@@ -464,7 +464,9 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 - Audio + window flash alarms
 - Persisted: timer definitions, per-character progress
 
-⚠️ Three wall-clock-driven wakeup schedulers (`TimerExpirationScheduler`, `ShiftAlarmService`, `TimerProgressService.CheckExpirations`) drive transitions. These are the most clock-dependent state machines in the codebase.
+⚠️ Three wall-clock-driven wakeup schedulers (`TimerExpirationScheduler`, `ShiftAlarmService`, `TimerProgressService.CheckExpirations`) drive transitions today. These are the most clock-dependent state machines in the codebase.
+
+⚠️ **Under the [world-sim model](world-simulator.md), all three scheduler-services collapse**: Gandalf subscribes to PlayerWorld's `CalendarTimeAdvanced` + `TimeOfDayShift` domain events (principle 13), compares each event's timestamp against its module-side timer ledger, fires alarms gated on `Mode == Live` (principle 12). No `DispatcherTimer`-based scheduling; no `IGameClock` dependency (PG in-game time is derived from world calendar events via the existing formula); no `TimerExpirationScheduler` / `ShiftAlarmService` wake-injection. Module-side state for the timer definitions stays; the wakeup machinery doesn't.
 
 ---
 

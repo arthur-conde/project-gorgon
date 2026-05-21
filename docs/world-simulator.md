@@ -12,12 +12,17 @@ Design rationale for the three-layer world-simulator architecture: source stream
 
 - **PlayerWorld** — the world reconstructed from `Player.log`. NOT "the player character" — that's a separate entity (`Character`) tracked within either world. When this doc says "Player" it always means "derived from Player.log."
 - **ChatWorld** — the world reconstructed from the chat log files.
-- **Folder / composer / producer** — the three state-machine kinds (principle 10). Folders apply frames; composers correlate change events; producers emit scheduled frames.
+- **Folder / composer / producer** — the three state-machine kinds (principle 10). Folders apply frames; composers correlate change events; producers source external-input frames (log tails).
 - **Frame** — `(timestamp, payload)`. The unifying primitive.
 - **Change event** — what a folder emits when applying a frame. World-internal.
 - **Domain frame** — what a composer emits when its pattern is satisfied. Cross-world consumable (published to the world's bus).
 - **World** vs **world runtime** — used interchangeably. "World" is short.
 - **View** — a composer operating above the worlds, subscribing to one or more world buses, exposing composed state to modules.
+- **`WorldMode`** — `Replaying` (draining recorded frames) or `Live` (caught up to source stream tail). Each world tracks independently. State derivation is mode-agnostic; side-effect-emitting consumers gate on `Mode == Live`.
+- **Canonical time-related domain events** (emitted on each world's bus, principle 13):
+  - `CalendarTimeAdvanced(Now, Mode)` — fires on second-resolution world-clock advancement
+  - `TimeOfDayShift(from, to, at, Mode)` — composer-derived; PG in-game shift boundaries
+  - `ModeChanged(from, to, at)` — fires on `Replaying ↔ Live` transition
 
 ---
 
@@ -48,9 +53,13 @@ The converged answer to all three: a **clocked world simulator** that owns the c
 10. **Three state-machine kinds: folders, composers, producers.** Each has a distinct signature and dispatch position:
     - **Folders** — `Frame<TPayload>` in, change events out. One frame is dispatched to exactly one folder (per the routing rules established by frame type). Folders mutate world state; they live inside one world. Examples: `PlayerSkillStateService` (XP frame → skill snapshot mutation), `ChatInventoryStateMachine` (stack-observation frame → name-keyed observation).
     - **Composers** — change events in (one or more, possibly across event types), domain frames out, emitted when the multi-frame pattern is satisfied. Composers *recognize* multi-frame patterns in events PG already emits; they do not anticipate or synthesize PG behavior. Intra-world composers (e.g., Arwen gift detection — three same-source frames → `GiftObservation`) live inside one world. Cross-world composers are views (next principle). Composers chain via subscribe within a frame's resolution — they never re-emit frames into the world's merger.
-    - **Producers** — emit scheduled frames into the merger for future-time dispatch. Examples: wake-at-T for user-defined timers, PG in-game-time shift alarms, eager TTL-eviction emissions. Producer-emitted frames are first-class `Frame<T>`; the merger holds them and dispatches when the simulated clock reaches the target. Producers are the *only* mechanism for time-shifted emission; composers never play this role.
+    - **Producers** — sources of external-input frames. Log tails (Player.log, chat log) are the canonical examples; future possibilities include filesystem reconcile for character export. Producers are NOT a mechanism for user-driven scheduling — user-side concerns (Gandalf timers, alarm scheduling) consume world domain events and run their own module-internal logic against them; they do not register producers in a world's merger. The world is sealed at its input.
 
-11. **Per-frame resolution is a finite DAG traversal; no cycles, no merger re-entry.** Within a world, a single frame dispatches to its folder; folder emits change events; intra-world composers subscribed to those change events run and possibly emit domain frames; composers subscribed to *those* domain frames run; resolution continues until no new events are emitted. The dispatch graph is topologically ordered (composers declare their input event types); resolution depth is bounded by the graph's depth. Composers don't re-enter the merger; producers do, but only for genuinely future-time emissions. View-layer resolution is the same shape, one layer up: view-layer composers receive world domain frames, may emit higher-level domain frames consumed by other views or by modules; views never re-emit into a world.
+11. **Per-frame resolution is a finite DAG traversal; no cycles, no merger re-entry.** Within a world, a single frame dispatches to its folder; folder emits change events; intra-world composers subscribed to those change events run and possibly emit domain frames; composers subscribed to *those* domain frames run; resolution continues until no new events are emitted. The dispatch graph is topologically ordered (composers declare their input event types); resolution depth is bounded by the graph's depth. View-layer resolution is the same shape, one layer up: view-layer composers receive world domain frames, may emit higher-level domain frames consumed by other views or by modules; views never re-emit into a world.
+
+12. **Each world tracks `Mode ∈ {Replaying, Live}`; side-effect-emitting consumers gate on `Mode == Live`.** During drain (catching up to the live tail from session-start), the world is in `Replaying`. Once drained and now blocking on the live source-stream tail for new frames, the world transitions to `Live`. State derivation is **mode-agnostic** — folders, composers, and views update internal state identically in both modes. **User-facing side effects** (audio alarms, window flash, OS notifications) gate on `Mode == Live` to avoid blasting the user with replays of yesterday's alarms when Mithril restarts. Mode flips are themselves observable: each world emits a `ModeChanged(from, to, at)` domain event on transition. Worlds transition independently — PlayerWorld may catch up at T1, ChatWorld at T2.
+
+13. **Calendar time is a domain event, not a clock read.** The world clock itself is just "last applied frame's timestamp" — there's no continuous-time abstraction to query during idle (there's no idle anyway, because PG's logs are continuously noisy during play). Consumers that care about time progression subscribe to `CalendarTimeAdvanced(Now, Mode)` domain frames on the world's bus — emitted on second-resolution world-clock advancement (deduplicated within a wall-clock second). Calendar-time composers may derive higher-level events like `TimeOfDayShift(from, to, at, Mode)` for PG shift transitions. Module-side schedulers (Gandalf timer alarms, Samwise ripeness alarms) consume these events; compare their internal thresholds against the carried timestamp; fire (gated on `Mode == Live`). No real-wall-clock leaks into state machines or module-side scheduling — real wall-clock is used only inside the world's merger to know when to block on the live source-stream tail.
 
 ---
 
@@ -121,27 +130,45 @@ public readonly record struct Frame<TPayload>(
 
 ```csharp
 /// <summary>
-/// A world's simulated wall-clock. Advances exclusively by applied frames'
-/// timestamps; never reads <see cref="DateTime.UtcNow"/>. State-decision wall-clock
-/// TTLs (correlator windows, eviction policies, alarm scheduling) read from here,
-/// NOT from <see cref="TimeProvider.System"/>.
+/// A world's simulated wall-clock. <see cref="Now"/> is always the timestamp of
+/// the most recently applied frame — there is no live-mode interpolation, no
+/// continuous-time abstraction. Consumers that care about time progression
+/// subscribe to <c>CalendarTimeAdvanced</c> domain events on the world's bus.
+/// Real wall-clock (<see cref="TimeProvider.System"/>) is used only inside the
+/// world's merger for blocking on the live source-stream tail; never by folders,
+/// composers, views, or modules.
 /// </summary>
 public interface IWorldClock
 {
     /// <summary>
-    /// Simulated wall-clock. Frame-derived; weakly monotonic at 1-second resolution
-    /// (PG's timestamp precision). Multiple frames may share the same value.
-    /// In live mode between frames, interpolates against real-time delta from the
-    /// most recent frame; in replay mode, sits at the last applied frame's timestamp.
+    /// Simulated wall-clock = timestamp of the most recently applied frame.
+    /// Weakly monotonic at 1-second resolution (PG's timestamp precision).
+    /// Multiple frames may share the same value. Reads during live-mode idle
+    /// return the same value as immediately after the last frame applied.
     /// </summary>
     DateTimeOffset Now { get; }
 
     /// <summary>
     /// Strictly-monotonic frame index. Ticks once per applied frame.
-    /// Identifies a unique point in the trajectory; tie-breaks within a wall-clock
-    /// second; pairs with <see cref="Now"/> as the full identity of a simulated moment.
+    /// Identifies a unique point in the trajectory; tie-breaks within a
+    /// wall-clock second; pairs with <see cref="Now"/> as the full identity
+    /// of a simulated moment.
     /// </summary>
     long Frame { get; }
+
+    /// <summary>
+    /// Current world mode. <see cref="WorldMode.Replaying"/> while draining
+    /// recorded frames toward the live tail; <see cref="WorldMode.Live"/> once
+    /// caught up. Transition emits a <c>ModeChanged</c> domain event on the bus.
+    /// Side-effect-emitting consumers gate on <c>Mode == Live</c>.
+    /// </summary>
+    WorldMode Mode { get; }
+}
+
+public enum WorldMode
+{
+    Replaying,
+    Live,
 }
 ```
 
@@ -511,7 +538,7 @@ After all migrations land:
 
 3. **Snapshot / rewind.** Once both worlds are clocked with frame indices, snapshot at frame N = (folder states + composer pending state + clock state) is well-defined. Rewind / branch is a natural follow-on. Out of scope for v1; the contracts shouldn't preclude it.
 
-4. **Live-mode clock interpolation.** Between frames in live mode, the simulated clock should advance at real-time pace anchored to the last frame's timestamp. Concrete formula: `simClock.Now = lastFrame.Timestamp + (TimeProvider.System.GetUtcNow() - lastFrameLandedAt)`. Need to validate this against TTL-gate consumers — does the interpolated value match their expectations for "5 seconds elapsed"? Probably yes; needs a test.
+4. ~~**Live-mode clock interpolation.**~~ **Resolved (the original framing was wrong): no interpolation.** The world clock is just "last applied frame's timestamp." Reading `worldClock.Now` during live-mode idle returns the same value as immediately after the last frame applied — no continuous-time read. Consumers that need to react to time progression subscribe to `CalendarTimeAdvanced` domain events (principle 13). PG's logs are continuously noisy during active play (movement, asset loading, combat ticks, NPC chatter), so the world clock advances at most a few seconds behind real time during normal gameplay; module-side schedulers comparing event timestamps against thresholds fire near-real-time without anyone needing interpolation. Real wall-clock is used only inside the world's merger to know how long to block on the live source-stream tail.
 
 5. ~~**Two clocks or one?**~~ **Resolved: each world owns its `IWorldClock`; views derive their own clock from observed domain-frame timestamps.** Each world's clock advances by its own source's frame timestamps. Views are composers above worlds; they observe domain frames flowing from world buses, each frame carrying its own timestamp (inherited from the originating change/source frame). View-layer TTL gates (like `InventoryView`'s 5s pairing window) use the *frame timestamps themselves* for correlation; for eviction-of-stale-pending-state, views derive a "now" from the max of the most-recently-observed frame timestamps across both world buses. Concrete contract: `IViewClock` exposes `Now : DateTimeOffset` (derived) and `Frames` as a tuple `(playerFrame, chatFrame)` of the most-recently-observed frame indices from each world's bus.
 
