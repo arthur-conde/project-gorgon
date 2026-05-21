@@ -13,7 +13,7 @@ A per-PR babysitter agent the world-sim orchestrator hands a PR to. The shepherd
 
 ## Why this exists
 
-The orchestration plan defines the dispatch loop for workers but leaves review undefined. Its Stop Condition #2 ("If a code review flags blocking concerns, the orchestrator pauses pending resolution") references the generic `code-review` skill as one input, but doesn't say who runs it, when, or how the orchestrator consumes the result. The plan also doesn't model the iterative "review → fix → re-review" cycle the orchestrator currently expects a human to drive.
+Before this design landed, the orchestration plan defined the dispatch loop for workers but left review undefined. Its Stop Condition #2 referenced the generic `code-review` skill as one input, but didn't say who ran it, when, or how the orchestrator consumed the result. The plan also didn't model the iterative "review → fix → re-review" cycle the orchestrator otherwise expected a human to drive.
 
 The shepherd fills that gap. It owns one PR end-to-end: runs reviewers, dispatches workers to address findings, escalates to a human only when the PR can't progress hands-free.
 
@@ -32,7 +32,7 @@ Two new subagents and one set of edits to the orchestration plan.
 3. **Replay-determinism inspection** — static-analysis-style sweep for non-determinism sources: `DateTime.UtcNow`/`Stopwatch` in state-decision paths, dictionary-iteration-order assumptions, `Task.Run` / `Task.WhenAll` that could reorder side effects, etc.
 4. **Audit cross-reference** — cross-checks the PR's changed files against [`world-sim-migration-audit.md`](world-sim-migration-audit.md). If a file is listed as "needs behavioural change" and this PR is supposed to land that change, verify the change happened; if "sleeper blocker," verify it was addressed.
 
-**Generic review.** The shepherd also dispatches the existing `code-reviewer` subagent from `pr-review-toolkit` in parallel with `world-sim-reviewer` each iteration. The pr-review-toolkit reviewer covers generic bug-scanning, CLAUDE.md adherence, git-history context — work the specialist doesn't need to reproduce.
+**Generic review.** The shepherd also dispatches a `general-purpose` subagent with an inlined code-review prompt template (see the shepherd agent file's §Generic code review prompt section) in parallel with `world-sim-reviewer` each iteration. The inlined prompt covers generic bug-scanning, CLAUDE.md adherence, git-history context — work the specialist doesn't need to reproduce. (The `pr-review-toolkit` plugin's `code-reviewer` agent would have been a natural fit, but it isn't installed in this environment; the inlined-prompt-on-general-purpose pattern is the project's existing convention for Agent-dispatchable review.)
 
 ---
 
@@ -48,7 +48,7 @@ loop {
                                               (never bulldoze human input)
 
   run reviewers in parallel:
-    - code-reviewer (pr-review-toolkit, generic)
+    - general-purpose (inlined code-review prompt)
     - world-sim-reviewer (specialist)
   post combined review comment on PR
 
@@ -113,7 +113,7 @@ Plus human-readable prose the agent emits as its return value (which the orchest
 
 ```
 ### Shepherd iteration N — review verdict
-Generic review (pr-review-toolkit/code-reviewer): [inline or link]
+Generic review: [inline or link]
 World-sim specialist (world-sim-reviewer): [inline or link]
 Verdict: dispatching worker | ready-to-merge | needs-human
 ```
@@ -138,14 +138,14 @@ The shepherd reads the issue body itself — the orchestration plan's `spawned_s
 
 ---
 
-## Files added when this lands
+## Files this design produced
 
 1. `.claude/agents/world-sim-shepherd.md` — shepherd subagent definition
 2. `.claude/agents/world-sim-reviewer.md` — specialist reviewer subagent
 3. Edits to [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md):
    - **Dispatch flow.** New step between "worker opens PR" and "orchestrator dispatches next task": orchestrator hands off to the shepherd.
-   - **Verification gates.** Add the shepherd as part of the per-PR gate alongside Tier 1 (build) and Tier 2 (test). Currently the plan has no inline code-review tier.
-   - **Stop conditions.** Stop Condition #2 ("code-review flags blocking concerns") becomes "shepherd returns `needs-human`" — the shepherd encapsulates the existing escalation rule.
+   - **Verification gates.** Shepherd review is now §Tier 2.5, sitting between Tier 2 (Test) and Tier 3 (System).
+   - **Stop conditions.** Stop Condition #2 references the shepherd's `needs-human` verdict; the generic `code-review` skill reference is gone.
 
 Optional follow-on (separate PR):
 - `tests/Mithril.WorldSim.Shepherd.Tests` — pure-function unit tests over a `ShepherdState` decision function (loop logic extracted into a plain C# library). The Agent/GitHub plumbing isn't unit-testable; the decision logic is.
@@ -154,7 +154,7 @@ Optional follow-on (separate PR):
 
 ## Open considerations
 
-1. **Generic reviewer wart.** The existing `/code-review` is a slash command, not a callable subagent. The shepherd uses the `code-reviewer` subagent from the `pr-review-toolkit` plugin instead, which is `Agent`-dispatchable. If `pr-review-toolkit` ever changes that subagent's contract, the shepherd's invocation needs to follow.
+1. **Generic reviewer wart.** The existing `/code-review` is a slash command, not a `Agent`-callable subagent. The `pr-review-toolkit` plugin provides a `code-reviewer` agent that would be a clean fit but isn't installed in this environment. The shepherd works around this by dispatching `general-purpose` with an inlined code-review prompt template embedded in the shepherd agent file. If `pr-review-toolkit` ever gets installed, switching the dispatch to that subagent (and dropping the inline template) is a one-line change.
 
 2. **Concurrent shepherds on overlapping PRs.** If the orchestrator dispatches two shepherds on PRs that touch the same file, the second worker's commit could clobber the first. The shepherd doesn't detect this proactively; it falls back to the `conflict` verdict if a merge conflict appears. The orchestration plan's Stop Condition #6 (conflicting concurrent work → serialize) covers the policy side.
 
