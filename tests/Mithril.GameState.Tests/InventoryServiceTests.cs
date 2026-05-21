@@ -4,6 +4,7 @@ using System.IO;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Tests.TestSupport;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
@@ -83,12 +84,12 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
-    public async Task SubscribeAfterAdd_ReplaysCurrentMapAsAddedEvents()
+    public async Task SubscribeAfterAdd_ReplaysFullEventLog()
     {
-        // The late-subscribe race that caused issue #7: the seed AddItem fires
-        // during PlayerLogStream's session-replay flush, before the gated module
-        // attaches its handler. Subscribe must replay the live map so the new
-        // subscriber sees the same history as one that was attached upfront.
+        // The late-subscribe race that #585 closed: a consumer attaching after
+        // session-replay AddItem events have already been processed must see
+        // those Added events, not be told inventory is empty. Per the React-
+        // channel contract Subscribe now replays the full event log in order.
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
             "[00:00:02] LocalPlayer: ProcessAddItem(BarleySeeds(7), -1, True)");
@@ -100,7 +101,9 @@ public sealed class InventoryServiceTests
 
         replayed.Should().HaveCount(2);
         replayed.Should().AllSatisfy(e => e.Kind.Should().Be(InventoryEventKind.Added));
-        replayed.Select(e => (e.InstanceId, e.InternalName)).Should().BeEquivalentTo(new[]
+        // Event-log replay preserves the original Fire order — a late subscriber
+        // observes the same sequence an upfront subscriber would have.
+        replayed.Select(e => (e.InstanceId, e.InternalName)).Should().Equal(new[]
         {
             (42L, "Moonstone"),
             (7L, "BarleySeeds"),
@@ -108,11 +111,15 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
-    public async Task SubscribeAfterDelete_DoesNotReplayDeletedEntry()
+    public async Task SubscribeAfterDelete_ReplaysAddThenDelete()
     {
-        // Deleted entries are retained for TryResolve, but a brand-new subscriber
-        // shouldn't be told an item exists that's already gone. Otherwise Samwise
-        // would treat a stale id as a candidate seed for the next plant.
+        // #585: under the React-channel contract, a brand-new subscriber sees the
+        // full event log, including Deleted events for items that were
+        // added-and-deleted before it attached. Pre-#585 Subscribe silently
+        // dropped these (only replayed live items as Added), which was the
+        // bug class flagged by audits #579/#588 — Legolas/Motherlode would
+        // miss dig-completion signals from before Mithril attached, Arwen
+        // would miss gifts made in the same session-replay window, etc.
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
             "[00:00:02] LocalPlayer: ProcessDeleteItem(42)");
@@ -122,7 +129,13 @@ public sealed class InventoryServiceTests
         var replayed = new List<InventoryEvent>();
         using var sub = svc.Subscribe(replayed.Add);
 
-        replayed.Should().BeEmpty();
+        replayed.Should().HaveCount(2);
+        replayed[0].Kind.Should().Be(InventoryEventKind.Added);
+        replayed[0].InstanceId.Should().Be(42);
+        replayed[0].InternalName.Should().Be("Moonstone");
+        replayed[1].Kind.Should().Be(InventoryEventKind.Deleted);
+        replayed[1].InstanceId.Should().Be(42);
+        replayed[1].InternalName.Should().Be("Moonstone");
         // TryResolve still returns the name (Arwen's gift-attribution path).
         svc.TryResolve(42, out var name).Should().BeTrue();
         name.Should().Be("Moonstone");
@@ -176,11 +189,14 @@ public sealed class InventoryServiceTests
     }
 
     [Fact]
-    public async Task SubscribeReplay_CarriesCurrentStackSize()
+    public async Task SubscribeReplay_DeliversAddThenStackChanged()
     {
-        // Once a stack has been mutated by UpdateItemCode, a fresh subscriber must
-        // see the post-mutation size on the synthesized Added event so the view
-        // doesn't render a stale "1" until the next live event.
+        // #585: the React-channel replay delivers the actual event log, not a
+        // synthesized "current state" snapshot. A late subscriber sees the
+        // Added (size 1) and the subsequent StackChanged (size 4) in order —
+        // same shape an upfront subscriber would have observed. Consumers that
+        // want "what's in inventory right now?" go through the Query channel
+        // (TryGetStackSize), not the React channel.
         var stream = new ScriptedStream(
             "[00:00:01] LocalPlayer: ProcessAddItem(Guava(100), -1, True)",
             "[00:00:02] LocalPlayer: ProcessUpdateItemCode(100, 201920, True)"); // size 4
@@ -190,10 +206,16 @@ public sealed class InventoryServiceTests
         var replayed = new List<InventoryEvent>();
         using var sub = svc.Subscribe(replayed.Add);
 
-        replayed.Should().ContainSingle();
+        replayed.Should().HaveCount(2);
         replayed[0].Kind.Should().Be(InventoryEventKind.Added);
         replayed[0].InstanceId.Should().Be(100);
-        replayed[0].StackSize.Should().Be(4);
+        replayed[0].StackSize.Should().Be(1);
+        replayed[1].Kind.Should().Be(InventoryEventKind.StackChanged);
+        replayed[1].InstanceId.Should().Be(100);
+        replayed[1].StackSize.Should().Be(4);
+        // Query channel reports the post-mutation size.
+        svc.TryGetStackSize(100, out var size).Should().BeTrue();
+        size.Should().Be(4);
     }
 
     [Fact]
@@ -613,6 +635,213 @@ public sealed class InventoryServiceTests
 
         await svc.StopAsync(CancellationToken.None);
         _ = runTask;
+    }
+
+    // ---- #585 React-channel contract: full event-log replay ----------------
+
+    [Fact]
+    public async Task Subscribe_FullEventLogReplay_PreservesAddDeleteAddDeleteOrder()
+    {
+        // #585 acceptance test: a sequence of Add → Delete → Add → Delete fired
+        // before subscription must replay in order. The pre-#585 contract
+        // synthesized at most one Added per surviving live entry, so this
+        // sequence would have replayed as zero events (both items deleted).
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessDeleteItem(42)",
+            "[00:00:03] LocalPlayer: ProcessAddItem(BarleySeeds(7), -1, True)",
+            "[00:00:04] LocalPlayer: ProcessDeleteItem(7)");
+        var svc = new InventoryService(stream.Driver);
+        await RunUntilDrainedAsync(svc, stream);
+
+        var replayed = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(replayed.Add);
+
+        replayed.Should().HaveCount(4);
+        replayed.Select(e => (e.Kind, e.InstanceId)).Should().Equal(new[]
+        {
+            (InventoryEventKind.Added, 42L),
+            (InventoryEventKind.Deleted, 42L),
+            (InventoryEventKind.Added, 7L),
+            (InventoryEventKind.Deleted, 7L),
+        });
+    }
+
+    [Fact]
+    public async Task Subscribe_LiveOnly_SkipsBacklogAndDeliversSubsequentEvents()
+    {
+        // Opt-out path for consumers that genuinely don't care about
+        // pre-attach history. Replay is skipped; only events fired AFTER
+        // Subscribe is established are delivered.
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessDeleteItem(42)");
+        var svc = new InventoryService(stream.Driver);
+        var runTask = svc.StartAsync(CancellationToken.None);
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(5));
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add, ReplayMode.LiveOnly);
+        events.Should().BeEmpty("LiveOnly skips the session backlog");
+
+        stream.Push("[00:00:03] LocalPlayer: ProcessAddItem(BarleySeeds(7), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Should().ContainSingle();
+        events[0].Kind.Should().Be(InventoryEventKind.Added);
+        events[0].InstanceId.Should().Be(7);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task Subscribe_DefaultReplayMode_IsFromSessionStart()
+    {
+        // The zero-arg overload must default to full-log replay — this is the
+        // contract every existing in-tree consumer (Samwise, Palantir,
+        // Legolas/Motherlode) relies on after #585.
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessDeleteItem(42)");
+        var svc = new InventoryService(stream.Driver);
+        await RunUntilDrainedAsync(svc, stream);
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add); // no ReplayMode arg
+
+        events.Should().HaveCount(2);
+        events[0].Kind.Should().Be(InventoryEventKind.Added);
+        events[1].Kind.Should().Be(InventoryEventKind.Deleted);
+    }
+
+    [Fact]
+    public async Task Subscribe_AtomicReplayThenLive_NoDuplicateOrLostEvents()
+    {
+        // The lock-around-Fire-and-Append discipline must hold: an event fired
+        // after Subscribe returns is delivered exactly once (live), not also
+        // re-delivered as part of a stale replay snapshot, and not missed
+        // because the replay snapshot was taken before append.
+        //
+        // Drive backlog → subscribe → fire a live event under the same drain
+        // gate. The subscriber should see exactly: backlog Added + live Added.
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(Moonstone(42), -1, True)");
+        var svc = new InventoryService(stream.Driver);
+        var runTask = svc.StartAsync(CancellationToken.None);
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(5));
+
+        var events = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(events.Add);
+        events.Should().ContainSingle("backlog Moonstone Added replays atomically");
+
+        stream.Push("[00:00:02] LocalPlayer: ProcessAddItem(BarleySeeds(7), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
+
+        events.Should().HaveCount(2,
+            "live event is delivered exactly once via the live-handler path, not duplicated through replay");
+        events[0].InstanceId.Should().Be(42);
+        events[1].InstanceId.Should().Be(7);
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    [Fact]
+    public async Task LateSubscriber_ReceivesDeletedEventsSynthesizedBeforeAttach()
+    {
+        // The cross-pump-race scenario from #585: a Motherlode-style consumer
+        // attaches AFTER the L1 driver has already pumped session-replay
+        // AddItem + DeleteItem pairs through InventoryService. The pre-#585
+        // contract dropped those Deleted events entirely (the live map was
+        // empty by the time Subscribe ran). The new contract replays them
+        // from the event log so the consumer's Deleted-handler (the
+        // dig-completion signal for Legolas, the gift-attribution signal
+        // for Arwen) fires correctly.
+        var stream = new ScriptedStream(
+            "[00:00:01] LocalPlayer: ProcessAddItem(MotherlodeMap_Mine(42), -1, True)",
+            "[00:00:02] LocalPlayer: ProcessDeleteItem(42)",
+            "[00:00:03] LocalPlayer: ProcessAddItem(MotherlodeMap_Mine(43), -1, True)",
+            "[00:00:04] LocalPlayer: ProcessDeleteItem(43)");
+        var svc = new InventoryService(stream.Driver);
+        await RunUntilDrainedAsync(svc, stream);
+
+        // Late subscriber that only cares about deletes (Motherlode pattern).
+        var deletes = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(e =>
+        {
+            if (e.Kind == InventoryEventKind.Deleted) deletes.Add(e);
+        });
+
+        deletes.Should().HaveCount(2,
+            "both dig-completion signals must reach the late subscriber even though both maps were already consumed before attach");
+        deletes.Select(e => e.InstanceId).Should().Equal(42L, 43L);
+    }
+
+    [Fact]
+    public async Task EventLog_ExceedsSoftCap_DropsOldestAndWarnsOnce()
+    {
+        // Pathological session: a long-running Mithril instance accumulates
+        // tens of thousands of inventory events. The log soft-caps at
+        // EventLogSoftCap (50,000) by dropping oldest entries in chunks; a
+        // single Warn fires the first time the cap is exceeded so the
+        // truncation isn't silent. The trim chunk is large (4096) so the
+        // log oscillates between cap − chunk and cap, not at cap exactly.
+        const int over = 60_000;
+        var stream = new ScriptedStream(Array.Empty<string>());
+        var diag = new RecordingDiagnostics();
+        var svc = new InventoryService(stream.Driver, diag: diag);
+        var runTask = svc.StartAsync(CancellationToken.None);
+
+        for (int i = 0; i < over; i++)
+            stream.Push($"[00:00:01] LocalPlayer: ProcessAddItem(BarleySeeds({i}), -1, True)");
+        await stream.WaitForDrainAsync(TimeSpan.FromSeconds(30));
+
+        // Late subscriber sees a bounded replay (the cap, not all 60k events).
+        var replayed = new List<InventoryEvent>();
+        using var sub = svc.Subscribe(replayed.Add);
+
+        replayed.Count.Should().BeLessThan(over,
+            "the event log must be soft-capped — late subscribers receive bounded history");
+        replayed.Count.Should().BeLessThanOrEqualTo(50_000,
+            "soft cap = 50_000; trim brings the log under-or-equal to cap");
+        replayed.Count.Should().BeGreaterThan(40_000,
+            "trim chunk is bounded so the log stays close to (not far below) the cap");
+
+        // Exactly one overflow Warn, emitted the first time the cap was hit.
+        var overflowWarns = diag.Warns
+            .Where(w => w.Category == "GameState.Inventory" && w.Message.Contains("soft cap"))
+            .ToList();
+        overflowWarns.Should().ContainSingle(
+            "the overflow Warn is one-shot — pathological sessions shouldn't spam diagnostics");
+
+        await svc.StopAsync(CancellationToken.None);
+        _ = runTask;
+    }
+
+    private sealed class RecordingDiagnostics : IDiagnosticsSink
+    {
+        public List<(string Category, string Message)> Warns { get; } = new();
+        private readonly object _gate = new();
+        private readonly List<DiagnosticEntry> _entries = new();
+
+        public event EventHandler<DiagnosticEntry>? EntryAdded;
+
+        public void Write(DiagnosticLevel level, string category, string message)
+        {
+            var entry = new DiagnosticEntry(DateTime.UtcNow, level, category, message);
+            lock (_gate)
+            {
+                _entries.Add(entry);
+                if (level == DiagnosticLevel.Warn) Warns.Add((category, message));
+            }
+            EntryAdded?.Invoke(this, entry);
+        }
+
+        public IReadOnlyList<DiagnosticEntry> Snapshot()
+        {
+            lock (_gate) return _entries.ToArray();
+        }
     }
 
     [Fact]

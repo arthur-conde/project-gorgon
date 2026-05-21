@@ -86,16 +86,41 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     private ILogSubscription? _playerSubscription;
     private ILogSubscription? _chatSubscription;
 
-    // _subLock guards _map and _handlers. _pendingChat / _pendingAdd are
-    // PendingCorrelator instances that are independently thread-safe via their own
-    // internal _gate; they don't require _subLock for correctness, but both L1
-    // subscription handlers (OnLocalPlayer, OnChat) take _subLock around correlator
-    // calls anyway so the drain-then-mutate-_map sequence stays atomic within a
-    // handler. The two subscriptions have independent pump threads, so _subLock is
-    // load-bearing for cross-pipe serialization too.
+    // One-shot guard for the SinceSubscribe coercion diag. Subscribe treats
+    // SinceSubscribe as LiveOnly today (no "since timestamp T" window
+    // implemented); we emit a single Trace per process so the spurious knob
+    // is observable without flooding diagnostics on repeated subscribes.
+    // Mirrors LogStreamDriver's chat-pipe ReplayMode-mismatch diagnostic
+    // (LogStreamDriver.cs ReplayMode != LiveOnly branch).
+    private static int s_sinceSubscribeDiagFired;
+
+    // _subLock guards _map, _handlers, _eventLog, and _eventLogOverflowWarned.
+    // _pendingChat / _pendingAdd are PendingCorrelator instances that are
+    // independently thread-safe via their own internal _gate; they don't require
+    // _subLock for correctness, but both L1 subscription handlers (OnLocalPlayer,
+    // OnChat) take _subLock around correlator calls anyway so the
+    // drain-then-mutate-_map sequence stays atomic within a handler. The two
+    // subscriptions have independent pump threads, so _subLock is load-bearing for
+    // cross-pipe serialization too.
     private readonly object _subLock = new();
     private readonly Dictionary<long, MapEntry> _map = new();
     private readonly List<Action<InventoryEvent>> _handlers = new();
+
+    // React-channel event log (#585). Every InventoryEvent the service emits
+    // is appended here so a late subscriber asking for the default
+    // ReplayMode.FromSessionStart replay receives the full session, including
+    // Deleted events for items that were added-and-deleted before it attached.
+    // Soft-capped at EventLogSoftCap: when exceeded the oldest entries are
+    // dropped to bound memory (~50 bytes/entry x 50k ~= 2.5 MB worst case) and
+    // a single Warn fires so the situation is observable rather than silent.
+    // The cap exists for pathological sessions; typical PG sessions produce
+    // well under it.
+    private const int EventLogSoftCap = 50_000;
+    // When trimming, drop this many entries at once so we amortize the
+    // shift cost across many appends rather than a one-at-a-time slide.
+    private const int EventLogTrimChunk = 4_096;
+    private readonly List<InventoryEvent> _eventLog = new();
+    private bool _eventLogOverflowWarned;
 
     // Bidirectional chat/AddItem correlation. Either signal can arrive first within
     // the same second:
@@ -196,19 +221,36 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         return false;
     }
 
-    public IDisposable Subscribe(Action<InventoryEvent> handler)
+    public IDisposable Subscribe(
+        Action<InventoryEvent> handler,
+        ReplayMode replay = ReplayMode.FromSessionStart)
     {
         ArgumentNullException.ThrowIfNull(handler);
+        // SinceSubscribe is treated like LiveOnly here — InventoryService
+        // has no notion of an arbitrary "since timestamp T" window today
+        // (mirrors LogStreamDriver's current behaviour for that mode).
+        // Emit a one-shot Trace per process for symmetry with the
+        // LogStreamDriver chat-pipe ReplayMode-mismatch diagnostic, so the
+        // spurious knob doesn't go unnoticed. Fired outside _subLock — the
+        // diagnostics sink is independently thread-safe and this avoids
+        // re-entering the sink while holding the subscription lock.
+        if (replay == ReplayMode.SinceSubscribe
+            && Interlocked.CompareExchange(ref s_sinceSubscribeDiagFired, 1, 0) == 0)
+        {
+            _diag?.Trace(
+                "GameState.Inventory",
+                "ReplayMode.SinceSubscribe is not yet implemented for IInventoryService; treating as LiveOnly. " +
+                "This diagnostic fires once per process.");
+        }
         lock (_subLock)
         {
-            // Replay current live map state to this handler only. Skip
-            // entries marked Deleted — they're retained for TryResolve but
-            // shouldn't surface as Added events to a fresh subscriber.
-            foreach (var (id, entry) in _map)
+            // React-channel contract (#585): default replay is the full
+            // in-session event log, atomically under _subLock so the
+            // replay-then-live boundary is race-free with concurrent Fire()s.
+            if (replay == ReplayMode.FromSessionStart)
             {
-                if (entry.Deleted) continue;
-                Invoke(handler, new InventoryEvent(
-                    InventoryEventKind.Added, id, entry.InternalName, entry.Timestamp, entry.StackSize, entry.SizeConfirmed));
+                foreach (var evt in _eventLog)
+                    Invoke(handler, evt);
             }
             _handlers.Add(handler);
             return new Subscription(this, handler);
@@ -708,15 +750,48 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     }
 
     /// <summary>
-    /// MUST be called with <see cref="_subLock"/> held. Dispatches an event to
-    /// every currently-attached handler. Holding the lock during dispatch is
-    /// what makes the Subscribe-vs-live-event race impossible: a new
-    /// subscriber either ran its replay before this Fire (and will receive
-    /// the live event) or runs after (and saw the entry in its replay).
+    /// MUST be called with <see cref="_subLock"/> held. Appends to the
+    /// React-channel event log (#585) and dispatches to every currently
+    /// attached handler. Holding the lock around both is what makes the
+    /// Subscribe-vs-live-event race impossible: a new subscriber either ran
+    /// its replay before this Fire (and will receive the live event because
+    /// the handler is in <see cref="_handlers"/>) or runs after (and saw
+    /// the event in its replay of <see cref="_eventLog"/>).
     /// </summary>
     private void Fire(InventoryEvent evt)
     {
+        AppendToEventLog(evt);
         foreach (var h in _handlers) Invoke(h, evt);
+    }
+
+    /// <summary>
+    /// MUST be called with <see cref="_subLock"/> held. Appends an event to
+    /// the React-channel log, enforcing the soft cap by dropping oldest
+    /// entries in <see cref="EventLogTrimChunk"/>-sized chunks. The first
+    /// time the cap is exceeded a single <c>Warn</c> fires so the situation
+    /// surfaces in diagnostics rather than silently truncating session
+    /// history. Subsequent overflows are bounded but not logged again to
+    /// avoid noise in pathological sessions.
+    /// </summary>
+    private void AppendToEventLog(InventoryEvent evt)
+    {
+        if (_eventLog.Count >= EventLogSoftCap)
+        {
+            // Trim a chunk from the head. RemoveRange is O(n) on List<T>, but
+            // amortizes to O(1) per Append once Count rounds the cap because
+            // we trim a chunk at a time, not one element at a time.
+            var trim = Math.Min(EventLogTrimChunk, _eventLog.Count);
+            _eventLog.RemoveRange(0, trim);
+            if (!_eventLogOverflowWarned)
+            {
+                _eventLogOverflowWarned = true;
+                _diag?.Warn("GameState.Inventory",
+                    $"React-channel event log exceeded soft cap ({EventLogSoftCap}); " +
+                    $"dropping oldest entries. Late subscribers will see a bounded session history. " +
+                    $"This is the first overflow this session; further overflows are silent.");
+            }
+        }
+        _eventLog.Add(evt);
     }
 
     private void Invoke(Action<InventoryEvent> handler, InventoryEvent evt)
