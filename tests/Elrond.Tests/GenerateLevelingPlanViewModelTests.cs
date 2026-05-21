@@ -4,6 +4,7 @@ using FluentAssertions;
 using Mithril.Leveling;
 using Mithril.Planning;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 using Mithril.Shared.Crafting;
 using Mithril.Shared.Modules;
 using Xunit;
@@ -40,7 +41,7 @@ public class GenerateLevelingPlanViewModelTests
     {
         data ??= Data();
         return new GenerateLevelingPlanViewModel(
-            new FakeActiveChar(snap), Planner(data), data,
+            new FakeActiveChar(snap), new FakeGameReports(snap), Planner(data), data,
             sink is null ? null : () => sink);
     }
 

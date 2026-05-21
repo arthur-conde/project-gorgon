@@ -5,7 +5,7 @@ using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Microsoft.Extensions.Hosting;
 
 namespace Mithril.GameState.Inventory;
@@ -80,6 +80,12 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
     private readonly GameConfig? _gameConfig;
+    // Optional foundation service (#612). When present, InventoryService
+    // subscribes to its StorageReportsChanged event for reconcile triggers
+    // and reads storage snapshots via GetStorageReport/GetStorageContents —
+    // rather than running its own FileSystemWatcher on the Reports/ directory.
+    // Null in test contexts that don't wire the service.
+    private readonly IGameReportsService? _gameReports;
     private readonly TimeProvider _time;
     private FileSystemWatcher? _seedWatcher;
     private Timer? _seedDebounce;
@@ -180,12 +186,14 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         IDiagnosticsSink? diag = null,
         IReferenceDataService? refData = null,
         GameConfig? gameConfig = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        IGameReportsService? gameReports = null)
     {
         _driver = driver;
         _diag = diag;
         _refData = refData;
         _gameConfig = gameConfig;
+        _gameReports = gameReports;
         _time = time ?? TimeProvider.System;
         _pendingChat = new PendingCorrelator<string, int>(PendingChatTtl, _time, keyComparer: StringComparer.Ordinal);
         _pendingAdd = new PendingCorrelator<string, long>(PendingChatTtl, _time, keyComparer: StringComparer.Ordinal);
@@ -299,6 +307,8 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             _chatSubscription = null;
             _seedDebounce?.Dispose();
             _seedWatcher?.Dispose();
+            if (_gameReports is not null)
+                _gameReports.StorageReportsChanged -= OnGameReportsStorageChanged;
         }
     }
 
@@ -574,26 +584,55 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     /// </summary>
     internal void LoadExportSeeds()
     {
-        if (_gameConfig is null || _refData is null) return;
-        var dir = _gameConfig.ReportsDirectory;
-        if (string.IsNullOrEmpty(dir)) return;
+        if (_refData is null) return;
 
+        // #612: prefer the IGameReportsService (foundation) when present;
+        // it owns the report scan + parse + cache. The GameConfig-direct
+        // path stays as a fallback for older test contexts that didn't wire
+        // the service through DI.
         ReportFileInfo? newest;
         StorageReport report;
-        try
+
+        if (_gameReports is not null)
         {
-            newest = StorageReportLoader.ScanForReports(dir).FirstOrDefault();
+            newest = _gameReports.StorageReports.FirstOrDefault();
             if (newest is null)
             {
-                _diag?.Trace("GameState.Inventory", $"Seed: no exports found in {dir}");
+                _diag?.Trace("GameState.Inventory", "Seed: no exports found via IGameReportsService");
                 return;
             }
-            report = StorageReportLoader.Load(newest.FilePath);
+            var loaded = _gameReports.GetStorageContents(newest.Character, newest.Server);
+            if (loaded is null)
+            {
+                _diag?.Warn("GameState.Inventory", $"Seed: IGameReportsService failed to parse {newest.FilePath}");
+                return;
+            }
+            report = loaded;
         }
-        catch (Exception ex)
+        else if (_gameConfig is not null)
         {
-            _diag?.Warn("GameState.Inventory", $"Seed: failed to load export: {ex.Message}");
-            return;
+            var dir = _gameConfig.ReportsDirectory;
+            if (string.IsNullOrEmpty(dir)) return;
+
+            try
+            {
+                newest = StorageReportLoader.ScanForReports(dir).FirstOrDefault();
+                if (newest is null)
+                {
+                    _diag?.Trace("GameState.Inventory", $"Seed: no exports found in {dir}");
+                    return;
+                }
+                report = StorageReportLoader.Load(newest.FilePath);
+            }
+            catch (Exception ex)
+            {
+                _diag?.Warn("GameState.Inventory", $"Seed: failed to load export: {ex.Message}");
+                return;
+            }
+        }
+        else
+        {
+            return; // No data source available.
         }
 
         // Group in-inventory entries by InternalName via TypeID lookup. Only
@@ -693,6 +732,16 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
     private void SetupSeedWatcher()
     {
+        // #612: when IGameReportsService is wired, subscribe to its already-
+        // debounced StorageReportsChanged event — no second FileSystemWatcher.
+        // The shell wires this; only legacy tests that pass GameConfig without
+        // the service fall back to the local watcher.
+        if (_gameReports is not null)
+        {
+            _gameReports.StorageReportsChanged += OnGameReportsStorageChanged;
+            return;
+        }
+
         if (_gameConfig is null) return;
         var dir = _gameConfig.ReportsDirectory;
         if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
@@ -713,6 +762,14 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         {
             _diag?.Warn("GameState.Inventory", $"Seed: watcher setup failed: {ex.Message}");
         }
+    }
+
+    private void OnGameReportsStorageChanged(object? sender, EventArgs e)
+    {
+        // IGameReportsService's own watcher already debounces, so we reconcile
+        // immediately on its notification — no second debounce timer here.
+        try { LoadExportSeeds(); }
+        catch (Exception ex) { _diag?.Warn("GameState.Inventory", $"Seed: refresh failed: {ex.Message}"); }
     }
 
     private void OnSeedReportsChanged(object sender, FileSystemEventArgs e)

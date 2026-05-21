@@ -2,6 +2,7 @@ using Celebrimbor.Domain;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Storage;
+using Mithril.GameReports;
 
 namespace Celebrimbor.Services;
 

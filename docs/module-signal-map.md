@@ -47,7 +47,7 @@ Two streams (Player.log and chat) each **self-scope** via their own intra-source
 |---|---|
 | `IReferenceDataService` | reference |
 | `IServerCatalogService` (planned) | reference |
-| `Mithril.GameReports` (planned, see [`world-simulator.md`](world-simulator.md) §Three categories) | reference (external shared data; per-character snapshot files, externally sourced) |
+| `Mithril.GameReports` (shipped #612, see [`world-simulator.md`](world-simulator.md) §Three categories) | reference (external shared data; per-character snapshot files, externally sourced) |
 | `IGameSessionService` | world (session ledger; evolving from "current session" to a per-server ledger) |
 | `IPlayerSkillStateService` | character |
 | `IPlayerRecipeStateService` | character |
@@ -622,7 +622,7 @@ Notes: feeds any future Dying-skill XP tracker (Dying is a PG skill levelled by 
 
 Notes: min/max consumers want gold-over-time analysis, so the ledger is a first-class output rather than just a snapshot. Early customer for the dual-clock `(Now, Frame)` pair-stamp convention — both axes matter (gold per hour wants `Now`; "did this transaction precede that one" wants `Frame`).
 
-### `Mithril.GameReports` (planned shared service)
+### `Mithril.GameReports` (shipped, #612)
 
 **Replaces** the earlier "Storage-export as synthetic-frame producer" entry — the world-simulator design's [Three categories of data](world-simulator.md) section reframed this as a **shared service in the foundation layer**, not a producer of frames into a world. Reports are point-in-time records (PG's `/exportchar` output), not world events.
 

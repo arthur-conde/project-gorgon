@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json.Serialization.Metadata;
+using Mithril.GameReports;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
@@ -71,9 +72,22 @@ public static class ServiceCollectionExtensions
             .AddSingleton<ISessionAnchor>(sp => sp.GetRequiredService<SessionAnchor>())
             .AddSingleton<IPlayerLogStream, PlayerLogStream>()
             .AddSingleton<IChatLogStream, ChatLogStream>()
+            // Foundation service (#612) — owns the FileSystemWatcher on
+            // Reports/, parses storage exports + character snapshots,
+            // exposes per-(server, character) scope query. ActiveCharacterService
+            // is now a thin adapter that adds the "active selection" axis.
+            .AddSingleton<IGameReportsService>(sp =>
+            {
+                var gameConfig = sp.GetRequiredService<Game.GameConfig>();
+                var diag = sp.GetService<IDiagnosticsSink>();
+                return new GameReportsService(
+                    () => gameConfig.ReportsDirectory,
+                    diag is null ? null : (category, message) => diag.Write(DiagnosticLevel.Warn, category, message));
+            })
             .AddSingleton<IActiveCharacterService>(sp => new ActiveCharacterService(
                 sp.GetRequiredService<Game.GameConfig>(),
                 sp.GetRequiredService<IActiveCharacterPersistence>(),
+                sp.GetRequiredService<IGameReportsService>(),
                 sp.GetRequiredService<IDiagnosticsSink>()))
             .AddHostedService<ActiveCharacterLogSynchronizer>();
 

@@ -2,6 +2,7 @@ using Mithril.Leveling;
 using Mithril.Planning;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 using Mithril.Shared.Reference;
 
 namespace Celebrimbor.Services;

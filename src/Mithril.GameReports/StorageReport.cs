@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace Mithril.Shared.Storage;
+namespace Mithril.GameReports;
 
 /// <summary>
 /// Top-level JSON model for a character's storage/inventory export.

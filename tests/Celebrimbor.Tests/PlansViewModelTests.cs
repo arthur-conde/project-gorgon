@@ -3,6 +3,7 @@ using Celebrimbor.ViewModels;
 using FluentAssertions;
 using Mithril.Planning;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 using Xunit;
 
 namespace Celebrimbor.Tests;

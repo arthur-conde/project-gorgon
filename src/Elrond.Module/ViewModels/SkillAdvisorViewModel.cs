@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Elrond.Domain;
 using Elrond.Services;
+using Mithril.GameReports;
 using Mithril.Shared.Character;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
@@ -55,8 +56,18 @@ public sealed partial class SkillAdvisorViewModel
 
     private readonly SkillAdvisorEngine _engine;
     private readonly IActiveCharacterService _activeChar;
+    private readonly IGameReportsService _gameReports;
     private readonly IReferenceDataService _referenceData;
     private readonly ElrondSettings _settings;
+
+    /// <summary>
+    /// Resolves the active character's snapshot via <see cref="IGameReportsService"/>
+    /// directly (#612). The character selection axis still flows through
+    /// <see cref="IActiveCharacterService"/> — only the snapshot DATA reads from
+    /// the foundation reports service.
+    /// </summary>
+    private CharacterSnapshot? ActiveCharacterSnapshot =>
+        _gameReports.GetCharacterSnapshot(_activeChar.ActiveCharacterName, _activeChar.ActiveServer);
     // Resolved lazily, ONLY on the explicit Send click. Resolving ICraftListImportTarget
     // eagerly at ctor time closes a DI cycle: it pulls Celebrimbor's CraftListImportTarget
     // → IModuleActivator → ShellModuleActivator(ShellViewModel) → ShellViewModel..ctor's
@@ -78,6 +89,7 @@ public sealed partial class SkillAdvisorViewModel
     public SkillAdvisorViewModel(
         SkillAdvisorEngine engine,
         IActiveCharacterService characterData,
+        IGameReportsService gameReports,
         IReferenceDataService referenceData,
         ElrondSettings settings,
         GenerateLevelingPlanViewModel generatePlan,
@@ -85,6 +97,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         _engine = engine;
         _activeChar = characterData;
+        _gameReports = gameReports;
         _referenceData = referenceData;
         _settings = settings;
         GeneratePlan = generatePlan;
@@ -430,7 +443,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         if (string.IsNullOrEmpty(skillKey)) return;
 
-        var active = _activeChar.ActiveCharacter;
+        var active = ActiveCharacterSnapshot;
         var leafKeys = SkillNodes.Select(n => n.Key).ToHashSet(StringComparer.Ordinal);
         if (active is not null && leafKeys.Contains(skillKey))
         {
@@ -457,7 +470,7 @@ public sealed partial class SkillAdvisorViewModel
 
     private void BuildSkillNodes()
     {
-        var active = _activeChar.ActiveCharacter;
+        var active = ActiveCharacterSnapshot;
         if (active is null)
         {
             SkillNodes = [];
@@ -518,7 +531,7 @@ public sealed partial class SkillAdvisorViewModel
             ? entry.DisplayName
             : skillKey;
 
-        var active = _activeChar.ActiveCharacter;
+        var active = ActiveCharacterSnapshot;
         SelectedSkillLevel = active is not null && active.Skills.TryGetValue(skillKey, out var charSkill)
             ? charSkill.Level
             : null;
@@ -526,7 +539,7 @@ public sealed partial class SkillAdvisorViewModel
 
     private void Reanalyze()
     {
-        var active = _activeChar.ActiveCharacter;
+        var active = ActiveCharacterSnapshot;
         if (active is null)
         {
             Analysis = null;

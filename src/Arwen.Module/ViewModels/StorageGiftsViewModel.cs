@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using FavorScale = Mithril.Reference.Models.Npcs.FavorScale;
 using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
 

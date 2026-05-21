@@ -4,7 +4,7 @@ using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Character;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 
 namespace Elrond.Tests;
 
@@ -24,6 +24,37 @@ internal sealed class FakeActiveChar : IActiveCharacterService
     public event EventHandler? ActiveCharacterChanged { add { } remove { } }
     public event EventHandler? CharacterExportsChanged { add { } remove { } }
     public event EventHandler? StorageReportsChanged { add { } remove { } }
+    public void Dispose() { }
+}
+
+/// <summary>
+/// Minimal IGameReportsService double — returns whichever snapshot the paired
+/// FakeActiveChar exposes (#612: Elrond's snapshot input migrated to the
+/// foundation reports service).
+/// </summary>
+internal sealed class FakeGameReports : IGameReportsService
+{
+    private readonly CharacterSnapshot? _active;
+    public FakeGameReports(CharacterSnapshot? active = null) => _active = active;
+
+    public IReadOnlyList<ReportFileInfo> StorageReports => [];
+    public IReadOnlyList<CharacterSnapshot> CharacterSnapshots => _active is null ? [] : [_active];
+
+    public ReportFileInfo? GetStorageReport(string? character, string? server) => null;
+    public StorageReport? GetStorageContents(string? character, string? server) => null;
+
+    public CharacterSnapshot? GetCharacterSnapshot(string? character, string? server)
+    {
+        if (_active is null || string.IsNullOrEmpty(character)) return null;
+        if (!_active.Name.Equals(character, StringComparison.OrdinalIgnoreCase)) return null;
+        if (!string.IsNullOrEmpty(server)
+            && !_active.Server.Equals(server, StringComparison.OrdinalIgnoreCase)) return null;
+        return _active;
+    }
+
+    public event EventHandler? StorageReportsChanged { add { } remove { } }
+    public event EventHandler? CharacterSnapshotsChanged { add { } remove { } }
+    public void Refresh() { }
     public void Dispose() { }
 }
 

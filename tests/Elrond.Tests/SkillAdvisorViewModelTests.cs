@@ -10,7 +10,7 @@ using Mithril.Planning;
 using Mithril.Shared.Character;
 using Mithril.Shared.Crafting;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Xunit;
 
 namespace Elrond.Tests;
@@ -256,7 +256,7 @@ public class SkillAdvisorViewModelTests
             ],
         };
         var engine = new SkillAdvisorEngine(refData);
-        var vm = new SkillAdvisorViewModel(engine, characterSvc, refData, settings,
+        var vm = new SkillAdvisorViewModel(engine, characterSvc, ReportsFor(characterSvc), refData, settings,
             Gen(refData, characterSvc));
 
         vm.QueryText.Should().Be("ORDER BY EffectiveXp DESC, RecipeName");
@@ -331,7 +331,7 @@ public class SkillAdvisorViewModelTests
         var engine = new SkillAdvisorEngine(refData);
 
         var act = () => new SkillAdvisorViewModel(
-            engine, characterSvc, refData, new ElrondSettings(),
+            engine, characterSvc, ReportsFor(characterSvc), refData, new ElrondSettings(),
             Gen(refData, characterSvc),
             () => throw new InvalidOperationException("import target resolved during construction"));
 
@@ -341,7 +341,33 @@ public class SkillAdvisorViewModelTests
 
     // #228 PR-B/B2: SkillAdvisorViewModel now hosts the Generate-plan child VM.
     private static GenerateLevelingPlanViewModel Gen(IReferenceDataService refData, IActiveCharacterService chr)
-        => new(chr, new CrossSkillPlanner(refData, new LevelingMath(refData), new RecipeExpander(refData)), refData);
+        => new(chr, ReportsFor(chr), new CrossSkillPlanner(refData, new LevelingMath(refData), new RecipeExpander(refData)), refData);
+
+    /// <summary>Wraps an <see cref="IActiveCharacterService"/> as an <see cref="IGameReportsService"/>
+    /// for tests: GetCharacterSnapshot mirrors <c>ActiveCharacter</c>; the storage side returns empty.</summary>
+    private static IGameReportsService ReportsFor(IActiveCharacterService chr) => new FakeReportsAdapter(chr);
+
+    private sealed class FakeReportsAdapter(IActiveCharacterService chr) : IGameReportsService
+    {
+        public IReadOnlyList<ReportFileInfo> StorageReports => [];
+        public IReadOnlyList<CharacterSnapshot> CharacterSnapshots =>
+            chr.ActiveCharacter is null ? [] : [chr.ActiveCharacter];
+        public ReportFileInfo? GetStorageReport(string? character, string? server) => null;
+        public StorageReport? GetStorageContents(string? character, string? server) => null;
+        public CharacterSnapshot? GetCharacterSnapshot(string? character, string? server)
+        {
+            var active = chr.ActiveCharacter;
+            if (active is null || string.IsNullOrEmpty(character)) return null;
+            if (!active.Name.Equals(character, StringComparison.OrdinalIgnoreCase)) return null;
+            if (!string.IsNullOrEmpty(server)
+                && !active.Server.Equals(server, StringComparison.OrdinalIgnoreCase)) return null;
+            return active;
+        }
+        public event EventHandler? StorageReportsChanged { add { } remove { } }
+        public event EventHandler? CharacterSnapshotsChanged { add { } remove { } }
+        public void Refresh() { }
+        public void Dispose() { }
+    }
 
     private static SkillAdvisorViewModel MakeVmWithImportTarget(
         out FakeRefData refData, out FakeCraftListImportTarget importTarget)
@@ -357,7 +383,7 @@ public class SkillAdvisorViewModelTests
         var engine = new SkillAdvisorEngine(refData);
         importTarget = new FakeCraftListImportTarget();
         var captured = importTarget;
-        return new SkillAdvisorViewModel(engine, characterSvc, refData, new ElrondSettings(),
+        return new SkillAdvisorViewModel(engine, characterSvc, ReportsFor(characterSvc), refData, new ElrondSettings(),
             Gen(refData, characterSvc),
             () => captured);
     }
@@ -394,7 +420,7 @@ public class SkillAdvisorViewModelTests
 
         var settings = new ElrondSettings();
         var engine = new SkillAdvisorEngine(refData);
-        var vm = new SkillAdvisorViewModel(engine, characterSvc, refData, settings,
+        var vm = new SkillAdvisorViewModel(engine, characterSvc, ReportsFor(characterSvc), refData, settings,
             Gen(refData, characterSvc));
         return (vm, refData, characterSvc, settings);
     }

@@ -600,15 +600,15 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             ActiveServer = server;
         }
 
-        public IReadOnlyList<Mithril.Shared.Character.CharacterSnapshot> Characters
-            => Array.Empty<Mithril.Shared.Character.CharacterSnapshot>();
-        public IReadOnlyList<Mithril.Shared.Storage.ReportFileInfo> StorageReports
-            => Array.Empty<Mithril.Shared.Storage.ReportFileInfo>();
+        public IReadOnlyList<Mithril.GameReports.CharacterSnapshot> Characters
+            => Array.Empty<Mithril.GameReports.CharacterSnapshot>();
+        public IReadOnlyList<Mithril.GameReports.ReportFileInfo> StorageReports
+            => Array.Empty<Mithril.GameReports.ReportFileInfo>();
         public string? ActiveCharacterName { get; }
         public string? ActiveServer { get; }
-        public Mithril.Shared.Character.CharacterSnapshot? ActiveCharacter => null;
-        public Mithril.Shared.Storage.ReportFileInfo? ActiveStorageReport => null;
-        public Mithril.Shared.Storage.StorageReport? ActiveStorageContents => null;
+        public Mithril.GameReports.CharacterSnapshot? ActiveCharacter => null;
+        public Mithril.GameReports.ReportFileInfo? ActiveStorageReport => null;
+        public Mithril.GameReports.StorageReport? ActiveStorageContents => null;
         public void SetActiveCharacter(string name, string server) { }
         public void Refresh() { }
         public event EventHandler? ActiveCharacterChanged { add { } remove { } }

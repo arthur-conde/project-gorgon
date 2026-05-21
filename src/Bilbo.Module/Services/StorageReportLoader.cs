@@ -1,6 +1,5 @@
-global using Mithril.Shared.Storage;
-
 using Bilbo.Domain;
+using Mithril.GameReports;
 using Mithril.Shared.Reference;
 
 namespace Bilbo.Services;

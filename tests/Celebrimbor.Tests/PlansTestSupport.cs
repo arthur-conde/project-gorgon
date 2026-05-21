@@ -5,7 +5,7 @@ using Mithril.Shared.Character;
 using Mithril.Shared.Crafting;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 
 namespace Celebrimbor.Tests;
 

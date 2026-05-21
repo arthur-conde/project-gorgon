@@ -1,5 +1,5 @@
 using Mithril.Shared.Character;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 
 namespace Mithril.Shared.Tests.Character;
 

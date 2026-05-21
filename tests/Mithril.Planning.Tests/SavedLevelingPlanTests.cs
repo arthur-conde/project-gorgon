@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Mithril.Leveling;
 using Mithril.Shared.Character;
+using Mithril.GameReports;
 using Xunit;
 
 namespace Mithril.Planning.Tests;

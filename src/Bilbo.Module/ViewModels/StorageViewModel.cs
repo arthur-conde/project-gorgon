@@ -8,7 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
 using Mithril.Shared.Game;
 using Mithril.Shared.Reference;
-using Mithril.Shared.Storage;
+using Mithril.GameReports;
 using Mithril.Shared.Wpf;
 
 namespace Bilbo.ViewModels;
@@ -19,20 +19,30 @@ public sealed partial class StorageViewModel : ObservableObject
     private readonly BilboSettings _settings;
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeChar;
+    private readonly IGameReportsService _reports;
     private IReadOnlyList<StorageItemRow> _allItems = [];
 
     public StorageViewModel(
         GameConfig gameConfig,
         BilboSettings settings,
         IReferenceDataService refData,
-        IActiveCharacterService activeChar)
+        IActiveCharacterService activeChar,
+        IGameReportsService reports)
     {
         _gameConfig = gameConfig;
         _settings = settings;
         _refData = refData;
         _activeChar = activeChar;
+        _reports = reports;
+        // Selection axis still comes from IActiveCharacterService (it's the
+        // single source of truth for who's active). The storage data itself
+        // and its file-change events come from IGameReportsService — the
+        // foundation service that owns the Reports directory scan + watcher
+        // (#612). This split lets Bilbo subscribe to the report-file changes
+        // it actually cares about without being coupled to character-selection
+        // unrelated noise.
         _activeChar.ActiveCharacterChanged += (_, _) => DispatchReload();
-        _activeChar.StorageReportsChanged += (_, _) => DispatchReload();
+        _reports.StorageReportsChanged += (_, _) => DispatchReload();
         Reload();
     }
 
@@ -104,7 +114,7 @@ public sealed partial class StorageViewModel : ObservableObject
     [RelayCommand]
     private void Refresh()
     {
-        _activeChar.Refresh();
+        _reports.Refresh();
         Reload();
     }
 
@@ -112,7 +122,7 @@ public sealed partial class StorageViewModel : ObservableObject
 
     private void Reload()
     {
-        var report = _activeChar.ActiveStorageContents;
+        var report = _reports.GetStorageContents(_activeChar.ActiveCharacterName, _activeChar.ActiveServer);
         if (report is null)
         {
             _allItems = [];

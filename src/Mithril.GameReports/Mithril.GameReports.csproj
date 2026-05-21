@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Mithril.GameReports</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    Foundation-layer assembly. Holds the loaders + service for PG's character
+    export snapshots (Reports/items_X.json, Character_X.json). External shared
+    data source per docs/world-simulator.md §Three categories of data:
+    multiple modules consume; no module "owns" the file. Vault contents are
+    the canonical case — Player.log + chat cannot observe them, only the
+    report includes them.
+
+    Deliberately has no dependency on Mithril.Shared. Diagnostics flow via
+    an optional callback parameter rather than a service reference, mirroring
+    the discipline Mithril.Reference uses (foundation assemblies are siblings,
+    not consumers, of Mithril.Shared).
+  -->
+</Project>
