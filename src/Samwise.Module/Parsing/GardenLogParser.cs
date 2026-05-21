@@ -42,8 +42,10 @@ public sealed partial class GardenLogParser : ILogParser
     [GeneratedRegex(@"ProcessUpdateItemCode\((\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex UpdateItemCodeRx();
 
-    [GeneratedRegex(@"ProcessUpdateSkill.*type=Gardening", RegexOptions.CultureInvariant)]
-    private static partial Regex GardeningXpRx();
+    // ProcessUpdateSkill(type=Gardening) is consumed via IPlayerSkillState.SubscribeChanges
+    // (Mithril.GameState) per #581 — no per-line regex here. The GardenStateMachine still
+    // applies a Samwise.Parsing.GardeningXp event; only its source changed from this parser
+    // to GardenIngestionService.OnSkillChange.
 
     [GeneratedRegex(@"ProcessScreenText.*ErrorMessage", RegexOptions.CultureInvariant)]
     private static partial Regex ScreenTextErrorRx();
@@ -79,8 +81,6 @@ public sealed partial class GardenLogParser : ILogParser
 
         m = UpdateItemCodeRx().Match(line);
         if (m.Success) return new UpdateItemCode(timestamp, m.Groups[1].Value);
-
-        if (GardeningXpRx().IsMatch(line)) return new GardeningXp(timestamp);
 
         m = PlantingCapRx().Match(line);
         if (m.Success) return new PlantingCapReached(timestamp, m.Groups[1].Value);
