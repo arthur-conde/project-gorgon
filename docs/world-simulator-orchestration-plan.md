@@ -299,6 +299,29 @@ tasks:
 
 ---
 
+## Per-PR shepherding
+
+After a worker opens its PR, the orchestrator hands off to a per-PR shepherd subagent instead of polling the PR itself. The shepherd babysits one PR end-to-end and returns a structured verdict.
+
+Dispatch the shepherd via the `Agent` tool with:
+
+```
+subagent_type: world-sim-shepherd
+prompt: |
+  Babysit PR #<pr>. Issue: #<issue>. Phase: <phase>. Risk: <risk>.
+  Worker dispatch template:
+  <verbatim worker template the orchestrator would use for a fresh dispatch>
+  max_iterations: 3
+```
+
+The shepherd returns one of three verdicts (parseable from a fenced JSON block in its final message):
+
+- `ready-to-merge` — the orchestrator does the actual `gh pr merge` per its merge policy.
+- `needs-human` — the orchestrator surfaces the shepherd's escalation reason + summary to the user. This is Stop Condition #2; do not auto-retry.
+- `conflict` — merge conflict detected; the orchestrator serializes work per Stop Condition #6 and dispatches a rebase task.
+
+Design rationale: [`world-sim-shepherd.md`](world-sim-shepherd.md).
+
 ## Verification gates
 
 Verification has three tiers — `build`, `test`, and `system`. The orchestrator runs all three before marking a task done.
@@ -324,6 +347,10 @@ dotnet test Mithril.slnx
 ```
 
 All 20-ish test projects, no failures, no skips. This catches cross-project regressions.
+
+### Tier 2.5 — Shepherd review (every PR)
+
+After the worker opens its PR and before the orchestrator considers system-tier checks, the per-PR shepherd runs (see [§Per-PR shepherding](#per-pr-shepherding)). The shepherd dispatches the generic code reviewer and the world-sim specialist in parallel each iteration; findings flow back as a structured verdict. The shepherd handles its own iteration: a `needs-human` verdict is the only signal the orchestrator routes on.
 
 ### Tier 3 — System (selective tasks, per the task's `risk` level)
 
@@ -393,7 +420,7 @@ Run between phases as a checkpoint. These are "is the system still cohesive" ass
 The orchestrator pauses for human review under any of these conditions. Do NOT auto-retry; do NOT auto-merge past them.
 
 1. **CI failure on a task PR.** Worker may attempt one fix-up commit if the cause is obviously a flake (e.g., `RG1000 BAML dup-key` per `mithril_rg1000_baml_dupkey_flake` memory — known build flake). If failure repeats or is non-trivial, escalate.
-2. **Review comments on a task PR.** If a code review (human or automated like `code-review` skill) flags blocking concerns, the orchestrator pauses pending resolution.
+2. **Shepherd returns `needs-human`.** The per-PR shepherd (see [§Per-PR shepherding](#per-pr-shepherding)) encapsulates review-and-iterate. Its `needs-human` verdict — fired by max_iterations exceeded, human review comment, same-issue-class detection, or worker_no_progress — is a hard pause. The shepherd's prose summary explains which specific reason triggered.
 3. **Cross-phase invariant fails.** If running the post-phase checks reveals a regression, do not unlock the next phase. Escalate.
 4. **Performance regression beyond threshold.** If a Tier-3 benchmark exceeds 10% regression, escalate. Don't merge.
 5. **Replay-determinism test fails.** If a replay test shows non-identical trajectories where it should match, escalate.
