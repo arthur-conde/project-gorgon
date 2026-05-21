@@ -47,6 +47,7 @@ Two streams (Player.log and chat) each **self-scope** via their own intra-source
 |---|---|
 | `IReferenceDataService` | reference |
 | `IServerCatalogService` (planned) | reference |
+| `Mithril.GameReports` (planned, see [`world-simulator.md`](world-simulator.md) §Three categories) | reference (external shared data; per-character snapshot files, externally sourced) |
 | `IGameSessionService` | world (session ledger; evolving from "current session" to a per-server ledger) |
 | `IPlayerSkillStateService` | character |
 | `IPlayerRecipeStateService` | character |
@@ -420,7 +421,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 
 **Inputs**
 - Reference: `IReferenceDataService` (recipes, skills, items, XP tables)
-- Character snapshot: imported from Bilbo storage report or manual user input (NOT live from `IPlayerSkillStateService` today — tracked in #224–228 chain)
+- Character snapshot: today imported from Bilbo storage report; post-migration reads directly from `Mithril.GameReports` (per world-simulator.md migration item 11). Live `IPlayerSkillStateService` integration is tracked separately in #224–228 chain.
 - Settings: `ElrondSettings`
 - User input: skill picker, recipe selector, complexity/difficulty editor
 
@@ -534,7 +535,7 @@ A handful of patterns are worth seeing all at once after the per-component scan.
 - **View-layer correlators must scope-check.** Once the splits land and cross-source correlation lives in the view layer, every cross-world join must assert both sides are in the same `(Server, Character)` before firing — otherwise it's pairing across a session boundary. In single-server play this is implicitly safe; under multi-server use it's a latent correctness gap that needs the scope check to land alongside the connect-event / catalog parsers.
 - **Wall-clock-gated transitions live in five places.** `IInventoryService` correlator TTL (5s, the only foundation-layer wall-clock gate); `Samwise.GardenStateMachine.PruneWithered` + `AlarmService.IsLikelyGarbageCollected`; `Gandalf.TimerProgressService.CheckExpirations` + `TimerExpirationScheduler` + `ShiftAlarmService`; `Legolas.MotherlodeMeasurementCoordinator` (event-time but compared against a fresh foreign-FSM timestamp, which is wall-clock-shaped). Everything else uses event-time arithmetic on payload timestamps. **Under the worlds**, all of these migrate from `_time.GetUtcNow()` to `IWorldClock.Now` and become replay-deterministic — a mechanical search-replace.
 - **Second event sources (non-log inputs that mutate state).** `IInventoryService` `FileSystemWatcher` for export-reconcile; `IQuestService` `PerCharacterView.CurrentChanged` for character-switch reload (collapses under per-character world scope — see entry); `Gandalf` three wakeup schedulers; user-input commands across every UI-bearing module. Under the worlds these become **timestamped producer-emitted frames** for a world's merger (filesystem reconcile, wake-at-T) or move out of world scope entirely (user input mutates adjacent state directly).
-- **Module → GameState dependency graph is shallow.** No module depends on more than four GameState services. The deepest consumer (`Legolas.MotherlodeMeasurementCoordinator` — 4 services) is also the only Tier-2 SM. Arwen depends on 2 (`IInventoryService`, `IGameSessionService`). Samwise on 1 (`IInventoryService`). Saruman on 0 GameState services (consumes reference + per-character view only, despite being a cross-source consumer). Pippin / Bilbo / Silmarillion / Celebrimbor / Elrond on 0.
+- **Module → GameState dependency graph is shallow.** No module depends on more than four GameState services. The deepest consumer (`Legolas.MotherlodeMeasurementCoordinator` — 4 services) is *today* the only Tier-2 SM in the repo; post-migration (item 3 in the world-simulator design plan) it becomes single-source and the Tier-2 reference vanishes. Arwen depends on 2 (`IInventoryService`, `IGameSessionService`). Samwise on 1 (`IInventoryService`). Saruman on 0 GameState services (consumes reference + per-character view only, despite being a cross-source consumer). Pippin / Bilbo / Silmarillion / Celebrimbor / Elrond on 0.
 - **Five of ten modules are pure projectors** (Pippin, Elrond, Bilbo, Silmarillion, Celebrimbor) — no log subscriptions, no GameState subscriptions for state mutation. They consume reference data + persisted JSON + user input only.
 
 ---
@@ -621,17 +622,24 @@ Notes: feeds any future Dying-skill XP tracker (Dying is a PG skill levelled by 
 
 Notes: min/max consumers want gold-over-time analysis, so the ledger is a first-class output rather than just a snapshot. Early customer for the dual-clock `(Now, Frame)` pair-stamp convention — both axes matter (gold per hour wants `Now`; "did this transaction precede that one" wants `Frame`).
 
-### Storage-export as synthetic-frame producer (planned)
+### `Mithril.GameReports` (planned shared service)
 
-Today `IInventoryService` consumes character export JSON via `FileSystemWatcher` and synthesizes `StackChanged` events outside any frame stream. When a downstream consumer needs world-frame coherence between storage state and inventory state (Bilbo evolving past "read once at module init"), the storage report becomes a **timestamped producer**: file write → frame stamped with the export's emitted timestamp → injected into PlayerWorld's merger alongside Player.log frames.
+**Replaces** the earlier "Storage-export as synthetic-frame producer" entry — the world-simulator design's [Three categories of data](world-simulator.md) section reframed this as a **shared service in the foundation layer**, not a producer of frames into a world. Reports are point-in-time records (PG's `/exportchar` output), not world events.
 
 **Inputs**
-- Filesystem: character export JSON `FileSystemWatcher` (unchanged)
+- Filesystem: per-character export JSON files in `Reports/` (`items_X.json`, plus skills / recipes / quests / vault data). Loaded via `FileSystemWatcher`; debounced per file.
 
 **State machines**
-- None new — produces frames consumed by `IInventoryService`'s existing reconcile logic
+- Per-file fold — each known report file is its own keyed dictionary, hot-swapped on file change. No event-stream semantics; consumers read the current snapshot.
 
 **Outputs**
-- Producer-emitted frames into the world's merger queue (timestamp from the export payload)
+- Per-file accessors (current snapshot of items / skills / recipes / vault contents / etc.)
+- `Updated` event per file when a fresh export is detected
+- Per-character scope; queried by the active session's `(Server, Character)`
 
-Notes: non-destructive — fills an `InternalName → stack size` map only. No urgency until a Bilbo consumer needs the coherence guarantee; today's debounced reconcile is fine in isolation.
+**Consumers** (post-migration):
+- Bilbo — storage view, craftability projection
+- Elrond — character snapshot input for skill advisor
+- Future: any module needing "what does this character have access to" (vault + bag composed at a view layer above worlds + reports)
+
+Notes: vault contents are the canonical case requiring this service — the worlds can't observe vault items, only reports include them. The previously-flagged "FileSystemWatcher reconcile retires under chat replay" framing was wrong: chat replay covers pre-attach inventory adds; vault/snapshot data requires GameReports; the two concerns separate cleanly. See `world-simulator.md` migration item 11.

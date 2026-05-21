@@ -49,8 +49,8 @@ The converged answer to all three: a **clocked world simulator** that owns the c
 2. **Two worlds with sealed output boundaries; views consume across them.** `PlayerWorld` is deterministic over `IClassifiedPlayerLogStream`. `ChatWorld` is deterministic over the chat stream. Each world has its own internal pipeline (frames → folders → change events → composers → domain frames) and its own output bus carrying its domain frames. Worlds don't query each other and don't send messages to each other — they're sealed at the bus. Cross-world consumers (views) subscribe to both world buses; nothing flows back into a world from above.
 3. **If a service currently consumes both chat and Player.log, it must be split.** No cross-source services. Each service lives in exactly one world.
 4. **Cross-source composition lives in a view layer above the worlds.** Views are composers operating one layer up — they subscribe to one or more world buses, maintain composed state, expose their own bus surface (or read-only API) to modules. Cross-world consumers (modules needing data from both Player.log and chat) always go through a view. Single-world consumers (modules needing only one source's state) may subscribe directly to that world's bus — no pass-through view required, since the view layer's purpose is *composition across worlds*, not API uniformity.
-5. **Dual-clock: simulated wall-clock + frame index.** `Now : DateTimeOffset` advances by frame timestamps; `Frame : long` strictly monotonic per applied frame. Coarse clock answers "how much simulated time has passed?" (1-second resolution because PG's timestamps are); fine clock answers "are we at the same point in the trajectory?" Together they identify a unique moment.
-6. **Scope: reference / world (per-server) / character (per-server-per-character).** Per [`module-signal-map.md`](module-signal-map.md) — PG has multiple servers; world state is per-server; character state is per-character within a server. Sims partition along these scopes.
+5. **Tri-property clock: simulated wall-clock + frame index + mode.** `Now : DateTimeOffset` advances by frame timestamps (the timestamp of the most recently applied frame); `Frame : long` strictly monotonic per applied frame; `Mode ∈ {Replaying, Live}` tracks whether the world is draining backlog or caught up (full detail in principle 12). `Now` answers "how much simulated time has passed?" (1-second resolution because PG's timestamps are); `Frame` answers "are we at the same point in the trajectory?"; `Mode` answers "should side-effecting consumers fire now?" The triple identifies a unique moment in a unique mode.
+6. **Scope: reference / world (per-server) / character (per-server-per-character).** Per [`module-signal-map.md`](module-signal-map.md) — PG has multiple servers; world state is per-server; character state is per-character within a server. Worlds partition along these scopes.
 7. **Both streams self-scope independently.** Player.log identifies `(Server, Character)` from its own intra-source signals (`Servers:` catalog + `EVENT(Ok): connected` + `LoginBanner`); chat identifies its own scope from the chat banner. No cross-source coupling for scope.
 8. **Tier 1/2 correlator pattern survives, relocates to the view layer.** [`cross-source-correlation.md`](cross-source-correlation.md)'s tier hierarchy stays valid as a pattern catalog for view-layer joins, but loses its in-repo "reference implementation" pointers (Inventory and Motherlode both migrate).
 9. **Chat world replays from PG-session-start, symmetric with Player world.** Chat is *not* live-only — that's a today-implementation choice we're explicitly replacing. The determinism contract views can offer their consumers is upper-bounded by the determinism of both worlds at *matching* simulated time windows. Asymmetric replay (Player.log replays session-start, chat live-only) = asymmetric view inputs = no replay-determinism claim possible. So both worlds drain from the PG-session-start chat banner; the chat-tail seeks to the most recent chat banner matching the current Player.log session (banner-by-banner pairing on `(Character, close-in-time)`), then emits forward. Cost is bounded (~hundreds of KB of chat per day vs the 12 MB of Player.log already replayed); benefit is the FileSystemWatcher reconcile workaround in `IInventoryService` retires (chat replay covers pre-attach stack sizes natively).
@@ -78,8 +78,8 @@ Source              World runtime                                    View layer 
 Player.log        → │ Merger ──→ Folders ──→ Composers ──→ Bus  │ ──┐
 (replay from        │ ↑               (change events) (domain   │   │
  session-start)     │ │                                frames)   │   │
-                    │ └──── Producers (wake-at-T, fs reconcile,         InventoryView    Samwise
-                    │       eager TTL-eviction) ──────┘         │   │   (cross-world      Arwen
+                    │ └──── Producers (Player.log tail; future:        InventoryView    Samwise
+                    │       fs reconcile via GameReports) ────┘ │   │   (cross-world      Arwen
                     └───────────────────────────────────────────┘   │   composer,        …
                                                                     ├──→ subscribes to
                     ┌─────── ChatWorld ─────────────────────────┐   │   both world buses,
@@ -181,11 +181,13 @@ public enum WorldMode
 
 ```csharp
 /// <summary>
-/// A source of timestamped frames feeding a world. Implementers include:
-/// the L1 classified-pipe reader (Player.log frames), the chat tail (chat frames),
-/// chat correlator completions (synthetic frames), filesystem reconcile (synthetic
-/// frames stamped with export timestamps), wake-at-T schedulers (synthetic frames
-/// for the target firing time), etc.
+/// A source of external-input frames feeding a world (principle 10). Implementers
+/// are sources of real-world inputs only: the L1 classified-pipe reader (Player.log
+/// frames), the chat tail (chat frames). Future possibilities: filesystem reconcile
+/// emitting frames stamped with export payload timestamps. Producers are NOT a
+/// mechanism for user-driven scheduling — user-side wake-at-T concerns consume
+/// world domain events and run module-internal logic against them; they do not
+/// register producers in a world's merger.
 /// </summary>
 public interface IFrameProducer<TPayload>
 {
@@ -561,7 +563,7 @@ After this design lands, the following changes are needed:
 9. **`ServerCatalogParser`** for the `Servers: [ … ]` startup line → `IServerCatalogService` (reference-scope, exposed as a `Mithril.Reference` entry).
 10. **`ConnectionEventParser`** for `EVENT(Ok): connected, url=…` → augments `IGameSessionService` with the `Server` field.
 11. **Extract character report loader → `Mithril.GameReports`** (new assembly). Per-character snapshot files (`Reports/items_X.json`, plus skills / recipes / quests / vault). `FileSystemWatcher` lives here. Bilbo's storage view migrates to subscribe to this service. Elrond's character snapshot input migrates. The previously-flagged "FileSystemWatcher reconcile retires under chat replay" framing was wrong — chat replay covers pre-attach inventory adds, but vault contents and snapshot-only data require GameReports; the two concerns separate cleanly.
-12. **Gandalf scheduler collapse.** `TimerExpirationScheduler` / `ShiftAlarmService` / `TimerProgressService.CheckExpirations` retire under principle 13. Gandalf subscribes to PlayerWorld's `CalendarTimeAdvanced` + `TimeOfDayShift` domain events; compares against module-side timer ledger; fires alarms gated on `Mode == Live`. Module-side timer definitions (in `Mithril.GameReports`-style? no — module-owned per category 3) stay; the wakeup machinery doesn't.
+12. **Gandalf scheduler collapse.** `TimerExpirationScheduler` / `ShiftAlarmService` / `TimerProgressService.CheckExpirations` retire under principle 13. Gandalf subscribes to PlayerWorld's `CalendarTimeAdvanced` + `TimeOfDayShift` domain events; compares against module-side timer ledger; fires alarms gated on `Mode == Live`. The module-side timer definitions are module-owned adjacent state (category 3); the wakeup machinery doesn't survive.
 
 After all migrations land:
 - No service spans both sources.
@@ -578,7 +580,7 @@ After all migrations land:
 
 2. ~~**Pass-through views for single-world consumers.**~~ **Resolved: always-through-views for cross-world composition.** For single-world consumers (Samwise, Arwen, Saruman discovery-only), subscribing directly to a world's bus is fine — no view layer required for "I only need PlayerWorld events." The view layer exists specifically for cross-world composition (`InventoryView`, `WordOfPowerView`) and stays consistent shape-wise even when only one module consumes a given view today.
 
-3. **Snapshot / rewind.** Once both worlds are clocked with frame indices, snapshot at frame N = (folder states + composer pending state + clock state) is well-defined. Rewind / branch is a natural follow-on. Out of scope for v1; the contracts shouldn't preclude it.
+3. **Snapshot / rewind** — *deferred, not blocking.* Once both worlds are clocked with frame indices, snapshot at frame N = (folder states + composer pending state + clock state) is well-defined. Rewind / branch is a natural follow-on. Explicitly out of v1 scope; the contracts as written don't preclude it. Re-open if a real consumer asks.
 
 4. ~~**Live-mode clock interpolation.**~~ **Resolved (the original framing was wrong): no interpolation.** The world clock is just "last applied frame's timestamp." Reading `worldClock.Now` during live-mode idle returns the same value as immediately after the last frame applied — no continuous-time read. Consumers that need to react to time progression subscribe to `CalendarTimeAdvanced` domain events (principle 13). PG's logs are continuously noisy during active play (movement, asset loading, combat ticks, NPC chatter), so the world clock advances at most a few seconds behind real time during normal gameplay; module-side schedulers comparing event timestamps against thresholds fire near-real-time without anyone needing interpolation. Real wall-clock is used only inside the world's merger to know how long to block on the live source-stream tail.
 
@@ -594,5 +596,5 @@ After all migrations land:
 
 - Complete state-machine semantics for each folder/composer. The world runtime is mostly today's GameState services with the `BackgroundService`-per-service shell replaced by folder/composer registration (per principle 10); per-service transition tables are in their source files.
 - Detailed view-layer implementations. The contracts and worked examples here are starting points; concrete views write themselves once the world layer is in place.
-- Live-vs-replay mode switching. The architecture supports both naturally (replay = source stream is a finite recorded log; live = source stream is a live tail). The world doesn't need to know which it's in; producers do.
+- Live-vs-replay mode switching at the implementation level. Each world tracks `Mode` (principle 12) and consumers gate side effects accordingly; the *mechanism* a world uses to detect "drained, now on the live tail" is producer-implementation-specific (e.g., the Player.log tail's notion of "I'm now `await`ing the next live append"). The world doesn't dictate how producers reach catch-up; it just observes the result.
 - Performance characteristics under high-frame-rate scenarios (combat ticks, asset-loading bursts). The dispatch graph fans out per-frame; load behavior is empirical and won't be known until the migration is far enough along to measure.

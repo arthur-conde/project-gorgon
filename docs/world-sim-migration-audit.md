@@ -6,6 +6,18 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 `docs/world-simulator-architecture`; both docs are *not yet* on `main` or
 `feat/effects-state-service` — read via `git show` for this audit).
 
+> **Note on staleness:** This audit is a snapshot. The design notebook has
+> evolved further since `51e39f0`: the folder/composer/producer taxonomy was
+> narrowed (producers now restricted to external-input sources only, not
+> wake-at-T), a `WorldMode` concept was added (principles 12 + 13), and
+> `Mithril.GameReports` was extracted as a separate foundation-layer assembly.
+> The audit's *findings* (15 components, 5 needing migration, 3 sleeper
+> blockers, the per-component classifications) remain valid; only some
+> terminology and a few migration-item details are stale relative to the
+> latest `world-simulator.md`. Read this audit as "what the components
+> looked like when audited"; read `world-simulator.md` for the current
+> architectural target.
+
 ## Executive summary
 
 - **15 components audited** across `Mithril.GameState`, ten modules, and
