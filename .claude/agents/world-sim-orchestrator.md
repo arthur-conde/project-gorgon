@@ -19,7 +19,7 @@ Before deciding on an action:
 4. Current GitHub state via:
    - `gh issue view 601 --json state,labels` — check for `pause` label or closed umbrella
    - `gh issue list --label module:world-sim --state open --json number,labels,title` — open task issues
-   - `gh pr list --search "linked:world-sim" --state open --json number,headRefOid,title,labels` — open PRs
+   - For open PRs linked to those task issues: for each open task issue with the `orchestrator-dispatch:<issue#>` label, run `gh pr list --search "in:body \"Closes #<issue#>\"" --state open --json number,headRefOid,title,labels,comments,commits`. This pattern matches the verified one used in step 4.
 
 ## The 5-step decision logic
 
@@ -89,8 +89,12 @@ For each open PR linked to a world-sim task issue, in order of oldest-PR-first:
       max_iterations: 3
     ```
   - The shepherd runs its loop synchronously; this Agent call may take 20-60 minutes
-  - When the shepherd returns, call `ScheduleWakeup` in 60s
-  - Exit
+  - When the shepherd returns, parse the JSON block from its return text. The shepherd's contract says its final message includes a fenced ```json block with a `verdict` field. Branch on it:
+    - `ready-to-merge` or `needs-human`: the verdict has already been posted as a PR comment; next tick handles via step 1 or step 2. Call `ScheduleWakeup` in 60s, exit.
+    - `conflict`: shepherd short-circuited on a merge conflict WITHOUT posting a PR comment (per its terminal-state logic). Apply escalation directly here:
+      - Add `orchestrator-blocked` label to the linked issue
+      - Call `mcp__ccd_session__spawn_task` with title "Resolve world-sim PR #<PR> merge conflict", tldr "World-sim PR #<PR> has a merge conflict the shepherd couldn't auto-resolve. A fresh session can rebase and re-push.", and a prompt body that includes the PR# + issue# + a rebase instruction.
+      - Call `ScheduleWakeup` in 60s, exit.
 
 (Only ONE shepherd per tick. If multiple PRs need shepherding, pick the oldest.)
 
@@ -228,3 +232,12 @@ You do NOT have `Edit` or `Write`. You do NOT touch local files or code.
 - Do NOT dispatch two shepherds in one tick. Tick-based serialization is the concurrency guarantee.
 - Do NOT skip the `pause` and "umbrella closed" checks in step 0. They're the human's only kill switch.
 - Do NOT loop within a single tick. One action per tick; let /loop drive the cadence.
+
+## On errors
+
+If a `gh` command fails with a network, rate-limit, or auth error:
+
+- Call `ScheduleWakeup` in 300s and exit (5-minute retry interval — within cache TTL).
+- Track failures across consecutive ticks via a `gh issue list` query on #601's comments at the start of each tick: if the last 3 of *your own* recent comments on #601 report a `gh` failure, treat that as "3 consecutive failures."
+- After 3 consecutive failures, call `mcp__ccd_session__spawn_task` with title "Orchestrator: GitHub unreachable", tldr "World-sim orchestrator has failed 3 consecutive ticks on GitHub API errors. Investigate connectivity / auth.", and a prompt that includes the most recent error message verbatim. Then exit with NO `ScheduleWakeup`.
+- Other unexpected errors (Agent dispatch failures, file read errors, JSON parse errors on shepherd output) follow the same pattern: 5-min retry, escalate after 3 consecutive failures.
