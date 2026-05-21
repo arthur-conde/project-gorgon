@@ -7,14 +7,14 @@ namespace Mithril.GameState.Inventory;
 /// unique id emitted by <c>ProcessAddItem</c> / <c>ProcessDeleteItem</c>.
 /// <paramref name="InternalName"/> maps to
 /// <see cref="Mithril.Reference.Models.Items.Item.InternalName"/>.
-/// <paramref name="Timestamp"/> is the source log line''s timestamp (UTC), not
-/// wall-clock — consumers with time-window logic (e.g. Samwise''s plant-resolve
+/// <paramref name="Timestamp"/> is the source log line's timestamp (UTC), not
+/// wall-clock — consumers with time-window logic (e.g. Samwise's plant-resolve
 /// window) need the in-game timeline.
 /// <paramref name="StackSize"/> is the stack size at the moment of the event:
-/// for <see cref="InventoryEventKind.Added"/> it''s the size known when the
+/// for <see cref="InventoryEventKind.Added"/> it's the size known when the
 /// item entered the map (1 if no chat correlation has landed yet);
-/// for <see cref="InventoryEventKind.Deleted"/> it''s the last-known size
-/// before removal; for <see cref="InventoryEventKind.StackChanged"/> it''s
+/// for <see cref="InventoryEventKind.Deleted"/> it's the last-known size
+/// before removal; for <see cref="InventoryEventKind.StackChanged"/> it's
 /// the new size.
 /// <paramref name="SizeConfirmed"/> is the same bit
 /// <see cref="IInventoryService.TryGetStackSize"/> consults — false when the
@@ -52,20 +52,20 @@ public enum InventoryEventKind
 /// chat <c>[Status]</c> channel via <c>IChatLogStream</c> for stack-size
 /// correlation on fresh additions.
 ///
-/// <para><b>Three channels (per <a href="https://github.com/moumantai-gg/mithril/pull/584">#584</a>''s
+/// <para><b>Three channels (per <a href="https://github.com/moumantai-gg/mithril/pull/584">#584</a>'s
 /// service-design rule).</b></para>
 /// <list type="bullet">
 ///   <item><b>Query</b> — <see cref="TryResolve"/> and
-///   <see cref="TryGetStackSize"/> answer "what''s in inventory right now?"
-///   (including last-known state for deleted entries — Arwen''s
+///   <see cref="TryGetStackSize"/> answer "what's in inventory right now?"
+///   (including last-known state for deleted entries — Arwen's
 ///   gift-attribution path needs the pre-delete name/size).</item>
 ///   <item><b>React</b> — <see cref="Subscribe(Action{InventoryEvent}, ReplayMode)"/>
 ///   delivers the full session <see cref="InventoryEvent"/> log. The default
 ///   <see cref="ReplayMode.FromSessionStart"/> replays every Added / Deleted /
 ///   StackChanged event the service has emitted in this session (in order)
 ///   before going live; <see cref="ReplayMode.LiveOnly"/> skips the replay
-///   for consumers that genuinely don''t care about history. The contract
-///   matches <see cref="Mithril.Shared.Logging.ILogStreamDriver"/>''s
+///   for consumers that genuinely don't care about history. The contract
+///   matches <see cref="Mithril.Shared.Logging.ILogStreamDriver"/>'s
 ///   default replay-then-live shape.</item>
 ///   <item><b>Bind</b> — not exposed today. Consumers that want an
 ///   observable <c>Items</c> collection wrap <see cref="Subscribe"/> at the
@@ -84,7 +84,7 @@ public interface IInventoryService
     /// <summary>
     /// Resolve an instance id to its internal item name, if known. Returns
     /// true even for ids that have been deleted — the entry is retained so
-    /// late lookups (e.g. Arwen''s gift-attribution path) still succeed.
+    /// late lookups (e.g. Arwen's gift-attribution path) still succeed.
     /// </summary>
     bool TryResolve(long instanceId, out string internalName);
 
@@ -95,7 +95,7 @@ public interface IInventoryService
     /// export seeding, or export reconcile. Returns false when:
     /// <list type="bullet">
     ///   <item>The instance has never been observed (carryover from a prior
-    ///   game session whose AddItem isn''t in this log''s replay buffer).</item>
+    ///   game session whose AddItem isn't in this log's replay buffer).</item>
     ///   <item>The instance is in the map but its size is still the
     ///   unconfirmed default of 1 (a session-replayed AddItem with no
     ///   chat status in the correlation window). A real stack of 1 is
@@ -104,7 +104,7 @@ public interface IInventoryService
     ///   <c>true, 1</c>.</item>
     /// </list>
     /// Like <see cref="TryResolve"/>, returns the last-known confirmed size
-    /// for entries that have been deleted in this session — Arwen''s
+    /// for entries that have been deleted in this session — Arwen's
     /// gift-attribution path needs the pre-delete size.
     /// </summary>
     bool TryGetStackSize(long instanceId, out int stackSize);
@@ -125,7 +125,7 @@ public interface IInventoryService
     /// during this session now receives the Deleted (and any interim
     /// StackChanged) events for those items, not just the survivors.</para>
     ///
-    /// <para><b>Live-only subscriptions.</b> Callers that genuinely don''t
+    /// <para><b>Live-only subscriptions.</b> Callers that genuinely don't
     /// care about session history (e.g. a UI that only renders events from
     /// "now" forward) pass <see cref="ReplayMode.LiveOnly"/>. Replay is
     /// skipped; the handler only sees events fired after the subscription
@@ -134,7 +134,7 @@ public interface IInventoryService
     /// <para><b>Atomicity.</b> Replay and live-attach are atomic — under an
     /// internal lock — so no event is lost, duplicated, or reordered
     /// relative to the canonical map. A live event firing during another
-    /// handler''s replay either runs after replay completes (and is
+    /// handler's replay either runs after replay completes (and is
     /// delivered live) or runs before (and is in the replay), never both
     /// and never neither.</para>
     ///
@@ -144,7 +144,7 @@ public interface IInventoryService
     /// that do non-trivial work should dispatch off-thread immediately to
     /// avoid blocking ingestion.</para>
     ///
-    /// <para><b>Query vs. React.</b> For "what''s in inventory right now?"
+    /// <para><b>Query vs. React.</b> For "what's in inventory right now?"
     /// use the Query channel — <see cref="TryResolve"/> /
     /// <see cref="TryGetStackSize"/>. Subscribe is the React channel: a
     /// log of what happened, in order, including the Deleted events the

@@ -86,6 +86,14 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     private ILogSubscription? _playerSubscription;
     private ILogSubscription? _chatSubscription;
 
+    // One-shot guard for the SinceSubscribe coercion diag. Subscribe treats
+    // SinceSubscribe as LiveOnly today (no "since timestamp T" window
+    // implemented); we emit a single Trace per process so the spurious knob
+    // is observable without flooding diagnostics on repeated subscribes.
+    // Mirrors LogStreamDriver's chat-pipe ReplayMode-mismatch diagnostic
+    // (LogStreamDriver.cs ReplayMode != LiveOnly branch).
+    private static int s_sinceSubscribeDiagFired;
+
     // _subLock guards _map, _handlers, _eventLog, and _eventLogOverflowWarned.
     // _pendingChat / _pendingAdd are PendingCorrelator instances that are
     // independently thread-safe via their own internal _gate; they don't require
@@ -218,14 +226,27 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         ReplayMode replay = ReplayMode.FromSessionStart)
     {
         ArgumentNullException.ThrowIfNull(handler);
+        // SinceSubscribe is treated like LiveOnly here — InventoryService
+        // has no notion of an arbitrary "since timestamp T" window today
+        // (mirrors LogStreamDriver's current behaviour for that mode).
+        // Emit a one-shot Trace per process for symmetry with the
+        // LogStreamDriver chat-pipe ReplayMode-mismatch diagnostic, so the
+        // spurious knob doesn't go unnoticed. Fired outside _subLock — the
+        // diagnostics sink is independently thread-safe and this avoids
+        // re-entering the sink while holding the subscription lock.
+        if (replay == ReplayMode.SinceSubscribe
+            && Interlocked.CompareExchange(ref s_sinceSubscribeDiagFired, 1, 0) == 0)
+        {
+            _diag?.Trace(
+                "GameState.Inventory",
+                "ReplayMode.SinceSubscribe is not yet implemented for IInventoryService; treating as LiveOnly. " +
+                "This diagnostic fires once per process.");
+        }
         lock (_subLock)
         {
             // React-channel contract (#585): default replay is the full
             // in-session event log, atomically under _subLock so the
             // replay-then-live boundary is race-free with concurrent Fire()s.
-            // SinceSubscribe is treated like LiveOnly here — InventoryService
-            // has no notion of an arbitrary "since timestamp T" window today
-            // (mirrors LogStreamDriver's current behaviour for that mode).
             if (replay == ReplayMode.FromSessionStart)
             {
                 foreach (var evt in _eventLog)
