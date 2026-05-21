@@ -31,12 +31,10 @@ public sealed partial class ChatLogParser : IChatLogParser
     // request + response from one stream — see PlayerLogParser docs and
     // docs/cross-source-correlation.md for the structural reason.
 
-    // Area banner: a run of asterisks then "Entering Area: <FriendlyName>".
-    // The name runs to end-of-line; trim trailing whitespace via the lazy group
-    // plus an explicit \s* tail so a trailing CR/space doesn't bleed into it.
-    [GeneratedRegex(@"Entering Area:\s*(?<area>.+?)\s*$",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
-    private static partial Regex AreaEnteredRegex();
+    // #605: the chat "Entering Area:" banner retired here. PlayerAreaTracker
+    // (Mithril.GameState.Areas) is the authoritative area-key source, fed by
+    // Player.log's LOADING LEVEL line; PlayerLogIngestionService.ApplyAreaIfChanged
+    // drives IAreaCalibrationService.SelectArea on every change. See #531.
 
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
@@ -95,14 +93,6 @@ public sealed partial class ChatLogParser : IChatLogParser
                 collectMatch.Groups["name"].Value.Trim(),
                 count,
                 bonus);
-        }
-
-        var areaMatch = AreaEnteredRegex().Match(line);
-        if (areaMatch.Success)
-        {
-            var area = areaMatch.Groups["area"].Value.Trim();
-            if (!string.IsNullOrEmpty(area))
-                return new AreaEntered(timestamp, area);
         }
 
         return new UnknownLine(timestamp, line);

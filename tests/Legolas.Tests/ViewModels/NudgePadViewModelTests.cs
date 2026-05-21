@@ -91,7 +91,6 @@ public class NudgePadViewModelTests
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
         public event EventHandler? Changed { add { } remove { } }
-        public void OnAreaEntered(string areaFriendlyName) { }
         public void SelectArea(string areaKey) { }
         public void ClearCurrentAreaCalibration() { }
         public void NoteSurvey(string name, MetreOffset offset) { }

@@ -30,7 +30,6 @@ public class LegolasWizardViewModelTests
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<Mithril.Shared.Reference.AreaEntry> AllAreas => Array.Empty<Mithril.Shared.Reference.AreaEntry>();
         public event EventHandler? Changed;
-        public void OnAreaEntered(string areaFriendlyName) { }
         public void SelectArea(string areaKey) { }
         public AreaCalibration? CalibrateCurrentArea(
             IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)

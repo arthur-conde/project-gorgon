@@ -43,7 +43,6 @@ public sealed class FakeAreaCalibrationService : IAreaCalibrationService
     public event EventHandler? Changed;
     public event EventHandler<CalibrationSurveyObservation>? SurveyObserved;
 
-    public void OnAreaEntered(string areaFriendlyName) { }
     public void SelectArea(string areaKey) { }
     public AreaCalibration? CalibrateCurrentArea(
         IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0) => null;
