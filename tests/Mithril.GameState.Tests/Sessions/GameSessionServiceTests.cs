@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Mithril.GameState.Servers;
 using Mithril.GameState.Sessions;
 using Mithril.GameState.Tests.TestSupport;
 using Mithril.Shared.Logging;
@@ -19,12 +20,20 @@ public sealed class GameSessionServiceTests
     private const string BannerOtherCharacter =
         "[14:00:00] Logged in as character Frodo. Time UTC=05/11/2026 14:00:00. Timezone Offset 01:00:00";
 
+    private const string ConnectS4 = "connected, url=s4.projectgorgon.com, port=9002";
+    private const string ConnectS0 = "connected, url=s0.projectgorgon.com, port=9002";
+
+    private static readonly ServerEntry Laeth = new(
+        "s4", "Laeth", "s4.projectgorgon.com", 9002, "Laeth desc");
+    private static readonly ServerEntry Arisetsu = new(
+        "s0", "Arisetsu", "s0.projectgorgon.com", 9002, "Arisetsu desc");
+
     [Fact]
     public async Task First_banner_populates_Current_and_raises_SessionStarted_and_pushes_to_anchor()
     {
         using var driver = new TestLogStreamDriver();
         var anchor = new SessionAnchor();
-        var svc = new GameSessionService(driver, anchor);
+        var svc = new GameSessionService(driver, anchor: anchor);
         try
         {
             GameSession? captured = null;
@@ -49,7 +58,7 @@ public sealed class GameSessionServiceTests
     {
         using var driver = new TestLogStreamDriver();
         var anchor = new SessionAnchor();
-        var svc = new GameSessionService(driver, anchor);
+        var svc = new GameSessionService(driver, anchor: anchor);
         try
         {
             var startedCount = 0;
@@ -282,4 +291,259 @@ public sealed class GameSessionServiceTests
 
     private static SystemSignalLogLine MakeSignal(SystemSignalKind kind, string data) =>
         new(DateTimeOffset.UtcNow, kind, data, Sequence: 0, ReadMonotonicTicks: 0);
+
+    private static SystemSignalLogLine MakeConnect(string body) =>
+        new(DateTimeOffset.UtcNow, SystemSignalKind.ConnectionEvent, body,
+            Sequence: 0, ReadMonotonicTicks: 0);
+
+    // --- #611: Server identity (ConnectionEvent + catalog join) ---
+
+    [Fact]
+    public async Task Connect_then_banner_resolves_Server_from_catalog()
+    {
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(Laeth, Arisetsu);
+        var svc = new GameSessionService(driver, catalog);
+        try
+        {
+            driver.PushLive(MakeConnect(ConnectS4));
+            driver.PushLive(MakeBanner(BannerEmraell));
+            await RunUntilDrainedAsync(svc, driver);
+
+            svc.Current.Should().NotBeNull();
+            svc.Current!.Server.Should().NotBeNull();
+            svc.Current.Server!.Id.Should().Be("s4");
+            svc.Current.Server.Name.Should().Be("Laeth");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Banner_without_preceding_connect_publishes_Server_null()
+    {
+        // Cold-start mid-PG-session: L0 seed seeks past the preamble, so
+        // the EVENT(Ok): connected line never reaches L0.5 and the catalog
+        // is empty. The banner arrives, gets minted with Server = null.
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(); // empty catalog
+        var svc = new GameSessionService(driver, catalog);
+        try
+        {
+            driver.PushLive(MakeBanner(BannerEmraell));
+            await RunUntilDrainedAsync(svc, driver);
+
+            svc.Current.Should().NotBeNull();
+            svc.Current!.Server.Should().BeNull();
+            svc.Current.CharacterName.Should().Be("Emraell");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Connect_with_unknown_url_publishes_Server_null()
+    {
+        // Catalog is populated but the connect URL isn't in it (e.g. a new
+        // PG server that's not yet in the corpus, or a catalog that failed
+        // to parse). Server resolution returns null; the session is still
+        // minted with the rest of its banner fields intact.
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(Arisetsu); // s0 only, no s4
+        var svc = new GameSessionService(driver, catalog);
+        try
+        {
+            driver.PushLive(MakeConnect(ConnectS4));
+            driver.PushLive(MakeBanner(BannerEmraell));
+            await RunUntilDrainedAsync(svc, driver);
+
+            svc.Current.Should().NotBeNull();
+            svc.Current!.Server.Should().BeNull();
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task SessionStarted_payload_carries_resolved_Server()
+    {
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(Laeth);
+        var svc = new GameSessionService(driver, catalog);
+        try
+        {
+            GameSession? captured = null;
+            svc.SessionStarted += (_, s) => captured = s;
+
+            driver.PushLive(MakeConnect(ConnectS4));
+            driver.PushLive(MakeBanner(BannerEmraell));
+            await RunUntilDrainedAsync(svc, driver);
+
+            captured.Should().NotBeNull();
+            captured!.Server.Should().NotBeNull();
+            captured.Server!.Name.Should().Be("Laeth");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Subscribe_replay_carries_resolved_Server()
+    {
+        // Late subscriber observes Current via replay — Server must be on
+        // the replayed session (not just live deliveries).
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(Laeth);
+        var svc = new GameSessionService(driver, catalog);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var runTask = svc.StartAsync(cts.Token);
+        try
+        {
+            driver.PushLive(MakeConnect(ConnectS4));
+            driver.PushLive(MakeBanner(BannerEmraell));
+            await driver.DrainSystemAsync();
+
+            GameSession? replayed = null;
+            using var sub = svc.Subscribe(s => replayed = s);
+
+            replayed.Should().NotBeNull();
+            replayed!.Server.Should().NotBeNull();
+            replayed.Server!.Id.Should().Be("s4");
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+            _ = runTask;
+            svc.Dispose();
+        }
+    }
+
+    [Fact]
+    public async Task Pending_connect_is_consumed_by_banner_not_reused()
+    {
+        // A connect-then-banner pair publishes one session with Server set.
+        // A subsequent banner (PG re-login same Mithril run) without its
+        // own connect must publish Server = null — the prior connect was
+        // for the prior session and is one-shot per banner.
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(Laeth);
+        var svc = new GameSessionService(driver, catalog);
+        try
+        {
+            var sessions = new List<GameSession>();
+            svc.SessionStarted += (_, s) => sessions.Add(s);
+
+            driver.PushLive(MakeConnect(ConnectS4));
+            driver.PushLive(MakeBanner(BannerEmraell));
+            driver.PushLive(MakeBanner(BannerSecond)); // re-login, no new connect
+            await RunUntilDrainedAsync(svc, driver);
+
+            sessions.Should().HaveCount(2);
+            sessions[0].Server.Should().NotBeNull();
+            sessions[0].Server!.Id.Should().Be("s4");
+            sessions[1].Server.Should().BeNull("the connect URL is one-shot per banner");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Connect_after_banner_does_not_retroactively_attach_to_current()
+    {
+        // PG always emits connect before banner. A reverse-order observation
+        // (defensive guard) does NOT mutate the already-published session —
+        // _current is captured-by-value once the banner publishes.
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(Laeth);
+        var svc = new GameSessionService(driver, catalog);
+        try
+        {
+            driver.PushLive(MakeBanner(BannerEmraell));
+            driver.PushLive(MakeConnect(ConnectS4));
+            await RunUntilDrainedAsync(svc, driver);
+
+            svc.Current.Should().NotBeNull();
+            svc.Current!.Server.Should().BeNull(
+                "connect arriving after the banner doesn't retroactively populate");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Most_recent_connect_wins_when_multiple_arrive_before_banner()
+    {
+        // Defensive: if two EVENT(Ok): connected lines arrive without an
+        // intervening banner (PG re-emit, or a corner-case L0 replay),
+        // the last one wins — it's the one the next session connected on.
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(Laeth, Arisetsu);
+        var svc = new GameSessionService(driver, catalog);
+        try
+        {
+            driver.PushLive(MakeConnect(ConnectS4));
+            driver.PushLive(MakeConnect(ConnectS0));
+            driver.PushLive(MakeBanner(BannerEmraell));
+            await RunUntilDrainedAsync(svc, driver);
+
+            svc.Current.Should().NotBeNull();
+            svc.Current!.Server!.Id.Should().Be("s0");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task No_catalog_injected_publishes_Server_null_without_throwing()
+    {
+        // Defensive: if the service is constructed without an
+        // IServerCatalogService (DI race, test scaffolding), connect
+        // observations are stashed but resolution skips — Server stays null,
+        // no throw.
+        using var driver = new TestLogStreamDriver();
+        var svc = new GameSessionService(driver, serverCatalog: null);
+        try
+        {
+            driver.PushLive(MakeConnect(ConnectS4));
+            driver.PushLive(MakeBanner(BannerEmraell));
+            await RunUntilDrainedAsync(svc, driver);
+
+            svc.Current.Should().NotBeNull();
+            svc.Current!.Server.Should().BeNull();
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Malformed_connect_payload_does_not_break_subsequent_banner()
+    {
+        // A garbled connect line is dropped (parser returns null), the
+        // pending URL stays empty, the next banner publishes with Server
+        // = null. Verifies the malformed-input containment path.
+        using var driver = new TestLogStreamDriver();
+        var catalog = new FakeServerCatalog(Laeth);
+        var svc = new GameSessionService(driver, catalog);
+        try
+        {
+            driver.PushLive(MakeConnect("totally not a connect payload"));
+            driver.PushLive(MakeBanner(BannerEmraell));
+            await RunUntilDrainedAsync(svc, driver);
+
+            svc.Current.Should().NotBeNull();
+            svc.Current!.Server.Should().BeNull();
+            svc.Current.CharacterName.Should().Be("Emraell");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    private sealed class FakeServerCatalog : IServerCatalogService
+    {
+        private readonly Dictionary<string, ServerEntry> _byUrl;
+        private readonly IReadOnlyCollection<ServerEntry> _all;
+
+        public FakeServerCatalog(params ServerEntry[] entries)
+        {
+            _byUrl = entries.ToDictionary(e => e.Url, StringComparer.OrdinalIgnoreCase);
+            _all = entries;
+        }
+
+        public ServerEntry? Get(string url) =>
+            !string.IsNullOrEmpty(url) && _byUrl.TryGetValue(url, out var e) ? e : null;
+
+        public IReadOnlyCollection<ServerEntry> All => _all;
+    }
 }

@@ -33,8 +33,11 @@ public enum SystemSignalKind
     /// <summary>
     /// <c>EVENT(Ok): loginCharacter | playing | sessionUpdate</c> — in-window,
     /// no-<c>[ts]</c> session-lifecycle phases. The pre-login preamble's
-    /// <c>EVENT(Ok): connected</c> is structurally outside the L0 replay
-    /// window and is handled by #514's seed facility, not here.
+    /// <c>EVENT(Ok): connected</c> is routed to
+    /// <see cref="ConnectionEvent"/> separately (#611). Only reaches L0.5
+    /// when L0's session-replay window opens at byte 0 (Mithril attached
+    /// before PG launched, or PG-truncation-while-Mithril-runs); a Mithril
+    /// cold-start mid-PG-session seeks past the preamble and never sees it.
     /// </summary>
     SessionLifecycle,
 
@@ -51,4 +54,19 @@ public enum SystemSignalKind
     /// in which case the catalog stays empty for the attach lifetime.
     /// </summary>
     Servers,
+
+    /// <summary>
+    /// <c>EVENT(Ok): connected, url=&lt;host&gt;, port=&lt;port&gt;</c> — the
+    /// per-session connect line PG emits when the client establishes its
+    /// game-server TCP connection. No <c>[ts]</c> prefix; lives in the
+    /// preamble before the login banner (~17 minutes earlier in some
+    /// captures, due to character-select / area-load latency). Consumed by
+    /// <c>ConnectionEventParser</c> + <c>GameSessionService</c> (#611) to
+    /// derive the per-session server identity by joining against
+    /// <c>IServerCatalogService</c> (#610). Same preamble caveat as
+    /// <see cref="Servers"/>: only reaches L0.5 when the seed opens at
+    /// byte 0; a Mithril cold-start mid-PG-session seeks past it and
+    /// <c>GameSession.Server</c> stays <c>null</c> for the attach lifetime.
+    /// </summary>
+    ConnectionEvent,
 }
