@@ -267,6 +267,19 @@ public sealed class GardenIngestionService : BackgroundService
     /// state machine cares only that an update fired and at what timestamp,
     /// mirroring the prior regex path's payload-less <see cref="GardeningXp"/>
     /// event.</para>
+    ///
+    /// <para><b>Cold-start inter-drain race (acknowledged bound; tracked in
+    /// <see href="https://github.com/moumantai-gg/mithril/issues/597">#597</see>):</b>
+    /// <see cref="IPlayerSkillState.SubscribeChanges"/> is no-replay — a late
+    /// subscriber sees only changes from the moment it attaches. The handler
+    /// here attaches after <c>_gate.WaitAsync</c> + <c>LoadAllAsync</c>, while
+    /// <c>PlayerSkillStateService</c> has no gate and can drain L1 envelopes
+    /// ahead of Samwise. Any Gardening <see cref="SkillChangeKind.Delta"/>
+    /// fired in that pre-attach window is lost. Bound: harvests completed in
+    /// that window stay <c>Ripe</c> with stale <c>_pendingHarvestPlotId</c>
+    /// until the next live interaction, where <c>MarkOldestRipeOfType</c>
+    /// recovers them. #597 closes this structurally via full-event-log replay
+    /// on <c>SubscribeChanges</c> (sister to <see href="https://github.com/moumantai-gg/mithril/issues/585">#585</see>).</para>
     /// </summary>
     // internal for tests (Samwise.Tests has InternalsVisibleTo); production
     // callers go through SubscribeChanges in ExecuteAsync above.
