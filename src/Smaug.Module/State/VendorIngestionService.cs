@@ -1,4 +1,5 @@
 using System.Windows;
+using Mithril.GameState.Skills;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
@@ -16,11 +17,23 @@ namespace Smaug.State;
 ///
 /// <para><b>L1 migration shape (#550 PR 3, archetype-B).</b> Subscribes to
 /// <see cref="LocalPlayerLogLine"/> with
-/// <see cref="ReplayMode.FromSessionStart"/> — Civic-Pride (from
-/// <c>ProcessLoadSkills</c>) plus <c>NpcInteractionStarted</c> /
+/// <see cref="ReplayMode.FromSessionStart"/> — <c>NpcInteractionStarted</c> /
 /// <c>VendorScreenOpened</c> context lines must arrive before any
 /// <c>VendorItemSold</c> for that sell to be attributable; <c>LiveOnly</c>
 /// would silently skip sells that landed in the replay window.</para>
+///
+/// <para><b>Civic Pride via shared skill state (#580).</b> Smaug no longer
+/// re-parses <c>ProcessLoadSkills</c> / <c>ProcessUpdateSkill</c> for the
+/// CivicPride skill — it consumes the shared
+/// <see cref="IPlayerSkillState"/> service (#462 / PR #465) and reads the
+/// effective level (<c>Level + BonusLevels</c>) off the replayed snapshot.
+/// The subscription is taken before the L1 vendor subscription, and
+/// <see cref="IPlayerSkillState.Subscribe"/> delivers the current snapshot
+/// synchronously under its lock, so a CivicPride level known to the tracker
+/// at subscribe time is set on <see cref="_context"/> before any vendor
+/// envelope is dispatched. Per Class A finding #2 from the consumer audit
+/// (#579) and the consumption-side rule documented in
+/// <c>docs/module-charters.md</c> post-PR #578.</para>
 ///
 /// <para><b>Latent-bug fix.</b> Per <see href="https://github.com/moumantai-gg/mithril/issues/549">#549</see>
 /// the pre-L1 ingestion path mutates the UI-bound
@@ -39,8 +52,8 @@ namespace Smaug.State;
 /// already owns per-key dedup at the sink (HashSet keyed
 /// <c>SessionId|NpcKey|InternalName|PricePaid|Timestamp:O</c>); an L1
 /// high-water <c>Sequence</c> filter would be redundant. The context
-/// mutations (<c>CivicPrideUpdated</c>, <c>VendorScreenOpened</c>,
-/// <c>NpcInteractionStarted</c>) are last-write-wins and structurally
+/// mutations (<c>VendorScreenOpened</c>, <c>NpcInteractionStarted</c>,
+/// CivicPride snapshot replay) are last-write-wins and structurally
 /// idempotent under replay.</para>
 ///
 /// <para><b>Containment.</b> The L1 driver wraps every handler invocation in
@@ -57,9 +70,11 @@ public sealed class VendorIngestionService : BackgroundService
     private readonly PriceCalibrationService _calibration;
     private readonly VendorSellContext _context;
     private readonly IActiveCharacterService _activeCharacter;
+    private readonly IPlayerSkillState _skillState;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
     private ILogSubscription? _subscription;
+    private IDisposable? _skillSubscription;
 
     public VendorIngestionService(
         ILogStreamDriver driver,
@@ -67,6 +82,7 @@ public sealed class VendorIngestionService : BackgroundService
         PriceCalibrationService calibration,
         VendorSellContext context,
         IActiveCharacterService activeCharacter,
+        IPlayerSkillState skillState,
         ModuleGates gates,
         IDiagnosticsSink? diag = null)
     {
@@ -75,6 +91,7 @@ public sealed class VendorIngestionService : BackgroundService
         _calibration = calibration;
         _context = context;
         _activeCharacter = activeCharacter;
+        _skillState = skillState;
         _diag = diag;
         _gate = gates.For("smaug");
     }
@@ -93,6 +110,13 @@ public sealed class VendorIngestionService : BackgroundService
             _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
             _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
         });
+
+        // Subscribe to shared skill state (#580). Subscribe is atomic
+        // replay + live under the tracker's lock, so the current snapshot
+        // — including any CivicPride observed pre-gate — is delivered
+        // synchronously before this call returns, and before any vendor
+        // envelope reaches the L1 handler below.
+        _skillSubscription = _skillState.Subscribe(OnSkillSnapshot);
 
         // Latent-bug fix per #549 + #550 capability E. The Smaug gate only
         // opens after the user has clicked the Smaug tab, so Application.Current
@@ -114,12 +138,6 @@ public sealed class VendorIngestionService : BackgroundService
 
                 switch (evt)
                 {
-                    case CivicPrideUpdated cp:
-                        _context.CivicPrideLevel = cp.EffectiveLevel;
-                        _diag?.Trace("Smaug.Parse",
-                            $"CivicPride level={cp.EffectiveLevel} (raw={cp.Raw}+bonus={cp.Bonus})");
-                        break;
-
                     case NpcInteractionStarted started:
                         _context.RememberEntity(started.EntityId, started.NpcKey);
                         break;
@@ -165,6 +183,8 @@ public sealed class VendorIngestionService : BackgroundService
         {
             _subscription?.Dispose();
             _subscription = null;
+            _skillSubscription?.Dispose();
+            _skillSubscription = null;
         }
     }
 
@@ -172,7 +192,46 @@ public sealed class VendorIngestionService : BackgroundService
     {
         _subscription?.Dispose();
         _subscription = null;
+        _skillSubscription?.Dispose();
+        _skillSubscription = null;
         base.Dispose();
+    }
+
+    /// <summary>
+    /// Whole-snapshot handler — invoked synchronously by
+    /// <see cref="IPlayerSkillState.Subscribe"/> with the current snapshot
+    /// on attach (replay) and on every subsequent
+    /// <c>ProcessLoadSkills</c> / <c>ProcessUpdateSkill</c>.
+    ///
+    /// <para>If the snapshot does not carry <c>CivicPride</c> (cold session
+    /// before the first <c>ProcessLoadSkills</c> of the session, or a
+    /// partial-snapshot warm-up window), <b>do not</b> reset
+    /// <c>_context.CivicPrideLevel</c> — preserve whatever the prime-from-export
+    /// path or a prior live snapshot already set. The shared skill snapshot is
+    /// authoritative when the key is present; absent is "not yet observed",
+    /// not "the skill is unlearned".</para>
+    ///
+    /// <para><b>Threading.</b> Per the <see cref="IPlayerSkillState.Subscribe"/>
+    /// contract this runs <b>synchronously under the tracker's lock</b> — on
+    /// the caller's thread for the initial replay and on the L1 ingestion
+    /// thread for live dispatch — <b>not</b> on the WPF dispatcher. Safe today
+    /// because <c>_context.CivicPrideLevel</c> is a plain field write on a POCO
+    /// and the downstream WPF binding path
+    /// (<c>PriceCalibrationService.DataChanged</c> → <c>CalibrationViewModel</c>)
+    /// already hops to the dispatcher via the L1 subscription's
+    /// <see cref="DeliveryContext.Marshaled"/>. <b>Future trap:</b> if
+    /// <see cref="VendorSellContext"/> grows <c>INotifyPropertyChanged</c>
+    /// properties bound directly to the UI, this handler must marshal to the
+    /// UI thread before mutating them.</para>
+    /// </summary>
+    private void OnSkillSnapshot(PlayerSkillSnapshot snapshot)
+    {
+        if (!snapshot.Skills.TryGetValue("CivicPride", out var cp)) return;
+        var effective = cp.Level + cp.BonusLevels;
+        if (_context.CivicPrideLevel == effective) return;
+        _context.CivicPrideLevel = effective;
+        _diag?.Trace("Smaug.Skills",
+            $"CivicPride level={effective} (raw={cp.Level}+bonus={cp.BonusLevels}) from IPlayerSkillState");
     }
 
     private void OnActiveCharacterChanged(object? sender, EventArgs e) =>
@@ -183,6 +242,16 @@ public sealed class VendorIngestionService : BackgroundService
     /// before Smaug's ingestion loop was running, pull Civic Pride from the character export.
     /// When the active character changes, overwrites unconditionally; on first prime, only fills in
     /// a zero level so a live log-parsed value is not clobbered by a stale export.
+    ///
+    /// <para><b>Ordering — live wins over export.</b> <see cref="ExecuteAsync"/>
+    /// calls this <em>before</em> subscribing to <see cref="IPlayerSkillState"/>,
+    /// so the export-derived value is in place first and the subsequent
+    /// synchronous replay of <see cref="OnSkillSnapshot"/> overwrites it with
+    /// the live tracker snapshot. This is deliberate: the character export is a
+    /// stale on-disk file (last <c>/dumpchar</c>), while <c>IPlayerSkillState</c>
+    /// reflects the current session — flipping the order would let a stale export
+    /// clobber correct live data. The post-prime <c>ActiveCharacterChanged</c>
+    /// overwrite path is the one exception (a deliberate character switch).</para>
     /// </summary>
     private void PrimeCivicPrideFromActiveCharacter(bool overwrite = false)
     {

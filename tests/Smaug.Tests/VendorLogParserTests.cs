@@ -61,17 +61,14 @@ public sealed class VendorLogParserTests
     }
 
     [Fact]
-    public void ParsesCivicPrideFromLoadSkills()
+    public void DoesNotParseCivicPrideFromLoadSkills_PostMigration()
     {
-        // Embedded within the giant ProcessLoadSkills line; only the substring matters.
+        // Per #580 — CivicPride is consumed off IPlayerSkillState, not
+        // re-parsed here. A ProcessLoadSkills line that embeds the CivicPride
+        // skill record must return null from this parser; the integration
+        // test below covers the IPlayerSkillState consumption path.
         var line = "ProcessLoadSkills(... {type=CivicPride,raw=1,bonus=1,xp=45,tnl=60,max=50}, ...)";
-        var evt = _parser.TryParse(line, DateTime.UtcNow);
-
-        evt.Should().BeOfType<CivicPrideUpdated>();
-        var cp = (CivicPrideUpdated)evt!;
-        cp.Raw.Should().Be(1);
-        cp.Bonus.Should().Be(1);
-        cp.EffectiveLevel.Should().Be(2);
+        _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
     }
 
     [Fact]

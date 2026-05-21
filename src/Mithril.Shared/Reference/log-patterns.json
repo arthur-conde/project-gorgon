@@ -171,17 +171,6 @@
         { "name": "npcKey", "group": 2, "type": "string" }
       ]
     },
-    "smaug.VendorLogParser.CivicPrideRx": {
-      "pattern": "\\{type=CivicPride,raw=(\\d+),bonus=(\\d+),",
-      "source": "player",
-      "module": "smaug",
-      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "CivicPrideRx" },
-      "eventType": "smaug.CivicPrideUpdated",
-      "fields": [
-        { "name": "raw", "group": 1, "type": "int" },
-        { "name": "bonus", "group": 2, "type": "int" }
-      ]
-    },
     "pippin.GourmandLogParser.ProcessBookFoodsRx": {
       "pattern": "ProcessBook\\(\"Skill Info\",\\s*\"(Foods Consumed:\\\\n\\\\n(?:[^\"\\\\]|\\\\.)*)\".*\"SkillReport\"",
       "source": "player",

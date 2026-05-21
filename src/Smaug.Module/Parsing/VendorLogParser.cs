@@ -9,9 +9,17 @@ namespace Smaug.Parsing;
 ///   ProcessVendorAddItem(price, ItemName(instanceId), bool)
 ///   ProcessVendorUpdateAvailableGold(gold, reset, cap)
 ///   ProcessStartInteraction(entityId, uid, favor, bool, "NPC_Key")
-///   {type=CivicPride,raw=N,bonus=M,...} — appears inside ProcessLoadSkills / ProcessUpdateSkill
-/// Active-character tracking lives in <c>ActiveCharacterLogSynchronizer</c> — this
-/// parser does not handle <c>ProcessAddPlayer</c>.
+///
+/// <para>Civic Pride is intentionally <b>not</b> parsed here — it lives in the
+/// shared <see cref="Mithril.GameState.Skills.IPlayerSkillState"/> service
+/// (which already tails <c>ProcessLoadSkills</c> / <c>ProcessUpdateSkill</c>),
+/// and <c>VendorIngestionService</c> consumes the projected
+/// <c>PlayerSkillSnapshot</c> directly. Per <see href="https://github.com/moumantai-gg/mithril/issues/580">#580</see>
+/// (Class A finding #2 from the post-#578 cross-cutting consumer audit) modules
+/// don't re-parse skill verbs.</para>
+///
+/// <para>Active-character tracking lives in <c>ActiveCharacterLogSynchronizer</c> —
+/// this parser does not handle <c>ProcessAddPlayer</c>.</para>
 /// </summary>
 public sealed partial class VendorLogParser
 {
@@ -30,10 +38,6 @@ public sealed partial class VendorLogParser
     [GeneratedRegex(@"ProcessStartInteraction\((\d+),\s*\d+,\s*[\d.-]+,\s*\w+,\s*""(NPC_\w+)""\)",
         RegexOptions.CultureInvariant)]
     private static partial Regex StartInteractionRx();
-
-    [GeneratedRegex(@"\{type=CivicPride,raw=(\d+),bonus=(\d+),",
-        RegexOptions.CultureInvariant)]
-    private static partial Regex CivicPrideRx();
 
     public VendorEvent? TryParse(string line, DateTime timestamp)
     {
@@ -75,15 +79,6 @@ public sealed partial class VendorLogParser
             var m = StartInteractionRx().Match(line);
             if (m.Success && int.TryParse(m.Groups[1].ValueSpan, out var entityId))
                 return new NpcInteractionStarted(timestamp, entityId, m.Groups[2].Value);
-        }
-
-        if (line.Contains("type=CivicPride", StringComparison.Ordinal))
-        {
-            var m = CivicPrideRx().Match(line);
-            if (m.Success
-                && int.TryParse(m.Groups[1].ValueSpan, out var raw)
-                && int.TryParse(m.Groups[2].ValueSpan, out var bonus))
-                return new CivicPrideUpdated(timestamp, raw, bonus);
         }
 
         return null;
