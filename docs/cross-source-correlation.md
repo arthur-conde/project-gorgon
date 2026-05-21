@@ -120,27 +120,29 @@ maps in sequence), bind responses **k-th-to-slot-k in arrival order** — see
 the `MotherlodeMeasurementCoordinator` "label-agnostic temporal pairing" rule
 for the canonical pattern.
 
-**In-repo reference.**
-[`Legolas.Services.MotherlodeMeasurementCoordinator`](../src/Legolas.Module/Services/MotherlodeMeasurementCoordinator.cs)
-binds the request — `LocalPlayer: ProcessDoDelayLoop("Using <Map>")`, parsed
-from **Player.log** by `PlayerLogParser` into `MotherlodeUseDetected` — to
-the response — chat `[Status] The treasure is N meters from here.`, parsed
-from the **chat log** by `ChatLogParser.MotherlodeRegex` into
-`MotherlodeDistance`. So this consumer is **currently cross-source** (Player.log
-request ↔ chat response, ~1 s offset between them), and the same-game-second
-tiebreaker risk that Tier-3 will eventually mitigate applies.
+**In-repo reference.** None — the only Tier-2 reference,
+[`Legolas.Services.MotherlodeMeasurementCoordinator`](../src/Legolas.Module/Services/MotherlodeMeasurementCoordinator.cs),
+was migrated to single-source in
+[#604](https://github.com/moumantai-gg/mithril/issues/604). The request
+(`LocalPlayer: ProcessDoDelayLoop("Using <Map>")`) and the response
+(`LocalPlayer: ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")`)
+now both flow from **Player.log**, parsed by `PlayerLogParser` into
+`MotherlodeUseDetected` and `MotherlodeDistance` respectively and dispatched by
+`PlayerLogIngestionService` to the same coordinator API
+(`OnUse` / `OnDistance`). Pairing is therefore intra-stream — a single
+`Sequence`-ordered stream, no cross-source tiebreaker risk.
 
-PG also emits the same distance readout in Player.log as
-`LocalPlayer: ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")`
-— see the [Player-Log-Signals wiki capture (Motherlode maps → Source)](https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#source--playerlog-is-canonical-the-chat-mirror-is-redundant)
-documenting the same-source emission evidence. Migrating the consumer to read
-the Player.log line instead of the chat one would strip the cross-source
-coupling and let the SM operate on a single stream's well-defined
-`Sequence` ordering — but that migration is a **separate planned change**
-([#541](https://github.com/moumantai-gg/mithril/pull/541)'s PR body called it
-explicitly out-of-scope; #511 deliverable 6 is the structural home). Until it
-lands, the consumer is the canonical example of a *Tier-2 SM operating on a
-cross-source pair*, not a same-source one.
+The pattern stays documented here because the k-th-to-slot-k temporal binding
+the coordinator implements is still a Tier-2 protocol SM in shape — request +
+response with no shared join key, paired by arrival order within a TTL window.
+A future cross-source request/response consumer that needs a TTL gate without
+a shared key falls back to this section and the coordinator's source as the
+template; the only thing that changed in #604 is which stream the response
+arrives on.
+
+PG's emission evidence — both Player.log and chat carried the distance, with
+Player.log landing ~1 s earlier — is captured in
+[Player-Log-Signals (Motherlode → Source)](https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#source--playerlog-is-canonical-the-chat-mirror-is-redundant).
 
 **Why no shared primitive.** Tier-2 SMs have heterogeneous state
 (per-consumer unmatched policies, batching contracts, response shapes,
@@ -242,11 +244,15 @@ If one ever does, this section gets the first reference.
 |---|---|---|
 | `InventoryService` (`ProcessAddItem` ↔ chat `[Status] added`) | 1 | Keyed by `InternalName`, 5 s TTL |
 | `Legolas.Services.LogIngestionService` (chat `added` ↔ chat `collected!`) | 1 | Keyed by item name, 5 s TTL; credit-0 + warn on unmatched takes; Trace on TTL eviction (post-#541) |
-| `Legolas.Services.MotherlodeMeasurementCoordinator` (Player.log `ProcessDoDelayLoop` ↔ chat `[Status] The treasure is N meters`) | 2 | Currently cross-source; k-th-to-slot-k binding; label-agnostic temporal pairing. Same-source migration to Player.log `ProcessScreenText(ImportantInfo, …)` is feasible but deferred to #511 deliverable 6 |
+| *(no in-repo consumer)* | 2 | Tier-2 lost its in-repo reference in [#604](https://github.com/moumantai-gg/mithril/issues/604) — `Legolas.Services.MotherlodeMeasurementCoordinator` migrated to single-source Player.log (`ProcessDoDelayLoop` ↔ `ProcessScreenText(ImportantInfo, …)`), so the protocol SM now operates intra-stream. The pattern stays documented; the next consumer that needs a TTL-gated request/response without a shared key gets the first new reference. |
 | *(no in-repo consumer)* | 3 | Tier-3 mechanism is available (L1 ships `LogEnvelope<T>.IsReplay`, PR #554) but unused — the four #556 candidates resolved via the unified pipe (Pin/Weather/Position) or Tier 1 (Inventory). Slot reserved for a future cross-source same-game-second tiebreak need. |
 
 ## Open questions / future work
 
+- **First post-#604 Tier-2 consumer**, if one ever surfaces (cross-source
+  request/response, no shared join key, TTL-gated arrival pairing), gets the
+  new in-repo reference in §Tier 2 — the pattern catalog already documents the
+  shape via `MotherlodeMeasurementCoordinator`'s pre-migration history.
 - **First Tier-3 consumer**, if one ever surfaces (cross-source pair, no
   shared key, no causal request/response, same-game-second tiebreak
   required), gets the first in-repo reference in §Tier 3 — the mechanism

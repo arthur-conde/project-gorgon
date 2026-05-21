@@ -25,13 +25,11 @@ public sealed partial class ChatLogParser : IChatLogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex InventoryAddRegex();
 
-    // Motherlode discriminator: "The treasure is <N> meters from here" with NO
-    // direction token (regular survey emits "[Status] The X is Ym DIR …", which
-    // SurveyRegex requires the DIR for — the two cannot collide). PG's live line
-    // uses US "meters"; accept the "metres" spelling too for robustness (#488).
-    [GeneratedRegex(@"The treasure is (?<dist>\d+) met(?:er|re)s from here",
-        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
-    private static partial Regex MotherlodeRegex();
+    // #604: the chat motherlode-distance discriminator retired here. The same
+    // banner now flows from Player.log ProcessScreenText(ImportantInfo, …),
+    // parsed by PlayerLogParser.MotherlodeDistanceRx, so the coordinator pairs
+    // request + response from one stream — see PlayerLogParser docs and
+    // docs/cross-source-correlation.md for the structural reason.
 
     // Area banner: a run of asterisks then "Entering Area: <FriendlyName>".
     // The name runs to end-of-line; trim trailing whitespace via the lazy group
@@ -97,13 +95,6 @@ public sealed partial class ChatLogParser : IChatLogParser
                 collectMatch.Groups["name"].Value.Trim(),
                 count,
                 bonus);
-        }
-
-        var motherlodeMatch = MotherlodeRegex().Match(line);
-        if (motherlodeMatch.Success
-            && int.TryParse(motherlodeMatch.Groups["dist"].ValueSpan, out var mlDist))
-        {
-            return new MotherlodeDistance(timestamp, mlDist);
         }
 
         var areaMatch = AreaEnteredRegex().Match(line);

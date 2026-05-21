@@ -186,8 +186,10 @@ public sealed class PlayerLogIngestionService : BackgroundService
 
                 // Map pins (ProcessMapPin{Add,Remove}) are owned by the
                 // GameState-tier PlayerPinTracker (#468); this service handles
-                // ProcessMapFx absolute targets (#454) and the
-                // ProcessDoDelayLoop Motherlode-map use gesture (#488).
+                // ProcessMapFx absolute targets (#454), the ProcessDoDelayLoop
+                // Motherlode-map use gesture (#488), and — post-#604 — the
+                // ProcessScreenText motherlode distance readout (migrated from
+                // the chat log so the coordinator is intra-PlayerWorld).
                 switch (_parser.TryParse(line, ts))
                 {
                     case MapTargetDetected mt:
@@ -201,10 +203,26 @@ public sealed class PlayerLogIngestionService : BackgroundService
                     // a prior Mithril session.
                     case MotherlodeUseDetected use
                         when _session.Mode == SessionMode.Motherlode:
+                    {
                         var at = new DateTimeOffset(
                             DateTime.SpecifyKind(use.Timestamp, DateTimeKind.Utc));
                         _motherlode.OnUse(at, use.MapName);
                         break;
+                    }
+
+                    // #604: distance readout migrated from chat. Same coordinator
+                    // entry point (OnDistance) — the k-th-to-slot-k temporal
+                    // pairing logic is unchanged; only the source stream is. The
+                    // request side (MotherlodeUseDetected above) and response
+                    // side (this case) are now both Player.log-resident.
+                    case MotherlodeDistance md
+                        when _session.Mode == SessionMode.Motherlode:
+                    {
+                        var at = new DateTimeOffset(
+                            DateTime.SpecifyKind(md.Timestamp, DateTimeKind.Utc));
+                        _motherlode.OnDistance(md.DistanceMetres, at);
+                        break;
+                    }
                 }
 
                 // Update the high-water AFTER successful handling so a
