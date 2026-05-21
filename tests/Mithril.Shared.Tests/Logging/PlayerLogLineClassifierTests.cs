@@ -130,6 +130,39 @@ public sealed class PlayerLogLineClassifierTests
         kinds.Should().Contain(SystemSignalKind.PlayerAdded);
         kinds.Should().Contain(SystemSignalKind.SessionLifecycle);
         kinds.Should().Contain(SystemSignalKind.Servers);
+        kinds.Should().Contain(SystemSignalKind.ConnectionEvent);
+    }
+
+    [Fact]
+    public void Connect_line_classifies_as_SystemSignal_and_eats_prefix()
+    {
+        // The no-[ts] preamble line PG emits when the client connects to a
+        // game server. Distinguished from the other EVENT(Ok): phases by
+        // the `connected` verb after the colon-space.
+        const string line = "EVENT(Ok): connected, url=s4.projectgorgon.com, port=9002";
+        var r = PlayerLogLineClassifier.Classify(line);
+
+        r.Kind.Should().Be(PlayerLogLineClassifier.LineKind.SystemSignal);
+        r.SystemKind.Should().Be(SystemSignalKind.ConnectionEvent);
+        // The "EVENT(Ok): " envelope must be eaten; the payload begins with `connected,`.
+        r.DataStart.Should().Be("EVENT(Ok): ".Length);
+        line[r.DataStart..].Should().StartWith("connected,");
+    }
+
+    [Fact]
+    public void Other_EVENT_phases_do_not_absorb_into_ConnectionEvent()
+    {
+        // Narrow trigger — `EVENT(Ok): conn…` without the full `connected`
+        // literal must NOT route to ConnectionEvent. The classifier
+        // requires the exact `connected` token; siblings (`connecting`,
+        // `connection`) fall to the SessionLifecycle/Anomaly paths below.
+        var connecting = PlayerLogLineClassifier.Classify("EVENT(Ok): connecting, url=x");
+        connecting.SystemKind.Should().NotBe(SystemSignalKind.ConnectionEvent);
+
+        // The known sibling phases continue to route to SessionLifecycle.
+        var loginCh = PlayerLogLineClassifier.Classify("EVENT(Ok): loginCharacter, numChars=2");
+        loginCh.Kind.Should().Be(PlayerLogLineClassifier.LineKind.SystemSignal);
+        loginCh.SystemKind.Should().Be(SystemSignalKind.SessionLifecycle);
     }
 
     [Fact]

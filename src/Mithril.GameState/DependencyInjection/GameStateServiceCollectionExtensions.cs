@@ -38,6 +38,11 @@ public static class GameStateServiceCollectionExtensions
         // ISessionAnchor is registered in AddMithrilGameServices as a leaf
         // (SessionAnchor). GameSessionService pushes to it on every parsed
         // banner — see SessionAnchor.cs and GameSessionService.Publish.
+        // Also injects IServerCatalogService (#610) so the per-session
+        // EVENT(Ok): connected URL can be joined against the catalog to
+        // populate GameSession.Server (#611). The catalog is registered
+        // below; both are singletons so order of AddSingleton calls is
+        // irrelevant for resolution.
         services
             .AddSingleton<GameSessionService>()
             .AddSingleton<IGameSessionService>(sp => sp.GetRequiredService<GameSessionService>())

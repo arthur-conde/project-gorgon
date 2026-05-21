@@ -3,6 +3,7 @@
 [20:01:14] Logged in as character <CHARACTER>. Time UTC=05/19/2026 20:01:14. Timezone Offset 01:00:00
 [21:04:45] Logged in as character <CHARACTER>. Time UTC=05/19/2026 21:04:45. Timezone Offset 01:00:00
 Servers: [ { "AllowGuests" : true, "Port" : 9002, "Description" : "<b>Laeth - \"Time and Space\"</b>\nA brand new world!", "Url" : "s4.projectgorgon.com", "ID" : "s4", "Name" : "Laeth" }, { "AllowGuests" : true, "Port" : 9002, "Description" : "<b>Arisetsu - \"Hope and Warmth\"</b>\nPlay on the original.", "Url" : "s0.projectgorgon.com", "ID" : "s0", "Name" : "Arisetsu" } ]
+EVENT(Ok): connected, url=s4.projectgorgon.com, port=9002
 EVENT(Ok): loginCharacter, numChars=2
 EVENT(Ok): sessionUpdate, playTime=300
 EVENT(Ok): playing

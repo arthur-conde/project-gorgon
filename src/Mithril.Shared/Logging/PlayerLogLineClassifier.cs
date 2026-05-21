@@ -105,16 +105,23 @@ internal static class PlayerLogLineClassifier
         if (StartsWithLiteral(line, "EVENT(Ok): "))
         {
             const int dataStart = 11; // length of "EVENT(Ok): "
-            // The lifecycle phases we route: loginCharacter | playing | sessionUpdate.
-            // (The pre-login preamble's EVENT(Ok): connected sits outside the
-            // L0 replay window and is #514's seed-facility territory.)
+            // The lifecycle phases we route as SessionLifecycle: loginCharacter |
+            // playing | sessionUpdate. EVENT(Ok): connected is its own kind
+            // (ConnectionEvent, #611) because it carries the url+port payload
+            // that ConnectionEventParser joins against IServerCatalogService.
+            // Like Servers: above, connect sits in the preamble before the
+            // banner — only reaches L0.5 when the seed opens at byte 0.
+            if (StartsWithLiteral(line, "EVENT(Ok): connected"))
+            {
+                return new Result(LineKind.SystemSignal, dataStart, 0, SystemSignalKind.ConnectionEvent);
+            }
             if (StartsWithLiteral(line, "EVENT(Ok): loginCharacter")
                 || StartsWithLiteral(line, "EVENT(Ok): playing")
                 || StartsWithLiteral(line, "EVENT(Ok): sessionUpdate"))
             {
                 return new Result(LineKind.SystemSignal, dataStart, 0, SystemSignalKind.SessionLifecycle);
             }
-            // EVENT(Ok): connected and any other unknown phase falls to anomaly.
+            // Any other unknown phase falls to anomaly.
             return new Result(LineKind.Anomaly, -1, 0, default);
         }
 
