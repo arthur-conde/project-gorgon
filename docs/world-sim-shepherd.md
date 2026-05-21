@@ -48,7 +48,7 @@ loop {
                                               (never bulldoze human input)
 
   run reviewers in parallel:
-    - code-reviewer (pr-review-toolkit, generic)
+    - general-purpose (inlined code-review prompt)
     - world-sim-reviewer (specialist)
   post combined review comment on PR
 
@@ -113,7 +113,7 @@ Plus human-readable prose the agent emits as its return value (which the orchest
 
 ```
 ### Shepherd iteration N — review verdict
-Generic review (pr-review-toolkit/code-reviewer): [inline or link]
+Generic review: [inline or link]
 World-sim specialist (world-sim-reviewer): [inline or link]
 Verdict: dispatching worker | ready-to-merge | needs-human
 ```

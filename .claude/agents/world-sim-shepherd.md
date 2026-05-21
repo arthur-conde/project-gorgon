@@ -120,7 +120,7 @@ Use `gh pr comment <pr> --body-file <path>`. The body shape is fixed:
 ```
 ### Shepherd iteration N — review verdict
 
-**Generic review** (`code-reviewer`):
+**Generic review**:
 <verbatim generic-review output, indented one level>
 
 **World-sim specialist** (`world-sim-reviewer`):
