@@ -66,12 +66,15 @@ public class LogParserTests
     }
 
     [Fact]
-    public void Parses_motherlode_distance()
+    public void Chat_no_longer_parses_motherlode_distance_post_604()
     {
+        // #604 migrated the motherlode distance readout to Player.log
+        // ProcessScreenText. The chat parser now treats the line as an
+        // unrecognised banner and falls through to UnknownLine. The Player.log
+        // half of this contract is asserted in MotherlodeParserTests.
         var evt = _parser.TryParse("The treasure is 43 metres from here", FixedTime);
 
-        evt.Should().BeOfType<MotherlodeDistance>()
-            .Which.DistanceMetres.Should().Be(43);
+        evt.Should().NotBeOfType<MotherlodeDistance>();
     }
 
     [Theory]

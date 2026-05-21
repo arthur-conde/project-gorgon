@@ -1,7 +1,6 @@
 using System.Threading.Channels;
 using FluentAssertions;
 using Legolas.Domain;
-using Legolas.Flow;
 using Legolas.Services;
 using Legolas.ViewModels;
 using Mithril.Shared.Diagnostics;
@@ -43,20 +42,15 @@ public sealed class LogIngestionServiceTests
         gates.For("legolas").Open();
         var sink = new CapturingSink();
         var clock = new ManualTimeProvider(new DateTime(2026, 5, 20, 14, 0, 0, DateTimeKind.Utc));
-        // The motherlode coordinator and area-calibration service aren't
-        // exercised by add/collect pathways, but the ctor needs concrete
-        // references. Reuse the test stubs other fixtures already ship.
-        var motherlode = new MotherlodeMeasurementCoordinator(
-            new MultilaterationSolver(),
-            new MotherlodeFlowController(session),
-            new FakePlayerPositionTracker(),
-            new FakePlayerPinTracker());
+        // #604: the chat motherlode distance subscription retired here — the
+        // motherlode coordinator is now driven entirely by PlayerLogIngestionService.
+        // The area-calibration service is the only remaining non-add/collect
+        // collaborator and a fake is plenty.
         var svc = new LogIngestionService(
             stream,
             new ChatLogParser(),
             gates,
             session,
-            motherlode,
             new FakeAreaCalibrationService(),
             diag: sink,
             time: clock);

@@ -54,6 +54,16 @@ public sealed record ItemAddedToInventory(
     string Name,
     int Count) : GameEvent(Timestamp);
 
+/// <summary>
+/// The motherlode-map distance readout — <c>"The treasure is N meters from here."</c>
+/// As of #604 this is parsed from <b>Player.log</b>
+/// (<c>LocalPlayer: ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")</c>)
+/// by <see cref="PlayerLogParser"/>, retiring the prior chat-log source. PG emits the
+/// banner on Player.log first; the chat mirror was redundant. The migration collapses the
+/// canonical Tier-2 cross-source coordinator (see <c>docs/cross-source-correlation.md</c>)
+/// into a single-source intra-PlayerWorld pairing; the k-th-to-slot-k temporal binding in
+/// <see cref="MotherlodeMeasurementCoordinator"/> is unchanged.
+/// </summary>
 public sealed record MotherlodeDistance(
     DateTime Timestamp,
     int DistanceMetres) : GameEvent(Timestamp);
@@ -62,7 +72,7 @@ public sealed record MotherlodeDistance(
 /// Player.log <c>LocalPlayer: ProcessDoDelayLoop(&lt;sec&gt;, &lt;verb&gt;,
 /// "Using … Motherlode Map", …)</c> — the player clicked a carried metal-slab
 /// (Motherlode) map. The <b>use gesture</b> the measurement coordinator
-/// temporally correlates a position feeder fix and the following ChatLog
+/// temporally correlates a position feeder fix and the following
 /// <see cref="MotherlodeDistance"/> line(s) against (#488). Pairing/binding is
 /// still order-based, not name-based — the use-line name is the map <i>type</i>
 /// (identical across a same-type stack, no per-map identity), carried only as a

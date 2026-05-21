@@ -13,8 +13,12 @@ namespace Legolas.Services;
 /// Background service that consumes chat-log lines from <see cref="IChatLogStream"/>,
 /// parses them via <see cref="IChatLogParser"/>, and pumps resulting events into the
 /// session: SurveyDetected adds slots, ItemCollected marks the matching slot
-/// collected, MotherlodeDistance + Metal-Slab collection forward to the
-/// <see cref="MotherlodeMeasurementCoordinator"/> (#488).
+/// collected, AreaEntered feeds the calibration service as a fallback (the
+/// Player.log <c>LOADING LEVEL</c> banner is the primary source). The Motherlode
+/// distance pairing was migrated to Player.log <c>ProcessScreenText</c> in #604,
+/// so the chat distance subscription previously hosted here is gone — the
+/// coordinator now pairs request + response from <see cref="PlayerLogIngestionService"/>
+/// alone.
 /// </summary>
 public sealed class LogIngestionService : BackgroundService
 {
@@ -22,7 +26,6 @@ public sealed class LogIngestionService : BackgroundService
     private readonly IChatLogParser _parser;
     private readonly ModuleGates _gates;
     private readonly SessionState _session;
-    private readonly MotherlodeMeasurementCoordinator _motherlode;
     private readonly IAreaCalibrationService _areaCalibration;
     private readonly IDiagnosticsSink? _diag;
     private readonly ThrottledWarn _warn;
@@ -32,7 +35,6 @@ public sealed class LogIngestionService : BackgroundService
         IChatLogParser parser,
         ModuleGates gates,
         SessionState session,
-        MotherlodeMeasurementCoordinator motherlode,
         IAreaCalibrationService areaCalibration,
         IDiagnosticsSink? diag = null,
         TimeProvider? time = null)
@@ -41,7 +43,6 @@ public sealed class LogIngestionService : BackgroundService
         _parser = parser;
         _gates = gates;
         _session = session;
-        _motherlode = motherlode;
         _areaCalibration = areaCalibration;
         _diag = diag;
         var clock = time ?? TimeProvider.System;
@@ -109,12 +110,6 @@ public sealed class LogIngestionService : BackgroundService
                 case ItemCollected ic:
                     HandleItemCollected(ic);
                     break;
-                case MotherlodeDistance md when _session.Mode == SessionMode.Motherlode:
-                    // md.Timestamp was carried through as raw.Timestamp.UtcDateTime
-                    // at the parser boundary above, so it is Kind=Utc; lift to a
-                    // DateTimeOffset with offset 0 for the coordinator's API.
-                    _motherlode.OnDistance(md.DistanceMetres, new DateTimeOffset(md.Timestamp, TimeSpan.Zero));
-                    break;
                 case AreaEntered ae:
                     _areaCalibration.OnAreaEntered(ae.AreaFriendlyName);
                     break;
@@ -128,7 +123,6 @@ public sealed class LogIngestionService : BackgroundService
         ItemAddedToInventory ia => $"Added: {ia.Name} x{ia.Count}",
         ItemCollected ic when ic.SpeedBonusItem is not null => $"Collected: {ic.Name} (+ {ic.SpeedBonusItem} speed bonus)",
         ItemCollected ic => $"Collected: {ic.Name}",
-        MotherlodeDistance md => $"Motherlode: {md.DistanceMetres}m",
         AreaEntered ae => $"Area: {ae.AreaFriendlyName}",
         UnknownLine ul => $"Unknown: {ul.RawLine}",
         _ => evt.GetType().Name,

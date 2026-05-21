@@ -41,12 +41,14 @@ public sealed record MotherlodeStatus(
 /// per-map identity (type name only) and the inventory slot ≠ the grid the
 /// player arranges by, so read→treasure binding cannot be derived from the log.
 ///
-/// <para>This is the canonical <b>Tier-2 (causal protocol state machine)</b>
-/// reference in the cross-source-correlation hierarchy — see
-/// <c>docs/cross-source-correlation.md</c>. The use-line (request) and
+/// <para>Shape is Tier-2 (causal protocol state machine, see
+/// <c>docs/cross-source-correlation.md</c>): the use-line (request) and
 /// distance-line (response) carry no shared join key; the SM pairs them by
 /// arrival order within a TTL window (k-th-to-slot-k label-agnostic temporal
-/// binding) rather than by label.</para>
+/// binding) rather than by label. Post-#604, both request and response flow
+/// from Player.log (<c>ProcessDoDelayLoop</c> + <c>ProcessScreenText(ImportantInfo, …)</c>),
+/// so the pairing is intra-stream — the cross-source coupling that prior
+/// versions documented is gone, but the k-th-to-slot-k logic is unchanged.</para>
 ///
 /// <para><b>Create-on-use, not on stock.</b> A working slot is created lazily
 /// by a <i>reading</i>, never by holding inventory — so carrying 100+ maps
@@ -371,8 +373,11 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         if (changed) Raise();
     }
 
-    /// <summary>A ChatLog distance reading. Creates/binds the slot the current
-    /// mode + per-spot ordinal selects, then re-solves it.</summary>
+    /// <summary>A Player.log distance reading (#604: previously a ChatLog
+    /// reading; migrated to <c>ProcessScreenText(ImportantInfo, "The treasure is
+    /// N meters from here.")</c> so request + response share one stream).
+    /// Creates/binds the slot the current mode + per-spot ordinal selects,
+    /// then re-solves it.</summary>
     public void OnDistance(int metres, DateTimeOffset at)
     {
         lock (_gate)

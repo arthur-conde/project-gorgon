@@ -257,20 +257,6 @@
         { "name": "bonus", "group": "bonus", "type": "string" }
       ]
     },
-    "legolas.ChatLogParser.MotherlodeRegex": {
-      "pattern": "The treasure is (?<dist>\\d+) met(?:er|re)s from here",
-      "source": "chat",
-      "module": "legolas",
-      "csharp": {
-        "type": "Legolas.Services.ChatLogParser",
-        "method": "MotherlodeRegex",
-        "options": ["Compiled", "CultureInvariant"]
-      },
-      "eventType": "legolas.MotherlodeDistance",
-      "fields": [
-        { "name": "dist", "group": "dist", "type": "int" }
-      ]
-    },
     "shared.InventoryStatusChatParser.CountedRx": {
       "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+x(?<count>\\d+)\\s+added to inventory\\.",
       "source": "chat",

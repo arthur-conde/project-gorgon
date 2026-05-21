@@ -53,10 +53,11 @@ public class PlayerLogParserTests
     }
 
     [Theory]
-    // The motherlode distance itself is ProcessScreenText (mirrored to ChatLog,
-    // where ChatLogParser picks it up) — never ProcessMapFx; the Player.log
-    // parser ignores it. A non-motherlode survey delay-loop is also ignored.
-    [InlineData("[09:03:31] LocalPlayer: ProcessScreenText(ImportantInfo, \"The treasure is 1285 meters from here.\")")]
+    // A non-motherlode survey delay-loop, a level marker, and the empty line
+    // are all ignored by this parser. Pre-#604 the motherlode distance
+    // ProcessScreenText also returned null here (it was a chat-only signal);
+    // it now produces a MotherlodeDistance and is asserted in
+    // MotherlodeParserTests.
     [InlineData("[08:25:38] LocalPlayer: ProcessDoDelayLoop(0.5, Unset, \"Using Eltibule Good Mining Survey\", 5305, AbortIfAttacked)")]
     [InlineData("LOADING LEVEL AreaEltibule")]
     [InlineData("")]
