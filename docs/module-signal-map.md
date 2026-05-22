@@ -30,7 +30,7 @@ A component classified as "no state machines" still appears if it consumes or ex
 ## Conventions
 
 - Log pipe names (`LocalPlayer`, `CombatActor`, `SystemSignal`, unified classified `IClassifiedPlayerLogStream`, `IChatLogStream`) refer to the post-#556 L1 driver surfaces. Modules subscribe via `ILogStreamDriver`; the canonical pipe definitions live in [`src/Mithril.Shared/Logging/PlayerLogPipeSplitter.cs`](../src/Mithril.Shared/Logging/PlayerLogPipeSplitter.cs).
-- GameState services are named by interface (`IInventoryService` etc.). Modules subscribe to **these**, not raw log pipes — the architectural commitment per #587. (One remaining exception: `Legolas.LogIngestionService` still consumes `IChatLogStream` directly — slated for full retirement per [#531 comment](https://github.com/moumantai-gg/mithril/issues/531#issuecomment-4499029851); every chat verb has a same-source Player.log equivalent.)
+- GameState services are named by interface (`IInventoryService` etc.). Modules subscribe to **these**, not raw log pipes — the architectural commitment per #587. (Post-#606 there are zero in-module direct `IChatLogStream` consumers — Legolas's `LogIngestionService` was the last and retired alongside Phase 3 of the world-sim migration.)
 - "Wall-clock TTL" means a transition guarded by `_time.GetUtcNow()` deltas. Distinguished from event-time deltas (`envelope.Payload.Timestamp` arithmetic) which are part of the log stream and replay-deterministic.
 
 ### Scope vocabulary
@@ -383,19 +383,28 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 
 **Charter:** surveying, route optimization, map overlay ([`module-charters.md`](module-charters.md); architecture in [`legolas-overview.md`](legolas-overview.md)).
 
-**Inputs (today)**
-- Log: `LocalPlayer` pipe via `PlayerLogIngestionService`
-- Log: `IChatLogStream` (**raw chat lines**) via `LogIngestionService` — **only remaining direct chat tail in the codebase** ([`src/Legolas.Module/Services/LogIngestionService.cs:61`](../src/Legolas.Module/Services/LogIngestionService.cs)). **Slated for full retirement** — [#531 comment](https://github.com/moumantai-gg/mithril/issues/531#issuecomment-4499029851) confirms every chat verb has a same-source Player.log equivalent (`ItemAddedToInventory` → existing `IInventoryService.Subscribe`; `ItemCollected` → `ProcessScreenText(ImportantInfo, "<Mineral> collected!…")`; `MotherlodeDistance` → `ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")`; `SurveyDetected` → trailing arg of `ProcessMapFx`; `AreaEntered` → `PlayerAreaTracker.Changed` and already redundant).
-- GameState: `IPlayerPositionTracker.Subscribe`, `IPlayerPinTracker.Subscribe`, `IInventoryService?.Subscribe`, `IPlayerAreaTracker.CurrentArea` (synchronous read)
-- Reference: `IReferenceDataService`
+**Inputs**
+- Log: `LocalPlayer` pipe via `PlayerLogIngestionService` (`ProcessMapFx`,
+  `ProcessDoDelayLoop`, `ProcessScreenText(ImportantInfo, …)` for motherlode
+  distance) + `ItemCollectionTracker` (`ProcessScreenText(ImportantInfo, …)`
+  for `<Mineral> collected!`). Post-#606 Legolas has **zero direct chat
+  consumers** — the module is PlayerWorld-resident.
+- GameState: `IInventoryView.Bus.Subscribe<InventoryItemAdded>` /
+  `Subscribe<InventoryStackChanged>` (via `ItemCollectionTracker`, post-#606
+  replacement for the retired chat `[Status] X xN added to inventory.`
+  consumer); `IPlayerPositionTracker.Subscribe`,
+  `IPlayerPinTracker.Subscribe`, `IPlayerAreaTracker.CurrentArea`
+  (synchronous read).
+- Reference: `IReferenceDataService` (display-name resolution for the
+  inventory→collect correlator key).
 - Settings: `LegolasSettings`, `ICharacterPinAnchor`
 - Other: `ICommunityCalibrationService`
 - User input: route plan editor, overlay controls, calibration UI
 
-**State machines (today; chat-side targets for retirement marked)**
-- `PlayerLogIngestionService` — Player.log fan-in; **synchronous peeks** into `PlayerAreaTracker`, `AreaCalibrationService`, `SurveyFlowController`, `SessionState` mid-handler
-- ~~`LogIngestionService` (chat)~~ — **slated for full deletion per #531 comment**: owns its own `await foreach` over `IChatLogStream`; contains Tier-1 correlator + forwards chat distance to motherlode coordinator. Becomes empty once all five verbs migrate to Player.log; `ChatLogParser` and the `IChatLogStream` ctor arg delete with it.
-- `MotherlodeMeasurementCoordinator` — currently the canonical Tier-2 SM (Player.log request ↔ chat distance response). **Becomes same-source** after the chat retirement: response migrates to `ProcessScreenText(ImportantInfo, …)` in Player.log; the Tier-2 cross-source pairing collapses to a single-stream `Sequence`-ordered request/response within ~20s window.
+**State machines**
+- `PlayerLogIngestionService` — Player.log fan-in; **synchronous peeks** into `PlayerAreaTracker`, `AreaCalibrationService`, `SurveyFlowController`, `SessionState` mid-handler.
+- `ItemCollectionTracker` — Tier-1 Add↔Collect correlator (#606); Add side via `IInventoryView.Bus`, Collect side via the new `PlayerLogParser.ItemCollectedRx`. Intra-module (no longer cross-source).
+- `MotherlodeMeasurementCoordinator` — single-source PlayerWorld SM post-#604 (`ProcessDoDelayLoop` ↔ `ProcessScreenText(ImportantInfo, …)`).
 - `SurveyFlowController` — survey-session lifecycle (idle → active → all-collected)
 - `MotherlodeFlowController` — motherlode-session lifecycle
 - `PinCalibrationCoordinator` — pin-set delta reactor for projector calibration
@@ -408,8 +417,6 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 - Map overlay UI (window above game)
 - Share-card export
 - Persisted: per-character JSON (calibration, route plans)
-
-⚠️ Once the chat retirement lands (#531 comment), Legolas owns zero chat dependencies; the module is PlayerWorld-resident. The Motherlode SM stops being a cross-source consumer entirely. [`cross-source-correlation.md`](cross-source-correlation.md) loses its in-repo Tier-2 reference implementation as part of this — the pattern stays documented for future cross-source consumers, but the live example evaporates.
 
 ---
 
@@ -528,7 +535,7 @@ A handful of patterns are worth seeing all at once after the per-component scan.
 
 - **Cross-FSM peeks live in three places.** `Arwen.CalibrationService.OnItemDeleted` → `IInventoryService.TryResolve`. `Legolas.PlayerLogIngestionService` → `PlayerAreaTracker.CurrentArea` + `AreaCalibrationService.CurrentCalibration` + `SurveyFlowController.CurrentState`. `Samwise.AlarmService` → `GardenStateMachine.IsLikelyGarbageCollected`. None inside `Mithril.GameState` itself — the foundation layer is peek-free post-#556 / #587. Under the clocked-sim model these peeks become legal (declared dispatch order makes them coherent); the cross-source one (Arwen → Inventory) moves through the view layer instead.
 - **Cross-source services span both Player.log and chat in two places today.** `IInventoryService` (foundation; fuses Player.log `ProcessAddItem` with chat `[Status] added` via Tier-1 `PendingCorrelator`) and `SarumanCodebookService` (module-level; mutated from both `SarumanDiscoveryIngestionService` and `SarumanChatIngestionService`). Both **must split** per the [world-simulator rule](world-simulator.md) — Player.log half stays in PlayerWorld, chat half stays in ChatWorld, an `IInventoryView` / `IWordOfPowerView` composes at the view layer.
-- **Chat-input surface today vs after retirement.** *Today:* three correlator-shaped consumers — `IInventoryService` (Tier-1 with Player.log), `Legolas.LogIngestionService` (Tier-1 `added`↔`collected!` plus Tier-2 motherlode-distance forwarder), `Saruman.SarumanChatIngestionService` (Tier-1-without-pairing keyed by word code). *After [#531 comment](https://github.com/moumantai-gg/mithril/issues/531#issuecomment-4499029851) retirement + the two splits land:* exactly **two state machines in ChatWorld** (`ChatInventoryStateMachine` + `ChatWordOfPowerStateMachine`), zero direct chat consumers anywhere else. Legolas drops its chat tail entirely; every chat verb has a same-source Player.log equivalent.
+- **Chat-input surface post-migration.** After #602 (inventory split), #603 (Saruman split), #604 / #605 / #606 (Legolas retirements), there are **zero direct module-level `IChatLogStream` consumers**. The chat stream is consumed only inside `ChatWorld` (the `IChatInventoryState` folder + the `IChatWordOfPowerState` folder, both fed by the chat-channel classifier). Modules consume the composed view surfaces (`IInventoryView`, `IWordOfPowerView`) instead. Legolas — the last holdout — retired its chat tail in #606; every chat verb it consumed has a same-source Player.log equivalent (mapped in the wiki Player-Log-Signals page).
 - **Both streams self-scope independently.** Player.log identifies its `(Server, Character)` from its own intra-source signals (`Servers:` catalog + `EVENT(Ok): connected, url=…` + `LoginBanner` — the latter two planned). Chat identifies its `(Server, Character)` from its own `**** Logged In As X. Server Y. Timezone Offset Z.` banner. No cross-source coupling for scope determination. Cross-source agreement (both banners' character names match) is verification, not derivation.
 - **View-layer correlators must scope-check.** Once the splits land and cross-source correlation lives in the view layer, every cross-world join must assert both sides are in the same `(Server, Character)` before firing — otherwise it's pairing across a session boundary. In single-server play this is implicitly safe; under multi-server use it's a latent correctness gap that needs the scope check to land alongside the connect-event / catalog parsers.
 - **Wall-clock-gated transitions live in five places.** `IInventoryService` correlator TTL (5s, the only foundation-layer wall-clock gate); `Samwise.GardenStateMachine.PruneWithered` + `AlarmService.IsLikelyGarbageCollected`; `Gandalf.TimerProgressService.CheckExpirations` + `TimerExpirationScheduler` + `ShiftAlarmService`; `Legolas.MotherlodeMeasurementCoordinator` (event-time but compared against a fresh foreign-FSM timestamp, which is wall-clock-shaped). Everything else uses event-time arithmetic on payload timestamps. **Under the worlds**, all of these migrate from `_time.GetUtcNow()` to `IWorldClock.Now` and become replay-deterministic — a mechanical search-replace.

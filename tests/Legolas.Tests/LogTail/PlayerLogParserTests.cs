@@ -86,4 +86,93 @@ public class PlayerLogParserTests
     [InlineData("[10:30:15] LocalPlayer: ProcessMapPinRemove(1, 0, 0, (784.74, 0.00, 3429.94), \"\")")]
     public void Ignores_map_pin_lines(string line)
         => _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
+
+    // #606: ProcessScreenText survey-collect readout — replaces the retired
+    // chat-side "[Status] X collected!" parser. The Player.log payload is
+    // byte-identical to the chat line minus the "[Status] " prefix.
+    [Theory]
+    [InlineData("""ProcessScreenText(ImportantInfo, "Rubywall Crystal collected!")""", "Rubywall Crystal", null)]
+    [InlineData("""ProcessScreenText(ImportantInfo, "Diamond collected!")""", "Diamond", null)]
+    [InlineData("""ProcessScreenText(ImportantInfo, "Expert-Quality Metal Slab collected!")""", "Expert-Quality Metal Slab", null)]
+    [InlineData("""[01:59:39] LocalPlayer: ProcessScreenText(ImportantInfo, "Citrine collected!")""", "Citrine", null)]
+    public void Parses_item_collected_from_ProcessScreenText(string line, string expectedName, string? expectedBonus)
+    {
+        var evt = _parser.TryParse(line, DateTime.UtcNow);
+
+        var ic = evt.Should().BeOfType<ItemCollected>().Subject;
+        ic.Name.Should().Be(expectedName);
+        ic.SpeedBonusItem.Should().Be(expectedBonus);
+        ic.Count.Should().Be(1, "the Player.log collected! line never carries a count for the primary item");
+    }
+
+    [Theory]
+    // Speed-bonus tail — "Also found X x<N> (speed bonus!)" parsed into the
+    // SpeedBonusItem field with the count stripped. The primary item shape is
+    // identical to the bonus-free case; the optional tail kicks in only when
+    // PG fires it.
+    [InlineData("""ProcessScreenText(ImportantInfo, "Rubywall Crystal collected! Also found Azurite x2 (speed bonus!)")""",
+        "Rubywall Crystal", "Azurite")]
+    [InlineData("""ProcessScreenText(ImportantInfo, "Garnet collected! Also found Fluorite (speed bonus!)")""",
+        "Garnet", "Fluorite")]
+    [InlineData("""ProcessScreenText(ImportantInfo, "Simple Metal Slab collected! Also found Simple Metal Slab x3 (speed bonus!)")""",
+        "Simple Metal Slab", "Simple Metal Slab")]
+    public void Parses_item_collected_with_speed_bonus_from_ProcessScreenText(string line, string expectedName, string expectedBonus)
+    {
+        var evt = _parser.TryParse(line, DateTime.UtcNow);
+
+        var ic = evt.Should().BeOfType<ItemCollected>().Subject;
+        ic.Name.Should().Be(expectedName);
+        ic.SpeedBonusItem.Should().Be(expectedBonus);
+    }
+
+    [Theory]
+    // Discriminator guards: other ProcessScreenText categories must NOT
+    // false-positive — the regex anchors on ImportantInfo + the literal
+    // "collected!" so unrelated banners (GeneralInfo / ErrorMessage) fall
+    // through to null.
+    [InlineData("""ProcessScreenText(GeneralInfo, "You've already looted this chest!")""")]
+    [InlineData("""ProcessScreenText(ErrorMessage, "You've already milked Bessie in the past hour.")""")]
+    public void Other_screen_text_categories_are_not_an_item_collected(string line)
+    {
+        _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
+    }
+
+    [Theory]
+    // Item-collected and motherlode-distance share the ProcessScreenText
+    // prefix; pin both ways so the in-branch ordering can't silently flip a
+    // motherlode banner into an ItemCollected or vice versa.
+    [InlineData(
+        """ProcessScreenText(ImportantInfo, "The treasure is 1285 meters from here.")""")]
+    public void Treasure_distance_is_not_an_item_collected(string line)
+    {
+        _parser.TryParse(line, DateTime.UtcNow).Should().NotBeOfType<ItemCollected>();
+    }
+
+    // #606: relative-offset helper — extracts the inline "The X is Nm DIR and
+    // Mm DIR." readout from a ProcessMapFx trailing message string. Mirrors
+    // the chat-retired survey-offset semantics; consumed by
+    // PlayerLogIngestionService.HandleMapTarget to drive the calibration
+    // verify-mode NoteSurvey hook.
+    [Theory]
+    [InlineData("The Bloodstone is 528m west and 202m north.", -528, 202)]
+    [InlineData("The Diamond is 20m east and 14m south.", 20, -14)]
+    [InlineData("The Star Sapphire is 137m north and 88m west.", -88, 137)]
+    [InlineData("The Foo is 5m north and 12m east.", 12, 5)]
+    public void TryParseMapFxRelativeOffset_extracts_signed_directional_offset(
+        string message, int expectedEast, int expectedNorth)
+    {
+        var offset = PlayerLogParser.TryParseMapFxRelativeOffset(message);
+        offset.Should().NotBeNull();
+        offset!.Value.East.Should().Be(expectedEast);
+        offset.Value.North.Should().Be(expectedNorth);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("random banner with no DIR tokens")]
+    [InlineData("The treasure is 1285 meters from here.")]
+    public void TryParseMapFxRelativeOffset_returns_null_for_non_matching_messages(string message)
+    {
+        PlayerLogParser.TryParseMapFxRelativeOffset(message).Should().BeNull();
+    }
 }

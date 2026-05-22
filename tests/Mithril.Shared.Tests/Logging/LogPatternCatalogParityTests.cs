@@ -24,7 +24,7 @@ public class LogPatternCatalogParityTests
         TouchAssemblyForType("Arwen.Parsing.FavorLogParser");
         TouchAssemblyForType("Smaug.Parsing.VendorLogParser");
         TouchAssemblyForType("Pippin.Parsing.GourmandLogParser");
-        TouchAssemblyForType("Legolas.Services.ChatLogParser");
+        TouchAssemblyForType("Legolas.Services.PlayerLogParser");
         TouchAssemblyForType("Mithril.GameState.Inventory.InventoryStatusChatParser");
         TouchAssemblyForType("Mithril.GameState.Chat.ChatChannelClassifier");
         TouchAssemblyForType("Mithril.GameState.WordsOfPower.WordOfPowerView");

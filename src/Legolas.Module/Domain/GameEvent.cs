@@ -4,11 +4,6 @@ namespace Legolas.Domain;
 
 public abstract record GameEvent(DateTime Timestamp) : LogEvent(Timestamp);
 
-public sealed record SurveyDetected(
-    DateTime Timestamp,
-    string Name,
-    MetreOffset Offset) : GameEvent(Timestamp);
-
 /// <summary>
 /// Player.log <c>LocalPlayer: ProcessMapFx((X,Y,Z), …, "&lt;short&gt;",
 /// &lt;Category&gt;, "&lt;msg&gt;")</c> — emitted once per survey
@@ -21,7 +16,11 @@ public sealed record SurveyDetected(
 /// <c>ProcessScreenText</c>, never <c>ProcessMapFx</c>).
 ///
 /// <para><see cref="Short"/>/<see cref="Category"/>/<see cref="Message"/> are
-/// diagnostic-only — placement uses <see cref="World"/> exclusively.</para>
+/// diagnostic-only — placement uses <see cref="World"/> exclusively. Post-#606
+/// the trailing <see cref="Message"/> also feeds the calibration verify-mode
+/// <c>NoteSurvey</c> hook (the chat-side <c>[Status]</c> directional banner
+/// retired); <see cref="PlayerLogParser.TryParseMapFxRelativeOffset"/> extracts
+/// the inline relative offset from this string.</para>
 /// </summary>
 public sealed record MapTargetDetected(
     DateTime Timestamp,
@@ -35,24 +34,32 @@ public sealed record MapTargetDetected(
 // PlayerPinTracker (#468). Calibration consumers read the area-scoped pin
 // set from IPlayerPinTracker, not a Legolas log event.
 
+/// <summary>
+/// The <c>ProcessScreenText(ImportantInfo, "&lt;Mineral&gt; collected!")</c>
+/// survey-yield readout (#606). Parsed from <b>Player.log</b> by
+/// <see cref="PlayerLogParser"/>, retiring the prior chat <c>[Status]</c>
+/// source. The Player.log payload is byte-identical to the retired chat line
+/// minus the <c>[Status] </c> prefix — including the optional
+/// <c>Also found &lt;Bonus&gt; x&lt;N&gt; (speed bonus!)</c> tail (parsed into
+/// <see cref="SpeedBonusItem"/>).
+///
+/// <para><see cref="Count"/> is preserved as a field-shape carryover from the
+/// retired chat parser; PG emits no count on the primary "collected!" line
+/// (counts moved to the "added to inventory" line — now consumed by
+/// <see cref="ItemCollectionTracker"/> via <c>IInventoryView.Bus</c>), so this
+/// always carries <c>1</c> from <see cref="PlayerLogParser"/>.</para>
+/// </summary>
 public sealed record ItemCollected(
     DateTime Timestamp,
     string Name,
     int Count,
     string? SpeedBonusItem = null) : GameEvent(Timestamp);
 
-/// <summary>
-/// "[Status] X xN added to inventory." — the only chat line that carries the real
-/// item count. The matching <see cref="ItemCollected"/> line that follows has no
-/// count for survey collections (PG moved counts onto "added to inventory" lines).
-/// LogIngestionService buffers these and drains the buffer on the next
-/// <see cref="ItemCollected"/>, so non-survey adds (skinning, crafting, vendor
-/// purchases) don't leak into the survey report.
-/// </summary>
-public sealed record ItemAddedToInventory(
-    DateTime Timestamp,
-    string Name,
-    int Count) : GameEvent(Timestamp);
+// "[Status] X xN added to inventory." retired in #606. The shared
+// IInventoryView (#602) is the post-migration surface — its typed-bus
+// InventoryItemAdded / InventoryStackChanged events compose the same
+// Player.log ProcessAddItem + chat stack-size observations the chat
+// [Status] line carried. ItemCollectionTracker is the in-Legolas consumer.
 
 /// <summary>
 /// The motherlode-map distance readout — <c>"The treasure is N meters from here."</c>
@@ -87,7 +94,3 @@ public sealed record MotherlodeUseDetected(
 // authoritative area-key source, fed by Player.log's LOADING LEVEL line, and
 // PlayerLogIngestionService.ApplyAreaIfChanged drives the calibration service
 // directly. See #531 for the redundancy analysis.
-
-public sealed record UnknownLine(
-    DateTime Timestamp,
-    string RawLine) : GameEvent(Timestamp);

@@ -62,7 +62,6 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<LegolasBrushes>();
 
         // Core services
-        services.AddSingleton<IChatLogParser, ChatLogParser>();
         services.AddSingleton<PlayerLogParser>();
         services.AddSingleton<HeldKarpOptimizer>();
         services.AddSingleton<NearestNeighbourTwoOptOptimizer>();
@@ -255,12 +254,18 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, ToggleCalibrationPhaseCommand>();
         services.AddSingleton<IHotkeyCommand, ConfirmCalibrationCommand>();
 
-        // Chat-log ingestion (relative [Status] survey/collect lines).
-        services.AddHostedService<LogIngestionService>();
-        // Player-log ingestion (#454). Phase 2: area→calibration bridge via
-        // the shared PlayerAreaTracker. ProcessMapFx / ProcessMapPinAdd
-        // parsing layers onto this same subscription in Phases 3/4.
+        // Player-log ingestion (#454 / #488 / #604): area→calibration bridge,
+        // absolute ProcessMapFx placement, Motherlode use gesture + distance
+        // readout. Post-#606 this is Legolas's only log-tail subscription —
+        // the chat-log LogIngestionService retired alongside Phase 3 of the
+        // world-sim migration (umbrella #601).
         services.AddHostedService<PlayerLogIngestionService>();
+        // Inventory-add↔Player.log-collect correlator (#606). Replaces the
+        // chat-side [Status] added/collected pairing the retired
+        // LogIngestionService owned; subscribes to IInventoryView.Bus
+        // (typed-frame surface from #602) and ProcessScreenText collect
+        // banners parsed by PlayerLogParser.
+        services.AddHostedService<ItemCollectionTracker>();
 
         // Diagnostics — frame-time logger + synthetic-load harness. The logger
         // writes CSV + summary to %LocalAppData%/Mithril/Legolas/perf/. Both

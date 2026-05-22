@@ -195,6 +195,57 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
 
     // ---- absolute ProcessMapFx placement (Phase 3) -----------------------
 
+    /// <summary>
+    /// #606: the relative-offset readout embedded in the ProcessMapFx
+    /// trailing string feeds the calibration verify-mode NoteSurvey hook.
+    /// Pre-#606 a chat-side SurveyDetected was the input; post-#606 both bits
+    /// of data (absolute + relative) ride the same Player.log line.
+    /// </summary>
+    [Fact]
+    public async Task ProcessMapFx_feeds_NoteSurvey_with_inline_relative_offset()
+    {
+        var f = Build(calibration: Identity());
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = f.Service.StartAsync(cts.Token);
+        try
+        {
+            f.Driver.PushLive(LiveLine(MapFx));
+            await f.Driver.DrainLocalPlayerAsync();
+            await WaitUntil(() => f.Spy.NotedSurveys.Count >= 1, cts.Token);
+
+            f.Spy.NotedSurveys.Should().ContainSingle();
+            var (name, offset) = f.Spy.NotedSurveys[0];
+            name.Should().Be("Good Metal Slab");
+            // "67m west and 1181m south."
+            offset.East.Should().Be(-67);
+            offset.North.Should().Be(-1181);
+        }
+        finally { await Stop(f, run, cts); }
+    }
+
+    /// <summary>
+    /// #606: NoteSurvey fires unconditionally — calibration verify mode must
+    /// see the raw readout regardless of session mode or calibration state.
+    /// Mirrors the pre-#606 chat-side handler contract.
+    /// </summary>
+    [Fact]
+    public async Task NoteSurvey_fires_even_when_area_uncalibrated()
+    {
+        var f = Build(calibration: null);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = f.Service.StartAsync(cts.Token);
+        try
+        {
+            f.Driver.PushLive(LiveLine(MapFx));
+            await f.Driver.DrainLocalPlayerAsync();
+            await WaitUntil(() => f.Spy.NotedSurveys.Count >= 1, cts.Token);
+
+            f.Spy.NotedSurveys.Should().ContainSingle(
+                "calibration verify view consumes NoteSurvey before placement gating");
+        }
+        finally { await Stop(f, run, cts); }
+    }
+
     [Fact]
     public async Task Calibrated_area_places_one_absolute_pin_at_projected_pixel()
     {
@@ -582,7 +633,8 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
             double calibrationZoom = 1.0) => null;
         public void ClearCurrentAreaCalibration() { }
-        public void NoteSurvey(string name, MetreOffset offset) { }
+        public List<(string Name, MetreOffset Offset)> NotedSurveys { get; } = new();
+        public void NoteSurvey(string name, MetreOffset offset) => NotedSurveys.Add((name, offset));
         public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }
     }
 

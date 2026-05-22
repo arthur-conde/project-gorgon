@@ -8,13 +8,14 @@ The model has been through a significant rewrite (#454/#460/#476/#477/#478/#481�
 
 Project Gorgon's survey/treasure items (gated on **Geology**, **Mining**, or **Treasure Cartography** — "Surveying" is loose shorthand) go in the player's inventory. Using one prints a chat line like `[Status] The Iron Vein is 50m east and 30m north` and emits a `Player.log` `LocalPlayer: ProcessMapFx((X,Y,Z), …)` carrying the target's **exact world coordinate**. The item is consumed (and grants XP) only when used while *standing on* the target spot.
 
-Legolas tails both logs and:
+Legolas tails Player.log (only — post-#606 the chat-log subscription
+retired alongside Phase 3 of the world-sim migration) and:
 
 1. **Calibrates the area once** (guided, using the player's own in-game map pins) to learn the world↔overlay-pixel mapping. Persisted per area.
 2. **Auto-places** every survey/treasure target at its true overlay position the moment `ProcessMapFx` arrives — placement is **absolute**; the user never clicks to confirm.
 3. Draws a non-interactive "you are here" marker from the GameState position tracker (sparse: zone-in/teleport only).
 4. Optimises a route through the unvisited pins.
-5. Watches for `… collected!` lines to mark pins done; auto-resets when the last one drops (configurable).
+5. Watches for `ProcessScreenText(ImportantInfo, "<Mineral> collected!")` lines to mark pins done; auto-resets when the last one drops (configurable).
 
 The overlay is a HUD layered over the in-game map — strictly 1:1 with it, no internal zoom/pan ([#126](https://github.com/moumantai-gg/mithril/pull/127)).
 
@@ -23,14 +24,14 @@ The overlay is a HUD layered over the in-game map — strictly 1:1 with it, no i
 ## End-to-end Survey flow
 
 ```
-ChatLog tail            [Mithril.Shared — IChatLogStream]   names the target ("collected!" lines)
-Player.log tail         [Mithril.Shared — IPlayerLogStream]  ProcessMapFx → absolute world coord
+Player.log tail         [Mithril.Shared — ILogStreamDriver, LocalPlayer pipe]   ProcessMapFx → absolute world coord; ProcessScreenText collect banners
+IInventoryView.Bus      [Mithril.GameState — view-layer composer over PlayerWorld + ChatWorld]   InventoryItemAdded / InventoryStackChanged (post-#602)
    │
    ▼
-ChatLogParser / PlayerLogParser   [Services/]   regex → SurveyDetected | ItemCollected | MotherlodeDistance
+PlayerLogParser   [Services/]   regex → MapTargetDetected | ItemCollected | MotherlodeDistance | MotherlodeUseDetected
    │
    ▼
-LogIngestionService / PlayerLogIngestionService   [Services/]   dedup, auto-place every target, surface inventory
+PlayerLogIngestionService / ItemCollectionTracker   [Services/]   absolute placement, Tier-1 Add↔Collect correlator, surface inventory
    │
    ▼
 SurveyFlowController    [Flow/SurveyFlowController.cs]   3-state FSM (+ optional SettingPosition); diagnoses out-of-state arrivals
@@ -55,7 +56,7 @@ The wizard ([`LegolasWizardViewModel`](../src/Legolas.Module/ViewModels/LegolasW
 
 ### The raw data
 
-`Player.log` `ProcessMapFx((X,Y,Z), …)` carries the survey/treasure target's **absolute world coordinate** in the area's engine-unit frame (verified: `Check Survey` 4/4 in a live log; Treasure Cartography shares the item template). This is the placement source of truth. The chat-log `[Status] The <name> is <a>m <dir> and <b>m <dir>` line is still parsed by [`ChatLogParser`](../src/Legolas.Module/Services/ChatLogParser.cs) — but only to *name* the target, not to position it.
+`Player.log` `ProcessMapFx((X,Y,Z), …)` carries the survey/treasure target's **absolute world coordinate** in the area's engine-unit frame (verified: `Check Survey` 4/4 in a live log; Treasure Cartography shares the item template). This is the placement source of truth. The `[Status] The <name> is <a>m <dir> and <b>m <dir>` directional banner is now extracted from the **trailing string argument of the same `ProcessMapFx` line** (post-#606 — the chat-side parser retired) by [`PlayerLogParser.TryParseMapFxRelativeOffset`](../src/Legolas.Module/Services/PlayerLogParser.cs), and feeds the calibration verify-mode `NoteSurvey` hook. Naming / positioning both come from one Player.log line.
 
 `MetreOffset(East, North)` and `CoordinateProjector` still exist but are **vestigial** — Survey doesn't touch them, and after [#488](https://github.com/moumantai-gg/mithril/issues/488) Motherlode solves in world space and no longer uses them either (see [History](#history)).
 
@@ -153,7 +154,7 @@ On, it projects every `IAreaCalibrationService.CurrentAreaReferences` entry (are
 | `SurveyPlayerIsManual : bool` | Session | True when `SurveyPlayerPixel` came from the user's "Set my position" click (the `SettingPosition` detour) **or** a #497 character-named pin. Calibration-independent for the click; survives a calibration re-apply; superseded by the next *fresh* tracker fix. `PlayerAnchorStatus` shows `"You — set manually"`. |
 | `SurveyPlayerIsPinned : bool` | Session | #497: the manual anchor is a character-named / `@me` map pin (implies `IsManual`). `PlayerAnchorStatus` shows `"You — pinned, …"`. When the pin stops winning, both flags clear so auto resumes; a genuine pixel-click manual (`IsManual && !IsPinned`) keeps its #476 stickiness. Precedence lives in the pure `MapOverlayViewModel.ResolveSurveyAnchor`. |
 | `PlayerPosition : PixelPoint` / `HasPlayerPosition : bool` | Session | **Vestigial post-[#488](https://github.com/moumantai-gg/mithril/issues/488).** Was the manual map-click anchor the old Motherlode triangulation recorded; the rebuilt mechanic is log-driven world-space multilateration and never reads it. Survey never read it. Retained only because the `SetPlayerPosition` hotkey + overlay click still mutate it. |
-| `SelectedSurvey : SurveyItemViewModel?` | UI | Drives nudge-command targeting. Auto-set to the most-recently-placed survey by `LogIngestionService`. |
+| `SelectedSurvey : SurveyItemViewModel?` | UI | Drives nudge-command targeting. Auto-set to the most-recently-placed survey by `PlayerLogIngestionService`. |
 | `IsMapVisible`, `IsInventoryVisible`, `IsCalibrationVisible : bool` | UI | Overlay visibility intent — `OverlayController` reacts. |
 | `MapOpacity`, `InventoryOpacity : double` | **Persisted** | Bidirectionally synced with `LegolasSettings` in `LegolasModule.Register`. |
 | `Mode : SessionMode` | Session | `Survey \| Motherlode`. |
@@ -244,9 +245,9 @@ Pre-rewrite WPF baseline was 67–84 fps / p99 27–30 ms / 2–4 stutters for t
 | [`ViewModels/LegolasWizardViewModel.cs`](../src/Legolas.Module/ViewModels/LegolasWizardViewModel.cs) | The user-facing wizard. Projects mode + FSM + calibration state onto `CurrentStep`. |
 | [`Flow/SurveyFlowController.cs`](../src/Legolas.Module/Flow/SurveyFlowController.cs) | Survey FSM (3 states + `SettingPosition`). |
 | [`Flow/MotherlodeFlowController.cs`](../src/Legolas.Module/Flow/MotherlodeFlowController.cs) | Motherlode-mode FSM (out of scope here). |
-| [`Services/ChatLogParser.cs`](../src/Legolas.Module/Services/ChatLogParser.cs) | Regex parsing of `[Status]` survey/collect/motherlode lines (names targets). |
-| [`Services/PlayerLogParser.cs`](../src/Legolas.Module/Services/PlayerLogParser.cs) | `Player.log` parsing — `ProcessMapFx` (absolute survey targets). |
-| [`Services/LogIngestionService.cs`](../src/Legolas.Module/Services/LogIngestionService.cs) / [`PlayerLogIngestionService.cs`](../src/Legolas.Module/Services/PlayerLogIngestionService.cs) | `BackgroundService`s. Dedup, auto-place, FSM dispatch. |
+| [`Services/PlayerLogParser.cs`](../src/Legolas.Module/Services/PlayerLogParser.cs) | `Player.log` parsing — `ProcessMapFx` (absolute survey targets + inline relative-offset for calibration verify), `ProcessScreenText` (`<Mineral> collected!` + motherlode distance), `ProcessDoDelayLoop` (motherlode use gesture). |
+| [`Services/PlayerLogIngestionService.cs`](../src/Legolas.Module/Services/PlayerLogIngestionService.cs) | `BackgroundService`. Area→calibration bridge, absolute pin placement, motherlode coordinator wiring. |
+| [`Services/ItemCollectionTracker.cs`](../src/Legolas.Module/Services/ItemCollectionTracker.cs) | `BackgroundService`. Tier-1 Add↔Collect correlator (#606 replacement for the retired chat-tail `LogIngestionService`); subscribes to `IInventoryView.Bus` + parses `ProcessScreenText` collect banners. |
 | [`Services/AreaCalibrationService.cs`](../src/Legolas.Module/Services/AreaCalibrationService.cs) | Per-area calibration persistence + `Changed`. |
 | [`Services/PinCalibrationCoordinator.cs`](../src/Legolas.Module/Services/PinCalibrationCoordinator.cs) | The guided two-phase calibration walkthrough (Drop/Pair, correction, residual, Confirm). |
 | [`Services/LandmarkCalibrationSolver.cs`](../src/Legolas.Module/Services/LandmarkCalibrationSolver.cs) | Pure 2D similarity LSQ solver. |

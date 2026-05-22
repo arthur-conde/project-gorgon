@@ -247,39 +247,39 @@
         { "name": "desc", "group": "desc", "type": "string" }
       ]
     },
-    "legolas.ChatLogParser.SurveyRegex": {
-      "pattern": "\\[Status\\] The (?<name>.+?) is (?<a>\\d+)m (?<aDir>north|south|east|west) and (?<b>\\d+)m (?<bDir>north|south|east|west)\\b",
-      "source": "chat",
+    "legolas.PlayerLogParser.ItemCollectedRx": {
+      "pattern": "ProcessScreenText\\(\\s*ImportantInfo\\s*,\\s*\"(?<name>.+?)(?:\\s+x\\d+)?\\s+collected!(?:\\s+Also found\\s+(?<bonus>.+?)(?:\\s+x\\d+)?\\s+\\(speed bonus!\\))?\\.?\"\\s*\\)",
+      "source": "player",
       "module": "legolas",
       "csharp": {
-        "type": "Legolas.Services.ChatLogParser",
-        "method": "SurveyRegex",
+        "type": "Legolas.Services.PlayerLogParser",
+        "method": "ItemCollectedRx",
+        "options": ["Compiled", "CultureInvariant"]
+      },
+      "eventType": "legolas.ItemCollected",
+      "notes": "Player.log mirror of the retired chat \"[Status] X collected!\" line — same payload minus the [Status] prefix, including the optional \"Also found X x<N> (speed bonus!)\" tail. Migrated in #606 so Legolas is Player.log-sim-resident (last chat consumer in the codebase). Anchored on ImportantInfo to discriminate from MotherlodeDistance.",
+      "fields": [
+        { "name": "name", "group": "name", "type": "string" },
+        { "name": "bonus", "group": "bonus", "type": "string" }
+      ]
+    },
+    "legolas.PlayerLogParser.MapFxRelativeOffsetRx": {
+      "pattern": "The (?<name>.+?) is (?<a>\\d+)m (?<aDir>north|south|east|west) and (?<b>\\d+)m (?<bDir>north|south|east|west)\\b",
+      "source": "player",
+      "module": "legolas",
+      "csharp": {
+        "type": "Legolas.Services.PlayerLogParser",
+        "method": "MapFxRelativeOffsetRx",
         "options": ["Compiled", "CultureInvariant", "IgnoreCase"]
       },
-      "eventType": "legolas.SurveyDetected",
-      "flags": ["i"],
+      "kind": "helper",
+      "notes": "Extracts the trailing relative-offset readout (\"The X is Nm DIR and Mm DIR.\") embedded in a ProcessMapFx line — the chat-mirrored directional banner PG carries inline alongside the absolute (X,Y,Z). Drives PlayerLogIngestionService's calibration verify-mode NoteSurvey hook (#606 — the chat-side SurveyRegex retired). Helper-only: pattern applied via TryParseMapFxRelativeOffset against the ProcessMapFx trailing message string, not the full line.",
       "fields": [
         { "name": "name", "group": "name", "type": "string" },
         { "name": "a", "group": "a", "type": "int" },
         { "name": "aDir", "group": "aDir", "type": "string" },
         { "name": "b", "group": "b", "type": "int" },
         { "name": "bDir", "group": "bDir", "type": "string" }
-      ]
-    },
-    "legolas.ChatLogParser.CollectRegex": {
-      "pattern": "\\[Status\\]\\s+(?<name>.+?)(?:\\s+x(?<count>\\d+))?\\s+collected!(?:\\s+Also found\\s+(?<bonus>.+?)\\s+\\(speed bonus!\\))?",
-      "source": "chat",
-      "module": "legolas",
-      "csharp": {
-        "type": "Legolas.Services.ChatLogParser",
-        "method": "CollectRegex",
-        "options": ["Compiled", "CultureInvariant"]
-      },
-      "eventType": "legolas.ItemCollected",
-      "fields": [
-        { "name": "name", "group": "name", "type": "string" },
-        { "name": "count", "group": "count", "type": "int" },
-        { "name": "bonus", "group": "bonus", "type": "string" }
       ]
     },
     "shared.InventoryStatusChatParser.CountedRx": {
