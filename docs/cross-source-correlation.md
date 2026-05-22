@@ -84,20 +84,16 @@ text, mirrored here so the doc stands alone:
 
 **In-repo references.**
 
-- **`InventoryService`** ([`src/Mithril.GameState/Inventory/InventoryService.cs`](../src/Mithril.GameState/Inventory/InventoryService.cs))
+- **`InventoryView`** ([`src/Mithril.GameState/Inventory/InventoryView.cs`](../src/Mithril.GameState/Inventory/InventoryView.cs))
   fuses Player.log `ProcessAddItem(InternalName(id), …)` (carries the instance
   id but no count) with chat `[Status] X xN added to inventory.` (carries the
-  count but no instance id). Keyed by `InternalName`, 5 s TTL
-  (`PendingChatTtl`). This is the canonical Tier-1 implementation.
-- **`Legolas.Services.LogIngestionService`** ([`src/Legolas.Module/Services/LogIngestionService.cs`](../src/Legolas.Module/Services/LogIngestionService.cs))
-  fuses chat `[Status] X xN added to inventory.` with the chat
-  `[Status] X collected!` that follows it on a survey collect. Keyed by item
-  name, 5 s TTL (matching `InventoryService` deliberately). Unmatched takes
-  apply the **credit-0 + throttled `diag.Warn`** policy and skip the
-  `CollectedItems` dict write entirely (so the share card omits a `x0` line);
-  TTL-evicted noise (skinning/vendor/crafting adds for the same name) is
-  surfaced via a `Trace`-level `onUnmatched` callback so post-hoc "why did
-  this credit short?" debugging has a trail.
+  count but no instance id), via the cross-world composition layer introduced
+  in [#602](https://github.com/moumantai-gg/mithril/pull/602). Keyed by
+  `(Server, Character, InternalName)`, 5 s TTL (`PendingChatTtl`). This is the
+  canonical Tier-1 implementation. Pre-#602 the same correlator lived in the
+  shared `InventoryService` which itself spanned both sources — the split
+  moved the per-source state into the PlayerWorld + ChatWorld folders and
+  hoisted the cross-source pairing into the view layer above them.
 
 **Pitfall.** Decide the unmatched policy **explicitly** for every consumer.
 Silent fallbacks ("credit 1 if nothing matched") manufacture data that wasn't
@@ -105,6 +101,25 @@ in the log; an explicit credit-0 + diagnostic surfaces the gap. The pre-#541
 Legolas `_pendingAdds` is the cautionary tale — its "credit at least one"
 guess looked harmless until the design review forced the question and revealed
 it was masking real correlation misses.
+
+**Post-#606 note.** The Legolas `LogIngestionService` chat-tail Tier-1
+implementation retired alongside its parent service in
+[#606](https://github.com/moumantai-gg/mithril/issues/606) (Phase 3 of the
+world-sim migration #601). Its replacement —
+[`Legolas.Services.ItemCollectionTracker`](../src/Legolas.Module/Services/ItemCollectionTracker.cs)
+— is still Tier-1 in shape (same name-keyed FIFO drain, same credit-0 + warn
+on unmatched takes, same TTL eviction Trace) but composes over the post-#602
+view-layer surface: it subscribes to `IInventoryView.Bus`'s
+`InventoryItemAdded` / `InventoryStackChanged` frames (the Add side, downstream
+of `InventoryView`'s own Tier-1 cross-source pairing) and the new
+`PlayerLogParser.ItemCollectedRx` `ProcessScreenText` emission (the Collect
+side, intra-PlayerWorld). The two sides are no longer cross-source — the
+correlator is now intra-module — but the unmatched-policy discipline still
+applies: an `InventoryItemAdded` for a survey display name and a matching
+`ItemCollected` Player.log banner that doesn't pair within the TTL still
+credit-0 + warn rather than silently fabricate a credit. See the
+[wiki: Player-Log-Signals §Source — Player.log is canonical](https://github.com/moumantai-gg/mithril/wiki/Player-Log-Signals#source--playerlog-is-canonical-the-chat-mirror-is-redundant)
+capture for the Player.log/chat emission table that #606 keyed off.
 
 ## Tier 2 — causal protocol state machine
 
@@ -244,8 +259,8 @@ If one ever does, this section gets the first reference.
 
 | Consumer | Tier | Notes |
 |---|---|---|
-| `InventoryService` (`ProcessAddItem` ↔ chat `[Status] added`) | 1 | Keyed by `InternalName`, 5 s TTL |
-| `Legolas.Services.LogIngestionService` (chat `added` ↔ chat `collected!`) | 1 | Keyed by item name, 5 s TTL; credit-0 + warn on unmatched takes; Trace on TTL eviction (post-#541) |
+| `InventoryView` (`ProcessAddItem` ↔ chat `[Status] added`) | 1 | Keyed by `(Server, Character, InternalName)`, 5 s TTL. Pre-#602 lived in the cross-source `InventoryService`; the view-layer split kept the same correlator shape. |
+| *(no in-repo consumer)* | 1, in-module | Tier-1 lost its in-Legolas chat reference in [#606](https://github.com/moumantai-gg/mithril/issues/606) — `Legolas.Services.LogIngestionService` (chat `added` ↔ chat `collected!`) retired alongside the rest of Legolas's chat consumption. The replacement, `Legolas.Services.ItemCollectionTracker`, keeps the same name-keyed FIFO drain + credit-0 + warn policy but composes over `IInventoryView.Bus` (the Add side, downstream of `InventoryView`'s cross-source pairing) and the new `PlayerLogParser.ItemCollectedRx` (the Collect side). The pair is no longer cross-source — same unmatched-policy discipline still applies. |
 | *(no in-repo consumer)* | 2 | Tier-2 lost its in-repo reference in [#604](https://github.com/moumantai-gg/mithril/issues/604) — `Legolas.Services.MotherlodeMeasurementCoordinator` migrated to single-source Player.log (`ProcessDoDelayLoop` ↔ `ProcessScreenText(ImportantInfo, …)`), so the protocol SM now operates intra-stream. The pattern stays documented; the next consumer that needs a TTL-gated request/response without a shared key gets the first new reference. |
 | *(no in-repo consumer)* | 3 | Tier-3 mechanism is available (L1 ships `LogEnvelope<T>.IsReplay`, PR #554) but unused — the four #556 candidates resolved via the unified pipe (Pin/Weather/Position) or Tier 1 (Inventory). Slot reserved for a future cross-source same-game-second tiebreak need. |
 

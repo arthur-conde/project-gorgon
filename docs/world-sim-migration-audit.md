@@ -45,10 +45,14 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
   2. **`SarumanCodebookService` split + view** — different shape than Inventory
      (no temporal pairing, key-join only) so the view-layer abstraction needs
      to admit two distinct view patterns.
-  3. **`Legolas.LogIngestionService` full retirement (per #531)** — the only
-     remaining direct `IChatLogStream` consumer in-repo. Five chat verbs to
-     migrate to Player.log equivalents; `MotherlodeMeasurementCoordinator`
-     becomes same-source as a side-effect.
+  3. **`Legolas.LogIngestionService` full retirement (per #531)** —
+     **Delivered ([#606](https://github.com/moumantai-gg/mithril/issues/606)).**
+     Last direct `IChatLogStream` module consumer retired; all five chat verbs
+     migrated to Player.log equivalents. The new
+     `Legolas.Services.ItemCollectionTracker` owns the intra-module Tier-1
+     Add↔Collect correlator (Add side via `IInventoryView.Bus`, Collect side
+     via `PlayerLogParser`). `MotherlodeMeasurementCoordinator` already
+     same-source since #604.
 - **Patterns to systematize:** every wall-clock `_time.GetUtcNow()` in a
   transition gate (12 instances across 7 components) is the same mechanical
   swap to `IWorldClock.Now` after the sim lands. Both planned parsers
@@ -301,40 +305,35 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
 
 ### Legolas (surveying)
 
-`src/Legolas.Module/Services/{LogIngestionService.cs, PlayerLogIngestionService.cs,
-MotherlodeMeasurementCoordinator.cs, AreaCalibrationService.cs}`.
+`src/Legolas.Module/Services/{PlayerLogIngestionService.cs,
+ItemCollectionTracker.cs, MotherlodeMeasurementCoordinator.cs,
+AreaCalibrationService.cs}`.
 
-- **Source spanning**: YES today. **Only remaining direct `IChatLogStream`
-  consumer in the codebase** (confirmed via Grep — see "Migration-plan
-  spot-checks §5 below"). `LogIngestionService.cs:21` holds `IChatLogStream
-  _stream`; `:61` does `await foreach (var raw in _stream.SubscribeAsync(...))`.
-- **Five chat verbs in `LogIngestionService.Dispatch` at `:91-122`**:
-  - `SurveyDetected` → `HandleSurveyDetected` (calls
-    `_areaCalibration.NoteSurvey`)
-  - `ItemAddedToInventory` → `HandleItemAddedToInventory` (enqueue in
-    `_pendingAdds`)
-  - `ItemCollected` → `HandleItemCollected` (Tier-1 correlator dequeue)
-  - `MotherlodeDistance` → `_motherlode.OnDistance(...)` (Tier-2)
-  - `AreaEntered` → `_areaCalibration.OnAreaEntered(...)`
+- **Source spanning**: NO — post-#606 Legolas is Player.log-sim-resident with
+  zero direct `IChatLogStream` consumers. The previous five chat verbs all
+  retired to same-source Player.log equivalents:
+  - `ItemAddedToInventory` → `IInventoryView.Bus.Subscribe<InventoryItemAdded>`
+    (post-#602 split — view-layer composer over the PlayerWorld + ChatWorld
+    bus channels; the chat side is now folder-resident, not module-direct).
+  - `ItemCollected` → `PlayerLogParser.ItemCollectedRx` parsing
+    `ProcessScreenText(ImportantInfo, "<Mineral> collected!")` — new in #606.
+  - `MotherlodeDistance` → `ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")` (#604).
+  - `SurveyDetected` → `ProcessMapFx` trailing string arg, parsed inline by
+    `PlayerLogParser.TryParseMapFxRelativeOffset` and fed to
+    `IAreaCalibrationService.NoteSurvey` from `PlayerLogIngestionService.HandleMapTarget` (#606).
+  - `AreaEntered` → `PlayerAreaTracker.Changed` (#605).
 - **Cross-FSM peeks**: `PlayerLogIngestionService` synchronously reads
   `PlayerAreaTracker.CurrentArea`, `AreaCalibrationService.CurrentCalibration`,
-  `SurveyFlowController.CurrentState` mid-handler (per module-signal-map.md
-  `:395`). Sim-coherent under declared dispatch order.
+  `SurveyFlowController.CurrentState` mid-handler. Sim-coherent under declared
+  dispatch order (intra-PlayerWorld).
 - **Wall-clock**: `SurveyFlowController.cs` has `_time.GetUtcNow()` — needs
   read to determine if gates or stamps; `LegolasReportService.cs` also has it.
   Not on the critical state path; mostly UI / share-card stamping.
-- **Migration**: per [#531 comment](https://github.com/moumantai-gg/mithril/issues/531#issuecomment-4499029851)
-  cited in design notebook item 5 — every chat verb has a same-source Player.log
-  equivalent:
-  - `ItemAddedToInventory` → `IInventoryView.Added` (post-split)
-  - `ItemCollected` → `ProcessScreenText(ImportantInfo, "<Mineral> collected!…")`
-  - `MotherlodeDistance` → `ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")`
-  - `SurveyDetected` → `ProcessMapFx` trailing arg (or drop per #454)
-  - `AreaEntered` → already redundant with `PlayerAreaTracker.Changed`
-- **Status**: **full chat-tail retirement owed**. After retirement, Legolas is
-  Player.log-sim-resident; `LogIngestionService.cs` deletes; `ChatLogParser.cs`
-  deletes; `IChatLogStream` ctor arg deletes; `MotherlodeMeasurementCoordinator`
-  becomes same-source.
+- **Status**: **done** — chat-tail retirement complete (#606, Phase 3 of
+  #601). `LogIngestionService.cs`, `ChatLogParser.cs`, `IChatLogParser` and
+  the Legolas `IChatLogStream` ctor arg deleted. `ItemCollectionTracker` owns
+  the in-module Tier-1 correlator (now intra-module: Add side via
+  `IInventoryView.Bus`, Collect side via `PlayerLogParser`).
 
 ### Elrond, Bilbo, Silmarillion, Celebrimbor, Pippin
 
@@ -419,33 +418,33 @@ Both mutate `SarumanCodebookService` (`:64 RecordDiscovery`, `:120 MarkSpent`).
 Different shape than Inventory: key-only join, no TTL. View needs different
 abstraction.
 
-### 3. `MotherlodeMeasurementCoordinator` migration — **CONFIRMED currently chat**
+### 3. `MotherlodeMeasurementCoordinator` migration — **DONE (#604)**
 
-`MotherlodeMeasurementCoordinator.cs:376` exposes `OnDistance(int metres,
-DateTimeOffset at)`. Sole call site is `LogIngestionService.cs:116` —
-`MotherlodeDistance md` case in the chat dispatcher. The use side
-(`OnUse` via `ProcessDoDelayLoop`) is on `PlayerLogIngestionService.cs`
-(Player.log). Becomes same-source once the chat tail retires and
-`ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")` is
-read from Player.log instead.
+The coordinator's distance side migrated to
+`ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")` on
+Player.log; the use side was already `ProcessDoDelayLoop` on Player.log.
+Single-source PlayerWorld SM today; the cross-source Tier-2 reference in
+`docs/cross-source-correlation.md` retired with it.
 
-### 4. `AreaCalibrationService` chat redundancy — **CONFIRMED redundant**
+### 4. `AreaCalibrationService` chat redundancy — **DONE (#605)**
 
-`AreaCalibrationService.OnAreaEntered` (`AreaCalibrationService.cs:131-137`)
-called from chat path: `LogIngestionService.cs:119`. `AreaCalibrationService.SelectArea`
-called from Player.log path: `PlayerLogIngestionService.cs:383`. Same SetArea
-call inside (line `:148`). The chat call adds no information beyond what
-`PlayerAreaTracker.Changed` (which feeds the Player.log call) provides. **Drop
-the chat path**.
+`PlayerAreaTracker.Changed` (fed by Player.log's `LOADING LEVEL` line) is the
+authoritative source. The chat `Entering Area:` path was removed; the
+`PlayerLogIngestionService.ApplyAreaIfChanged` bridge drives
+`IAreaCalibrationService.SelectArea` on every change.
 
-### 5. Legolas full chat retirement — **CONFIRMED, 5 verbs**
+### 5. Legolas full chat retirement — **DONE (#606)**
 
-`LogIngestionService.cs:61` is the only `IChatLogStream.SubscribeAsync` call in
-non-driver code (confirmed by Grep across `src/`). Five verbs in `Dispatch` at
-`:91-122`: `SurveyDetected`, `ItemAddedToInventory`, `ItemCollected`,
-`MotherlodeDistance`, `AreaEntered`. Each has a same-source Player.log
-equivalent per the linked #531 comment. After retirement: `LogIngestionService.cs`,
-`ChatLogParser.cs`, and the `IChatLogStream` ctor arg all delete.
+All five chat verbs migrated to Player.log equivalents:
+- `ItemAddedToInventory` → `IInventoryView.Bus.Subscribe<InventoryItemAdded>` (#602 split)
+- `ItemCollected` → `PlayerLogParser.ItemCollectedRx` (`ProcessScreenText(ImportantInfo, "<Mineral> collected!")`)
+- `MotherlodeDistance` → same-source via #604
+- `SurveyDetected` → `ProcessMapFx` trailing-arg `TryParseMapFxRelativeOffset`
+- `AreaEntered` → `PlayerAreaTracker.Changed` (#605)
+
+`LogIngestionService.cs`, `ChatLogParser.cs`, `IChatLogParser`, and the
+Legolas `IChatLogStream` ctor argument all deleted. The Tier-1 Add↔Collect
+correlator now lives intra-module in `ItemCollectionTracker.cs`.
 
 ### 6. `QuestService.OnViewCurrentChanged` synthesis — **CONFIRMED**
 

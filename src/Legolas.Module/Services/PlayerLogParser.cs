@@ -6,15 +6,18 @@ using Legolas.Domain;
 namespace Legolas.Services;
 
 /// <summary>
-/// Player.log analog of <see cref="ChatLogParser"/> — pure line→event. #454:
-/// <c>ProcessMapFx</c> (absolute survey/treasure-map targets); #488:
-/// <c>ProcessDoDelayLoop</c> Motherlode-map use gesture; #604:
-/// <c>ProcessScreenText(ImportantInfo, "The treasure is N meters from here.")</c>
-/// Motherlode distance readout (migrated from <see cref="ChatLogParser"/> so the
-/// coordinator becomes a single-source intra-PlayerWorld state machine). Map-pin
-/// lifecycle parsing moved to the GameState-tier <c>MapPinParser</c> /
-/// <c>PlayerPinTracker</c> (#468) — same promotion pattern as
-/// <c>AreaTransitionParser</c> (#456).
+/// Player.log line→event parser. #454: <c>ProcessMapFx</c> (absolute
+/// survey/treasure-map targets); #488: <c>ProcessDoDelayLoop</c> Motherlode-map
+/// use gesture; #604: <c>ProcessScreenText(ImportantInfo, "The treasure is N
+/// meters from here.")</c> Motherlode distance readout (migrated from the chat
+/// log so the coordinator becomes a single-source intra-PlayerWorld state
+/// machine); #606: <c>ProcessScreenText(ImportantInfo, "&lt;Mineral&gt;
+/// collected!")</c> survey collect readout (migrated from the chat log so
+/// Legolas is now Player.log-sim-resident — closes the world-sim Phase 3 with
+/// no remaining <see cref="Mithril.Shared.Logging.IChatLogStream"/> consumer
+/// in the module). Map-pin lifecycle parsing moved to the GameState-tier
+/// <c>MapPinParser</c> / <c>PlayerPinTracker</c> (#468) — same promotion
+/// pattern as <c>AreaTransitionParser</c> (#456).
 ///
 /// <para>Real captured grammar (live Player.log, 2026-05-18):</para>
 /// <code>
@@ -65,6 +68,71 @@ public sealed partial class PlayerLogParser : ILogParser
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]
     private static partial Regex MotherlodeDistanceRx();
 
+    // #606: ProcessScreenText survey-collect readout. Mirrors the chat
+    // "[Status] <Mineral> collected!" line minus the [Status] prefix — same
+    // optional speed-bonus tail ("Also found <Bonus> x<N> (speed bonus!)").
+    // Anchored on ImportantInfo + the literal "collected!" so unrelated
+    // banners don't false-positive; the trailing-period tolerance and
+    // ImportantInfo discriminator follow MotherlodeDistanceRx's shape.
+    //
+    // Per the live capture (wiki Player-Log-Signals §Source — Player.log is
+    // canonical; chat is a redundant mirror), the primary "collected!" line
+    // carries NO count for the primary item (PG moved counts onto the
+    // "added to inventory" line, which Legolas now consumes via
+    // IInventoryView.Bus per #606). The (?:\s+x\d+)? before "collected!" is
+    // kept for legacy/edge-case parity with the retired ChatLogParser.
+    [GeneratedRegex(
+        """ProcessScreenText\(\s*ImportantInfo\s*,\s*"(?<name>.+?)(?:\s+x\d+)?\s+collected!(?:\s+Also found\s+(?<bonus>.+?)(?:\s+x\d+)?\s+\(speed bonus!\))?\.?"\s*\)""",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant)]
+    private static partial Regex ItemCollectedRx();
+
+    // #606: ProcessMapFx trailing-arg relative-offset readout. Same line as
+    // MapFxRx — PG embeds the chat-mirrored directional string ("The X is Nm
+    // DIR and Mm DIR.") as the trailing string argument alongside the absolute
+    // (X, Y, Z). The absolute coord drives pin placement (#454); the relative
+    // offset drives the calibration verify-mode hook (NoteSurvey). One line,
+    // two consumers — both Player.log-resident post-#606. Mirrors the chat-
+    // retired SurveyRegex shape so the (a,aDir,b,bDir) composition is identical.
+    [GeneratedRegex(
+        """The (?<name>.+?) is (?<a>\d+)m (?<aDir>north|south|east|west) and (?<b>\d+)m (?<bDir>north|south|east|west)\b""",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex MapFxRelativeOffsetRx();
+
+    /// <summary>
+    /// Extract the relative-offset readout embedded in a <c>ProcessMapFx</c>
+    /// trailing string ("The X is Nm DIR and Mm DIR."). Returns null when
+    /// the message doesn't match (uncalibrated areas, atypical banners). The
+    /// caller pairs this with the absolute (X,Y,Z) parsed by
+    /// <see cref="TryParse"/> — both bits of data come from the same log
+    /// line, so a paired emission is intra-line and order-free.
+    /// </summary>
+    public static MetreOffset? TryParseMapFxRelativeOffset(string message)
+    {
+        if (string.IsNullOrEmpty(message)) return null;
+        var m = MapFxRelativeOffsetRx().Match(message);
+        if (!m.Success
+            || !int.TryParse(m.Groups["a"].ValueSpan, out var aValue)
+            || !int.TryParse(m.Groups["b"].ValueSpan, out var bValue))
+        {
+            return null;
+        }
+        double east = 0, north = 0;
+        ApplyComponent(m.Groups["aDir"].Value, aValue, ref east, ref north);
+        ApplyComponent(m.Groups["bDir"].Value, bValue, ref east, ref north);
+        return new MetreOffset(east, north);
+    }
+
+    private static void ApplyComponent(string direction, int value, ref double east, ref double north)
+    {
+        switch (direction.ToLowerInvariant())
+        {
+            case "east":  east  = value;  break;
+            case "west":  east  = -value; break;
+            case "north": north = value;  break;
+            case "south": north = -value; break;
+        }
+    }
+
     private static string? NormalizeMapName(string raw)
     {
         var s = raw.Trim();
@@ -86,15 +154,33 @@ public sealed partial class PlayerLogParser : ILogParser
                 timestamp, NormalizeMapName(use.Groups["map"].Value));
         }
 
-        // #604: ProcessScreenText banner — must be tried before ProcessMapFx
-        // because ScreenText also carries an "ImportantInfo" category, but
-        // ProcessMapFx is the parenthesised-coord form. Anchor on the literal
-        // substring before the regex to keep the hot-path branch cheap.
-        if (line.Contains("ProcessScreenText", StringComparison.Ordinal)
-            && MotherlodeDistanceRx().Match(line) is { Success: true } d
-            && int.TryParse(d.Groups["dist"].ValueSpan, out var metres))
+        // #604/#606: ProcessScreenText banners — must be tried before
+        // ProcessMapFx because ScreenText also carries an "ImportantInfo"
+        // category, but ProcessMapFx is the parenthesised-coord form. Anchor
+        // on the literal substring before the regex to keep the hot-path
+        // branch cheap. Order within the ProcessScreenText branch:
+        //   1. MotherlodeDistance — pinned to the "The treasure is …" prefix,
+        //      cannot collide with ItemCollected.
+        //   2. ItemCollected — broader "<name> collected!" shape; tried after
+        //      MotherlodeDistance so the more specific regex wins.
+        if (line.Contains("ProcessScreenText", StringComparison.Ordinal))
         {
-            return new MotherlodeDistance(timestamp, metres);
+            if (MotherlodeDistanceRx().Match(line) is { Success: true } d
+                && int.TryParse(d.Groups["dist"].ValueSpan, out var metres))
+            {
+                return new MotherlodeDistance(timestamp, metres);
+            }
+            if (ItemCollectedRx().Match(line) is { Success: true } ic)
+            {
+                string? bonus = null;
+                if (ic.Groups["bonus"].Success)
+                    bonus = ic.Groups["bonus"].Value.Trim();
+                return new ItemCollected(
+                    timestamp,
+                    ic.Groups["name"].Value.Trim(),
+                    Count: 1,
+                    SpeedBonusItem: bonus);
+            }
         }
 
         if (line.Contains("ProcessMapFx", StringComparison.Ordinal)

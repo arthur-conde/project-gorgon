@@ -12,23 +12,32 @@ using Microsoft.Extensions.Hosting;
 namespace Legolas.Services;
 
 /// <summary>
-/// Legolas-owned LocalPlayer-pipe consumer. Distinct from
-/// <see cref="LogIngestionService"/> (which tails the <em>chat</em> log for
-/// <c>[Status]</c> survey/collect lines): this service watches the
-/// L0.5 <see cref="LocalPlayerLogLine"/> pipe via the L1 (#550)
-/// <see cref="ILogStreamDriver"/>, which is where #454's absolute-coordinate
-/// signals live.
+/// Legolas-owned LocalPlayer-pipe consumer. Post-#606 this is the only
+/// log-tail subscription in Legolas (the chat-tailing
+/// <c>LogIngestionService</c> retired alongside Phase 3 of the world-sim
+/// migration — see umbrella #601 and Legolas's
+/// <see cref="ItemCollectionTracker"/> sibling for the surviving
+/// inventory-add↔collect credit path).
 ///
-/// <para><b>This phase (Phase 2 of #454) — area context only.</b> The single
-/// responsibility wired here is the area→calibration bridge: feed the shared
-/// <see cref="PlayerAreaTracker"/> and, whenever the player's area changes,
-/// apply that area's persisted <see cref="Domain.AreaCalibration"/> via
-/// <see cref="IAreaCalibrationService.SelectArea"/>, plus <c>ProcessMapFx</c>
-/// (absolute survey/treasure targets) placement and the #488
-/// <c>ProcessDoDelayLoop</c> Motherlode-map use gesture (forwarded to the
-/// <see cref="MotherlodeMeasurementCoordinator"/>). Map-pin lifecycle parsing was
-/// promoted out to the GameState-tier <c>PlayerPinTracker</c> (#468) — one
-/// LocalPlayer-pipe subscription here, consistent with the other consumers.</para>
+/// <para><b>Responsibilities.</b>
+/// <list type="bullet">
+///   <item><b>Area→calibration bridge.</b> Feeds the shared
+///   <see cref="PlayerAreaTracker"/> and, whenever the player's area changes,
+///   applies that area's persisted <see cref="Domain.AreaCalibration"/> via
+///   <see cref="IAreaCalibrationService.SelectArea"/>.</item>
+///   <item><b><c>ProcessMapFx</c> placement (#454).</b> Absolute
+///   survey/treasure targets place a pin at the projected pixel; the
+///   trailing relative-offset readout drives the calibration verify-mode
+///   <see cref="IAreaCalibrationService.NoteSurvey"/> hook (#606 — the
+///   chat-side <c>[Status]</c> directional banner retired here).</item>
+///   <item><b><c>ProcessDoDelayLoop</c> Motherlode-map use gesture (#488).</b>
+///   Forwarded to the <see cref="MotherlodeMeasurementCoordinator"/>.</item>
+///   <item><b><c>ProcessScreenText(ImportantInfo, …)</c> motherlode distance
+///   readout (#604).</b> Same single-source coordinator.</item>
+/// </list>
+/// Map-pin lifecycle parsing was promoted out to the GameState-tier
+/// <c>PlayerPinTracker</c> (#468); <c>ProcessScreenText</c> survey-collect
+/// readouts live in <see cref="ItemCollectionTracker"/>.</para>
 ///
 /// <para><b>L1 migration (#550 PR 3, archetype-B).</b> Pre-L1 this service
 /// owned its own <c>await foreach</c> over <see cref="IPlayerLogStream"/>,
@@ -53,11 +62,8 @@ namespace Legolas.Services;
 /// subscription — <c>LiveOnly</c> serves both purposes once the tracker
 /// self-seeds.</para>
 ///
-/// <para>Gated on the <c>"legolas"</c> module gate, mirroring
-/// <see cref="LogIngestionService"/> — Legolas is a lazy module, so log work
-/// starts on first tab activation. The ChatLog <c>Entering Area:</c> path in
-/// <see cref="LogIngestionService"/> is retained as a complementary fallback;
-/// both converge on the same area key (last-writer-wins, idempotent).</para>
+/// <para>Gated on the <c>"legolas"</c> module gate — Legolas is a lazy
+/// module, so log work starts on first tab activation.</para>
 ///
 /// <para><b>Containment.</b> The L1 driver wraps each handler invocation in
 /// try/catch + rate-limited Warn, retiring the per-service <c>_diag?.Warn</c>
@@ -276,16 +282,26 @@ public sealed class PlayerLogIngestionService : BackgroundService
     }
 
     /// <summary>
-    /// Place an absolute <c>ProcessMapFx</c> target. Authoritative only for a
-    /// <b>calibrated</b> area (#454 "calibrated-area authority"): uncalibrated
-    /// areas keep the legacy relative chat path (the cold-start fallback until
-    /// pin calibration exists, Phase 4). The relative chat auto-place is
-    /// suppressed for calibrated areas in <see cref="LogIngestionService"/> so
-    /// a survey use — which emits both a chat <c>[Status]</c> line and this
-    /// Player.log line — produces exactly one pin.
+    /// Place an absolute <c>ProcessMapFx</c> target. Authoritative for both
+    /// calibrated (#454 "calibrated-area authority") and uncalibrated areas;
+    /// the chat <c>[Status]</c> relative-offset fallback was retired in #606
+    /// (Legolas is now Player.log-sim-resident). For uncalibrated areas the
+    /// target is reported via the diagnostic line below and not placed until
+    /// pin calibration runs.
     /// </summary>
     private void HandleMapTarget(MapTargetDetected mt)
     {
+        // Feed the calibration window's verify mode unconditionally — it must
+        // see the raw relative reading regardless of mode/state. Pre-#606 this
+        // was driven by a chat-side SurveyDetected parse; post-#606 the
+        // relative offset rides on the same ProcessMapFx line that already
+        // carries the absolute (X, Y, Z), so the calibration "Note Survey"
+        // hook is fed in-line from the trailing message string.
+        if (PlayerLogParser.TryParseMapFxRelativeOffset(mt.Message) is { } offset)
+        {
+            _areaCalibration.NoteSurvey(CleanName(mt.Short), offset);
+        }
+
         if (_session.Mode != SessionMode.Survey)
         {
             _session.LastLogEvent = $"Map target: {Describe(mt)} → ignored (mode is Motherlode)";
