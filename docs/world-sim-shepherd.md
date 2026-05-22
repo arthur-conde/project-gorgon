@@ -1,131 +1,163 @@
 # World-sim shepherd — design notebook
 
-A per-PR babysitter agent the world-sim orchestrator hands a PR to. The shepherd reviews the PR, dispatches workers to address findings, and signals back to the orchestrator when the PR is ready to merge or needs human attention.
+A per-issue delivery agent that owns one world-sim migration issue end-to-end: spawns the initial-implementation worker, opens the PR, runs the review-fix loop, and merges. The orchestrator dispatches exactly one shepherd per ready issue and walks away; the shepherd reports a structured terminal verdict via JSON when it returns.
 
 **Pairs with:**
-- [`world-simulator.md`](world-simulator.md) — the migration whose PRs this reviews
-- [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md) — the orchestrator whose dispatch loop this slots into
-- [`world-sim-migration-audit.md`](world-sim-migration-audit.md) — ground truth the specialist reviewer cross-checks PRs against
+- [`world-simulator.md`](world-simulator.md) — the migration whose issues this delivers
+- [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md) — phase preconditions, dep graph, global rules
+- [`world-sim-orchestrator.md`](world-sim-orchestrator.md) — the orchestrator that dispatches shepherds
+- [`world-sim-migration-audit.md`](world-sim-migration-audit.md) — ground truth the specialist reviewer cross-checks
 
-**Status:** design notebook, not implementation spec. The finalized implementation plan lives in the GitHub issue filed against the world-sim umbrella (#601).
+**Status:** design notebook + rationale, not implementation spec. The operational spec is the agent file [`../.claude/agents/world-sim-shepherd.md`](../.claude/agents/world-sim-shepherd.md). The v2 redesign rationale is in GitHub issue #646.
+
+**Version:** v2 (this rewrite). The v1 shepherd was a per-PR babysitter dispatched after a PR existed; v2 owns from issue pickup through merge. The contract bugs in the original v1 design were closed by PR #645 (commit a830456); v2 (issue #646) addresses the architectural gap that PR did not touch: cold-spawned workers and reviewers every iteration.
 
 ---
 
 ## Why this exists
 
-Before this design landed, the orchestration plan defined the dispatch loop for workers but left review undefined. Its Stop Condition #2 referenced the generic `code-review` skill as one input, but didn't say who ran it, when, or how the orchestrator consumed the result. The plan also didn't model the iterative "review → fix → re-review" cycle the orchestrator otherwise expected a human to drive.
+The world-sim migration umbrella (#601) has 15+ tasks across 5 phases. Each task → an issue → an implementation PR → a review → maybe more reviews → a merge. Doing this serially with a human in the loop is slow; doing it without per-PR judgment is reckless.
 
-The shepherd fills that gap. It owns one PR end-to-end: runs reviewers, dispatches workers to address findings, escalates to a human only when the PR can't progress hands-free.
+The shepherd is the per-issue agent that brings judgment to the loop without requiring a human at every step. It can:
+
+- Read the issue body and decide whether implementation, decomposition, "nothing to do," or "I need clarification" is the right move
+- Dispatch a worker to implement, hold the worker alive across review iterations via `SendMessage` (the worker accumulates context — it remembers why it made each prior decision)
+- Run specialist + generic reviewers; iterate review-fix cycles up to a ceiling
+- Merge the PR itself when convergence is reached
+- Escalate honestly when convergence isn't possible
+
+The orchestrator above the shepherd is a thin queue manager: pick the next ready issue, dispatch the shepherd, file the follow-ons the shepherd surfaces. The orchestrator never touches code, never calls `gh pr merge`, never spawns a general-purpose worker directly.
+
+---
+
+## v2 vs v1 — what changed
+
+| Concern | v1 shepherd | v2 shepherd |
+|---|---|---|
+| Scope | After PR exists, review-fix-rereview | Issue pickup → initial impl → PR → review-fix → merge |
+| Inputs | `pr`, `issue`, `phase`, `worker_template` | `issue`, `phase` (much smaller) |
+| Worker lifecycle | Fresh `Agent` dispatch per iteration (cold) | One `Agent` initial dispatch, then `SendMessage` continuations (warm) |
+| Reviewer lifecycle | Fresh `Agent` per iteration | One `Agent` per reviewer, then `SendMessage` (reviewers remember prior findings naturally) |
+| Merge | Shepherd signals `ready-to-merge`; orchestrator runs `gh pr merge` | Shepherd runs `gh pr merge` itself; reports `verdict: merged` |
+| Verdict enum | `ready-to-merge` / `needs-human` / `conflict` | `merged` / `needs-human` / `conflict` / `nothing-to-do` / `decomposed` |
+| Follow-on transport | Parsed from PR comment by orchestrator | Carried in shepherd's return JSON (PR comment is for humans only) |
+| Context loading cost | Each spawned subagent reads CLAUDE.md + required docs + issue body cold per iteration | Shepherd builds context pack once at intake, passes inline to first worker dispatch; subsequent `SendMessage`s send only the delta |
+
+The single load-bearing constraint that forced v2's shape: per https://code.claude.com/docs/en/sub-agents, "Subagents work within a single session." `SendMessage` only works while the original parent is alive. A short-lived per-tick shepherd cannot carry subagents across orchestrator ticks. The only path to subagent context continuity is a long-lived per-issue shepherd. Cost of "long-lived": the shepherd's parent context sits idle during subagent runs — but idle wait costs zero tokens (billing is per inference, not wall-clock). So a multi-hour shepherd is cheap.
 
 ---
 
 ## Core shape
 
-Two new subagents and one set of edits to the orchestration plan.
+Three subagents:
 
-**`world-sim-shepherd`** — the per-PR babysitter. Owns the review-fix-rereview loop for one PR. Tools: `Read`, `Grep`, `Glob`, `Bash` (constrained to `gh`), `Agent`.
+**`world-sim-shepherd`** — the per-issue delivery agent. Tools: `Read`, `Grep`, `Glob`, `Bash` (constrained to `gh`), `Agent`, `SendMessage`, `ToolSearch`. No `Edit`/`Write` — the shepherd never touches code; it dispatches workers to do so.
 
-**`world-sim-reviewer`** — the world-sim specialist reviewer the shepherd dispatches each iteration. Takes a PR# + phase context, returns structured findings against four specializations:
+**`world-sim-reviewer`** — the world-sim specialist reviewer the shepherd dispatches once per PR via `Agent` and then resumes via `SendMessage` on every subsequent review iteration. Four checks: principle adherence (1-13), phase-aware migration preconditions, replay-determinism inspection, audit cross-reference.
 
-1. **Principle adherence** — checks against the 13 numbered principles in [`world-simulator.md`](world-simulator.md). No cross-source services (principle 3); no `_time.GetUtcNow()` leaks in state-decision paths (principle 12); folder/composer/producer kinds respected (principle 10); frames stamped at event-time, not synthesis-time (principle 1); etc.
-2. **Phase-aware migration checks** — knows which phase the PR's issue belongs to via the orchestration plan's dependency graph and verifies preconditions. A Phase 3 PR should consume the view, not the pre-split service; a Phase 4 PR should not introduce new `_time.GetUtcNow()` in state paths.
-3. **Replay-determinism inspection** — static-analysis-style sweep for non-determinism sources: `DateTime.UtcNow`/`Stopwatch` in state-decision paths, dictionary-iteration-order assumptions, `Task.Run` / `Task.WhenAll` that could reorder side effects, etc.
-4. **Audit cross-reference** — cross-checks the PR's changed files against [`world-sim-migration-audit.md`](world-sim-migration-audit.md). If a file is listed as "needs behavioural change" and this PR is supposed to land that change, verify the change happened; if "sleeper blocker," verify it was addressed.
-
-**Generic review.** The shepherd also dispatches a `general-purpose` subagent with an inlined code-review prompt template (see the shepherd agent file's §Generic code review prompt section) in parallel with `world-sim-reviewer` each iteration. The inlined prompt covers generic bug-scanning, CLAUDE.md adherence, git-history context — work the specialist doesn't need to reproduce. (The `pr-review-toolkit` plugin's `code-reviewer` agent would have been a natural fit, but it isn't installed in this environment; the inlined-prompt-on-general-purpose pattern is the project's existing convention for Agent-dispatchable review.)
+**Generic reviewer (inlined)** — the shepherd dispatches a `general-purpose` subagent with an inlined code-review prompt (canonical version in the shepherd agent file, §Generic code review prompt). Same lifecycle: one `Agent` per PR, then `SendMessage`.
 
 ---
 
-## The shepherd loop
+## The shepherd lifecycle
 
 ```
-state = { iterations: 0, last_head_sha: null, last_verdict: null }
+phase 1: intake
+  read CLAUDE.md, the three required docs, the issue body, the phase slice
+  build the shepherd context pack (5-15K tokens)
 
-loop {
-  read PR state (gh pr view --json …)
-  if PR closed/merged                       → exit verdict matching state
-  if new human review comment since last    → exit needs-human
-                                              (never bulldoze human input)
+phase 2: initial implementation
+  Agent(general-purpose, prompt: context_pack + "implement this issue, open PR")
+  capture worker_id from Agent return
+  parse `outcome:` line from worker return
+    - success    → verify PR opened, fall through to phase 3
+    - nothing-to-do → return verdict("nothing-to-do")
+    - decomposed → return verdict("decomposed", follow_ons: filed sub-issues)
+    - needs-input → return verdict("needs-human", reason: "needs_input")
+    - failed     → return verdict("needs-human", reason: "worker_failed")
 
-  run reviewers in parallel:
-    - general-purpose (inlined code-review prompt)
-    - world-sim-reviewer (specialist)
-  post combined review comment on PR
+phase 3: review-fix loop
+  loop:
+    pr_state = gh pr view
+    short-circuit: MERGED/CLOSED/CONFLICTING → return verdict
+    human-comment guard: any non-bot comment since last iteration → escalate
 
-  if both reviews clean                     → exit ready-to-merge
+    if first iteration:
+      review_results = parallel(
+        Agent(general-purpose, prompt: generic review template),
+        Agent(world-sim-reviewer, prompt: pr/issue/phase)
+      )
+      capture generic_reviewer_id, specialist_reviewer_id
+    else:
+      review_results = parallel(
+        SendMessage(to: generic_reviewer_id, "re-review at SHA X"),
+        SendMessage(to: specialist_reviewer_id, "re-review at SHA X")
+      )
 
-  iterations++
-  if iterations > MAX_ITERATIONS (3)        → exit needs-human
-  if same class of issue as last iteration  → exit needs-human
-                                              (worker isn't addressing feedback)
+    parse <!-- generic-review-verdict: -->, <!-- world-sim-review-verdict: -->
+    decide posted_verdict: ready-to-merge | dispatching worker | needs-human
+      (escalation reasons: max_iterations, same_issue_class, worker_no_progress,
+       unparseable reviewer output)
 
-  dispatch worker via Agent tool with review feedback as input
-    (Agent call blocks until worker returns — worker bounds its own time)
+    gh pr comment <pr> --body-file <verdict marker + combined review prose + follow-ons>
 
-  if PR head SHA unchanged after worker     → exit needs-human
-                                              (worker claimed done, didn't push)
-}
+    if posted_verdict == ready-to-merge → phase 4
+    if posted_verdict == needs-human → return verdict("needs-human", reason)
+
+    SendMessage(to: worker_id, message: review feedback delta)
+    verify head_sha advanced → if not, return verdict("needs-human", "worker_no_progress")
+
+phase 4: merge
+  gh pr merge <pr> --squash --delete-branch
+  verify issue auto-closed; if not, comment + manual close (log anomaly)
+  return verdict("merged", merged_sha, follow_ons, anomalies)
 ```
 
-**No CI polling.** PR-level CI doesn't exist in this repo (CI runs at release-cut). The worker's own local `dotnet build` + `dotnet test` (a hard gate per the orchestration plan's Global Rules) is the only build/test gate before push. If the worker pushes broken code, the next review iteration catches it.
+**No PR-level CI.** This repo's CI runs at release-cut, not per-PR. The worker's local `dotnet build` + `dotnet test` (a hard gate per the orchestration plan's Global Rules) is the only build/test gate before push. If the worker pushes broken code, the next review iteration catches it.
 
-**No inter-commit timeout.** The shepherd's call to `Agent` to dispatch the worker is synchronous — the worker runs to completion, returns, then the shepherd verifies via `gh pr view` that new commits actually landed. The worker bounds its own time.
+**No inter-commit timeout.** Worker and reviewer `Agent`/`SendMessage` calls are synchronous — the subagent bounds its own time. Verification of "did anything change" happens via `gh pr view --json headRefOid` after the call returns.
 
-**"Same class of issue" detection.** Two cheap string-matching heuristics, either triggers escalation:
-- A file:line range from iteration N's review appears again in iteration N+1's review
-- A specific principle number (e.g., "principle 12 — wall-clock leak") cited in two consecutive iterations
+**SendMessage is the v2 architectural commitment.** Per Claude Code docs ("Subagents work within a single session"), `SendMessage` only works while the parent (= the shepherd) is alive. The whole point of the long-lived shepherd is to keep that window open across all review iterations. Spawning a fresh `Agent` per iteration would be the v1 mistake.
 
 ---
 
 ## Termination policy
 
-The shepherd exits in exactly one of these states. The verdict is structured (see Output contract); the human-readable summary accompanies it.
+The shepherd exits in exactly one of these states. The verdict is structured (see §Output contract); a human-readable summary accompanies it.
 
 | Verdict | Triggers |
 |---|---|
-| `ready-to-merge` | Both reviewers clean, no open human comments, PR open and not closed |
-| `needs-human` | `max_iterations` exceeded; `human_review` comment posted; `same_issue_class` detected; `worker_no_progress` (head SHA unchanged after worker dispatch); `closed_without_merge` (PR closed by a human without merging) |
-| `conflict` | Merge conflict against base that auto-rebase can't resolve |
+| `merged` | Both reviewers clean, shepherd successfully called `gh pr merge`. Happy path. |
+| `nothing-to-do` | Worker concluded the issue is already resolved or scope is obsolete. Orchestrator closes the issue. |
+| `decomposed` | Worker filed sub-issues; the shepherd surfaces them in `follow_ons` with `blocks: [<this issue>]`. Orchestrator records and moves on. |
+| `needs-human` | Review-fix loop hit a ceiling: `max_iterations`, `same_issue_class`, `human_review`, `worker_no_progress`, `initial_implementation_failed`, `needs_input`, `worker_failed`, `closed_without_merge`. Orchestrator adds `orchestrator-blocked` label + spawns task chip. |
+| `conflict` | Merge conflict against base couldn't auto-resolve. Orchestrator escalates with a rebase-instruction chip. |
 
-`MAX_ITERATIONS = 3` by default. The orchestrator can override per dispatch (e.g., higher for risk-high PRs). Three rounds of review-fix matches the empirical pattern that workers either converge fast or are stuck.
+`max_iterations` defaults to 3. Three rounds of review-fix matches the empirical pattern that workers either converge fast or are stuck.
 
 ---
 
 ## Output contract
 
-The shepherd's final message includes a fenced JSON block the orchestrator parses:
+Final message includes a fenced JSON block the orchestrator parses (full schema in the agent file §Output contract). Key shape:
 
 ```json
 {
-  "verdict": "ready-to-merge | needs-human | conflict",
-  "pr": 612,
-  "issue": 611,
-  "head_sha": "abc1234...",
-  "iterations": 2,
-  "escalation_reason": "max_iterations | human_review | same_issue_class | worker_no_progress | merge_conflict | closed_without_merge | null",
-  "summary": "1-2 sentences for the orchestrator log"
+  "verdict": "merged" | "needs-human" | "conflict" | "nothing-to-do" | "decomposed",
+  "issue": <int>,
+  "pr": <int> | null,
+  "merged_sha": "<sha>" | null,
+  "iterations": <int>,
+  "escalation_reason": <enum> | null,
+  "follow_ons": [{ "title": "...", "files": "...", "blocks": [<int>...], "body": "..." }],
+  "anomalies": ["<one-line>", ...],
+  "summary": "<1-2 sentences>"
 }
 ```
 
-Plus human-readable prose the agent emits as its return value (which the orchestrator surfaces verbatim in its escalation message when `verdict == needs-human`).
+Plus human-readable prose after the JSON block (which the orchestrator surfaces verbatim when escalating).
 
-**Per-iteration PR comment trail.** Each iteration posts a comment on the PR shaped like:
-
-```
-### Shepherd iteration N — review verdict
-Generic review: [inline or link]
-World-sim specialist (world-sim-reviewer): [inline or link]
-Verdict: dispatching worker | ready-to-merge | needs-human
-
-## Follow-ons (omitted if none — see docs/world-sim-orchestrator.md §Follow-on handling)
-- title: ...
-  files: ...
-  blocks: [...]
-  body: |
-    ...
-```
-
-So a human reading the PR later sees the full review history without needing the orchestrator's logs. The `## Follow-ons` section is parsed by the orchestrator at merge time; each entry becomes its own GitHub issue with the `orchestrator-followup` label. See [`world-sim-orchestrator.md`](world-sim-orchestrator.md) §Follow-on handling for the full schema and orchestrator logic.
+**Per-iteration PR comment trail.** Each iteration posts a comment on the PR with a first-line `<!-- shepherd-verdict: ... -->` marker. The marker is the contract for the orchestrator's cross-tick recovery (step 1). Each comment also includes the verbatim reviewer outputs and a `## Follow-ons` section (for **human visibility** — the orchestrator parses follow-ons from the return JSON, not the PR comment).
 
 ---
 
@@ -136,55 +168,52 @@ The orchestrator dispatches the shepherd via the `Agent` tool with:
 ```
 subagent_type: world-sim-shepherd
 prompt: |
-  Babysit PR #NNN. Issue: #MMM. Phase: 2. Risk: high.
-  Worker dispatch template: <verbatim text orchestrator would pass to a fresh worker>.
-  MAX_ITERATIONS: 3.
+  issue: <issue#>
+  phase: <phase from orchestration plan>
+  max_iterations: 3
 ```
 
-The shepherd reads the issue body itself — the orchestration plan's `spawned_session_handoff_self_contained` convention means issue bodies are already fully self-contained for cold sessions, so no spec pre-digestion is needed. The orchestrator hands the shepherd just the PR + issue numbers + a worker-dispatch template the shepherd can re-use when re-spawning workers.
+Minimal prompt. The shepherd builds its own context pack from the issue body + CLAUDE.md + the orchestration plan slice. The v1 design pre-assembled a `worker_template` for the orchestrator to hand in — v2 drops that, since the shepherd owns the worker lifecycle now.
 
 ---
 
-## Files this design produced
+## Files this design produced (v2)
 
-1. `.claude/agents/world-sim-shepherd.md` — shepherd subagent definition
-2. `.claude/agents/world-sim-reviewer.md` — specialist reviewer subagent
-3. Edits to [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md):
-   - **Dispatch flow.** New step between "worker opens PR" and "orchestrator dispatches next task": orchestrator hands off to the shepherd.
-   - **Verification gates.** Shepherd review is now §Tier 2.5, sitting between Tier 2 (Test) and Tier 3 (System).
-   - **Stop conditions.** Stop Condition #2 references the shepherd's `needs-human` verdict; the generic `code-review` skill reference is gone.
+1. `.claude/agents/world-sim-shepherd.md` — rewritten for v2 (intake, initial impl, SendMessage continuity, agent-merges)
+2. `.claude/agents/world-sim-orchestrator.md` — collapsed from 5 steps to 3 (circuit breaker, cross-tick recovery, dispatch shepherd)
+3. `.claude/agents/world-sim-reviewer.md` — small edit documenting SendMessage continuation behavior
+4. `docs/world-sim-shepherd.md` — this file (v2 rewrite)
+5. `docs/world-sim-orchestrator.md` — v2 status banner + scoped updates
 
-Optional follow-on (separate PR):
-- `tests/Mithril.WorldSim.Shepherd.Tests` — pure-function unit tests over a `ShepherdState` decision function (loop logic extracted into a plain C# library). The Agent/GitHub plumbing isn't unit-testable; the decision logic is.
+Filed via: GitHub issue #646.
 
 ---
 
 ## Open considerations
 
-1. **Generic reviewer wart.** The existing `/code-review` is a slash command, not a `Agent`-callable subagent. The `pr-review-toolkit` plugin provides a `code-reviewer` agent that would be a clean fit but isn't installed in this environment. The shepherd works around this by dispatching `general-purpose` with an inlined code-review prompt template embedded in the shepherd agent file. If `pr-review-toolkit` ever gets installed, switching the dispatch to that subagent (and dropping the inline template) is a one-line change.
-
-2. **Concurrent shepherds on overlapping PRs.** If the orchestrator dispatches two shepherds on PRs that touch the same file, the second worker's commit could clobber the first. The shepherd doesn't detect this proactively; it falls back to the `conflict` verdict if a merge conflict appears. The orchestration plan's Stop Condition #6 (conflicting concurrent work → serialize) covers the policy side.
-
-3. **Replay-determinism inspection scope.** The specialist's principle-12 check (no `_time.GetUtcNow()` in state-decision paths) needs to know which call sites count as "state-decision." The specialist's prompt should include the audit's classification — the [`world-sim-migration-audit.md`](world-sim-migration-audit.md) doc already enumerates the 9 sites. The specialist reads the audit per invocation and uses it as ground truth for which sites are still allowed.
+1. **Concurrent shepherds on overlapping PRs.** If the orchestrator dispatches two shepherds for issues whose implementations touch the same file, the second worker's commit could clobber the first. v2's serialization (one shepherd per orchestrator tick, /loop ticks are serialized) makes this hard to hit in practice, but if /loop ever supports concurrent ticks, the orchestrator needs a mutex (see §Concurrency in the agent file).
+2. **Agent ID format stability.** v2 captures worker/reviewer IDs by regex-matching `agentId:\s*([a-f0-9]+)` against the `Agent` return text. If the harness ever changes that format, the shepherd breaks. Worth a periodic spot-check.
+3. **Worker checkout drift across SendMessage gaps.** The worker may be idle for hours between SendMessages (during reviewer runs). Other actors (humans, other workers in other branches) could mutate the worktree state. The fix-message template tells the worker to `git pull` before editing — but this is a convention, not a guarantee. Workers that ignore the convention can push stale commits.
+4. **SendMessage cost vs Agent cost.** SendMessage continuations re-page-in the subagent's full prior context on each call. The marginal cost is small relative to a fresh Agent call (which would re-read CLAUDE.md + docs), but it isn't zero. Worth measuring over a real session to confirm the v2 economics hold up.
 
 ---
 
 ## What this design does NOT cover
 
-- **Implementation details** for the shepherd's loop or the reviewer's prompt. Those go in the GitHub issue body filed against #601.
+- **Multi-PR shepherding by a single agent instance.** Each shepherd dispatch owns exactly one issue → one PR. Cross-PR coordination is the orchestrator's job.
+- **User-action recording for shepherd replay.** Reviewers' outputs aren't deterministic. Shepherd runs aren't replayable.
 - **PR-level CI integration.** If lightweight CI ever runs on every PR push (separate from release-cut CI), the shepherd's loop will need a CI-wait check. Not designing for it now.
-- **Multi-PR shepherding by a single agent instance.** Each shepherd dispatch owns exactly one PR. Cross-PR coordination is the orchestrator's job.
-- **Auto-merge.** The shepherd signals `ready-to-merge`; the orchestrator (or you) does the actual `gh pr merge`. This matches the orchestration plan's "do NOT auto-merge past stop conditions" guidance.
-- **User-action recording for shepherd replay.** The shepherd's decisions aren't deterministic over PR state (the reviewers' outputs aren't deterministic). Replay of a shepherd run isn't a goal.
+- **Cross-session agent persistence.** Once the shepherd returns, all subagents it spawned die. If a future Claude Code release adds cross-session agent IDs (see the "Agent Teams" docs reference), the orchestrator could in principle keep workers alive across tick boundaries. Not designing for it now.
 
 ---
 
 ## References
 
 - World-sim architecture umbrella: [#601](https://github.com/moumantai-gg/mithril/issues/601)
+- v2 redesign issue: [#646](https://github.com/moumantai-gg/mithril/issues/646)
+- v1 contract-bug fix: PR #645 / commit a830456
 - Foundation umbrella: [#614](https://github.com/moumantai-gg/mithril/issues/614)
 - Orchestration plan: [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md)
-- Design notebook: [`world-simulator.md`](world-simulator.md)
 - Component audit: [`world-sim-migration-audit.md`](world-sim-migration-audit.md)
-- Generic reviewer subagent: `pr-review-toolkit/agents/code-reviewer.md`
+- Subagent lifecycle docs: <https://code.claude.com/docs/en/sub-agents>
 - Mithril Roadmap Project: <https://github.com/orgs/moumantai-gg/projects/1>
