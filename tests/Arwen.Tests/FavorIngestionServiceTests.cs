@@ -4,6 +4,7 @@ using Arwen.Domain;
 using Arwen.Parsing;
 using Arwen.State;
 using FluentAssertions;
+using Mithril.GameState.Gifting;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Logging;
@@ -51,14 +52,20 @@ public sealed class FavorIngestionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task L1_replay_then_live_drain_yields_identical_state_to_all_live()
+    public async Task L1_favor_snapshot_replays_identically_across_run_shapes()
     {
-        // ── Scenario: an in-session gift to Sanja. The log produces three
-        //    events in a fixed order:
-        //      StartInteraction(NPC_Sanja) — sets active NPC + absolute favor
-        //      DeleteItem(7001)            — instanceId resolves to "Moonstone"
-        //      DeltaFavor(NPC_Sanja, +30)  — correlated → calibration observation
-        // We assert the gift lands as a confirmed observation in both runs.
+        // Production-shape regression test for the L1 favor-snapshot side
+        // (archetype-B #550 PR 3) — the calibration sink-layer dedup keeps
+        // observations stable across replays. Two passes feed the same
+        // sequence in different shapes (all-live vs replay-then-live) and
+        // assert identical final state.
+        //
+        // Post-#608: the L1 path no longer drives gift detection (the
+        // IGiftSignalService is the production producer of GiftAccepted).
+        // The fixture's PublishGiftAccepted helper mimics what the signal
+        // service emits when its FSM resolves a gift; the resolved event
+        // routes through CalibrationService.OnGiftAccepted, which calls
+        // RecordObservation directly.
 
         var giftedAt = new DateTimeOffset(2026, 5, 19, 10, 30, 00, TimeSpan.Zero);
 
@@ -69,30 +76,24 @@ public sealed class FavorIngestionServiceTests : IDisposable
             await passLive.StartAsync();
             passLive.Driver.PushLive(MakeLine(
                 $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
-            passLive.Driver.PushLive(MakeLine(
-                $"ProcessDeleteItem(7001)", giftedAt));
-            passLive.Driver.PushLive(MakeLine(
-                $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
-            await passLive.WaitForDrainAsync();
+            await passLive.Driver.DrainLocalPlayerAsync();
+            passLive.PublishGiftAccepted(7001, "Moonstone", "NPC_Sanja", 30.0, giftedAt);
             await passLive.StopAsync();
         }
 
-        // ── Pass 2: split — first two events arrive as replay, last as live.
-        //    This exercises the production FromSessionStart path: the L1
-        //    driver yields backlog with IsReplay=true, then live tail with
-        //    IsReplay=false. The handler must not gate on IsReplay (Arwen
-        //    needs the whole backlog so calibration sees in-session pairs).
+        // ── Pass 2: split — StartInteraction arrives as L1 replay; the
+        //    GiftAccepted arrives on the signal-service channel after
+        //    StartAsync (mirroring the production FromSessionStart drain
+        //    where the signal service's own L1 backlog produces resolved
+        //    events as the gate opens).
         FavorIngestionFixture passSplit;
         using (passSplit = NewFixture("Pass2"))
         {
             passSplit.Driver.PushReplay(MakeLine(
                 $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
-            passSplit.Driver.PushReplay(MakeLine(
-                $"ProcessDeleteItem(7001)", giftedAt));
             await passSplit.StartAsync();
-            passSplit.Driver.PushLive(MakeLine(
-                $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
-            await passSplit.WaitForDrainAsync();
+            await passSplit.Driver.DrainLocalPlayerAsync();
+            passSplit.PublishGiftAccepted(7001, "Moonstone", "NPC_Sanja", 30.0, giftedAt);
             await passSplit.StopAsync();
         }
 
@@ -124,9 +125,9 @@ public sealed class FavorIngestionServiceTests : IDisposable
     {
         // Calibration's _observationKeys HashSet keyed
         // SessionId|InstanceId|NpcKey|Item|Delta|Timestamp:O short-circuits
-        // re-emitted DeleteItem/DeltaFavor pairs across replays. This is the
-        // load-bearing reason archetype-B Arwen doesn't need the L1
-        // SkipProcessedHighWater filter — feeding the same events twice must
+        // re-emitted GiftAccepted events across replays. This is the
+        // load-bearing reason archetype-B Arwen doesn't need a high-water
+        // filter on either subscription — feeding the same event twice must
         // leave state byte-identical.
 
         var giftedAt = new DateTimeOffset(2026, 5, 19, 10, 30, 00, TimeSpan.Zero);
@@ -137,10 +138,8 @@ public sealed class FavorIngestionServiceTests : IDisposable
         // First pass — observation lands.
         fixture.Driver.PushLive(MakeLine(
             $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
-        fixture.Driver.PushLive(MakeLine($"ProcessDeleteItem(7001)", giftedAt));
-        fixture.Driver.PushLive(MakeLine(
-            $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
-        await fixture.WaitForDrainAsync();
+        await fixture.Driver.DrainLocalPlayerAsync();
+        fixture.PublishGiftAccepted(7001, "Moonstone", "NPC_Sanja", 30.0, giftedAt);
 
         fixture.Calibration.Data.Observations.Should().HaveCount(1);
         var afterFirst = fixture.Calibration.Data.Observations[0];
@@ -150,10 +149,8 @@ public sealed class FavorIngestionServiceTests : IDisposable
         // values stay identical.
         fixture.Driver.PushLive(MakeLine(
             $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
-        fixture.Driver.PushLive(MakeLine($"ProcessDeleteItem(7001)", giftedAt));
-        fixture.Driver.PushLive(MakeLine(
-            $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
-        await fixture.WaitForDrainAsync();
+        await fixture.Driver.DrainLocalPlayerAsync();
+        fixture.PublishGiftAccepted(7001, "Moonstone", "NPC_Sanja", 30.0, giftedAt);
 
         fixture.Calibration.Data.Observations.Should().HaveCount(1);
         var afterSecond = fixture.Calibration.Data.Observations[0];
@@ -164,6 +161,64 @@ public sealed class FavorIngestionServiceTests : IDisposable
         afterSecond.Quantity.Should().Be(afterFirst.Quantity);
         afterSecond.InstanceId.Should().Be(afterFirst.InstanceId);
         afterSecond.Timestamp.Should().Be(afterFirst.Timestamp);
+
+        await fixture.StopAsync();
+    }
+
+    [Fact]
+    public async Task Late_subscribe_to_IGiftSignalService_still_observes_replayed_gifts()
+    {
+        // ── The #608 race contract (iteration 2 of the PR).
+        //
+        //    Concrete scenario: a gift's ProcessAddItem + ProcessStartInteraction
+        //    + ProcessDeleteItem + ProcessDeltaFavor all land in the L1
+        //    backlog (replay-from-session-start). The signal service's
+        //    single L1 subscription consumes the backlog as part of its
+        //    HostedService.ExecuteAsync, resolves the gift, and emits
+        //    GiftAccepted on its React channel.
+        //
+        //    If FavorIngestionService.ExecuteAsync hasn't subscribed to
+        //    IGiftSignalService yet (e.g., it's still blocked on
+        //    _gate.WaitAsync), the emitted GiftAccepted is held in the
+        //    signal service's internal event log. When the subscription
+        //    later attaches with the default replay=FromSessionStart, the
+        //    full backlog is atomically replayed to the new handler.
+        //
+        //    This test pre-loads the FakeGiftSignalService with a backlog
+        //    GiftAccepted, then subscribes; the replay path delivers it,
+        //    and CalibrationService.OnGiftAccepted records the observation.
+        //    This is the late-subscribe-safety property that distinguishes
+        //    the Tier-2 signal-service approach from a direct PlayerWorld
+        //    bus subscription (which has no replay).
+
+        var giftedAt = new DateTimeOffset(2026, 5, 19, 10, 30, 00, TimeSpan.Zero);
+
+        using var fixture = NewFixture("LateSubscribe");
+
+        // Pre-load a resolved gift into the signal service's event log
+        // BEFORE the FavorIngestionService subscribes. With no replay
+        // semantics this event would be dropped; with the React-channel
+        // replay-on-subscribe contract, it lands when Arwen subscribes.
+        fixture.GiftSignal.PublishToBacklog(new GiftAccepted(
+            NpcKey: "NPC_Sanja",
+            ItemInstanceId: 7001,
+            ItemInternalName: "Moonstone",
+            DeltaFavor: 30.0,
+            Timestamp: giftedAt,
+            InteractionStartedAt: giftedAt));
+
+        // Now Arwen comes up. The subscription's default replay mode delivers
+        // the backlog before any live events.
+        await fixture.StartAsync();
+        await fixture.GiftSignal.WaitForSubscriptionAsync();
+
+        fixture.Calibration.Data.Observations.Should().HaveCount(1,
+            "late-subscribe to IGiftSignalService replays the resolved gift backlog");
+        var observation = fixture.Calibration.Data.Observations[0];
+        observation.NpcKey.Should().Be("NPC_Sanja");
+        observation.ItemInternalName.Should().Be("Moonstone");
+        observation.FavorDelta.Should().Be(30.0);
+        observation.InstanceId.Should().Be(7001);
 
         await fixture.StopAsync();
     }
@@ -189,6 +244,7 @@ public sealed class FavorIngestionServiceTests : IDisposable
         public ArwenFavorState FavorState { get; }
         public FavorIngestionService Service { get; }
         public ModuleGates Gates { get; }
+        public FakeGiftSignalService GiftSignal { get; }
 
         private readonly PerCharacterView<ArwenFavorState> _view;
         private readonly SettingsAutoSaver<ArwenSettings> _saver;
@@ -200,7 +256,11 @@ public sealed class FavorIngestionServiceTests : IDisposable
             var index = new GiftIndex();
             index.Build(refData.Items, refData.Npcs);
             var inv = new FakeInventory();
-            inv.Add(7001, "Moonstone");
+            // No pre-seed of inv — post-#608 the GiftAccepted event carries
+            // the resolved InternalName directly. The fixture's
+            // PublishGiftAccepted helper mimics what IGiftSignalService emits
+            // when its FSM resolves a gift; production code uses the same
+            // subscription path.
             var dataDir = Path.Combine(arwenDir, passName);
             Directory.CreateDirectory(dataDir);
             Calibration = new CalibrationService(refData, index, inv, dataDir);
@@ -233,6 +293,7 @@ public sealed class FavorIngestionServiceTests : IDisposable
             Gates = new ModuleGates();
 
             Driver = new TestLogStreamDriver();
+            GiftSignal = new FakeGiftSignalService();
             Service = new FavorIngestionService(
                 Driver,
                 new FavorLogParser(),
@@ -241,7 +302,31 @@ public sealed class FavorIngestionServiceTests : IDisposable
                 _view,
                 active,
                 _saver,
-                Gates);
+                Gates,
+                GiftSignal);
+        }
+
+        /// <summary>
+        /// Emit a resolved <see cref="GiftAccepted"/> on the fake signal
+        /// service, mimicking what <c>GiftSignalService</c> publishes when
+        /// its single-pump FSM correlates the verb triple. The handler runs
+        /// synchronously on the caller thread, matching production's
+        /// "fires on the signal service's L1 pump" contract.
+        /// </summary>
+        public void PublishGiftAccepted(
+            long instanceId,
+            string internalName,
+            string npcKey,
+            double delta,
+            DateTimeOffset ts)
+        {
+            GiftSignal.PublishLive(new GiftAccepted(
+                NpcKey: npcKey,
+                ItemInstanceId: instanceId,
+                ItemInternalName: internalName,
+                DeltaFavor: delta,
+                Timestamp: ts,
+                InteractionStartedAt: ts));
         }
 
         public async Task StartAsync()
@@ -289,6 +374,81 @@ public sealed class FavorIngestionServiceTests : IDisposable
                     ["Friends"], []),
             };
             return new FakeRefData(items, npcs);
+        }
+
+        /// <summary>
+        /// Stub <see cref="IGiftSignalService"/> for tests. Implements the
+        /// React-channel atomic-replay-then-live contract that
+        /// <c>GiftSignalService</c> ships with: <see cref="Subscribe"/>
+        /// replays the in-memory event log to the new handler under a lock
+        /// before adding it to the live-handler list, so the late-subscribe
+        /// path is exercised exactly as production code does.
+        ///
+        /// <para><see cref="PublishToBacklog"/> appends to the event log
+        /// without firing live handlers (simulates events that resolved
+        /// before any subscription attached). <see cref="PublishLive"/>
+        /// fires synchronously to all attached handlers AND appends to the
+        /// log so subsequent subscribers see the same event on replay.</para>
+        /// </summary>
+        internal sealed class FakeGiftSignalService : IGiftSignalService
+        {
+            private readonly object _lock = new();
+            private readonly List<GiftAccepted> _eventLog = new();
+            private readonly List<Action<GiftAccepted>> _handlers = new();
+            private TaskCompletionSource _subscribed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            public Task WaitForSubscriptionAsync(TimeSpan? timeout = null) =>
+                _subscribed.Task.WaitAsync(timeout ?? TimeSpan.FromSeconds(5));
+
+            public IDisposable Subscribe(
+                Action<GiftAccepted> handler,
+                ReplayMode replay = ReplayMode.FromSessionStart)
+            {
+                ArgumentNullException.ThrowIfNull(handler);
+                lock (_lock)
+                {
+                    if (replay == ReplayMode.FromSessionStart)
+                    {
+                        foreach (var evt in _eventLog) handler(evt);
+                    }
+                    _handlers.Add(handler);
+                    _subscribed.TrySetResult();
+                    return new Sub(this, handler);
+                }
+            }
+
+            public void PublishToBacklog(GiftAccepted gift)
+            {
+                lock (_lock) { _eventLog.Add(gift); }
+            }
+
+            public void PublishLive(GiftAccepted gift)
+            {
+                List<Action<GiftAccepted>> snap;
+                lock (_lock)
+                {
+                    _eventLog.Add(gift);
+                    snap = _handlers.ToList();
+                }
+                foreach (var h in snap) h(gift);
+            }
+
+            private sealed class Sub : IDisposable
+            {
+                private readonly FakeGiftSignalService _owner;
+                private readonly Action<GiftAccepted> _handler;
+
+                public Sub(FakeGiftSignalService owner, Action<GiftAccepted> handler)
+                {
+                    _owner = owner;
+                    _handler = handler;
+                }
+
+                public void Dispose()
+                {
+                    lock (_owner._lock) { _owner._handlers.Remove(_handler); }
+                }
+            }
         }
 
         private sealed class InMemorySettingsStore : ISettingsStore<ArwenSettings>

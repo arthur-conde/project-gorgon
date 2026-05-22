@@ -236,32 +236,42 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
 - **Pure projector** modulo one fold. Confirmed pure projector, no migration
   needed — mechanical handler move only.
 
-### Arwen (NPC favor) ⚠️ **CROSS-FSM PEEK (CROSS-SOURCE)**
+### Arwen (NPC favor) ✅ **RESOLVED**
 
-`src/Arwen.Module/Domain/CalibrationService.cs:114-265`.
+`src/Arwen.Module/Domain/CalibrationService.cs` + `src/Arwen.Module/State/FavorIngestionService.cs`.
 
-- **Source spanning**: single (LocalPlayer via `FavorIngestionService`) at the
-  log level — but synchronously reads `IInventoryService.TryResolve` at `:186`
-  and `IInventoryService.TryGetStackSize` at `:247`.
-- **Cross-source crossing**: pre-#602 those reads crossed both Player.log AND
-  chat (the chat half back-filled stack sizes). Post-#679 the
-  `IInventoryService` binding resolves to `InventoryView`; `TryResolve` is a
-  passthrough to `IPlayerInventoryState.TryResolve` (Player.log-only ledger),
-  and `TryGetStackSize` reads the view's composed map. The Arwen peek is now
-  sim-coherent under the Player.log sim's dispatch order; the cross-source
-  coupling is encapsulated inside the view layer where the world-sim
-  principles permit it.
-- **Wall-clock**: `_time.GetUtcNow()` at `:167`, `:181`, `:204` — all
-  **test-only fallback overloads** for callers that don't plumb a real timestamp.
-  Production calls go through `OnStartInteraction(npcKey, DateTimeOffset)` etc.
-  Not gating.
-- **Migration**: Arwen does not consume the `Subscribe(Action<InventoryEvent>)`
-  shim — only `TryResolve` / `TryGetStackSize`, neither of which is on the
-  `[Obsolete]` surface — so it has no #659 cleanup obligation. Optional
-  follow-up: rebind DI to `IPlayerInventoryState` for `TryResolve` to declare
-  the same-source coupling explicitly, but not blocking.
-- **Status**: **resolved post-#679** — cross-source crossing now encapsulated
-  inside the view layer.
+- **Source spanning**: single (LocalPlayer) at the log level. The
+  `IInventoryService.TryGetStackSize` read inside `RecordObservation`
+  remains, but as a same-source read against the view's composed map
+  (sim-coherent under the Player.log dispatch order, with the cross-source
+  composition encapsulated inside the view layer per principle 4).
+- **Cross-FSM TryResolve peek**: **eliminated in #608** via the Tier-2
+  `IGiftSignalService` lift (the architectural payoff #594 / #596 created
+  the signal service for). `FavorIngestionService` now subscribes to
+  `IGiftSignalService.Subscribe` for resolved gift events;
+  `GiftSignalService` owns a single L1 subscription with its own
+  `ProcessAddItem`-fed `instanceId → InternalName` map, correlates the
+  full verb triple (`ProcessStartInteraction` / `ProcessDeleteItem` /
+  `ProcessDeltaFavor`) on its own pump, and emits a fully-resolved
+  `GiftAccepted` with the `InternalName` baked in. The React-channel
+  `Subscribe` contract replays the in-session event log atomically to
+  late subscribers (#585 contract), so attach order vs the L1 driver is
+  irrelevant — no cross-pump race on subscribe-late, no `TryResolve`
+  needed. The new `CalibrationService.OnGiftAccepted(GiftAccepted)`
+  entry point goes directly to `RecordObservation`.
+- **Wall-clock**: `_time.GetUtcNow()` at the no-timestamp `OnStartInteraction`
+  / `OnItemDeleted` / `OnDeltaFavor` overloads — all **test-only fallback
+  overloads** for callers that don't plumb a real timestamp. Production
+  calls go through `OnGiftAccepted` (uses the signal service's resolved
+  timestamps) and the timestamp-aware L1 overloads. Not gating.
+- **Migration**: Arwen does not consume the
+  `Subscribe(Action<InventoryEvent>)` shim — it uses `TryGetStackSize`
+  (not on the `[Obsolete]` surface) and the Tier-2
+  `IGiftSignalService.Subscribe` channel, so it has no #659 cleanup
+  obligation.
+- **Status**: **resolved post-#608** — cross-FSM peek replaced by
+  consumption of the Tier-2 signal service that owns the verb-triple
+  correlation on a single L1 pump.
 
 ### Saruman (Words of Power) ⚠️ **CROSS-SOURCE**
 
@@ -448,12 +458,20 @@ character-switch is a UI binding swap not a state mutation. The log-derived
 `HandleJournalLoaded` Abandoned synthesis at `:178-209` is unrelated and
 **stays** (real inference from `ProcessLoadQuests`).
 
-### 7. Arwen's `_inventory.TryResolve` peek — **CONFIRMED**
+### 7. Arwen's `_inventory.TryResolve` peek — **RESOLVED in #608**
 
-`Arwen.Module/Domain/CalibrationService.cs:186` (`TryResolve`) + `:247`
-(`TryGetStackSize`). Both inside `OnItemDeleted` / `RecordObservation`. Becomes
-sim-coherent after Inventory split — reads from the Player.log half within the
-same Player.log sim's dispatch order.
+`TryResolve` no longer called on the gift-detection path.
+`FavorIngestionService` subscribes to `IGiftSignalService.Subscribe` for
+fully-resolved `GiftAccepted` events; the Tier-2 signal service owns a
+single L1 subscription with its own `ProcessAddItem`-fed
+`instanceId → InternalName` map and correlates the verb triple on that
+one pump. The signal service's React-channel `Subscribe` contract
+replays the in-session resolved-gift log atomically to late subscribers
+(#585), so the iteration-1 "bus has no replay" gap is closed as well.
+`TryGetStackSize` (inside `RecordObservation`) remains as a same-source
+read against the view's composed map — sim-coherent under the Player.log
+sim's dispatch order with the cross-source composition encapsulated inside
+the view layer per principle 4.
 
 ### 8. Wall-clock `_time.GetUtcNow()` state-decision uses — **12 instances, classified**
 

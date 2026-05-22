@@ -101,12 +101,24 @@
         { "name": "delta", "group": 2, "type": "double" }
       ]
     },
-    "arwen.FavorLogParser.DeleteItemRx": {
+    "inventory.PlayerInventoryFrameProducer.DeleteItemRx": {
       "pattern": "ProcessDeleteItem\\((\\d+)\\)",
       "source": "player",
-      "module": "arwen",
-      "csharp": { "type": "Arwen.Parsing.FavorLogParser", "method": "DeleteItemRx" },
-      "eventType": "arwen.ItemDeleted",
+      "module": "gamestate",
+      "csharp": { "type": "Mithril.GameState.Inventory.Producers.PlayerInventoryFrameProducer", "method": "DeleteItemRx" },
+      "eventType": "gamestate.PlayerInventoryRemoveFrame",
+      "notes": "Moved from arwen.FavorLogParser to the GameState inventory folder's producer in #608. The same ProcessDeleteItem verb is also parsed by Mithril.GameState.Gifting.GiftSignalService.DeleteItemRx (Tier-2 signal service, single L1 pump) — Arwen consumes gifts via IGiftSignalService.GiftAccepted and no longer parses this verb directly.",
+      "fields": [
+        { "name": "instanceId", "group": 1, "type": "long" }
+      ]
+    },
+    "gifting.GiftSignalService.DeleteItemRx": {
+      "pattern": "ProcessDeleteItem\\((\\d+)\\)",
+      "source": "player",
+      "module": "gamestate",
+      "csharp": { "type": "Mithril.GameState.Gifting.GiftSignalService", "method": "DeleteItemRx" },
+      "eventType": "gamestate.GiftAccepted",
+      "notes": "Tier-2 signal service's own copy of the ProcessDeleteItem regex (#594 / #596). The single L1 pump correlates ProcessStartInteraction / ProcessDeleteItem / ProcessDeltaFavor on its own state machine and emits a resolved GiftAccepted with InternalName baked in (from the service's own ProcessAddItem map). Two services on separate pumps each maintain their own correlation against the same verb — by design.",
       "fields": [
         { "name": "instanceId", "group": 1, "type": "long" }
       ]

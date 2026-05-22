@@ -5,6 +5,7 @@ using System.Text.Json;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
+using Mithril.GameState.Gifting;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Sessions;
 using Mithril.Shared.Reference;
@@ -198,6 +199,40 @@ public sealed class CalibrationService
         }
 
         _pendingDeletedItem = (instanceId, internalName, timestamp);
+    }
+
+    /// <summary>
+    /// Production gift-detection entry point (#608, iteration 2). Consumed by
+    /// <see cref="State.FavorIngestionService"/>'s
+    /// <see cref="IGiftSignalService.Subscribe"/> handler — the Tier-2 signal
+    /// service correlates the <c>ProcessStartInteraction</c> /
+    /// <c>ProcessDeleteItem</c> / <c>ProcessDeltaFavor</c> verb triple on its
+    /// own single L1 subscription (with its own <c>ProcessAddItem</c> map)
+    /// and emits a fully-resolved <see cref="GiftAccepted"/>. By the time
+    /// this method fires, the <c>InternalName</c> is resolved, the NPC key
+    /// is known, and the favor delta is paired — no cross-pump
+    /// <c>TryResolve</c> peek, no FSM ordering dependency on cross-source
+    /// arrival.
+    ///
+    /// <para>Goes directly to <see cref="RecordObservation"/>. The legacy
+    /// <see cref="OnStartInteraction(string)"/> /
+    /// <see cref="OnItemDeleted(long)"/> /
+    /// <see cref="OnDeltaFavor(string, double)"/> FSM overloads remain — they
+    /// were never on the production path; existing unit tests drive them
+    /// directly to exercise the FSM transitions and verify
+    /// <see cref="RecordObservation"/> integration.</para>
+    /// </summary>
+    public void OnGiftAccepted(GiftAccepted gift)
+    {
+        if (string.IsNullOrEmpty(gift.NpcKey)) return;
+        if (string.IsNullOrEmpty(gift.ItemInternalName)) return;
+        if (gift.DeltaFavor <= 0) return;
+        RecordObservation(
+            gift.NpcKey,
+            gift.ItemInstanceId,
+            gift.ItemInternalName,
+            gift.DeltaFavor,
+            gift.Timestamp);
     }
 
     public void OnDeltaFavor(string npcKey, double delta)

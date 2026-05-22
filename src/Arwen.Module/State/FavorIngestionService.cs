@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Arwen.Domain;
 using Arwen.Parsing;
+using Mithril.GameState.Gifting;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
@@ -12,47 +13,73 @@ using Microsoft.Extensions.Hosting;
 namespace Arwen.State;
 
 /// <summary>
-/// Eager Arwen ingestion that maintains the canonical per-character exact-favor
-/// snapshots (<see cref="ArwenFavorState"/>) and feeds <see cref="CalibrationService"/>
-/// from the L1 (#550) driver's LocalPlayer pipe.
+/// Eager Arwen ingestion. Two channels, both archetype-B
+/// <see cref="ReplayMode.FromSessionStart"/>:
+/// <list type="bullet">
+///   <item><b>L1 LocalPlayer pipe</b> — drives the per-character exact-favor
+///   snapshot off <see cref="FavorUpdate"/> (parsed from
+///   <c>ProcessStartInteraction</c>). This is the only L1 signal the
+///   ingestion path consumes; the gift-detection FSM lives in
+///   <see cref="IGiftSignalService"/> (see below).</item>
+///   <item><b><see cref="IGiftSignalService"/></b> — the Tier-2 lift of
+///   Arwen's gift-detection FSM. The signal service owns a single L1
+///   subscription with its own <c>ProcessAddItem</c> map, correlates the
+///   <c>ProcessStartInteraction</c> / <c>ProcessDeleteItem</c> /
+///   <c>ProcessDeltaFavor</c> verb triple inside one pump, and emits a
+///   <see cref="GiftAccepted"/> with the resolved <c>InternalName</c> baked
+///   in. The React-channel <see cref="IGiftSignalService.Subscribe"/>
+///   contract atomically replays the full in-session event log to late
+///   subscribers (#585 contract), so attach order vs the world's frame
+///   producer is irrelevant — Arwen never observes a cross-pump
+///   resolved-name race regardless of when the gate opens.</item>
+/// </list>
+///
+/// <para><b>Why not a direct PlayerWorld bus subscription (#608, iteration
+/// 1).</b> Earlier iterations of #608 had this service subscribe to
+/// <c>IPlayerWorld.Bus.Subscribe&lt;PlayerInventoryRemoved&gt;</c> for the
+/// delete signal. That fixed the original <c>TryResolve</c> race but
+/// introduced two new ones:
+/// <list type="bullet">
+///   <item>The bus has no replay-on-subscribe; subscriptions added after the
+///   world's merger started pumping would silently miss the events.</item>
+///   <item>The L1 favor verbs and the bus delete events flow on different
+///   pumps; the FSM's transient <c>_activeNpcKey</c> state could be primed
+///   AFTER the matching <see cref="PlayerInventoryRemoved"/> already
+///   arrived, dropping the gift even with both subscriptions attached.</item>
+/// </list>
+/// The Tier-2 signal service (which #594 / #596 created precisely for this
+/// migration) sidesteps both: a single L1 subscription owns the FSM, and
+/// the React channel replays the resolved <see cref="GiftAccepted"/>
+/// events for late attachers. Consumers (us) only see fully-resolved gift
+/// events; nothing is missed.</para>
 ///
 /// <para><b>Replay policy.</b> archetype-B
-/// <see cref="ReplayMode.FromSessionStart"/> — rebuilds the exact-favor
-/// snapshots and gift-calibration observations on every cold start by draining
-/// the whole session backlog. Without replay the post-restart
-/// <see cref="ArwenFavorState"/> would be missing every favor change that
-/// happened before Mithril attached, and <see cref="CalibrationService"/>
-/// wouldn't see the in-session <c>DeleteItem</c>/<c>DeltaFavor</c> pair that
-/// derives a gift's per-unit favor rate.</para>
+/// <see cref="ReplayMode.FromSessionStart"/> on both sides. L1 replays
+/// favor verbs on cold start so per-NPC <see cref="ArwenFavorState"/>
+/// rebuilds. <see cref="IGiftSignalService.Subscribe"/>'s default replay
+/// shape atomically replays the resolved gift log to the handler before
+/// going live.</para>
 ///
-/// <para><b>Idempotence policy.</b> <em>None</em> from L1's perspective (no
-/// <see cref="LogSubscriptionOptions.SkipProcessedHighWater"/>). The
-/// <see cref="CalibrationService"/> already owns per-key dedup at the sink
-/// layer via its <c>_observationKeys</c> HashSet keyed
-/// <c>SessionId|InstanceId|NpcKey|Item|Delta|Timestamp:O</c>, and
+/// <para><b>Idempotence policy.</b> <em>None</em> from either source's
+/// perspective. <see cref="CalibrationService"/> owns per-key dedup at the
+/// sink layer via its <c>_observationKeys</c> HashSet keyed
+/// <c>SessionId|InstanceId|NpcKey|Item|Delta|Timestamp:O</c>;
 /// <see cref="ArwenFavorState.SetExactFavor"/> is an idempotent last-write-wins
-/// upsert. An L1 high-water filter here would be redundant <em>and</em>
-/// slightly wrong: a Mithril restart that re-reads the prior session must let
-/// calibration see the in-session <c>DeleteItem</c>/<c>DeltaFavor</c> pair
-/// again so the pending-correlation transient state machine can compute the
-/// gift value; a sequence-based suppression would drop those replays and the
-/// observation wouldn't land. See <see cref="CalibrationService"/> docstring
-/// and #549's Arwen row for the audit.</para>
+/// upsert. A high-water filter on either subscription would be redundant
+/// AND slightly wrong — a Mithril restart that re-reads the prior session
+/// must let calibration see the replayed gift events so the sink dedup can
+/// short-circuit; suppressing them upstream would drop the observations
+/// the dedup is designed to collapse.</para>
 ///
-/// <para><b>Threading.</b> Handler runs on the WPF dispatcher via
-/// <see cref="DeliveryContext.Marshaled"/> — <see cref="ArwenFavorState.Favor"/>
-/// is bound to UI, <c>_favorView.Save()</c> persists via per-character JSON,
-/// and <see cref="FavorStateService.OnFavorUpdated"/> raises
-/// <c>StateChanged</c>/<c>FavorChanged</c> consumed by bound view-models.
-/// The pre-L1 hand-rolled <c>Dispatch()</c> helper (Application.Current
-/// dispatcher peek + CheckAccess + InvokeAsync) is retired (#550 capability E).
-/// In test/headless contexts where <see cref="Application.Current"/> is null
-/// we fall back to <see cref="DeliveryContext.Inline"/>.</para>
-///
-/// <para><b>Containment.</b> The L1 driver wraps each handler invocation in
-/// try/catch + rate-limited Warn under the <c>Arwen.Ingestion</c> diag
-/// category. The pre-L1 per-service <see cref="ThrottledWarn"/> field, ctor
-/// init, and try/catch around the switch are retired (#550 capability C).</para>
+/// <para><b>Threading.</b> The L1 handler runs on the WPF dispatcher via
+/// <see cref="DeliveryContext.Marshaled"/>; in test/headless contexts where
+/// <see cref="Application.Current"/> is null we fall back to
+/// <see cref="DeliveryContext.Inline"/>. The
+/// <see cref="IGiftSignalService"/> handler fires synchronously on the
+/// service's L1 pump; we marshal onto the WPF dispatcher when one exists
+/// so calibration mutations stay on the same thread the L1 favor-snapshot
+/// path uses (and the same thread the calibration FSM was always invoked
+/// on pre-#608).</para>
 /// </summary>
 public sealed class FavorIngestionService : BackgroundService
 {
@@ -62,9 +89,12 @@ public sealed class FavorIngestionService : BackgroundService
     private readonly CalibrationService _calibration;
     private readonly PerCharacterView<ArwenFavorState> _favorView;
     private readonly IActiveCharacterService _activeChar;
+    private readonly IGiftSignalService _giftSignal;
     private readonly IDiagnosticsSink? _diag;
     private readonly ModuleGate _gate;
     private ILogSubscription? _subscription;
+    private IDisposable? _giftSubscription;
+    private Dispatcher? _dispatcher;
 
     public FavorIngestionService(
         ILogStreamDriver driver,
@@ -75,6 +105,7 @@ public sealed class FavorIngestionService : BackgroundService
         IActiveCharacterService activeChar,
         SettingsAutoSaver<ArwenSettings> autoSaver,
         ModuleGates gates,
+        IGiftSignalService giftSignal,
         IDiagnosticsSink? diag = null)
     {
         _driver = driver;
@@ -83,6 +114,7 @@ public sealed class FavorIngestionService : BackgroundService
         _calibration = calibration;
         _favorView = favorView;
         _activeChar = activeChar;
+        _giftSignal = giftSignal;
         _diag = diag;
         _ = autoSaver; // keep alive for PropertyChanged subscription
         _gate = gates.For("arwen");
@@ -92,16 +124,26 @@ public sealed class FavorIngestionService : BackgroundService
     {
         _diag?.Info("Arwen.Ingestion", "Waiting for module gate…");
         await _gate.WaitAsync(stoppingToken).ConfigureAwait(false);
-        _diag?.Info("Arwen.Ingestion", "Gate opened — subscribing to L1 driver (LocalPlayer pipe) for favor events");
+        _diag?.Info("Arwen.Ingestion",
+            "Gate opened — subscribing to L1 LocalPlayer pipe (favor snapshot verbs) and "
+            + "IGiftSignalService (resolved gift events) for calibration");
 
         // Resolve UI dispatcher once. Headless/test contexts (no WPF App
         // running) get Inline delivery — the production path always has a
         // dispatcher because Arwen is Eager and the shell wires App before
         // any module gate opens.
-        var dispatcher = Application.Current?.Dispatcher;
-        var delivery = dispatcher is null
+        _dispatcher = Application.Current?.Dispatcher;
+        var delivery = _dispatcher is null
             ? DeliveryContext.Inline
-            : DeliveryContext.Marshaled(dispatcher);
+            : DeliveryContext.Marshaled(_dispatcher);
+
+        // GiftSignalService.Subscribe replays the full in-session event log
+        // to the new handler atomically under its own lock (#585 contract);
+        // attach order vs the L1 driver is therefore irrelevant. The handler
+        // fires on the signal service's L1 pump thread — we marshal onto
+        // the dispatcher so calibration mutations land on the same thread
+        // the L1 favor-snapshot path uses.
+        _giftSubscription = _giftSignal.Subscribe(OnGiftAccepted);
 
         _subscription = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
@@ -114,29 +156,24 @@ public sealed class FavorIngestionService : BackgroundService
                 // (#513) and stable across Mithril restarts. Plumb it through so
                 // replay produces the same persisted GiftObservation.Timestamp
                 // and CalibrationService's sink-layer dedup short-circuits.
-                switch (evt)
+                if (evt is FavorUpdate update)
                 {
-                    case FavorUpdate update:
-                        _diag?.Trace("Arwen.Parse", $"FavorUpdate npc={update.NpcKey} favor={update.AbsoluteFavor:F1}");
-                        _calibration.OnStartInteraction(update.NpcKey, ts);
-                        var favor = _favorView.Current;
-                        if (favor is not null)
-                        {
-                            favor.SetExactFavor(update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
-                            _favorView.Save();
-                            _state.OnFavorUpdated(update.NpcKey);
-                        }
-                        break;
-
-                    case ItemDeleted deleted:
-                        _calibration.OnItemDeleted(deleted.InstanceId, ts);
-                        break;
-
-                    case FavorDelta delta:
-                        _diag?.Trace("Arwen.Parse", $"FavorDelta npc={delta.NpcKey} delta={delta.Delta:F1}");
-                        _calibration.OnDeltaFavor(delta.NpcKey, delta.Delta, ts);
-                        break;
+                    _diag?.Trace("Arwen.Parse", $"FavorUpdate npc={update.NpcKey} favor={update.AbsoluteFavor:F1}");
+                    var favor = _favorView.Current;
+                    if (favor is not null)
+                    {
+                        favor.SetExactFavor(update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
+                        _favorView.Save();
+                        _state.OnFavorUpdated(update.NpcKey);
+                    }
                 }
+                // FavorDelta and ProcessDeleteItem are intentionally not
+                // consumed here. IGiftSignalService owns the verb-triple
+                // correlation on its own single L1 pump; production gifts
+                // arrive at calibration via OnGiftAccepted on the React
+                // channel. FavorLogParser still emits FavorDelta for its
+                // own unit-test coverage; nothing on the ingestion path
+                // consumes it.
                 return ValueTask.CompletedTask;
             },
             new LogSubscriptionOptions
@@ -156,6 +193,34 @@ public sealed class FavorIngestionService : BackgroundService
         {
             _subscription?.Dispose();
             _subscription = null;
+            _giftSubscription?.Dispose();
+            _giftSubscription = null;
+        }
+    }
+
+    /// <summary>
+    /// <see cref="IGiftSignalService"/> handler — fires whenever the signal
+    /// service has fully resolved a gift (the verb-triple correlation
+    /// produced an item + npc + delta with a known <c>InternalName</c>).
+    /// Marshaled onto the WPF dispatcher when one exists so calibration
+    /// sink mutations stay on the same thread as the L1 favor-snapshot
+    /// path. Headless test contexts run inline.
+    /// </summary>
+    private void OnGiftAccepted(GiftAccepted gift)
+    {
+        void Dispatch() => _calibration.OnGiftAccepted(gift);
+
+        if (_dispatcher is null || _dispatcher.CheckAccess())
+        {
+            Dispatch();
+        }
+        else
+        {
+            // Async marshal — the L1 favor-snapshot handler is also async-marshaled
+            // via the DeliveryContext, so a synchronous Invoke here would risk
+            // ordering pile-ups under bursty replay. Per-source order is
+            // preserved by the dispatcher's FIFO queue.
+            _dispatcher.InvokeAsync(Dispatch);
         }
     }
 
@@ -163,6 +228,8 @@ public sealed class FavorIngestionService : BackgroundService
     {
         _subscription?.Dispose();
         _subscription = null;
+        _giftSubscription?.Dispose();
+        _giftSubscription = null;
         base.Dispose();
     }
 }
