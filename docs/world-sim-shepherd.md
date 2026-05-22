@@ -116,9 +116,16 @@ Plus human-readable prose the agent emits as its return value (which the orchest
 Generic review: [inline or link]
 World-sim specialist (world-sim-reviewer): [inline or link]
 Verdict: dispatching worker | ready-to-merge | needs-human
+
+## Follow-ons (omitted if none — see docs/world-sim-orchestrator.md §Follow-on handling)
+- title: ...
+  files: ...
+  blocks: [...]
+  body: |
+    ...
 ```
 
-So a human reading the PR later sees the full review history without needing the orchestrator's logs.
+So a human reading the PR later sees the full review history without needing the orchestrator's logs. The `## Follow-ons` section is parsed by the orchestrator at merge time; each entry becomes its own GitHub issue with the `orchestrator-followup` label. See [`world-sim-orchestrator.md`](world-sim-orchestrator.md) §Follow-on handling for the full schema and orchestrator logic.
 
 ---
 
