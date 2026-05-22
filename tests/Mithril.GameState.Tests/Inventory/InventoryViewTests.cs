@@ -460,6 +460,60 @@ public sealed class InventoryViewTests
         added[0].Payload.SizeConfirmed.Should().BeFalse("chat slot aged out of the correlation window");
     }
 
+    [Fact]
+    public void Replay_determinism_TTL_eviction_is_independent_of_wall_clock()
+    {
+        // Issue #675 acceptance: the view's correlator TTL must be driven by
+        // event-time (the ViewClock derived from bus frames), not the real
+        // wall clock. Codifies docs/world-simulator.md §Decisions ratified
+        // post-#642 Call 4 — same Player.log + same chat script + different
+        // real attach times must produce identical eviction sequences.
+        //
+        // Run1 emits a paired Add+Chat back-to-back in real time. Run2 emits
+        // the same scripted events at the same event-time stamps but inserts
+        // a 6s wall-clock Thread.Sleep between the Add and the matching
+        // chat — exceeding the 5s correlator TTL in wall-clock terms.
+        // Under the correct ViewClock-driven implementation both runs pair
+        // (event-time delta = 1s < 5s TTL). A regression that read
+        // TimeProvider.System (the pre-#602 service's behaviour) would let
+        // Run2's sleep evict the in-flight Add slot before chat arrived,
+        // diverging the emission trajectories.
+        static List<string> RunOnce(TimeSpan sleepBetweenAddAndChat)
+        {
+            var (view, pw, cw, _) = Build();
+            var captured = new List<string>();
+            view.Bus.Subscribe<InventoryItemAdded>(f => captured.Add(
+                $"Add({f.Payload.InstanceId},{f.Payload.InternalName},sz={f.Payload.StackSize},conf={f.Payload.SizeConfirmed},ts={f.Payload.Timestamp:HH:mm:ss})"));
+            view.Bus.Subscribe<InventoryStackChanged>(f => captured.Add(
+                $"Change({f.Payload.InstanceId},{f.Payload.InternalName},sz={f.Payload.StackSize},conf={f.Payload.SizeConfirmed},ts={f.Payload.Timestamp:HH:mm:ss})"));
+            view.Bus.Subscribe<InventoryItemRemoved>(f => captured.Add(
+                $"Remove({f.Payload.InstanceId},{f.Payload.InternalName},ts={f.Payload.Timestamp:HH:mm:ss})"));
+
+            PlayerAdd(pw, 42, "Moonstone", Ts(1));
+            if (sleepBetweenAddAndChat > TimeSpan.Zero) Thread.Sleep(sleepBetweenAddAndChat);
+            ChatObserved(cw, "Moonstone", 7, Ts(2));            // pairs with the Ts(1) Add → StackChanged
+            PlayerStackUpdate(pw, 42, "Moonstone", 15, Ts(3));  // StackChanged on the live entry
+            PlayerAdd(pw, 44, "RingOfPower", Ts(4));            // non-stackable → confirmed at Add
+            PlayerRemove(pw, 42, "Moonstone", Ts(5));
+
+            return captured;
+        }
+
+        var run1 = RunOnce(sleepBetweenAddAndChat: TimeSpan.Zero);
+        var run2 = RunOnce(sleepBetweenAddAndChat: TimeSpan.FromSeconds(6));
+
+        run2.Should().Equal(run1,
+            "ViewClock-driven TTL must be deterministic regardless of real attach time " +
+            "— docs/world-simulator.md §Decisions ratified post-#642 Call 4 (issue #675)");
+
+        // Sanity-pin against vacuous pass: the script produces five emissions
+        // (Added, StackChanged via chat-pair, StackChanged via stack-update,
+        // Added for the non-stackable, Removed). If a future refactor zeroed
+        // both runs simultaneously they'd still compare equal but the contract
+        // wouldn't be exercised.
+        run1.Should().HaveCount(5);
+    }
+
     // ── Shim translation ────────────────────────────────────────────────
 
     [Fact]
