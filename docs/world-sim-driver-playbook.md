@@ -4,7 +4,9 @@
 
 This is the playbook **you (top-level Claude at depth 0)** follow when `/world-sim-orchestrate-tick` finds work and reads you. You are the driver. You read GitHub state, pick the next ready issue (if any), deliver it from initial implementation through merge, file follow-ons, and call `ScheduleWakeup` for the next tick.
 
-**You are NOT a subagent.** v4 collapsed the driver from a `world-sim-shepherd` subagent (depth 1, no `Agent`) into top-level Claude itself (depth 0, has `Agent`). Design rationale and the empirical depth/Teams probe results live in [`world-sim-shepherd.md`](world-sim-shepherd.md) (the design notebook) and `scratch/desktop-harness-probe.md`. This playbook is operational only.
+**You are NOT a subagent.** v4 collapsed the driver into top-level Claude itself (depth 0, where `Agent` works). Earlier versions wrapped this work in a subagent at depth 1 where `Agent` doesn't work. Design rationale lives in [`world-sim-shepherd.md`](world-sim-shepherd.md) (the design notebook, kept under the historical filename) and `scratch/desktop-harness-probe.md`. This playbook is operational only.
+
+**You communicate with worker/reviewer teammates as "team-lead".** That is your name in the team scope, regardless of what the team itself is called. When you instruct a teammate to send you a message, the recipient is always `team-lead` — never "shepherd", "world-sim-shepherd", "driver", or any other label. Teammates that send to the wrong recipient name silent-succeed into a dead-letter and the driver never sees their message.
 
 **Environment**: Desktop is the primary target (Teams + SendMessage provide live continuity). CLI degrades to cold-spawn per iteration — see §Inline degraded mode.
 
@@ -176,7 +178,7 @@ state = {
   issue: <state.issue from mode dispatch, OR picked in §Pick>,
   phase: <state.phase from mode dispatch, OR looked-up in §Pick>,
   max_iterations: inputs.max_iterations OR 3,
-  team_name: "shepherd-issue-<issue#>",
+  team_name: "driver-issue-<issue#>",
   team_created: false,
   workers_spawned: [],
   reviewers_spawned: [],
@@ -330,6 +332,14 @@ loop:
   specialist_verdict = first regex match against review_results.specialist.text:
                       `<!--\s*world-sim-review-verdict:\s*(clean|findings)\s*-->`
 
+  # parse_follow_ons extracts the "## Follow-ons" YAML-block-scalar section
+  # from EACH reviewer's SendMessage body (both generic and specialist) and
+  # returns a flat list of {title, files, blocks, body} entries. Section
+  # delimited by `## Follow-ons` heading; entries delimited by lines starting
+  # with `- title:`; `body:` uses `|` block scalar (preserve newlines).
+  # Missing section means zero entries — don't error. See §Follow-on filing
+  # for the file-out shape; see the reviewer agent file and §Generic code
+  # review prompt for the section's authored shape.
   state.accumulated_follow_ons.extend(parse_follow_ons(review_results))
 
   if generic_verdict is null or specialist_verdict is null:
@@ -527,6 +537,8 @@ Shape:
 
 When you reach a terminal outcome (you've finished — either you opened a PR, concluded nothing-to-do, decomposed into sub-issues, hit a wall, or failed), you MUST report the outcome to the team-lead via `SendMessage`. Putting `outcome:` in your plain text output is NOT enough — your text output ends a turn and you go idle, but the team-lead does not see your turn output unless you explicitly send a message.
 
+**The recipient name is literally `"team-lead"`.** Not `"shepherd"`, not `"world-sim-shepherd"`, not `"driver"`, not `"orchestrator"`, not the team name. Just the four-character string `team-lead`. The harness's `SendMessage` returns `success: true` silent-success for any nonexistent recipient name (no error, no warning), so a typo means your message goes to a dead-letter inbox and the team-lead never sees it. You can verify the lead's name by reading `~/.claude/teams/<team_name>/config.json` — the lead's `name` field is `team-lead`.
+
 **Required final action:**
 
 ```
@@ -698,7 +710,7 @@ Use `gh pr comment <pr> -R moumantai-gg/mithril --body-file <path>`. The body sh
 - title: ...
   ...
 
-— posted by world-sim-shepherd
+— posted by world-sim driver
 ```
 
 In degraded mode, append the disclosure note (see §Inline degraded mode) inside the iteration comment so readers know which mode produced the findings.
@@ -743,11 +755,30 @@ Output format (FIRST line MUST be the machine-readable marker):
 
 **Summary:** <one or two sentences>
 
+## Follow-ons (out-of-scope, for future tracking)
+
+Zero or more entries. Use for findings worth a future issue but NOT blocking
+for this PR — adjacent code smells, refactor opportunities, sleeper concerns
+nearby. The driver parses this section at merge time and files each as a
+GitHub issue with `module:world-sim,orchestrator-followup` labels.
+
+Same shape as the specialist reviewer's follow-ons block:
+
+- title: <one-line summary>
+  files: <comma-separated file:line refs>
+  blocks: [<comma-separated issue numbers, or empty>]
+  body: |
+    <multi-line prose body for the issue>
+
+Omit this section entirely if you have no follow-ons. Do NOT pad with
+low-confidence noise — apply the same ≥80 confidence rubric, just
+acknowledge it's out-of-scope for THIS PR.
+
 If you are receiving this prompt via SendMessage (i.e., this is iteration ≥ 2):
 - The above "Read" steps are NOT needed — your prior context already has them.
 - Just `gh pr diff <N>` again to see the updated diff and re-review.
 
-Report your verdict to team-lead via `SendMessage({to: "team-lead", summary: "generic review: <clean|findings>", message: <your full output above including the verdict marker, the verdict line, findings, and summary>})`. Plain text output alone is NOT enough — the lead doesn't see your turn output, only your SendMessages.
+Report your verdict to team-lead via `SendMessage({to: "team-lead", summary: "generic review: <clean|findings>", message: <your full output above including the verdict marker, the verdict line, findings, follow-ons, and summary>})`. The recipient name is literally `"team-lead"` — not `"shepherd"`, `"driver"`, or any other label. Plain text output alone is NOT enough — the lead doesn't see your turn output, only your SendMessages.
 
 Do NOT run `dotnet build` or `dotnet test`. Do NOT post PR comments. Do NOT edit code.
 ```
@@ -787,7 +818,7 @@ To resolve:
 
 References:
 - Umbrella: #601
-- Driver agent: .claude/agents/world-sim-shepherd.md
+- Driver playbook: docs/world-sim-driver-playbook.md
 - Orchestration plan: docs/world-simulator-orchestration-plan.md
 ```
 
