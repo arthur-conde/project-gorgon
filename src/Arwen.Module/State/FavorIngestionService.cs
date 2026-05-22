@@ -167,13 +167,11 @@ public sealed class FavorIngestionService : BackgroundService
                         _state.OnFavorUpdated(update.NpcKey);
                     }
                 }
-                // FavorDelta and ProcessDeleteItem are intentionally not
-                // consumed here. IGiftSignalService owns the verb-triple
+                // ProcessDeltaFavor and ProcessDeleteItem are intentionally
+                // not consumed here. IGiftSignalService owns the verb-triple
                 // correlation on its own single L1 pump; production gifts
                 // arrive at calibration via OnGiftAccepted on the React
-                // channel. FavorLogParser still emits FavorDelta for its
-                // own unit-test coverage; nothing on the ingestion path
-                // consumes it.
+                // channel.
                 return ValueTask.CompletedTask;
             },
             new LogSubscriptionOptions
@@ -182,9 +180,11 @@ public sealed class FavorIngestionService : BackgroundService
                 DeliveryContext = delivery,
                 DiagnosticCategory = "Arwen.Ingestion",
                 // No SkipProcessedHighWater — CalibrationService owns
-                // per-key dedup at the sink layer; an L1 high-water filter
-                // would suppress the in-session DeleteItem/DeltaFavor pair
-                // that calibration must see on replay. See type doc.
+                // per-key dedup at the sink layer; the L1 subscription
+                // consumes only FavorUpdate (ProcessStartInteraction), so
+                // a high-water filter is unnecessary for correctness here.
+                // Gift events arrive separately via IGiftSignalService's
+                // React channel. See type doc.
             });
 
         try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }

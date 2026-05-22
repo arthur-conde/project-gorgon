@@ -90,17 +90,6 @@
         { "name": "npcKey", "group": 3, "type": "string" }
       ]
     },
-    "arwen.FavorLogParser.DeltaFavorRx": {
-      "pattern": "ProcessDeltaFavor\\(\\d+,\\s*\"(NPC_\\w+)\",\\s*([\\d.-]+),\\s*\\w+\\)",
-      "source": "player",
-      "module": "arwen",
-      "csharp": { "type": "Arwen.Parsing.FavorLogParser", "method": "DeltaFavorRx" },
-      "eventType": "arwen.FavorDelta",
-      "fields": [
-        { "name": "npcKey", "group": 1, "type": "string" },
-        { "name": "delta", "group": 2, "type": "double" }
-      ]
-    },
     "inventory.PlayerInventoryFrameProducer.DeleteItemRx": {
       "pattern": "ProcessDeleteItem\\((\\d+)\\)",
       "source": "player",
