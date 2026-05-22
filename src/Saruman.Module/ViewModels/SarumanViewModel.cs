@@ -5,18 +5,32 @@ using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Saruman.Domain;
+using Mithril.GameState.WordsOfPower;
 using Saruman.Services;
 
 namespace Saruman.ViewModels;
 
+/// <summary>
+/// Saruman's words-of-power view-model (#603 — post-codebook-split). Composes
+/// <see cref="IWordOfPowerView"/> (cross-source view) with
+/// <see cref="SarumanOverrideService"/> (module-internal user override). The
+/// VM never mutates discovery state — that is canonically owned by the view —
+/// and never clears the view's monotonic Spent flag.
+///
+/// <para>Refresh policy: subscribes to both the view's <c>CodebookChanged</c>
+/// event and the override service's <c>OverridesChanged</c> event;
+/// hops onto the UI dispatcher and rebuilds the row collection in-place to
+/// preserve selection / scroll.</para>
+/// </summary>
 public sealed partial class SarumanViewModel : ObservableObject
 {
-    private readonly SarumanCodebookService _codebook;
+    private readonly IWordOfPowerView _view;
+    private readonly SarumanOverrideService _overrides;
 
-    public SarumanViewModel(SarumanCodebookService codebook)
+    public SarumanViewModel(IWordOfPowerView view, SarumanOverrideService overrides)
     {
-        _codebook = codebook;
+        _view = view;
+        _overrides = overrides;
 
         WordsView = CollectionViewSource.GetDefaultView(Words);
         WordsView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(KnownWordRow.EffectName)));
@@ -25,7 +39,8 @@ public sealed partial class SarumanViewModel : ObservableObject
         WordsView.SortDescriptions.Add(new SortDescription(nameof(KnownWordRow.Code), ListSortDirection.Ascending));
         WordsView.Filter = FilterPredicate;
 
-        _codebook.CodebookChanged += (_, _) => Dispatch(Refresh);
+        _view.CodebookChanged += (_, _) => Dispatch(Refresh);
+        _overrides.OverridesChanged += (_, _) => Dispatch(Refresh);
         Refresh();
     }
 
@@ -53,17 +68,17 @@ public sealed partial class SarumanViewModel : ObservableObject
 
     private void Refresh()
     {
-        var incoming = _codebook.Words;
-        var byCode = new Dictionary<string, KnownWord>(incoming.Count, StringComparer.Ordinal);
-        foreach (var w in incoming) byCode[w.Code] = w;
+        var entries = _view.Entries;
+        var byCode = new Dictionary<string, WordOfPowerEntry>(entries.Count, StringComparer.Ordinal);
+        foreach (var e in entries) byCode[e.Code] = e;
 
         // Update existing rows in-place so selection/scroll state isn't disturbed.
         for (var i = Words.Count - 1; i >= 0; i--)
         {
             var row = Words[i];
-            if (byCode.TryGetValue(row.Code, out var w))
+            if (byCode.TryGetValue(row.Code, out var entry))
             {
-                row.UpdateFrom(w);
+                row.UpdateFrom(entry, _overrides.IsSpent(entry.Code));
                 byCode.Remove(row.Code);
             }
             else
@@ -71,8 +86,10 @@ public sealed partial class SarumanViewModel : ObservableObject
                 Words.RemoveAt(i);
             }
         }
-        foreach (var w in byCode.Values)
-            Words.Add(new KnownWordRow(w));
+        foreach (var e in byCode.Values)
+        {
+            Words.Add(new KnownWordRow(e, _overrides.IsSpent(e.Code)));
+        }
 
         var known = 0;
         var spent = 0;
@@ -116,21 +133,14 @@ public sealed partial class SarumanViewModel : ObservableObject
     private void MarkSpent(string? code)
     {
         if (string.IsNullOrEmpty(code)) return;
-        _codebook.MarkSpent(code, DateTime.UtcNow);
+        _overrides.MarkSpent(code);
     }
 
     [RelayCommand]
-    private void MarkKnown(string? code)
+    private void ClearOverride(string? code)
     {
         if (string.IsNullOrEmpty(code)) return;
-        _codebook.MarkKnown(code);
-    }
-
-    [RelayCommand]
-    private void RemoveWord(string? code)
-    {
-        if (string.IsNullOrEmpty(code)) return;
-        _codebook.Remove(code);
+        _overrides.ClearOverride(code);
     }
 
     private static void TrySetClipboard(string text)

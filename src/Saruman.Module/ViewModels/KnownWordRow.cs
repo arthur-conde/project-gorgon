@@ -1,19 +1,25 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using Saruman.Domain;
+using Mithril.GameState.WordsOfPower;
 
 namespace Saruman.ViewModels;
 
+/// <summary>
+/// VM row for a single Word-of-Power code (#603 — post-codebook-split). Wraps
+/// a <see cref="WordOfPowerEntry"/> from the cross-source view and composes
+/// the Saruman module-internal override flag — UI Spent state is
+/// <c>view.IsSpent OR override.IsSpent</c>.
+/// </summary>
 public sealed partial class KnownWordRow : ObservableObject
 {
-    public KnownWordRow(KnownWord w)
+    public KnownWordRow(WordOfPowerEntry e, bool userOverrideSpent)
     {
-        Code = w.Code;
-        FirstDiscoveredAt = w.FirstDiscoveredAt;
-        _effectName = w.EffectName;
-        _description = w.Description;
-        _state = w.State;
-        _spentAt = w.SpentAt;
-        _discoveryCount = w.DiscoveryCount;
+        Code = e.Code;
+        FirstDiscoveredAt = e.DiscoveredAt;
+        _effectName = e.EffectName;
+        _description = e.Description;
+        _viewSpent = e.State == WordOfPowerKnowledge.Spent;
+        _spentAt = e.LastSpentAt;
+        _userOverrideSpent = userOverrideSpent;
     }
 
     public string Code { get; }
@@ -21,28 +27,37 @@ public sealed partial class KnownWordRow : ObservableObject
 
     [ObservableProperty] private string _effectName;
     [ObservableProperty] private string _description;
-    [ObservableProperty] private int _discoveryCount;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSpent))]
     [NotifyPropertyChangedFor(nameof(IsKnown))]
     [NotifyPropertyChangedFor(nameof(StateOrder))]
-    private WordOfPowerState _state;
+    private bool _viewSpent;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSpent))]
+    [NotifyPropertyChangedFor(nameof(IsKnown))]
+    [NotifyPropertyChangedFor(nameof(StateOrder))]
+    private bool _userOverrideSpent;
 
     [ObservableProperty] private DateTime? _spentAt;
 
-    public bool IsSpent => State == WordOfPowerState.Spent;
-    public bool IsKnown => State == WordOfPowerState.Known;
+    /// <summary>
+    /// Composed Spent state: either the view observed a chat burn for this
+    /// code, or the user manually marked it Spent.
+    /// </summary>
+    public bool IsSpent => ViewSpent || UserOverrideSpent;
+    public bool IsKnown => !IsSpent;
 
     /// <summary>Sorts Known above Spent within an effect group.</summary>
     public int StateOrder => IsKnown ? 0 : 1;
 
-    public void UpdateFrom(KnownWord w)
+    public void UpdateFrom(WordOfPowerEntry e, bool userOverrideSpent)
     {
-        EffectName = w.EffectName;
-        Description = w.Description;
-        DiscoveryCount = w.DiscoveryCount;
-        State = w.State;
-        SpentAt = w.SpentAt;
+        EffectName = e.EffectName;
+        Description = e.Description;
+        ViewSpent = e.State == WordOfPowerKnowledge.Spent;
+        SpentAt = e.LastSpentAt;
+        UserOverrideSpent = userOverrideSpent;
     }
 }

@@ -1,49 +1,48 @@
 using System.Text.Json.Serialization;
 using Mithril.Shared.Character;
-using Mithril.Shared.Logging;
-using Saruman.Domain;
 
 namespace Saruman.Settings;
 
+/// <summary>
+/// Per-character Saruman module state (#603 — post-codebook-split). The
+/// codebook itself (discovery records + chat-spent state) has moved to
+/// <see cref="Mithril.GameState.WordsOfPower.IWordOfPowerView"/>; this state
+/// holds only the module-internal user-override ledger.
+///
+/// <para><b>One-way Sticky Spent.</b> The user can manually mark a code Spent
+/// for cases where the burn happened during an offline session (the
+/// observability gap accepted by #603). There is no "clear" / "Known"
+/// override — monotonic Spent makes Known-override mechanically meaningless
+/// (a globally-Spent code can't be un-spent by the user toggling a flag).</para>
+/// </summary>
 public sealed class SarumanState : IVersionedState<SarumanState>
 {
-    public const int Version = 1;
+    public const int Version = 2;
     public static int CurrentVersion => Version;
-    public static SarumanState Migrate(SarumanState loaded) => loaded;
+
+    /// <summary>
+    /// Migrate any pre-#603 saved state into the override-only shape.
+    /// Pre-#603 instances carried <c>Codebook</c> + <c>DiscoveryHighWaterSequence</c>;
+    /// both have moved to <see cref="Mithril.GameState.WordsOfPower"/> and are
+    /// not re-imported here — discovery state rebuilds from log replay; chat
+    /// spent state rebuilds from chat replay on first observation per
+    /// (server, character). The override ledger starts empty.
+    /// </summary>
+    public static SarumanState Migrate(SarumanState loaded)
+    {
+        loaded.SchemaVersion = Version;
+        loaded.SpentOverrides ??= new HashSet<string>(StringComparer.Ordinal);
+        return loaded;
+    }
 
     public int SchemaVersion { get; set; } = Version;
 
-    /// <summary>Known words keyed by uppercase code.</summary>
-    public Dictionary<string, KnownWord> Codebook { get; set; } = new(StringComparer.Ordinal);
-
     /// <summary>
-    /// Highest <c>LocalPlayerLogLine.Sequence</c> already applied to
-    /// <see cref="Codebook"/> via <c>RecordDiscovery</c>. Persisted so that on
-    /// a Mithril restart the L1 driver can replay the LocalPlayer pipe with
-    /// <c>SkipProcessedHighWater = DiscoveryHighWaterSequence</c> and the
-    /// monotonic <see cref="KnownWord.DiscoveryCount"/> bumps don't re-inflate.
-    /// Null until the first discovery has been recorded — the driver treats a
-    /// null/missing high-water as "no filter" (capability F of #550).
-    ///
-    /// <para>This is per-character because <see cref="Codebook"/> is
-    /// per-character (the canonical owner of the active-character split is
-    /// <see cref="PerCharacterView{T}"/>). A character switch swaps both the
-    /// codebook and its high-water atomically; no cross-character leakage.</para>
-    ///
-    /// <para>Defence-in-depth alongside <c>ReplayMode.SinceSubscribe</c>:
-    /// SinceSubscribe drops every replay envelope structurally (and is
-    /// today's primary defense), but persisting the high-water keeps the
-    /// filter useful if SinceSubscribe's behaviour later changes to a
-    /// replay-window variant (see <see cref="ReplayMode.SinceSubscribe"/>
-    /// docs) without a code change here.</para>
-    ///
-    /// <para>Field is added without a SchemaVersion bump because the default
-    /// (<c>null</c>) reads correctly out of legacy <c>SchemaVersion = 1</c>
-    /// files — System.Text.Json source-generated deserialisation leaves
-    /// missing fields at their default value. <see cref="Migrate"/> stays an
-    /// identity passthrough.</para>
+    /// Codes the user has manually marked Spent. Composes with
+    /// <see cref="Mithril.GameState.WordsOfPower.IWordOfPowerView.IsSpent"/>
+    /// at the VM layer: <c>isSpent = view.IsSpent(code) || overrides.Contains(code)</c>.
     /// </summary>
-    public long? DiscoveryHighWaterSequence { get; set; }
+    public HashSet<string> SpentOverrides { get; set; } = new(StringComparer.Ordinal);
 }
 
 [JsonSourceGenerationOptions(

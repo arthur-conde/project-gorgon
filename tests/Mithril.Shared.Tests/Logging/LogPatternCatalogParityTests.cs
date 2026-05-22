@@ -24,10 +24,11 @@ public class LogPatternCatalogParityTests
         TouchAssemblyForType("Arwen.Parsing.FavorLogParser");
         TouchAssemblyForType("Smaug.Parsing.VendorLogParser");
         TouchAssemblyForType("Pippin.Parsing.GourmandLogParser");
-        TouchAssemblyForType("Saruman.Parsing.WordOfPowerChatParser");
-        TouchAssemblyForType("Saruman.Parsing.WordOfPowerDiscoveredParser");
         TouchAssemblyForType("Legolas.Services.ChatLogParser");
         TouchAssemblyForType("Mithril.GameState.Inventory.InventoryStatusChatParser");
+        TouchAssemblyForType("Mithril.GameState.Chat.ChatChannelClassifier");
+        TouchAssemblyForType("Mithril.GameState.WordsOfPower.WordOfPowerView");
+        TouchAssemblyForType("Mithril.GameState.WordsOfPower.Parsing.WordOfPowerDiscoveredParser");
 
         foreach (var (key, entry) in LogPatternCatalog.Current.Regexes)
         {
