@@ -8,10 +8,10 @@ namespace Gandalf.Services;
 
 /// <summary>
 /// <see cref="ITimerSource"/> for repeatable-quest cooldowns. Pure projector
-/// over <see cref="IQuestService"/> + <see cref="DerivedTimerProgressService"/>:
+/// over <see cref="IPlayerQuestJournalService"/> + <see cref="DerivedTimerProgressService"/>:
 /// catalog enumerates <c>ActiveQuests ∪ keys-with-progress</c> joined against
 /// <see cref="IReferenceDataService.QuestsByInternalName"/> for static fields.
-/// Active set comes from <see cref="IQuestService.ActiveQuests"/> (per-character,
+/// Active set comes from <see cref="IPlayerQuestJournalService.ActiveQuests"/> (per-character,
 /// persisted in Mithril.GameState); cooldown progress stays Gandalf-internal
 /// via <see cref="DerivedTimerProgressService"/>.
 ///
@@ -30,7 +30,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
 
     private readonly DerivedTimerProgressService _derived;
     private readonly IReferenceDataService _refData;
-    private readonly IQuestService _questSvc;
+    private readonly IPlayerQuestJournalService _questSvc;
     private readonly TimeProvider _time;
     private readonly object _lock = new();
     private readonly IDisposable _questSubscription;
@@ -41,7 +41,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
     public QuestSource(
         DerivedTimerProgressService derived,
         IReferenceDataService refData,
-        IQuestService questSvc,
+        IPlayerQuestJournalService questSvc,
         TimeProvider? time = null)
     {
         _derived = derived;
@@ -178,7 +178,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
 
     /// <summary>
     /// Project the rendered universe: every quest currently in
-    /// <see cref="IQuestService.ActiveQuests"/> joined with reference data,
+    /// <see cref="IPlayerQuestJournalService.ActiveQuests"/> joined with reference data,
     /// PLUS every key with non-null cooldown progress (so a completed-but-
     /// still-cooling quest stays visible after it leaves the active journal).
     /// Quests with no <c>Reuse*</c> duration are filtered out — nothing to

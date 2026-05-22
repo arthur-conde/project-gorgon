@@ -26,7 +26,7 @@
          for why these aren't broadcast to every test project). -->
     <Compile Include="..\TestSupport\FakeReferenceData.cs"
              Link="TestSupport\FakeReferenceData.cs" />
-    <Compile Include="..\TestSupport\FakeQuestService.cs"
-             Link="TestSupport\FakeQuestService.cs" />
+    <Compile Include="..\TestSupport\FakePlayerQuestJournalService.cs"
+             Link="TestSupport\FakePlayerQuestJournalService.cs" />
   </ItemGroup>
 </Project>

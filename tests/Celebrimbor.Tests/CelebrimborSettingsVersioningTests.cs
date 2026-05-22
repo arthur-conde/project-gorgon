@@ -33,7 +33,7 @@ public class CelebrimborSettingsVersioningTests
         var loaded = JsonSerializer.Deserialize(legacy, Ti)!;
 
         // Per the codebase's IVersionedState pattern (cf. ArwenFavorState /
-        // QuestServiceState), SchemaVersion initialises to CurrentVersion, so an
+        // PlayerQuestJournalState), SchemaVersion initialises to CurrentVersion, so an
         // omitted field loads as v1 — migration *safety* is that Migrate tolerates
         // that (identity) and no legacy data is dropped, NOT a 0 sentinel.
         loaded.SchemaVersion.Should().Be(CelebrimborSettings.CurrentVersion);

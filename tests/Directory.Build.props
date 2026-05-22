@@ -12,7 +12,7 @@
              Link="TestSupport\TestPaths.cs" />
   </ItemGroup>
 
-  <!-- Heavier test helpers (FakeReferenceData, FakeQuestService) opt in
+  <!-- Heavier test helpers (FakeReferenceData, FakePlayerQuestJournalService) opt in
        per-project via <Compile Include /> in the test csproj. They depend on
        Mithril.Shared / Mithril.GameState, which not every test project
        references — broadcasting them via Directory.Build.props would break

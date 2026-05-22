@@ -17,13 +17,13 @@ namespace Mithril.GameState.Quests;
 ///   today's session log won't carry that <c>ProcessCompleteQuest</c> line).</item>
 /// </list>
 /// </summary>
-public sealed class QuestServiceState : IVersionedState<QuestServiceState>
+public sealed class PlayerQuestJournalState : IVersionedState<PlayerQuestJournalState>
 {
     public const int Version = 1;
 
     public static int CurrentVersion => Version;
 
-    public static QuestServiceState Migrate(QuestServiceState loaded) => loaded;
+    public static PlayerQuestJournalState Migrate(PlayerQuestJournalState loaded) => loaded;
 
     public int SchemaVersion { get; set; } = Version;
 
@@ -35,5 +35,5 @@ public sealed class QuestServiceState : IVersionedState<QuestServiceState>
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
-[JsonSerializable(typeof(QuestServiceState))]
-public partial class QuestServiceStateJsonContext : JsonSerializerContext { }
+[JsonSerializable(typeof(PlayerQuestJournalState))]
+public partial class PlayerQuestJournalStateJsonContext : JsonSerializerContext { }

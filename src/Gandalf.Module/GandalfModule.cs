@@ -7,9 +7,10 @@ using Gandalf.Views;
 using Mithril.GameState.Areas;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
-// Mithril.GameState now owns the quest parsers + IQuestService; Gandalf only
-// consumes IQuestService via QuestSource. The parser singletons + the old
-// QuestIngestionService no longer need to be registered here.
+// Mithril.GameState now owns the quest parsers + IPlayerQuestJournalService;
+// Gandalf only consumes IPlayerQuestJournalService via QuestSource. The
+// parser singletons + the old QuestIngestionService no longer need to be
+// registered here.
 using Mithril.Shared.Modules;
 using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
@@ -118,10 +119,10 @@ public sealed class GandalfModule : IMithrilModule
         services.AddHostedService<GandalfSplitMigration>();
 
         // Quest source — projects Quest POCO ReuseTime_* timers from
-        // IQuestService.ActiveQuests ∪ keys-with-progress. Ingestion and
-        // per-character journal persistence live in Mithril.GameState; this
-        // source is purely a Gandalf-side projector that anchors cooldowns
-        // via DerivedTimerProgressService.
+        // IPlayerQuestJournalService.ActiveQuests ∪ keys-with-progress.
+        // Ingestion and per-character journal persistence live in
+        // Mithril.GameState; this source is purely a Gandalf-side projector
+        // that anchors cooldowns via DerivedTimerProgressService.
         services.AddSingleton<QuestSource>();
         services.AddSingleton<QuestTimersViewModel>();
 

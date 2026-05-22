@@ -14,12 +14,12 @@ namespace Mithril.GameState.Tests.Quests;
 
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]
-public sealed class QuestServiceTests : IDisposable
+public sealed class PlayerQuestJournalServiceTests : IDisposable
 {
     private readonly string _dir;
     private readonly string _charactersDir;
 
-    public QuestServiceTests()
+    public PlayerQuestJournalServiceTests()
     {
         _dir = TestPaths.CreateTempDir("quests_service");
         _charactersDir = Path.Combine(_dir, "characters");
@@ -31,8 +31,8 @@ public sealed class QuestServiceTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch { /* best-effort */ }
     }
 
-    private (QuestService svc, ScriptedStream stream, FakeActiveCharacterService active,
-             FakeReferenceData refData, PerCharacterView<QuestServiceState> view)
+    private (PlayerQuestJournalService svc, ScriptedStream stream, FakeActiveCharacterService active,
+             FakeReferenceData refData, PerCharacterView<PlayerQuestJournalState> view)
         Build(IReadOnlyList<(string Key, Mithril.Reference.Models.Quests.Quest Quest)>? quests = null,
               string character = "Arthur", string server = "Kwatoxi")
     {
@@ -40,12 +40,12 @@ public sealed class QuestServiceTests : IDisposable
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter(character, server);
 
-        var store = new PerCharacterStore<QuestServiceState>(_charactersDir, "quests.json",
-            QuestServiceStateJsonContext.Default.QuestServiceState);
-        var view = new PerCharacterView<QuestServiceState>(active, store);
+        var store = new PerCharacterStore<PlayerQuestJournalState>(_charactersDir, "quests.json",
+            PlayerQuestJournalStateJsonContext.Default.PlayerQuestJournalState);
+        var view = new PerCharacterView<PlayerQuestJournalState>(active, store);
 
         var stream = new ScriptedStream(Array.Empty<string>());
-        var svc = new QuestService(
+        var svc = new PlayerQuestJournalService(
             stream.Driver,
             new QuestJournalLoadParser(),
             new QuestAcceptedParser(refData),
@@ -122,32 +122,51 @@ public sealed class QuestServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task BulkJournalLoad_FiresDiffEventsAgainstPriorActiveSet()
+    public async Task BulkJournalLoad_InfersAbandonedFromDroppedEntries_StampedOnLogTimestamp()
     {
+        // The Abandoned event here is a real inference from a real log event:
+        // ProcessLoadQuests is PG's authoritative snapshot of the journal, so
+        // anything that was active before and is absent from the new snapshot
+        // has been abandoned (or completed off-session, but Abandoned is the
+        // conservative observation given no ProcessCompleteQuest preceded).
+        // Timestamps come from the log line itself — no wall-clock leak. This
+        // is the inference that #607 explicitly preserves while retiring the
+        // character-switch synthesis path.
         var quests = new[]
         {
             QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
             QuestFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(1)),
             QuestFactory.Repeatable("quest_3", "Q3", "Q3", TimeSpan.FromHours(1)),
         };
+        var firstLoadTs = new DateTime(2026, 5, 18, 10, 0, 0, DateTimeKind.Utc);
+        var secondLoadTs = new DateTime(2026, 5, 18, 11, 0, 0, DateTimeKind.Utc);
         var (svc, stream, _, _, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);
         try
         {
             // Pre-seed: Q1 + Q2 are active.
-            stream.Push("[10:00:00] LocalPlayer: ProcessLoadQuests(1, TransitionalQuestState[], [], [1,2,])");
+            stream.Push(new RawLogLine(firstLoadTs,
+                "LocalPlayer: ProcessLoadQuests(1, TransitionalQuestState[], [], [1,2,])"));
             await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
             var live = new List<QuestEvent>();
             using var sub = svc.Subscribe(live.Add);
             live.Clear(); // discard the Subscribe replay so we only see the next bulk diff
 
-            // New bulk load: Q1 stays, Q2 leaves, Q3 arrives → 1 Abandoned + 1 Accepted.
-            stream.Push("[11:00:00] LocalPlayer: ProcessLoadQuests(1, TransitionalQuestState[], [], [1,3,])");
+            // New bulk load: Q1 stays, Q2 leaves, Q3 arrives → 1 Abandoned + 1 Accepted,
+            // both stamped on the log-line timestamp (not wall-clock).
+            stream.Push(new RawLogLine(secondLoadTs,
+                "LocalPlayer: ProcessLoadQuests(1, TransitionalQuestState[], [], [1,3,])"));
             await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
-            live.Should().Contain(e => e.Kind == QuestEventKind.Abandoned && e.InternalName == "Q2");
-            live.Should().Contain(e => e.Kind == QuestEventKind.Accepted && e.InternalName == "Q3");
+            live.Should().Contain(e =>
+                e.Kind == QuestEventKind.Abandoned
+                && e.InternalName == "Q2"
+                && e.Timestamp == secondLoadTs);
+            live.Should().Contain(e =>
+                e.Kind == QuestEventKind.Accepted
+                && e.InternalName == "Q3"
+                && e.Timestamp == secondLoadTs);
             live.Should().NotContain(e => e.Kind == QuestEventKind.Accepted && e.InternalName == "Q1");
             svc.ActiveQuests.Should().ContainKeys("Q1", "Q3").And.NotContainKey("Q2");
         }
@@ -264,8 +283,15 @@ public sealed class QuestServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CharacterSwitch_ReloadsStateAndFiresDiffToLiveSubscribers()
+    public async Task CharacterSwitch_DoesNotSynthesizeEvents()
     {
+        // Pre-#607 this service listened for PerCharacterView.CurrentChanged and
+        // synthesized Abandoned/Accepted/Completed events stamped with
+        // _time.GetUtcNow() so live subscribers could mirror the swap without
+        // re-subscribing. Under the world-sim's per-character scope the path
+        // collapses: character B's ledger was always character B's; binding
+        // the UI to it fires no events on character A's service instance.
+        // This regression guards the absence of that synthesis.
         var quests = new[]
         {
             QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
@@ -277,11 +303,11 @@ public sealed class QuestServiceTests : IDisposable
             var refData = new FakeReferenceData(quests);
             var bobActive = new FakeActiveCharacterService();
             bobActive.SetActiveCharacter("Bob", "Kwatoxi");
-            var bobStore = new PerCharacterStore<QuestServiceState>(_charactersDir, "quests.json",
-                QuestServiceStateJsonContext.Default.QuestServiceState);
-            var bobView = new PerCharacterView<QuestServiceState>(bobActive, bobStore);
+            var bobStore = new PerCharacterStore<PlayerQuestJournalState>(_charactersDir, "quests.json",
+                PlayerQuestJournalStateJsonContext.Default.PlayerQuestJournalState);
+            var bobView = new PerCharacterView<PlayerQuestJournalState>(bobActive, bobStore);
             var bobStream = new ScriptedStream(Array.Empty<string>());
-            var bobSvc = new QuestService(bobStream.Driver, new QuestJournalLoadParser(),
+            var bobSvc = new PlayerQuestJournalService(bobStream.Driver, new QuestJournalLoadParser(),
                 new QuestAcceptedParser(refData), new QuestCompletedParser(refData), bobView, refData);
             try
             {
@@ -291,8 +317,6 @@ public sealed class QuestServiceTests : IDisposable
             finally { await StopAsync(bobSvc); }
         }
 
-        // Now run as Arthur, accept Q1, then switch to Bob → should see
-        // Abandoned(Q1) + Accepted(Q2) on the live subscriber.
         var (svc, stream, active, _, _) = Build(quests, character: "Arthur");
         try
         {
@@ -303,11 +327,15 @@ public sealed class QuestServiceTests : IDisposable
             using var sub = svc.Subscribe(live.Add);
             live.Clear(); // discard Subscribe replay
 
+            // Flip the active-character service. Pre-#607 this would have
+            // fanned out Abandoned(Q1) + Accepted(Q2) synthesised events;
+            // post-#607 nothing happens — the UI is expected to re-resolve
+            // the per-character service for the new character instead.
             active.SetActiveCharacter("Bob", "Kwatoxi");
 
-            live.Should().Contain(e => e.Kind == QuestEventKind.Abandoned && e.InternalName == "Q1");
-            live.Should().Contain(e => e.Kind == QuestEventKind.Accepted && e.InternalName == "Q2");
-            svc.ActiveQuests.Should().ContainKey("Q2").And.NotContainKey("Q1");
+            live.Should().BeEmpty("character switch must not synthesise events on the existing service");
+            svc.ActiveQuests.Should().ContainKey("Q1").And.NotContainKey("Q2",
+                "the service is bound to Arthur's hydrated state; Bob's ledger is not its concern");
         }
         finally { await StopAsync(svc); }
     }
@@ -340,7 +368,7 @@ public sealed class QuestServiceTests : IDisposable
         finally { await StopAsync(svc); _ = runTask; }
     }
 
-    private static async Task RunUntilDrainedAsync(QuestService svc, ScriptedStream stream)
+    private static async Task RunUntilDrainedAsync(PlayerQuestJournalService svc, ScriptedStream stream)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         var runTask = svc.StartAsync(cts.Token);
@@ -350,7 +378,7 @@ public sealed class QuestServiceTests : IDisposable
         _ = runTask;
     }
 
-    private static async Task StopAsync(QuestService svc)
+    private static async Task StopAsync(PlayerQuestJournalService svc)
     {
         try { await svc.StopAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(2)); }
         catch { /* test cleanup */ }
