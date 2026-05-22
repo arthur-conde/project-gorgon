@@ -97,6 +97,7 @@ Apply the standard false-positive filters:
 Return a structured response. The shepherd parses this — keep it predictable.
 
 ```
+<!-- world-sim-review-verdict: clean | findings -->
 ### World-sim specialist review — PR #N / issue #I (phase P)
 
 **Verdict:** clean | findings
@@ -115,6 +116,8 @@ Return a structured response. The shepherd parses this — keep it predictable.
 
 **Summary:** <one or two sentences>
 ```
+
+The first line MUST be the HTML-comment marker `<!-- world-sim-review-verdict: clean -->` or `<!-- world-sim-review-verdict: findings -->`. The shepherd parses this marker — the prose `**Verdict:**` line is for humans and may shift formatting; the marker is the machine-readable contract.
 
 If you find nothing, emit a clean verdict with one sentence: `No findings against principles, phase preconditions, replay-determinism, or the audit.`
 
