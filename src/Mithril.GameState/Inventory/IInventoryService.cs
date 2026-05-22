@@ -158,6 +158,7 @@ public interface IInventoryService
     /// <see cref="ReplayMode.FromSessionStart"/> replays the full session
     /// event log atomically before going live;
     /// <see cref="ReplayMode.LiveOnly"/> skips the replay.</param>
+    [Obsolete("Subscribe to Frame<InventoryItemAdded> et al. on IInventoryView.Bus. Cleanup tracked in #659.")]
     IDisposable Subscribe(
         Action<InventoryEvent> handler,
         ReplayMode replay = ReplayMode.FromSessionStart);

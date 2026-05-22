@@ -66,6 +66,11 @@
     <ProjectReference Include="..\Mithril.GameReports\Mithril.GameReports.csproj" />
     <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
     <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
+    <!-- World-sim shells: Player (#616) was already referenced; Chat (#617) is
+         the new sibling, referenced explicitly per the "shell must
+         ProjectReference new shared libs" discipline so its DLL lands in
+         the app base dir for the reflection module loader to resolve. -->
+    <ProjectReference Include="..\Mithril.WorldSim.Chat\Mithril.WorldSim.Chat.csproj" />
     <!-- Shared leveling/planning libs. The shell must reference these so their
          DLLs land in the app base dir for the reflection module loader to resolve:
          modules not <ProjectReference>'d here (Celebrimbor) are copied as

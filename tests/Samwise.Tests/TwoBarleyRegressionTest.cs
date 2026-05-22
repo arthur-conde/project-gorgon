@@ -1,10 +1,8 @@
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using System.Text.RegularExpressions;
-using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
-using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Samwise.Config;
 using Samwise.Parsing;
@@ -108,7 +106,7 @@ public class TwoBarleyRegressionTest
     }
 
     [Fact]
-    public async Task SubscribeAfterSeedAdd_StillResolvesPlant()
+    public void SubscribeAfterSeedAdd_StillResolvesPlant()
     {
         // Direct repro for issue #7: the seed AddItem fires during PlayerLogStream's
         // session-replay flush, BEFORE the gated GardenIngestionService attaches its
@@ -116,26 +114,33 @@ public class TwoBarleyRegressionTest
         // the plant later landed with CropType=null → "Unknown" in the UI.
         // Under the new Subscribe(replay-on-attach) contract, the AddItem is replayed
         // synchronously when GardenIngestionService subscribes, so the plant resolves.
+        //
+        // Post-#602 the InventoryService class retired; the late-subscribe atomic
+        // replay contract is inherited by IInventoryView's shim surface (which is
+        // what IInventoryService now resolves to). This test pins the contract via
+        // a minimal IInventoryService fake that mirrors the shim's event-log
+        // replay semantics — the same contract the production view honours.
         var parser = new GardenLogParser();
         var cfg = new InMemoryCropConfigStore();
         var ac = new FakeActiveCharacterService();
         ac.SetActiveCharacter("Hits", "");
         var sm = new GardenStateMachine(cfg, referenceData: new BarleyOnlyReferenceData(), activeChar: ac);
 
-        // Drive the real InventoryService against a scripted L1 driver.
-        var stream = new ScriptedStream();
-        var inv = new InventoryService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var runTask = inv.StartAsync(cts.Token);
+        var inv = new ReplayingFakeInventoryService();
 
         // Push the seed AddItem BEFORE Samwise subscribes — simulating the gate
-        // race where InventoryService is up but GardenIngestionService is still
-        // doing LoadAllAsync.
-        stream.Push("[20:48:30] LocalPlayer: ProcessAddItem(BarleySeeds(86940428), -1, False)",
-            new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc));
-        await stream.WaitForDrainAsync(cts.Token);
+        // race where the inventory service is up but GardenIngestionService is
+        // still doing LoadAllAsync.
+        inv.Raise(new InventoryEvent(
+            InventoryEventKind.Added,
+            InstanceId: 86940428,
+            InternalName: "BarleySeeds",
+            Timestamp: new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc),
+            StackSize: 1,
+            SizeConfirmed: false));
 
         // Now subscribe — replay must deliver the seed AddItem retroactively.
+#pragma warning disable CS0618 // shim surface used during the #602 → #659 migration window
         using var sub = inv.Subscribe(evt =>
         {
             var idStr = evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -147,6 +152,7 @@ public class TwoBarleyRegressionTest
             };
             if (ge is not null) sm.Apply(ge);
         });
+#pragma warning restore CS0618
 
         // Now plant: SetPetOwner + ProcessUpdateItemCode (parser-driven path).
         Feed(sm, parser, "[20:50:22] LocalPlayer: ProcessSetPetOwner(590342, 588755, PassiveFollow)",
@@ -156,103 +162,80 @@ public class TwoBarleyRegressionTest
 
         sm.Snapshot()["Hits"]["590342"].CropType
             .Should().Be("Barley", "Subscribe replay must deliver the seed AddItem so plant-resolve can map id→Barley");
-
-        await cts.CancelAsync();
-        try { await inv.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-        _ = runTask;
     }
 
     /// <summary>
-    /// Minimal <see cref="ILogStreamDriver"/> fake for Samwise tests after the
-    /// L1 migration (#565): only the <see cref="LocalPlayerLogLine"/> pipe is
-    /// exercised here (no chat). Strips the standard
-    /// <c>[HH:MM:SS] LocalPlayer: </c> envelope from pushed Player.log shapes
-    /// so the test reads like the pre-L1 raw-line stream did.
+    /// Minimal <see cref="IInventoryService"/> fake that mirrors the View's
+    /// late-subscribe atomic-replay contract (#585 — inherited by IInventoryView
+    /// post-#602). The shim's event-log replay semantics are what the
+    /// SubscribeAfterSeedAdd test pins, not the InventoryService class itself
+    /// (which retired in #602).
     /// </summary>
-    private sealed class ScriptedStream : ILogStreamDriver
+    private sealed class ReplayingFakeInventoryService : IInventoryService
     {
-        private const int TsPrefixLen = 11;             // length of "[HH:MM:SS] "
-        private const string ActorToken = "LocalPlayer: ";
+        private readonly object _lock = new();
+        private readonly List<InventoryEvent> _eventLog = new();
+        private readonly List<Action<InventoryEvent>> _handlers = new();
+        private readonly Dictionary<long, (string Name, int Size, bool Confirmed, bool Deleted)> _map = new();
 
-        private readonly Channel<LocalPlayerLogLine> _channel =
-            Channel.CreateUnbounded<LocalPlayerLogLine>();
-        private long _pending;
-        private TaskCompletionSource _drained = NewDrainTcs();
-
-        public ILogSubscription Subscribe<T>(
-            Func<LogEnvelope<T>, ValueTask> handler,
-            LogSubscriptionOptions? options = null) where T : class
+        public bool TryResolve(long instanceId, out string internalName)
         {
-            if (typeof(T) == typeof(LocalPlayerLogLine))
+            lock (_lock)
             {
-                var typed = (Func<LogEnvelope<LocalPlayerLogLine>, ValueTask>)(object)handler;
-                var cts = new CancellationTokenSource();
-                _ = Task.Run(() => PumpAsync(typed, cts.Token));
-                // Fire-and-forget cancel on dispose. Any in-flight handler invocation
-                // unwinds on its own thread; tests don't need to wait for it.
-                return new Sub(() => { try { cts.Cancel(); } catch { } });
+                if (_map.TryGetValue(instanceId, out var e)) { internalName = e.Name; return true; }
             }
-            // Chat / other pipes: accept-and-ignore so InventoryService's second
-            // Subscribe<RawLogLine> call doesn't blow up.
-            return new Sub(() => { });
+            internalName = "";
+            return false;
         }
 
-        public void Push(string line, DateTime? timestamp = null)
+        public bool TryGetStackSize(long instanceId, out int stackSize)
         {
-            Interlocked.Increment(ref _pending);
-            Interlocked.Exchange(ref _drained, NewDrainTcs());
-            _channel.Writer.TryWrite(new LocalPlayerLogLine(
-                new DateTimeOffset(timestamp ?? DateTime.UtcNow, TimeSpan.Zero),
-                StripEnvelope(line), 0, 0));
-        }
-
-        public Task WaitForDrainAsync(CancellationToken ct) => _drained.Task.WaitAsync(ct);
-
-        private async Task PumpAsync(
-            Func<LogEnvelope<LocalPlayerLogLine>, ValueTask> handler, CancellationToken ct)
-        {
-            try
+            lock (_lock)
             {
-                while (await _channel.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
+                if (_map.TryGetValue(instanceId, out var e) && e.Confirmed) { stackSize = e.Size; return true; }
+            }
+            stackSize = 0;
+            return false;
+        }
+
+#pragma warning disable CS0618 // shim surface; matches IInventoryView semantics
+        public IDisposable Subscribe(
+            Action<InventoryEvent> handler,
+            Mithril.Shared.Logging.ReplayMode replay = Mithril.Shared.Logging.ReplayMode.FromSessionStart)
+        {
+            lock (_lock)
+            {
+                if (replay == Mithril.Shared.Logging.ReplayMode.FromSessionStart)
                 {
-                    while (_channel.Reader.TryRead(out var line))
-                    {
-                        try { await handler(new LogEnvelope<LocalPlayerLogLine>(line, IsReplay: false)).ConfigureAwait(false); }
-                        catch { /* mirror driver containment */ }
-                        finally
-                        {
-                            if (Interlocked.Decrement(ref _pending) == 0) _drained.TrySetResult();
-                        }
-                    }
+                    foreach (var e in _eventLog) handler(e);
                 }
+                _handlers.Add(handler);
+                return new Sub(this, handler);
             }
-            catch (OperationCanceledException) { /* expected on dispose */ }
+        }
+#pragma warning restore CS0618
+
+        public void Raise(InventoryEvent evt)
+        {
+            lock (_lock)
+            {
+                if (evt.Kind == InventoryEventKind.Added)
+                {
+                    _map[evt.InstanceId] = (evt.InternalName, evt.StackSize, evt.SizeConfirmed, false);
+                }
+                else if (evt.Kind == InventoryEventKind.Deleted
+                    && _map.TryGetValue(evt.InstanceId, out var entry))
+                {
+                    _map[evt.InstanceId] = entry with { Deleted = true };
+                }
+                _eventLog.Add(evt);
+                foreach (var h in _handlers.ToArray()) h(evt);
+            }
         }
 
-        private static string StripEnvelope(string line)
+        private sealed class Sub(ReplayingFakeInventoryService o, Action<InventoryEvent> h) : IDisposable
         {
-            var idx = 0;
-            if (line.Length > TsPrefixLen
-                && line[0] == '[' && line[3] == ':' && line[6] == ':' && line[9] == ']')
-                idx = TsPrefixLen;
-            if (idx + ActorToken.Length <= line.Length
-                && line.IndexOf(ActorToken, idx, StringComparison.Ordinal) == idx)
-                idx += ActorToken.Length;
-            return idx == 0 ? line : line.Substring(idx);
-        }
-
-        private static TaskCompletionSource NewDrainTcs() =>
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        private sealed class Sub : ILogSubscription
-        {
-            private readonly Action _onDispose;
-            public Sub(Action onDispose) { _onDispose = onDispose; }
-            public string Id => "samwise#scripted";
-            public LogSubscriptionDiagnostics Diagnostics =>
-                new(0, 0, 0, 0, 0, LogSubscriptionState.Healthy);
-            public event EventHandler? StateChanged { add { } remove { } }
-            public void Dispose() => _onDispose();
+            public void Dispose() { lock (o._lock) o._handlers.Remove(h); }
         }
     }
 

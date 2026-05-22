@@ -191,7 +191,9 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         // *Deleted* completion signal only — never to create slots from stock.
         _posSub = positionTracker.Subscribe(OnPlayerPosition);
         _pinSub = pinTracker.Subscribe(OnPinChanged);
+#pragma warning disable CS0618 // back-compat shim use during the #602 → #659 migration window
         _invSub = inventory?.Subscribe(OnInventory);
+#pragma warning restore CS0618
     }
 
     // ---- Feeder inputs (tracker thread) ----------------------------------

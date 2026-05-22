@@ -51,7 +51,9 @@ public sealed partial class LiveInventoryViewModel : ObservableObject, IDisposab
         View.Filter = o => o is LiveInventoryRow r && (ShowDeleted || !r.IsDeleted);
         View.SortDescriptions.Add(new SortDescription(nameof(LiveInventoryRow.LastUpdated), ListSortDirection.Descending));
 
+#pragma warning disable CS0618 // back-compat shim use during the #602 → #659 migration window
         _subscription = _inventory.Subscribe(OnEvent);
+#pragma warning restore CS0618
     }
 
     partial void OnShowDeletedChanged(bool value) => _dispatch(() => View.Refresh());
