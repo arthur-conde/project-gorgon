@@ -127,15 +127,11 @@
                                 <MenuItem Header="Copy code"
                                           Command="{Binding PlacementTarget.DataContext.DataContext.CopyCodeCommand, RelativeSource={RelativeSource Self}}"
                                           CommandParameter="{Binding PlacementTarget.DataContext.Code, RelativeSource={RelativeSource Self}}"/>
-                                <MenuItem Header="Mark as spent"
+                                <MenuItem Header="Mark as spent (offline burn)"
                                           Command="{Binding PlacementTarget.DataContext.DataContext.MarkSpentCommand, RelativeSource={RelativeSource Self}}"
                                           CommandParameter="{Binding PlacementTarget.DataContext.Code, RelativeSource={RelativeSource Self}}"/>
-                                <MenuItem Header="Restore as known"
-                                          Command="{Binding PlacementTarget.DataContext.DataContext.MarkKnownCommand, RelativeSource={RelativeSource Self}}"
-                                          CommandParameter="{Binding PlacementTarget.DataContext.Code, RelativeSource={RelativeSource Self}}"/>
-                                <Separator/>
-                                <MenuItem Header="Remove"
-                                          Command="{Binding PlacementTarget.DataContext.DataContext.RemoveWordCommand, RelativeSource={RelativeSource Self}}"
+                                <MenuItem Header="Clear manual override"
+                                          Command="{Binding PlacementTarget.DataContext.DataContext.ClearOverrideCommand, RelativeSource={RelativeSource Self}}"
                                           CommandParameter="{Binding PlacementTarget.DataContext.Code, RelativeSource={RelativeSource Self}}"/>
                             </ContextMenu>
                         </Setter.Value>

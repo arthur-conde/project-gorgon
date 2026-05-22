@@ -186,36 +186,49 @@
         { "name": "count", "group": 3, "type": "int" }
       ]
     },
-    "saruman.WordOfPowerChatParser.ChatLineRx": {
-      "pattern": "^\\d{2}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\s*\\t\\s*\\[[^\\]]+\\]\\s*(?<speaker>[^:]+?)\\s*:\\s*(?<msg>.*)$",
+    "gameState.ChatChannelClassifier.ChatLineRx": {
+      "pattern": "^\\d{2}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\s*\\t\\s*\\[(?<channel>[^\\]]+)\\]\\s*(?<speaker>[^:]+?)\\s*:\\s*(?<text>.*)$",
       "source": "chat",
-      "module": "saruman",
-      "csharp": { "type": "Saruman.Parsing.WordOfPowerChatParser", "method": "ChatLineRx" },
+      "module": "gameState",
+      "csharp": { "type": "Mithril.GameState.Chat.ChatChannelClassifier", "method": "ChatLineRx" },
       "kind": "helper",
-      "notes": "Splits a chat line into speaker + message; codebook-validated upper-token match decides whether to emit.",
+      "notes": "Splits a chat line into (channel, speaker, text). The classifier routes [Status]/[NPC Chatter] to drain and the rest to PlayerChat (#603).",
       "fields": [
+        { "name": "channel", "group": "channel", "type": "string" },
         { "name": "speaker", "group": "speaker", "type": "string" },
-        { "name": "msg", "group": "msg", "type": "string" }
+        { "name": "text", "group": "text", "type": "string" }
       ]
     },
-    "saruman.WordOfPowerChatParser.UpperTokenRx": {
+    "gameState.ChatChannelClassifier.ChatLineNoSpeakerRx": {
+      "pattern": "^\\d{2}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\s*\\t\\s*\\[(?<channel>[^\\]]+)\\]\\s*(?<text>.*)$",
+      "source": "chat",
+      "module": "gameState",
+      "csharp": { "type": "Mithril.GameState.Chat.ChatChannelClassifier", "method": "ChatLineNoSpeakerRx" },
+      "kind": "helper",
+      "notes": "Fallback for chat lines lacking the canonical 'Speaker:' split — bare-header system announcements. Used by the classifier when the speakered shape misses (#603).",
+      "fields": [
+        { "name": "channel", "group": "channel", "type": "string" },
+        { "name": "text", "group": "text", "type": "string" }
+      ]
+    },
+    "gameState.WordOfPowerView.UpperTokenRx": {
       "pattern": "\\b[A-Z]{4,}\\b",
       "source": "chat",
-      "module": "saruman",
-      "csharp": { "type": "Saruman.Parsing.WordOfPowerChatParser", "method": "UpperTokenRx" },
+      "module": "gameState",
+      "csharp": { "type": "Mithril.GameState.WordsOfPower.WordOfPowerView", "method": "UpperTokenRx" },
       "kind": "helper",
-      "notes": "Match-all upper-token scanner; downstream code validates each match against SarumanCodebookService before emitting saruman.WordOfPowerSpoken.",
+      "notes": "Match-all upper-token scanner; the WoP view validates each match against the discovery codebook before flipping state to Spent (#603).",
       "fields": [
         { "name": "token", "group": 0, "type": "string" }
       ]
     },
-    "saruman.WordOfPowerDiscoveredParser.DiscoveryRx": {
+    "gameState.WordOfPowerDiscoveredParser.DiscoveryRx": {
       "pattern": "ProcessBook\\(\"You discovered a word of power!\",\\s*\"You've discovered a word of power: <sel>(?<code>[A-Z]+)</sel>.*?<b><size=125%>Word of Power: (?<effect>[^<]+)</size></b>\\\\n(?<desc>.+?)\\\\n\\\\n<i>",
       "source": "player",
-      "module": "saruman",
-      "csharp": { "type": "Saruman.Parsing.WordOfPowerDiscoveredParser", "method": "DiscoveryRx" },
-      "eventType": "saruman.WordOfPowerDiscovered",
-      "notes": "ProcessBook newlines are encoded as literal \\n (backslash + n), so the pattern carries \\\\n.",
+      "module": "gameState",
+      "csharp": { "type": "Mithril.GameState.WordsOfPower.Parsing.WordOfPowerDiscoveredParser", "method": "DiscoveryRx" },
+      "eventType": "gameState.PlayerWordOfPowerDiscovered",
+      "notes": "ProcessBook newlines are encoded as literal \\n (backslash + n), so the pattern carries \\\\n. Migrated from Saruman to Mithril.GameState per #603.",
       "fields": [
         { "name": "code", "group": "code", "type": "string" },
         { "name": "effect", "group": "effect", "type": "string" },

@@ -2,6 +2,8 @@ using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Celestial;
 using Mithril.GameState.Celestial.Parsing;
+using Mithril.GameState.Chat;
+using Mithril.GameState.Chat.Producers;
 using Mithril.GameState.Effects;
 using Mithril.GameState.Gifting;
 using Mithril.GameState.Inventory;
@@ -19,6 +21,8 @@ using Mithril.GameState.Skills;
 using Mithril.GameState.Skills.Parsing;
 using Mithril.GameState.Skills.Producers;
 using Mithril.GameState.Weather;
+using Mithril.GameState.WordsOfPower;
+using Mithril.GameState.WordsOfPower.Producers;
 using Mithril.Shared.DependencyInjection;
 using Mithril.WorldSim;
 using Mithril.WorldSim.Chat;
@@ -251,6 +255,51 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<IPlayerQuestJournalService>(sp => sp.GetRequiredService<PlayerQuestJournalService>())
             .AddHostedService(sp => sp.GetRequiredService<PlayerQuestJournalService>());
 
+        // World-sim Words-of-Power split (#603 — Phase 2).
+        //
+        //   - PlayerWordOfPowerDiscoveryStateService is an IFolder<WordOfPowerDiscoveryFrame>
+        //     registered with IPlayerWorld; the sibling producer reads the L1
+        //     LocalPlayer pipe and emits discovery frames for ProcessBook lines.
+        //   - PlayerChatLineLogService is an IFolder<PlayerChatLineFrame> registered
+        //     with IChatWorld; the sibling producer re-tails the chat replay
+        //     source, aggregates continuation lines, and emits per-channel
+        //     PlayerChat frames (system buckets like [Status] / [NPC Chatter]
+        //     drain at the producer level).
+        //   - WordOfPowerView is the cross-world composer: subscribes to typed
+        //     change events on both world buses (PlayerWordOfPowerDiscovered +
+        //     ChatPlayerLineObserved), runs uppercase-token regex + codebook
+        //     validation, and emits WordOfPowerKnowledgeChanged on its own bus.
+        //
+        // Saruman migrates to consume the view directly — its module-internal
+        // override ledger composes on top of view.IsSpent(code).
+        services.AddPerCharacterStore<PlayerWordOfPowerDiscoveryStateData>(
+            "wop-discovery.json",
+            PlayerWordOfPowerDiscoveryStateJsonContext.Default.PlayerWordOfPowerDiscoveryStateData);
+        services
+            .AddSingleton<PlayerWordOfPowerDiscoveryStateService>()
+            .AddSingleton<IPlayerWordOfPowerDiscoveryState>(sp =>
+                sp.GetRequiredService<PlayerWordOfPowerDiscoveryStateService>())
+            .AddSingleton<IFolder<WordOfPowerDiscoveryFrame>>(sp =>
+                sp.GetRequiredService<PlayerWordOfPowerDiscoveryStateService>())
+            .AddSingleton<PlayerWordOfPowerDiscoveryFrameProducer>()
+            .AddHostedService<PlayerWordOfPowerDiscoveryWorldRegistration>();
+
+        services
+            .AddSingleton<PlayerChatLineLogService>()
+            .AddSingleton<IPlayerChatLineLog>(sp => sp.GetRequiredService<PlayerChatLineLogService>())
+            .AddSingleton<IFolder<PlayerChatLineFrame>>(sp =>
+                sp.GetRequiredService<PlayerChatLineLogService>())
+            .AddSingleton<PlayerChatLineProducer>()
+            .AddHostedService<PlayerChatLineWorldRegistration>();
+
+        services.AddPerCharacterStore<WordOfPowerViewState>(
+            "wop-spent.json",
+            WordOfPowerViewStateJsonContext.Default.WordOfPowerViewState);
+        services
+            .AddSingleton<WordOfPowerView>()
+            .AddSingleton<IWordOfPowerView>(sp => sp.GetRequiredService<WordOfPowerView>())
+            .AddHostedService<WordOfPowerViewRegistration>();
+
         return services;
     }
 
@@ -368,6 +417,95 @@ public static class GameStateServiceCollectionExtensions
         {
             _world.RegisterProducer(_producer);
             _world.RegisterFolder(_folder);
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Hosted service that wires <see cref="PlayerWordOfPowerDiscoveryStateService"/>
+    /// (folder) + <see cref="PlayerWordOfPowerDiscoveryFrameProducer"/> (producer)
+    /// into the <see cref="IPlayerWorld"/> singleton at host start (#603).
+    /// Same shape as the skill / inventory registrations.
+    /// </summary>
+    private sealed class PlayerWordOfPowerDiscoveryWorldRegistration : IHostedService
+    {
+        private readonly IPlayerWorld _world;
+        private readonly IFolder<WordOfPowerDiscoveryFrame> _folder;
+        private readonly PlayerWordOfPowerDiscoveryFrameProducer _producer;
+
+        public PlayerWordOfPowerDiscoveryWorldRegistration(
+            IPlayerWorld world,
+            IFolder<WordOfPowerDiscoveryFrame> folder,
+            PlayerWordOfPowerDiscoveryFrameProducer producer)
+        {
+            _world = world;
+            _folder = folder;
+            _producer = producer;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _world.RegisterProducer(_producer);
+            _world.RegisterFolder(_folder);
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Hosted service that wires <see cref="PlayerChatLineLogService"/> (folder)
+    /// + <see cref="PlayerChatLineProducer"/> (producer) into the
+    /// <see cref="IChatWorld"/> singleton at host start (#603).
+    /// </summary>
+    private sealed class PlayerChatLineWorldRegistration : IHostedService
+    {
+        private readonly IChatWorld _world;
+        private readonly IFolder<PlayerChatLineFrame> _folder;
+        private readonly PlayerChatLineProducer _producer;
+
+        public PlayerChatLineWorldRegistration(
+            IChatWorld world,
+            IFolder<PlayerChatLineFrame> folder,
+            PlayerChatLineProducer producer)
+        {
+            _world = world;
+            _folder = folder;
+            _producer = producer;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _world.RegisterProducer(_producer);
+            _world.RegisterFolder(_folder);
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Hosted service that calls <see cref="WordOfPowerView.Start"/> at host
+    /// start so the view's PlayerWorld + ChatWorld bus subscriptions are in
+    /// place before either world's <c>StartAsync</c> fires and frames begin
+    /// flowing (#603). Mirrors the analogous wiring for
+    /// <see cref="InventoryView.Start"/> in
+    /// <see cref="PlayerInventoryWorldRegistration"/>.
+    /// </summary>
+    private sealed class WordOfPowerViewRegistration : IHostedService
+    {
+        private readonly WordOfPowerView _view;
+
+        public WordOfPowerViewRegistration(WordOfPowerView view)
+        {
+            _view = view;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _view.Start();
             return Task.CompletedTask;
         }
 

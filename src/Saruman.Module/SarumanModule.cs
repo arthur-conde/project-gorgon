@@ -4,7 +4,6 @@ using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Modules;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
-using Saruman.Parsing;
 using Saruman.Services;
 using Saruman.Settings;
 using Saruman.ViewModels;
@@ -28,22 +27,19 @@ public sealed class SarumanModule : IMithrilModule
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var legacySarumanDir = Path.Combine(localApp, "Mithril", "Saruman");
 
-        // Codebook is per-character — each character discovers words independently.
+        // Per-character module store for the override ledger only — the
+        // codebook itself (discovery + chat-spent state) lives in
+        // Mithril.GameState.WordsOfPower as a folder + view pair (#603).
         services.AddSingleton<ILegacyMigration<SarumanState>>(_ =>
             new SarumanLegacyMigration(legacySarumanDir, SarumanJsonContext.Default.SarumanState));
         services.AddPerCharacterModuleStore<SarumanState>(Id, SarumanJsonContext.Default.SarumanState);
 
-        services.AddSingleton<SarumanCodebookService>();
-        services.AddSingleton<WordOfPowerDiscoveredParser>();
-        services.AddSingleton<WordOfPowerChatParser>();
+        services.AddSingleton<SarumanOverrideService>();
 
         services.AddSingleton<SarumanViewModel>();
         services.AddSingleton<SarumanView>(sp => new SarumanView
         {
             DataContext = sp.GetRequiredService<SarumanViewModel>(),
         });
-
-        services.AddHostedService<SarumanDiscoveryIngestionService>();
-        services.AddHostedService<SarumanChatIngestionService>();
     }
 }
