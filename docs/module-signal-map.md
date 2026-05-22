@@ -327,11 +327,10 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 **Charter:** NPC favor + gift-rate calibration ([`module-charters.md`](module-charters.md)).
 
 **Inputs**
-- Log: `LocalPlayer` pipe via `FavorIngestionService` — three event types parsed by `FavorLogParser`:
-  - `FavorUpdate` — `StartInteraction` marker; sets active NPC
-  - `ItemDeleted` — `instanceId` only; needs Inventory resolve
-  - `FavorDelta` — delta favor for active NPC
-- GameState: `IInventoryService.TryResolve(instanceId)` — **synchronous cross-FSM peek** mid-transition
+- Log: `LocalPlayer` pipe via `FavorIngestionService` — one event type parsed by `FavorLogParser`:
+  - `FavorUpdate` — `ProcessStartInteraction` marker; absolute favor snapshot for the active NPC
+- GameState: `IGiftSignalService` (Tier-2 signal service in `Mithril.GameState.Gifting`) — React-channel `Subscribe` for `GiftAccepted`. The signal service owns a single L1 subscription with its own `ProcessAddItem`-fed `instanceId → InternalName` map, correlates the `ProcessStartInteraction` / `ProcessDeleteItem` / `ProcessDeltaFavor` verb triple on its own pump, and emits a fully-resolved `GiftAccepted` with `InternalName` baked in. The React channel atomically replays the in-session event log to late subscribers (#585 contract).
+- GameState: `IInventoryService.TryGetStackSize` — same-source read against the view's composed map (sim-coherent under Player.log dispatch order, encapsulated inside the view layer per principle 4).
 - GameState: `IGameSessionService` (SessionId for record stamps + dedup key)
 - Reference: `IReferenceDataService` items.json, NPC data, gift preferences
 - Settings: `ArwenSettings`, `CalibrationSettings`
@@ -340,7 +339,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 
 **State machines**
 - `FavorStateService` — per-character NPC favor snapshots; `SetExactFavor` is an absolute (not delta) last-write-wins upsert
-- `CalibrationService` — gift-detection mini-FSM: hand-rolled 2-slot pending correlator (`_pendingDeletedItem` ⊕ `_pendingDelta` paired in either arrival order, cleared by next `StartInteraction`). Tier-1-shaped, **same-source** (all three signals on `LocalPlayer` pipe). Persists observations; derives per-(NPC,item) / per-(NPC,signature) / per-NPC / per-keyword rates.
+- `CalibrationService` — calibration aggregator. Production gift events arrive via `OnGiftAccepted(GiftAccepted)` from the `IGiftSignalService` React channel — already resolved (`InternalName` + `NpcKey` + delta), so this entry point goes straight to `RecordObservation`. Persists observations; derives per-(NPC,item) / per-(NPC,signature) / per-NPC / per-keyword rates. (Legacy hand-rolled 2-slot correlator FSM — `_pendingDeletedItem` ⊕ `_pendingDelta` — remains only to exercise pre-#608 transitions in unit tests; the production path bypasses it.)
 - `PendingGiftObservation` queue — TTL-bounded list of gifts awaiting user confirmation of stack size
 
 **Outputs**
@@ -350,7 +349,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 - Community export: sanitized rate aggregates only (no per-observation timestamps / NPC favor snapshots)
 - UI: favor dashboard, gift scanner, observations editor, calibration tab
 
-⚠️ The `_inventory.TryResolve` peek is the canonical Rule-1 violation discussed in the world-simulator design notes — works in live play (Add lands long before Delete), races on replay-from-session-start where both consumers drain the backlog in parallel.
+**Cross-source posture.** Resolved post-#608 — the historical `IInventoryService.TryResolve` cross-FSM peek (the canonical Rule-1 violation cited in earlier revisions of the world-simulator design notes) was eliminated by lifting the gift-detection FSM into the Tier-2 `IGiftSignalService`. The signal service does all three verbs on a single L1 pump and emits resolved events; Arwen consumes only same-source signals (its own L1 favor pipe + the React channel). No cross-pump race on subscribe-late. See [`world-sim-migration-audit.md`](world-sim-migration-audit.md) §Arwen for the full narrative.
 
 ---
 

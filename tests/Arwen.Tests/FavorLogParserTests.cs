@@ -33,25 +33,25 @@ public sealed class FavorLogParserTests
     }
 
     [Fact]
-    public void ParsesDeltaFavor()
-    {
-        var line = "[18:14:21] LocalPlayer: ProcessDeltaFavor(0, \"NPC_Fainor\", 23, True)";
-        var evt = _parser.TryParse(line, DateTime.UtcNow);
-
-        evt.Should().BeOfType<FavorDelta>();
-        var delta = (FavorDelta)evt!;
-        delta.NpcKey.Should().Be("NPC_Fainor");
-        delta.Delta.Should().Be(23);
-    }
-
-    [Fact]
     public void ReturnsNull_ForDeleteItem_PostMigration()
     {
         // Post-#608 the parser no longer consumes ProcessDeleteItem — the
-        // gift-detection FSM receives Removes via the PlayerWorld bus
-        // (PlayerInventoryRemoved). The parser must skip these lines without
-        // emitting any event.
+        // gift-detection FSM is lifted into
+        // Mithril.GameState.Gifting.IGiftSignalService (Tier-2 signal service),
+        // which owns its own L1 subscription and parses this verb there.
+        // The parser must skip these lines without emitting any event.
         var line = "[18:17:59] LocalPlayer: ProcessDeleteItem(98931165)";
+        _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
+    }
+
+    [Fact]
+    public void ReturnsNull_ForDeltaFavor_PostMigration()
+    {
+        // Post-#691 the parser no longer consumes ProcessDeltaFavor — the
+        // gift-detection FSM owns the verb-triple correlation on its own L1
+        // pump inside IGiftSignalService. The parser must skip these lines
+        // without emitting any event.
+        var line = "[18:14:21] LocalPlayer: ProcessDeltaFavor(0, \"NPC_Fainor\", 23, True)";
         _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
     }
 

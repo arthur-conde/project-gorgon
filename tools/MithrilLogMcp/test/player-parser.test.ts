@@ -46,14 +46,6 @@ describe('PlayerLineParser', () => {
     assert.equal(smaug!.data.npcKey, 'NPC_Marna');
   });
 
-  it('parses arwen.FavorDelta from ProcessDeltaFavor', () => {
-    const events = parse('ProcessDeltaFavor(0, "NPC_Marna", 50.0, True)');
-    const e = events.find((x) => x.type === 'arwen.FavorDelta');
-    assert.ok(e);
-    assert.equal(e!.data.npcKey, 'NPC_Marna');
-    assert.equal(e!.data.delta, 50.0);
-  });
-
   it('parses smaug.VendorItemSold', () => {
     const events = parse('ProcessVendorAddItem(420, RustyDagger(987654), True)');
     const e = events.find((x) => x.type === 'smaug.VendorItemSold');

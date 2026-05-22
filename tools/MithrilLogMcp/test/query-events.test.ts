@@ -22,10 +22,9 @@ function fixturePath(): string {
     '[12:00:01] LocalPlayer: ProcessSetPetOwner(11111, 22222)',
     '[12:00:02] Download appearance loop @Carrot(scale=1.0)',
     '[12:00:03] ProcessStartInteraction(900, 1, 100.5, True, "NPC_Marna")',
-    '[12:00:04] ProcessDeltaFavor(0, "NPC_Marna", 25.0, True)',
-    '[12:00:05] ProcessVendorAddItem(50, RustyDagger(101), True)',
-    '[12:00:06] ProcessVendorAddItem(75, RustyDagger(102), True)',
-    '[12:00:07] ProcessStartInteraction(901, 1, 200.5, True, "NPC_Velkort")',
+    '[12:00:04] ProcessVendorAddItem(50, RustyDagger(101), True)',
+    '[12:00:05] ProcessVendorAddItem(75, RustyDagger(102), True)',
+    '[12:00:06] ProcessStartInteraction(901, 1, 200.5, True, "NPC_Velkort")',
   ];
   fs.writeFileSync(p, lines.join('\n') + '\n');
   // Anchor mtime to yesterday so line `[HH:MM:SS]` stamps land safely before
@@ -47,7 +46,7 @@ describe('runQueryEvents', () => {
         limit: 100,
       });
       const result = await runQueryEvents(args, makeConfig(p), stubCursorStore());
-      assert.ok(result.summary.scannedLines >= 8);
+      assert.ok(result.summary.scannedLines >= 7);
       assert.equal(result.events.length, 2);
       assert.ok(result.events.every((e) => e.type === 'arwen.FavorUpdate'));
     } finally { fs.unlinkSync(p); }
@@ -103,11 +102,11 @@ describe('runAggregate', () => {
       const result = await runAggregate(args, makeConfig(p), stubCursorStore());
       assert.equal(result.buckets.length, 1);
       assert.equal(result.buckets[0]?.key, 'count');
-      // 8 lines, but ProcessStartInteraction matches twice (arwen + smaug).
+      // 7 lines, but ProcessStartInteraction matches twice (arwen + smaug).
       // 1 (SetPetOwner) + 1 (AppearanceLoop) + 2 (interaction A: arwen+smaug) +
-      // 1 (DeltaFavor) + 1 (VendorAddItem) + 1 (VendorAddItem) +
-      // 2 (interaction B: arwen+smaug) + 1 (ProcessAddPlayer) = 10
-      assert.equal(result.buckets[0]?.count, 10);
+      // 1 (VendorAddItem) + 1 (VendorAddItem) +
+      // 2 (interaction B: arwen+smaug) + 1 (ProcessAddPlayer) = 9
+      assert.equal(result.buckets[0]?.count, 9);
     } finally { fs.unlinkSync(p); }
   });
 

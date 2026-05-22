@@ -152,9 +152,12 @@ channel rule, and this strategic principle):
   *Known anti-pattern instances — audit landed as
   [#579](https://github.com/moumantai-gg/mithril/issues/579) on 2026-05-21,
   surfacing four Class A migrations (Gandalf `LootBracketTracker.AddItemRx`,
-  Smaug CivicPride, Samwise GardeningXp, Arwen ItemDeleted) plus one Class C
-  design discussion (Samwise `ProcessUpdateItemCode` needs a new
-  `InventoryEvent.CodeChanged` event kind on `IInventoryService`).
+  Smaug CivicPride, Samwise GardeningXp, Arwen `ItemDeleted` — Arwen
+  resolved via [#608](https://github.com/moumantai-gg/mithril/pull/608) by
+  lifting the gift-detection FSM into the Tier-2 `IGiftSignalService`; see
+  [`world-sim-migration-audit.md`](world-sim-migration-audit.md) §Arwen)
+  plus one Class C design discussion (Samwise `ProcessUpdateItemCode` needs
+  a new `InventoryEvent.CodeChanged` event kind on `IInventoryService`).
   Each filed as its own retiring-PR issue.
 
 - **GameState services translate log events into a developer-facing domain
