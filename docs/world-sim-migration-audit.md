@@ -19,6 +19,12 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 > latest `world-simulator.md`. Read this audit as "what the components
 > looked like when audited"; read `world-simulator.md` for the current
 > architectural target.
+>
+> **Inventory section updated 2026-05-22 post-#679.** The Inventory row, exec
+> summary item #1, Samwise/Arwen/Palantir cross-references to inventory, and
+> spot-check #1 were rewritten after the #602 split shipped in
+> [#679](https://github.com/moumantai-gg/mithril/pull/679). The rest of the
+> doc remains the 2026-05-21 snapshot — read other rows in pre-Phase-2 tense.
 
 ## Executive summary
 
@@ -29,9 +35,13 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
   Silmarillion, Celebrimbor) — confirmed no log subscriptions, no FSM state.
   No migration owed.
 - **Highest-risk migrations, ranked:**
-  1. **`IInventoryService` split** — five different state surfaces feed it
+  1. **`IInventoryService` split** — five different state surfaces fed it
      (Player.log, chat, FileSystemWatcher, reference data, `_seededStackSizes`
-     reconcile). Every other migration sits downstream of this one.
+     reconcile); every other migration sat downstream of it.
+     **Delivered ([#602](https://github.com/moumantai-gg/mithril/issues/602) via
+     [#679](https://github.com/moumantai-gg/mithril/pull/679)).** Remaining work
+     is the per-consumer migration off the `[Obsolete]` shim, tracked in
+     [#659](https://github.com/moumantai-gg/mithril/issues/659).
   2. **`SarumanCodebookService` split + view** — different shape than Inventory
      (no temporal pairing, key-join only) so the view-layer abstraction needs
      to admit two distinct view patterns.
@@ -100,35 +110,71 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 - **Wall-clock**: none observed in state mutation.
 - **Status**: green. Mechanical handler migration.
 
-### `IInventoryService` ⚠️ **CROSS-SOURCE**
+### Inventory (`IPlayerInventoryState` / `IChatInventoryState` / `IInventoryView`) — **SPLIT DELIVERED ([#602](https://github.com/moumantai-gg/mithril/issues/602) via [#679](https://github.com/moumantai-gg/mithril/pull/679))**
 
-`src/Mithril.GameState/Inventory/InventoryService.cs:57-813`.
+Pre-#602: `InventoryService.cs` — a single service spanning Player.log AND chat
+with in-service `PendingCorrelator` + `FileSystemWatcher` reconcile (violating
+world-sim principle 3). Post-#602: two folders + a view, with the legacy
+`IInventoryService` interface retained only as an `[Obsolete]` shim that
+resolves to the view (for the six pre-existing consumers; cleanup tracked in
+[#659](https://github.com/moumantai-gg/mithril/issues/659)).
 
-- **Source spanning**: **YES.** Two parallel L1 subscriptions:
-  - `Subscribe<LocalPlayerLogLine>` at `:250` (Player.log: `ProcessAddItem`,
-    `ProcessDeleteItem`, `ProcessUpdateItemCode`, `ProcessRemoveFromStorageVault`).
-  - `Subscribe<RawLogLine>` at `:261` (chat: `[Status] X xN added`).
-  - Plus `FileSystemWatcher` at `:681-708` for character-export reconcile.
-- **Cross-source correlator**: `PendingCorrelator<string, int> _pendingChat` +
-  `PendingCorrelator<string, long> _pendingAdd` at `:135-136`, both 5s
-  `PendingChatTtl = TimeSpan.FromSeconds(5)` at `:77`.
-- **Wall-clock at `:610, :648`**: `_time.GetUtcNow().UtcDateTime` — both
-  **stamps** for reconcile events (not transition gates). The PendingCorrelator's
-  TTL itself reads via `TimeProvider` injected at `:182-183` — that one IS a
-  transition gate.
-- **Migration**: matches the design notebook's worked example 1 exactly. Split:
-  - **Player.log half** → `IPlayerInventoryService` (instance-id ledger,
-    `_map: Dictionary<long, MapEntry>`, no quantities).
-  - **Chat half** → `IChatInventoryStateMachine` (name-keyed observations).
-  - **View** → `IInventoryView` houses the `PendingCorrelator`, the
-    FileSystemWatcher reconcile, `_seededStackSizes`, and the existing
-    `TryResolve` / `TryGetStackSize` / `Subscribe` API surface.
-  - 5s TTL reads from `IViewClock` instead of `_time`.
-- **Blocker**: `_seededStackSizes` reconcile pass at `:541-671` consumes
-  `IReferenceDataService` + `StorageReport` JSON. It's not chat — it's a third
-  side-input to the view. The view-layer migration owns this.
-- **Status**: **migration owed**. Highest-risk first migration; everything else
-  downstream of it.
+- **Player.log half** → `IPlayerInventoryState`
+  (`src/Mithril.GameState/Inventory/PlayerInventoryStateService.cs`), fed by
+  `Producers/PlayerInventoryFrameProducer.cs`. Instance-id ledger folded from
+  `ProcessAddItem` / `ProcessDeleteItem`; emits `PlayerInventoryAdded` /
+  `PlayerInventoryRemoved` / `PlayerInventoryStackUpdated` on
+  `IPlayerWorld.Bus`. No stack-size column — that lives in the view.
+- **Chat half** → `IChatInventoryState`
+  (`src/Mithril.GameState/Inventory/ChatInventoryStateService.cs`), fed by
+  `Producers/ChatInventoryFrameProducer.cs`. Name-keyed time-series folded
+  from the `[Status] X xN added to inventory.` chat verb; emits
+  `ChatInventoryObserved` on `IChatWorld.Bus`. Recorder, not ledger — chat
+  carries no removal signal.
+- **View** → `IInventoryView` backed by `InventoryView`
+  (`src/Mithril.GameState/Inventory/InventoryView.cs`). Subscribes to the
+  three Player change events on `IPlayerWorld.Bus` and the one Chat change
+  event on `IChatWorld.Bus`; composes via a bidirectional
+  `PendingCorrelator<ScopedKey, …>` (5s `PendingChatTtl`, two halves
+  `_pendingChat` / `_pendingAdd` at `InventoryView.cs:113-114`). The view also
+  emits its own typed change events on its own bus
+  (`InventoryItemAdded` / `InventoryItemRemoved` / `InventoryStackChanged`) —
+  the canonical post-migration consumer surface.
+- **Correlator scope key**: `ScopedKey = (Server, Character, InternalName)`
+  (`InventoryView.cs:157`). The Server + Character pair comes from
+  `IGameSessionService` (Player.log side) and `IChatSessionService` (chat
+  side); chat observations whose session disagrees with the player session
+  drop with a diagnostic — cross-character correlation hazard eliminated
+  (iteration-2 acceptance criterion).
+- **Correlator clock**: `IViewClock` / `ViewClock`
+  (`src/Mithril.GameState/Inventory/IViewClock.cs`) — `Now = max(lastPlayerFrameTs,
+  lastChatFrameTs)` advancing only when the view observes a frame on either
+  bus. Wired as the correlator's `TimeProvider`, so the 5s TTL gate is
+  replay-deterministic: the simulated clock advances by event time, not
+  wall-clock. Resolves design notebook Q5; `Frames = (Player, Chat)` tuple
+  exposes per-side timestamps for tests + diagnostics.
+- **Seed reconcile**: `FileSystemWatcher` retired. The sole seed-refresh
+  signal is `IGameReportsService.StorageReportsChanged` (per
+  [#612](https://github.com/moumantai-gg/mithril/issues/612)); the
+  `_seededStackSizes` map, the non-stackable confirm pass, and the
+  single-instance stackable reconcile pass moved into
+  `InventoryView.LoadExportSeeds` / `OnGameReportsStorageChanged`. Export
+  read goes through `IGameReportsService.GetStorageContents` — `InventoryView`
+  no longer touches the filesystem directly.
+- **Legacy shim**: `IInventoryService.Subscribe(Action<InventoryEvent>)` and
+  the union-shaped `InventoryEvent` type survive only as `[Obsolete]` surfaces
+  on `InventoryView` so the six pre-#602 consumers (Arwen, Samwise, Palantir,
+  Legolas, Saruman, `MotherlodeMeasurementCoordinator`) keep working unchanged.
+  Per-consumer migration to the typed bus is the cleanup obligation tracked
+  in [#659](https://github.com/moumantai-gg/mithril/issues/659); follow-on
+  consumer PRs are filed against that issue as each consumer's
+  `[Obsolete]` warnings get addressed.
+- **Status**: **split delivered**. The keystone Phase 2 work landed in
+  [#679](https://github.com/moumantai-gg/mithril/pull/679). Remaining
+  obligations: (1) the six consumer migrations under
+  [#659](https://github.com/moumantai-gg/mithril/issues/659); (2) eventual
+  deletion of `IInventoryService` / `InventoryEvent` / the `[Obsolete]`
+  annotations once those six consumers are off the shim.
 
 ### `IQuestService` ⚠️ **SYNTHESIS + WALL-CLOCK STAMP**
 
@@ -164,8 +210,12 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 `src/Samwise.Module/Alarms/AlarmService.cs`.
 
 - **Source spanning**: single (LocalPlayer via `GardenIngestionService`) + reads
-  `IInventoryService.Subscribe` for `Added`/`Deleted` reshape. Once Inventory
-  splits, Samwise just consumes `IInventoryView`.
+  the `IInventoryService.Subscribe` `[Obsolete]` shim on `InventoryView` for
+  `Added`/`Deleted` reshape. Post-#679 the underlying surface is split
+  (`IPlayerInventoryState` / `IChatInventoryState` / `IInventoryView`); Samwise
+  still consumes the shim until its per-consumer migration to
+  `IInventoryView.Bus.Subscribe<InventoryItemAdded>(…)` lands. Tracked in
+  [#659](https://github.com/moumantai-gg/mithril/issues/659).
 - **Wall-clock transition gates**:
   - `GardenStateMachine.PruneWithered` at `:541-557`: `_time.GetUtcNow() - p.UpdatedAt > ttl`.
   - `GardenStateMachine.IsLikelyGarbageCollected` at `:596-600`.
@@ -193,17 +243,25 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 - **Source spanning**: single (LocalPlayer via `FavorIngestionService`) at the
   log level — but synchronously reads `IInventoryService.TryResolve` at `:186`
   and `IInventoryService.TryGetStackSize` at `:247`.
-- **Cross-source crossing**: under today's `IInventoryService`, those reads
-  cross both Player.log AND chat (the chat half back-fills stack sizes). After
-  the Inventory split, Arwen reads only `IPlayerInventoryService.TryResolve` —
-  same-sim, declared-dependency-coherent.
+- **Cross-source crossing**: pre-#602 those reads crossed both Player.log AND
+  chat (the chat half back-filled stack sizes). Post-#679 the
+  `IInventoryService` binding resolves to `InventoryView`; `TryResolve` is a
+  passthrough to `IPlayerInventoryState.TryResolve` (Player.log-only ledger),
+  and `TryGetStackSize` reads the view's composed map. The Arwen peek is now
+  sim-coherent under the Player.log sim's dispatch order; the cross-source
+  coupling is encapsulated inside the view layer where the world-sim
+  principles permit it.
 - **Wall-clock**: `_time.GetUtcNow()` at `:167`, `:181`, `:204` — all
   **test-only fallback overloads** for callers that don't plumb a real timestamp.
   Production calls go through `OnStartInteraction(npcKey, DateTimeOffset)` etc.
   Not gating.
-- **Migration**: trivial post-Inventory-split. The peek becomes coherent under
-  the Player.log sim's dispatch order.
-- **Status**: **gated on Inventory split**.
+- **Migration**: Arwen does not consume the `Subscribe(Action<InventoryEvent>)`
+  shim — only `TryResolve` / `TryGetStackSize`, neither of which is on the
+  `[Obsolete]` surface — so it has no #659 cleanup obligation. Optional
+  follow-up: rebind DI to `IPlayerInventoryState` for `TryResolve` to declare
+  the same-source coupling explicitly, but not blocking.
+- **Status**: **resolved post-#679** — cross-source crossing now encapsulated
+  inside the view layer.
 
 ### Saruman (Words of Power) ⚠️ **CROSS-SOURCE**
 
@@ -319,18 +377,29 @@ QuestSource.cs}`.
 ### Palantir (dev/debug shell)
 
 Read-only consumer of `IInventoryService` (`LiveInventoryViewModel.cs:19-42`).
-No FSM, no log subscription. Reactor only. Migrates with Inventory automatically.
+No FSM, no log subscription. Reactor only — subscribes via
+`_inventory.Subscribe(OnEvent)` at `:55`, which post-#679 lands on the
+`[Obsolete]` shim that `InventoryView` implements. Typed-bus migration to
+`view.Bus.Subscribe<InventoryItemAdded>(…)` is one of the six follow-ons
+tracked in [#659](https://github.com/moumantai-gg/mithril/issues/659).
 
 ---
 
 ## Migration-plan spot-checks
 
-### 1. `IInventoryService` split — **CONFIRMED**
+### 1. `IInventoryService` split — **DELIVERED (#602 via [#679](https://github.com/moumantai-gg/mithril/pull/679))**
 
-Cross-source confirmed at `InventoryService.cs:250` (Player.log) + `:261`
-(chat). Five-input service (Player.log, chat, FileSystemWatcher,
-reference data, `_seededStackSizes` reconcile). Split is the highest-risk
-first migration; everything downstream waits on it.
+Pre-#602 the cross-source span was confirmed at `InventoryService.cs:250`
+(Player.log L1) + `:261` (chat L1) — a five-input service (Player.log, chat,
+FileSystemWatcher, reference data, `_seededStackSizes` reconcile). PR #679
+retired the pre-split file entirely and shipped the worked-example-1 shape:
+`IPlayerInventoryState` folder (`PlayerInventoryStateService.cs` + producer),
+`IChatInventoryState` folder (`ChatInventoryStateService.cs` + producer), and
+`IInventoryView` (`InventoryView.cs`) as the cross-source composer. See the
+rewritten Inventory row above for the post-#679 file/line cites. Remaining
+work is the per-consumer migration off the `[Obsolete]`
+`Subscribe(Action<InventoryEvent>)` shim, tracked in
+[#659](https://github.com/moumantai-gg/mithril/issues/659).
 
 ### 2. `SarumanCodebookService` split — **CONFIRMED**
 
