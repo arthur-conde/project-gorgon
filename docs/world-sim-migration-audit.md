@@ -100,35 +100,71 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 - **Wall-clock**: none observed in state mutation.
 - **Status**: green. Mechanical handler migration.
 
-### `IInventoryService` ⚠️ **CROSS-SOURCE**
+### Inventory (`IPlayerInventoryState` / `IChatInventoryState` / `IInventoryView`) — **SPLIT DELIVERED ([#602](https://github.com/moumantai-gg/mithril/issues/602) via [#679](https://github.com/moumantai-gg/mithril/pull/679))**
 
-`src/Mithril.GameState/Inventory/InventoryService.cs:57-813`.
+Pre-#602: `InventoryService.cs` — a single service spanning Player.log AND chat
+with in-service `PendingCorrelator` + `FileSystemWatcher` reconcile (violating
+world-sim principle 3). Post-#602: two folders + a view, with the legacy
+`IInventoryService` interface retained only as an `[Obsolete]` shim that
+resolves to the view (for the six pre-existing consumers; cleanup tracked in
+[#659](https://github.com/moumantai-gg/mithril/issues/659)).
 
-- **Source spanning**: **YES.** Two parallel L1 subscriptions:
-  - `Subscribe<LocalPlayerLogLine>` at `:250` (Player.log: `ProcessAddItem`,
-    `ProcessDeleteItem`, `ProcessUpdateItemCode`, `ProcessRemoveFromStorageVault`).
-  - `Subscribe<RawLogLine>` at `:261` (chat: `[Status] X xN added`).
-  - Plus `FileSystemWatcher` at `:681-708` for character-export reconcile.
-- **Cross-source correlator**: `PendingCorrelator<string, int> _pendingChat` +
-  `PendingCorrelator<string, long> _pendingAdd` at `:135-136`, both 5s
-  `PendingChatTtl = TimeSpan.FromSeconds(5)` at `:77`.
-- **Wall-clock at `:610, :648`**: `_time.GetUtcNow().UtcDateTime` — both
-  **stamps** for reconcile events (not transition gates). The PendingCorrelator's
-  TTL itself reads via `TimeProvider` injected at `:182-183` — that one IS a
-  transition gate.
-- **Migration**: matches the design notebook's worked example 1 exactly. Split:
-  - **Player.log half** → `IPlayerInventoryService` (instance-id ledger,
-    `_map: Dictionary<long, MapEntry>`, no quantities).
-  - **Chat half** → `IChatInventoryStateMachine` (name-keyed observations).
-  - **View** → `IInventoryView` houses the `PendingCorrelator`, the
-    FileSystemWatcher reconcile, `_seededStackSizes`, and the existing
-    `TryResolve` / `TryGetStackSize` / `Subscribe` API surface.
-  - 5s TTL reads from `IViewClock` instead of `_time`.
-- **Blocker**: `_seededStackSizes` reconcile pass at `:541-671` consumes
-  `IReferenceDataService` + `StorageReport` JSON. It's not chat — it's a third
-  side-input to the view. The view-layer migration owns this.
-- **Status**: **migration owed**. Highest-risk first migration; everything else
-  downstream of it.
+- **Player.log half** → `IPlayerInventoryState`
+  (`src/Mithril.GameState/Inventory/PlayerInventoryStateService.cs`), fed by
+  `Producers/PlayerInventoryFrameProducer.cs`. Instance-id ledger folded from
+  `ProcessAddItem` / `ProcessDeleteItem`; emits `PlayerInventoryAdded` /
+  `PlayerInventoryRemoved` / `PlayerInventoryStackUpdated` on
+  `IPlayerWorld.Bus`. No stack-size column — that lives in the view.
+- **Chat half** → `IChatInventoryState`
+  (`src/Mithril.GameState/Inventory/ChatInventoryStateService.cs`), fed by
+  `Producers/ChatInventoryFrameProducer.cs`. Name-keyed time-series folded
+  from the `[Status] X xN added to inventory.` chat verb; emits
+  `ChatInventoryObserved` on `IChatWorld.Bus`. Recorder, not ledger — chat
+  carries no removal signal.
+- **View** → `IInventoryView` backed by `InventoryView`
+  (`src/Mithril.GameState/Inventory/InventoryView.cs`). Subscribes to the
+  three Player change events on `IPlayerWorld.Bus` and the one Chat change
+  event on `IChatWorld.Bus`; composes via a bidirectional
+  `PendingCorrelator<ScopedKey, …>` (5s `PendingChatTtl`, two halves
+  `_pendingChat` / `_pendingAdd` at `InventoryView.cs:113-114`). The view also
+  emits its own typed change events on its own bus
+  (`InventoryItemAdded` / `InventoryItemRemoved` / `InventoryStackChanged`) —
+  the canonical post-migration consumer surface.
+- **Correlator scope key**: `ScopedKey = (Server, Character, InternalName)`
+  (`InventoryView.cs:157`). The Server + Character pair comes from
+  `IGameSessionService` (Player.log side) and `IChatSessionService` (chat
+  side); chat observations whose session disagrees with the player session
+  drop with a diagnostic — cross-character correlation hazard eliminated
+  (iteration-2 acceptance criterion).
+- **Correlator clock**: `IViewClock` / `ViewClock`
+  (`src/Mithril.GameState/Inventory/IViewClock.cs`) — `Now = max(lastPlayerFrameTs,
+  lastChatFrameTs)` advancing only when the view observes a frame on either
+  bus. Wired as the correlator's `TimeProvider`, so the 5s TTL gate is
+  replay-deterministic: the simulated clock advances by event time, not
+  wall-clock. Resolves design notebook Q5; `Frames = (Player, Chat)` tuple
+  exposes per-side timestamps for tests + diagnostics.
+- **Seed reconcile**: `FileSystemWatcher` retired. The sole seed-refresh
+  signal is `IGameReportsService.StorageReportsChanged` (per
+  [#612](https://github.com/moumantai-gg/mithril/issues/612)); the
+  `_seededStackSizes` map, the non-stackable confirm pass, and the
+  single-instance stackable reconcile pass moved into
+  `InventoryView.LoadExportSeeds` / `OnGameReportsStorageChanged`. Export
+  read goes through `IGameReportsService.GetStorageContents` — `InventoryView`
+  no longer touches the filesystem directly.
+- **Legacy shim**: `IInventoryService.Subscribe(Action<InventoryEvent>)` and
+  the union-shaped `InventoryEvent` type survive only as `[Obsolete]` surfaces
+  on `InventoryView` so the six pre-#602 consumers (Arwen, Samwise, Palantir,
+  Legolas, Saruman, `MotherlodeMeasurementCoordinator`) keep working unchanged.
+  Per-consumer migration to the typed bus is the cleanup obligation tracked
+  in [#659](https://github.com/moumantai-gg/mithril/issues/659); follow-on
+  consumer PRs are filed against that issue as each consumer's
+  `[Obsolete]` warnings get addressed.
+- **Status**: **split delivered**. The keystone Phase 2 work landed in
+  [#679](https://github.com/moumantai-gg/mithril/pull/679). Remaining
+  obligations: (1) the six consumer migrations under
+  [#659](https://github.com/moumantai-gg/mithril/issues/659); (2) eventual
+  deletion of `IInventoryService` / `InventoryEvent` / the `[Obsolete]`
+  annotations once those six consumers are off the shim.
 
 ### `IQuestService` ⚠️ **SYNTHESIS + WALL-CLOCK STAMP**
 
