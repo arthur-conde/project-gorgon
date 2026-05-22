@@ -9,15 +9,16 @@ A single agent at /loop depth that drives the world-sim migration umbrella (#601
 - [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md) — phase preconditions, dep graph, global rules
 - [`world-sim-migration-audit.md`](world-sim-migration-audit.md) — ground truth the specialist reviewer cross-checks
 
-**Status:** design notebook + rationale, not implementation spec. The operational spec is the agent file [`../.claude/agents/world-sim-shepherd.md`](../.claude/agents/world-sim-shepherd.md).
+**Status:** design notebook + rationale, not implementation spec. The operational spec is the playbook [`world-sim-driver-playbook.md`](world-sim-driver-playbook.md) that top-level Claude follows when `/world-sim-orchestrate-tick` fires. (v3.1 and earlier had the operational spec in `.claude/agents/world-sim-shepherd.md` as a subagent definition; v4 deleted that file and moved the playbook content here in `docs/`.)
 
-**Version:** v3.1.
+**Version:** v4.
 
 - **v1** (PR #627): per-PR babysitter dispatched after a PR existed. Tight scope; no autonomous queue management.
 - **v2** (#646 / PR #647): expanded the shepherd to own from issue pickup through merge. Two layers: orchestrator at /loop depth dispatching shepherd at depth 2. Used `SendMessage(to: <agentId>)` for continuity — but that API doesn't work; `SendMessage` requires a named teammate in a Team scope.
 - **v2.1** (#652 / PR #653): fixed the API to use Teams primitives correctly. Two layers preserved.
-- **v3** (#656 / PR #658): collapsed orchestrator + shepherd into one agent at /loop depth. The v2.1 architecture needed `Agent` at depth 2 (shepherd dispatches worker), but the harness only reliably exposes `Agent` at depth 1 (/loop's dispatched agent). With orchestrator's small per-tick logic folded into shepherd's intake, the merged "driver" runs at depth 1 where `Agent` is available. The slash command name (`world-sim-orchestrate-tick`) is preserved for /loop continuity.
-- **v3.1** (#660 / this file): added two resume modes — manual issue dispatch (now first-class instead of "for debugging only") and adopt-PR (take over an existing PR mid-flight, skipping Phase 2). Same delivery machinery shared across all three modes; mode is determined by inputs at intake. Subsumes v1 shepherd's per-PR-review use case as the adopt-PR mode.
+- **v3** (#656 / PR #658): collapsed orchestrator + shepherd into one agent at /loop depth. The v2.1 architecture needed `Agent` at depth 2 (shepherd dispatches worker), but the harness only reliably exposes `Agent` at depth 0. v3 shipped on a wrong premise (claimed depth 1) and the first live tick failed (#663) when the depth-1 shepherd tried to spawn a worker and got "Agent is not available inside subagents."
+- **v3.1** (#660 / PR #662): added two resume modes — manual issue dispatch and adopt-PR. Same depth-1 architecture as v3; same depth-1 Agent restriction made it fail in the same way.
+- **v4** (#666 / this file): collapsed the driver into top-level Claude itself. The slash command body no longer dispatches a subagent — it tells top-level Claude to follow the playbook directly. Workers and reviewers are spawned by top-level Claude at depth 0 (where Agent works) and land at depth 1 (where they have file/shell/MCP/Teams/SendMessage but not Agent, which they don't need). Shutdown handshake is now load-bearing before TeamDelete (empirically verified — TeamDelete with active teammates errors with `active_members`). Primary target: Desktop harness (Teams + SendMessage are live). CLI degrades to cold-spawn per iteration.
 
 The notebook uses "shepherd" and "driver" interchangeably for the v3 merged agent — "shepherd" is the agent file name (kept for less churn); "driver" is what it does (drives the whole migration).
 
@@ -247,16 +248,17 @@ The driver builds its own context pack from the issue body + CLAUDE.md + the orc
 
 ---
 
-## Files this design produced (v3)
+## Files this design produced (v4)
 
-1. `.claude/agents/world-sim-shepherd.md` — rewritten for v3 (5-step tick: circuit breaker / idle / cross-tick recovery / pick + deliver / idle wakeup; delivery sub-phases unchanged from v2.1).
-2. `.claude/agents/world-sim-orchestrator.md` — DELETED. Folded into shepherd.
-3. `.claude/agents/world-sim-reviewer.md` — unchanged from v2.1.
-4. `.claude/commands/world-sim-orchestrate-tick.md` — slash command body updated to dispatch the new merged shepherd (name preserved for /loop continuity).
-5. `docs/world-sim-shepherd.md` — this file (v3 rewrite).
-6. `docs/world-sim-orchestrator.md` — DELETED. Notes folded here.
+1. `.claude/agents/world-sim-shepherd.md` — **DELETED**. The driver is no longer a subagent; it's top-level Claude following the playbook.
+2. `.claude/agents/world-sim-orchestrator.md` — DELETED in v3. Stayed deleted.
+3. `.claude/agents/world-sim-reviewer.md` — unchanged from v2.1. Still a subagent, dispatched as a teammate by top-level Claude.
+4. `.claude/commands/world-sim-orchestrate-tick.md` — rewritten in v4. Now instructs top-level Claude to follow the playbook directly; no subagent dispatch.
+5. `docs/world-sim-shepherd.md` — this file (v4 banner + history).
+6. `docs/world-sim-driver-playbook.md` — **NEW**. The operational spec top-level Claude reads each tick. Contains the 5-step decision logic + delivery sub-phases + mode dispatch + context pack + degraded mode + output contract + on-errors. ~915 lines.
+7. `docs/world-sim-orchestrator.md` — DELETED in v3. Stayed deleted.
 
-Filed via: GitHub issue #656.
+Filed via: GitHub issue #666.
 
 ---
 

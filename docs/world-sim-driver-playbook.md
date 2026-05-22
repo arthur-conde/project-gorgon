@@ -1,31 +1,30 @@
----
-name: world-sim-shepherd
-description: World-sim migration driver. One agent at /loop depth that picks the next ready issue from the dep graph, dispatches a worker + reviewers as named teammates via Teams + SendMessage, iterates the review-fix loop, merges the PR itself, files follow-ons, and schedules the next tick. Collapses the v2.1 orchestrator + shepherd into one layer so dispatched subagents live at depth 1 (where the harness reliably exposes Agent) rather than depth 2.
-tools: Read, Grep, Glob, Bash, Agent, SendMessage, TeamCreate, TeamDelete, mcp__ccd_session__spawn_task, ScheduleWakeup, ToolSearch
----
+> **Vocabulary:** see [`glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
 
-> **Vocabulary:** see [`docs/glossary.md`](../../docs/glossary.md) for definitions of the world-sim terminology used in this doc.
+# World-sim driver playbook (v4)
 
-# World-sim shepherd (v3)
+This is the playbook **you (top-level Claude at depth 0)** follow when `/world-sim-orchestrate-tick` is dispatched (either directly or via `/loop`). You are the driver. You read GitHub state, pick the next ready issue (if any), deliver it from initial implementation through merge, file follow-ons, and call `ScheduleWakeup` for the next tick.
 
-You drive the world-sim migration umbrella (#601) end-to-end. Each invocation is ONE tick of the /loop that's running you. You read GitHub state, pick the next ready issue (if any), deliver it from initial implementation through merge, file follow-ons, and call `ScheduleWakeup` for the next tick.
+**You are NOT a subagent.** Earlier versions (v2/v2.1/v3/v3.1) wrapped this work in a `world-sim-shepherd` subagent dispatched via `Agent` from the slash command. That doesn't work — the harness blocks `Agent` at depth ≥ 1, so workers and reviewers couldn't be spawned. v4 (this file) collapses the driver into top-level Claude itself. See #666 for rationale and `scratch/desktop-harness-probe.md` for the empirical depth/Teams probe results.
 
-**v3 (this file).** Collapses the v2.1 orchestrator + shepherd into a single agent at /loop depth. The v2.1 architecture had orchestrator (depth 1) dispatching shepherd (depth 2) dispatching worker+reviewers (depth 3) — but the harness only reliably exposes `Agent` at depth 1. v2.1 shepherds at depth 2 had Teams + SendMessage but not Agent, so they couldn't populate the teams they created. v3 fixes this by collapsing: the orchestrator's per-tick logic (circuit breaker, dep-graph, ready-set, escalation routing, follow-on filing) is small enough to fold into the shepherd's intake, and the merged agent runs at /loop depth where Agent is available. See #656.
+**Environment targeting:**
+- **Primary (Desktop)**: Teams + SendMessage provide live continuity. Workers and reviewers spawned as teammates stay alive across turns; SendMessage delivers as new conversation turns. Architectural model holds.
+- **Degraded (CLI)**: subagents exit after their first turn. SendMessage writes a dead-letter to disk. The driver detects this (no head_sha advance after SendMessage to worker) and falls back to cold-spawn per iteration. See §Inline degraded mode.
 
-You do NOT edit code — the worker teammate does. You DO call `gh pr merge` when convergence is reached.
+You do NOT edit code in the driver tick — the worker teammate does. You DO call `gh pr merge` when convergence is reached.
 
 ## Inputs
 
-The /loop slash command (`world-sim-orchestrate-tick`) dispatches you with no specific issue — you pick one each tick from the dep graph. v3.1 adds two optional resume modes for direct `Agent(...)` invocation: manual issue dispatch and existing-PR adoption.
+When `/world-sim-orchestrate-tick` fires you, no specific issue is supplied — you pick one each tick from the dep graph. Three optional inputs control the entry mode:
 
 Optional caller inputs:
 
 - (none) — **autonomous tick mode.** Pick the next ready issue from the dep graph and deliver it. This is what /loop dispatches.
-- `issue` (+ `phase` required) — **manual issue dispatch mode.** Skip the dep-graph picking; deliver this specific issue. For manual debugging or human-directed work.
+- `issue` — **manual issue dispatch mode.** Skip the dep-graph picking; deliver this specific issue. For manual debugging or human-directed work.
+- `phase` (optional in all modes) — phase classification override. If omitted, the driver looks up the phase from `docs/world-simulator-orchestration-plan.md` §Dependency graph by issue number. Issues not in the YAML (follow-ons with `orchestrator-followup` label, ad-hoc issues) have no phase — pass `null` to the context pack and the reviewers/workers handle the absence.
 - `pr` — **adopt-PR mode.** Skip the dep-graph picking AND skip Phase 2 (initial implementation). Fetch the PR, resolve the linked issue from the PR body (`Closes #N`), build the context pack against that issue, jump to Phase 3 (review-fix loop). For taking over PRs opened by humans, crashed prior driver ticks, or external processes.
 - `max_iterations` (optional, default `3`) — review-fix cycle ceiling. Applies to all modes.
 
-`pr` and `issue` are mutually exclusive. If both supplied, ask once and wait. If `issue` is supplied without `phase`, ask once and wait. If `pr` is supplied, `phase` is resolved automatically from the linked issue.
+`pr` and `issue` are mutually exclusive. If both supplied, ask once and wait. `phase` is no longer required to be supplied explicitly — the driver resolves it from the orchestration plan when needed.
 
 ## Required reading on intake (each tick — cheap probe first)
 
@@ -448,18 +447,20 @@ return terminal_dispatch("merged", merged_sha: merged_sha,
 
 Every terminal_dispatch invocation (merge, escalation, conflict, nothing-to-do, decomposed) MUST:
 
-1. **Tear down the team** (if `state.team_created`):
-   - SendMessage `{type: "shutdown_request"}` to each spawned teammate (workers + reviewers). Wait briefly (≤30s) for `shutdown_response` from each.
-   - `TeamDelete()` to remove `~/.claude/teams/<team_name>/`.
-   - If any teammate fails to shut down cleanly, append to `state.anomalies` and proceed — never block the terminal on cleanup.
+1. **Tear down the team via the shutdown handshake** (if `state.team_created`):
+   - For each spawned teammate (workers + reviewers): `SendMessage({to: name, message: {type: "shutdown_request", reason: "delivery complete"}})`.
+   - Wait for `shutdown_approved` reply from each (timeout 30s per teammate).
+   - The shutdown handshake is **load-bearing**, not a courtesy. Empirical Desktop probe (#666 verification, `scratch/desktop-harness-probe.md`) confirmed: `TeamDelete()` with active teammates fails with `Cannot cleanup team with N active member(s): <name>. Use requestShutdown to gracefully terminate teammates first`. Skipping the handshake means `TeamDelete` errors and `~/.claude/teams/<team_name>/` leaks.
+   - After all teammates approve (or timeout), call `TeamDelete()` to remove `~/.claude/teams/<team_name>/` and the shared task list.
+   - If a teammate fails to approve within timeout, append to `state.anomalies` (`"teammate <name> did not approve shutdown within 30s"`) and proceed — call `TeamDelete()` anyway. If it errors, log to stdout and exit; the OS will eventually GC the team dir, and re-running the driver on the same issue will hit a fresh team_name (per-tick UUID or per-issue scope).
 2. **Apply the verdict's GitHub-state side effects:**
    - `merged`: remove `orchestrator-dispatch:<issue#>` label (issue should already be closed). File `state.accumulated_follow_ons` per §Follow-on filing. Post roll-up comment on the merged PR.
    - `nothing-to-do`: post the worker's summary on the issue, `gh issue close <issue#>`, remove `orchestrator-dispatch:<issue#>` label.
    - `decomposed`: file `state.accumulated_follow_ons` (the sub-issues) per §Follow-on filing. Remove `orchestrator-dispatch:<issue#>` label so the parent stays in the ready set (its `Depends on: #<sub>` edges will keep it filtered until subs close).
-   - `needs-human`: add `orchestrator-blocked` label. Post a comment on #601 with the escalation summary. Call `mcp__ccd_session__spawn_task` per §Escalation prompt template, passing the JSON return + prose.
+   - `needs-human`: add `orchestrator-blocked` label. Post a comment on #601 with the escalation summary. Call `mcp__ccd_session__spawn_task` per §Escalation prompt template, passing the verdict, escalation reason, and any review-comment trail context.
    - `conflict`: add `orchestrator-blocked` label. Call `mcp__ccd_session__spawn_task` with title "Resolve world-sim PR #<PR> merge conflict", a rebase-instruction prompt body.
 3. **Schedule next tick**: `ScheduleWakeup` in 60s (work just completed; next ready issue may unlock).
-4. **Return** — the agent's final message includes the structured JSON (see §Output contract).
+4. **Return** — post the prose tick summary (see §Tick summary).
 
 ### 5. Idle
 
@@ -482,6 +483,8 @@ In every other path — successful delivery, fallback chip emission, idle, error
 If a tick reaches a code path that doesn't obviously match one of the documented outcomes, default to: call `ScheduleWakeup` in 1800s and exit. The worst case is a wasted 30-minute sleep — the alternative (silent /loop death) is far worse.
 
 When in doubt, schedule.
+
+**`ScheduleWakeup` vs `CronCreate` equivalence.** Both schedulers operate at depth -1 (harness layer) and fire fresh top-level Claude sessions at depth 0 when they trigger. `ScheduleWakeup` is the /loop self-pacing primitive — used inside /loop's dynamic mode (no fixed interval). `CronCreate` is a session-scoped cron entry that fires independently of /loop. Either works for chaining ticks; the driver uses `ScheduleWakeup` by default because /loop is the expected invocation surface. If `ScheduleWakeup` is unavailable in a given harness's depth-0 context, fall back to `CronCreate` with a short delay (e.g., `recurring: false`, fire at `now + 60s`).
 
 ## Building the context pack
 
@@ -609,26 +612,34 @@ After spawn, the teammate goes idle when its first turn ends. Subsequent communi
 
 `SendMessage` only works while the recipient is a teammate in your active team scope. When you `TeamDelete()`, all teammates die.
 
-## Inline degraded mode
+## Inline degraded mode (CLI fallback)
 
-If `TeamCreate` is not available in your harness (the tool errors, or is missing from your toolset), enter degraded mode for this delivery. Set `state.degraded_mode = true` and `state.anomalies.append("operated in inline mode — Teams unavailable")`.
+Two scenarios trigger degraded mode:
+
+1. **`TeamCreate` errors** at intake (tool missing from your toolset). Rare — `TeamCreate` was callable in both CLI and Desktop probes.
+2. **Teams is dead-letter** (CLI scenario). `TeamCreate` and `Agent({team_name, name})` both succeed, but subagents at depth 1 don't stay alive between turns — they exit after their first prompt. SendMessage writes to disk but no live process reads the inbox. The Desktop probe (`scratch/desktop-harness-probe.md`) confirms this is CLI-specific; the Desktop harness keeps teammates alive in-process.
+
+Detection: in CLI you can't pre-detect cheaply. The signal arrives at the first SendMessage-to-worker that should produce a push: if `gh pr view --json headRefOid` shows no advance after the SendMessage round-trip, AND the worker's inbox shows `read: false` (dead letter), Teams is dead-letter in this harness.
+
+Set `state.degraded_mode = true` and `state.anomalies.append("teams-not-live; using cold-spawn")` (or `"operated in inline mode — Teams unavailable"` for the rarer `TeamCreate` errors).
 
 Degraded mode behavior:
 
-- **Worker dispatch**: spawn via `Agent({subagent_type: "general-purpose", prompt: ...})` WITHOUT `team_name`. Fire-and-forget. One implementation attempt only.
-- **Review**: perform the review analytically inline. Read the PR diff yourself; apply the two-reviewer rubric (generic + specialist) as a single LLM pass. Your own context has the required reading already loaded. The PR comment posted in degraded mode MUST disclose this:
+- **First-encounter mid-delivery**: tear down the (now-useless) team via shutdown handshake + `TeamDelete()`. Continue the delivery in cold-spawn mode.
+- **Worker dispatch**: spawn via `Agent({subagent_type: "general-purpose", prompt: <context pack + task>})` WITHOUT `team_name`. Fire-and-forget. The worker opens the PR (initial implementation) or addresses review feedback (fix iteration) and exits.
+- **Fix iterations**: each iteration spawns a FRESH worker with the full context pack + current PR diff + new review feedback. Cold spawn each time. Token-expensive but functional.
+- **Review iterations**: same — spawn fresh reviewers each iteration. Or, if even that's too expensive, perform the review analytically inline (single LLM pass applying the two-reviewer rubric).
+- **Inline review disclosure**: PR comment posted in inline-review degraded mode MUST disclose:
   ```
   Note: this iteration was performed inline by the driver rather than via
-  dispatched subagents because the harness used by this driver run does not
-  expose the Teams primitive required by the v3 design. The two-reviewer
-  rubric was applied analytically against the diff + design notebook +
-  orchestration plan; findings are functionally equivalent to a properly-
-  dispatched parallel pair.
+  dispatched reviewers because the harness used by this driver run does not
+  expose Teams live continuity. The two-reviewer rubric was applied
+  analytically against the diff + design notebook + orchestration plan;
+  findings are functionally equivalent to a properly-dispatched parallel pair.
   ```
-- **No fix iterations**: if the inline review finds anything, return `verdict: needs-human` with `escalation_reason: degraded_mode_cannot_iterate`.
-- **Merge**: if the inline review is clean, still call `gh pr merge` yourself. No team teardown needed since no team existed.
+- **Merge**: same as primary mode — `gh pr merge` yourself when convergence is reached.
 
-This mode is a recovery path, not a goal. Repeated `operated in inline mode — Teams unavailable` anomalies should prompt harness investigation.
+This mode is a recovery path, not a goal. /loop should run in Desktop for primary deployment. Repeated `teams-not-live; using cold-spawn` anomalies in CLI are expected and informational, not a bug.
 
 ## "Same class of issue" detection
 
@@ -657,8 +668,8 @@ Use `gh pr comment <pr> -R moumantai-gg/mithril --body-file <path>`. The body sh
 **Escalation reason:** <max_iterations | same_issue_class | worker_no_progress | degraded_mode_cannot_iterate>
                        (omit this line unless Verdict is needs-human)
 
-## Follow-ons (out-of-scope findings — for human visibility; the driver
-                also surfaces these in the merge return JSON)
+## Follow-ons (out-of-scope findings — accumulated during review iterations,
+                filed as GitHub issues at merge time per §Follow-on filing)
 
 - title: <one-line summary>
   files: <comma-separated file:line refs>
@@ -737,11 +748,8 @@ Escalation reason: <max_iterations | human_review | same_issue_class
                    | merge_command_failed | shepherd_return_unparseable
                    | degraded_mode_cannot_iterate | no_dispatch_tools>
 
-Driver's terminal verdict (JSON):
-<paste the JSON block from the driver's return text>
-
-Driver summary:
-<paste the prose summary from after the JSON block>
+Driver tick summary:
+<paste the driver's tick summary — what happened, which PR if any, what the reviewers said, why it escalated>
 
 To resolve:
 - Read the PR diff (if a PR exists), the driver's review-comment trail, and
@@ -819,19 +827,22 @@ Skipped (gh create failure): 1 — <gh stderr first line>
 
 Omit any "Skipped" line whose count is zero. If `gh issue create` fails for one entry, continue with the next — never block the merge handling. Skip the entire filing step (no roll-up comment either) if `state.accumulated_follow_ons` is empty.
 
-## Tools you use
+## Tools you use (depth 0)
+
+As top-level Claude at depth 0, you have access to:
 
 - `Read`, `Grep`, `Glob` — read CLAUDE.md, the three required docs, the orchestration plan, any code referenced by review findings
-- `Bash` (constrained to `gh`) — `gh issue list/view/comment/close/create/edit`, `gh pr view/comment/diff/merge`. Always pass `-R moumantai-gg/mithril`.
+- `Bash` (with `gh`) — `gh issue list/view/comment/close/create/edit`, `gh pr view/comment/diff/merge`. Always pass `-R moumantai-gg/mithril`.
 - `TeamCreate` — establish the team scope at intake. Required for `Agent` to spawn named teammates.
-- `Agent` — dispatch teammates with `team_name` + `name` params (`general-purpose` for worker + generic reviewer; `world-sim-reviewer` for specialist)
-- `SendMessage` — resume the worker and reviewers across iterations by name
-- `TeamDelete` — tear down the team scope on terminal_dispatch
-- `mcp__ccd_session__spawn_task` — emit escalation chips on `needs-human` / `conflict` terminal_dispatches; emit driver-down chip on 3-strike error escalation
-- `ScheduleWakeup` — schedule the next /loop tick (see §ScheduleWakeup invariant)
-- `ToolSearch` — load deferred-tool schemas (`SendMessage`, `TeamCreate`, `TeamDelete` may need loading via `ToolSearch query: "select:SendMessage,TeamCreate,TeamDelete"`)
+- `Agent` — dispatch teammates with `team_name` + `name` params (`general-purpose` for worker + generic reviewer; `world-sim-reviewer` for specialist). Available ONLY at depth 0.
+- `SendMessage` — resume the worker and reviewers across iterations by name. Same restriction: works for live teammates only (Desktop). In CLI, SendMessage is dead-letter.
+- `TeamDelete` — tear down the team scope after the shutdown handshake completes.
+- `mcp__ccd_session__spawn_task` — emit escalation chips on `needs-human` / `conflict` terminal_dispatches; emit driver-down chip on 3-strike error escalation.
+- `ScheduleWakeup` — schedule the next /loop tick (see §ScheduleWakeup invariant). Available at depth 0; depth-1 teammates use `CronCreate` if they need scheduling.
+- `ToolSearch` — load deferred-tool schemas (`SendMessage`, `TeamCreate`, `TeamDelete` may need loading via `ToolSearch query: "select:SendMessage,TeamCreate,TeamDelete"`).
+- `Edit`, `Write` — available, but you should NOT use them during a driver tick. The worker teammate writes code; you orchestrate. (The only exception: writing temp files for `--body-file` arguments to `gh`.)
 
-You do NOT have `Edit` or `Write`. You do NOT touch code or files. If you want a fix made, SendMessage the worker teammate; if the worker fails to push, escalate.
+**Depth-1 teammates' tools (informational — verified by the Desktop probe):** workers and reviewers spawned at depth 1 have file/shell/MCP/Read/Edit/Write, TeamCreate/TeamDelete/SendMessage, `mcp__ccd_session__spawn_task` (regular tool, not deferred), `CronCreate` (scheduling analog). They do NOT have `Agent` (cannot recurse) or `ScheduleWakeup` under that name.
 
 ## What you do NOT do
 
@@ -856,36 +867,19 @@ If two driver ticks ever run concurrently, both will read the same GitHub state 
 
 No mutex label is acquired at tick start, so this protection lives at the /loop layer.
 
-## Output contract
+## Tick summary
 
-Your final message includes a fenced JSON block (consumed by cross-tick recovery and any human reading the driver's tick log):
+At the end of every tick, post a brief prose summary as your final user-visible message. One paragraph, plain English, no JSON. Examples:
 
-```json
-{
-  "verdict": "merged" | "needs-human" | "conflict" | "nothing-to-do" | "decomposed"
-           | "circuit-breaker" | "idle" | "limit-hit" | "no-action",
-  "issue": <int> | null,
-  "pr": <int> | null,
-  "head_sha": "<sha>" | null,
-  "merged_sha": "<sha>" | null,
-  "iterations": <int>,
-  "escalation_reason": "max_iterations" | "human_review" | "same_issue_class"
-                     | "worker_no_progress" | "merge_conflict" | "closed_without_merge"
-                     | "initial_implementation_failed" | "nothing_to_do" | "decomposed"
-                     | "needs_input" | "worker_failed" | "merge_command_failed"
-                     | "degraded_mode_cannot_iterate" | "no_dispatch_tools"
-                     | "pr_has_no_linked_issue" | "ambiguous_inputs" | null,
-  "follow_ons": [
-    { "title": "...", "files": "...", "blocks": [<int>...], "body": "..." }
-  ],
-  "anomalies": [ "<one-line>" ],
-  "summary": "<1-2 sentences>"
-}
-```
+- *Merged delivery*: "Delivered #707 (Phase 2 — split AbilityCalendarStateService). Worker opened PR #710, reviewers converged on iteration 2, merged with merge_sha abc1234. Filed 2 follow-on issues (#711 — same-class refactor opportunity in PlannerService, #712 — missing test for Mode == Replay branch). Next tick in 60s."
+- *Idle*: "No actionable work this tick — all open world-sim issues are either dispatched, blocked, or have unresolved deps. Next tick in 30 minutes."
+- *Escalation*: "Task #707 escalated as `needs-human / same_issue_class` — workers couldn't resolve principle-12 finding in PlannerService.cs:142 across 3 review iterations. `orchestrator-blocked` label applied, spawn_task chip emitted. Next tick in 60s."
+- *Cross-tick recovery*: "Cross-tick recovery picked up PR #709's `needs-human` marker from a prior crashed tick. Applied `orchestrator-blocked` label to #708 and emitted escalation chip. Next tick in 60s."
+- *Circuit breaker*: "Driver paused — `pause` label is on #601. Remove the label and restart /loop to resume." (no ScheduleWakeup)
 
-Verdicts that don't correspond to a delivery (`circuit-breaker`, `idle`, `limit-hit`, `no-action`) carry `issue: null` and `pr: null`. They're informational — they tell /loop and any tail-reader what happened this tick.
+**Why prose, not JSON.** v3.1 emitted a structured JSON return for the orchestrator subagent to parse. In v4 there's no orchestrator — the driver IS top-level Claude, and there's no consumer for a JSON return. All inter-tick state lives in GitHub (labels, PR comment markers, filed issues, umbrella comment trail). Prose serves the only remaining consumer (the human reading the conversation).
 
-After the JSON block, include human-readable prose: a paragraph summarizing what happened.
+If a future tooling consumer ever needs structured output, the relevant fields are already persisted on GitHub: `gh issue view <N>` and `gh pr view <PR>` carry the labels, comment markers, and state needed to reconstruct what any tick did.
 
 ## On errors
 
