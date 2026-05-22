@@ -104,23 +104,50 @@ public sealed class ItemCollectionTracker : BackgroundService
             keyComparer: StringComparer.OrdinalIgnoreCase);
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Attach the <see cref="IInventoryView.Bus"/> subscriptions <b>before</b>
+    /// the host's <see cref="ExecuteAsync"/> pump spins up — and crucially
+    /// before the <c>"legolas"</c> module gate has any chance of holding back
+    /// the pump on a lazy module. <see cref="ViewEventBus.Subscribe"/> has no
+    /// replay-on-subscribe contract; any frame published before <c>Subscribe</c>
+    /// is lost to a subscriber that attaches later. Pre-#688/#606 the bus
+    /// subscriptions sat inside <see cref="ExecuteAsync"/> behind the gate-wait,
+    /// which for a lazy module means every inventory frame published before
+    /// first-tab activation would be lost — the exact race the
+    /// <c>InventoryItemAdded</c> + <c>InventoryStackChanged</c> credit relies on
+    /// not happening. Attaching here closes that window: the host's
+    /// <see cref="BackgroundService.StartAsync"/> contract guarantees we run
+    /// before any consumer can observe the service as "started," so by the time
+    /// any other hosted-service (or the world's merger) publishes a frame, our
+    /// subscriptions are already live. The <see cref="ILogStreamDriver"/>
+    /// subscription stays inside <see cref="ExecuteAsync"/> behind the gate —
+    /// the L1 driver's own <see cref="ReplayMode"/> semantics cover late-attach
+    /// and the FSM-touching collect handler must wait for the module gate.
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
-        await _gates.For("legolas").WaitAsync(stoppingToken).ConfigureAwait(false);
-
         // Inventory view — typed bus consumption per #606. Both Added (when
         // SizeConfirmed) and StackChanged represent the post-#602 equivalents
         // of the retired chat "[Status] X xN added to inventory." line. The
         // view's own correlator already pairs the Player.log + chat sides; we
         // consume the resolved view event downstream of that composition.
-        _addedSub = _inventoryView.Bus.Subscribe<InventoryItemAdded>(OnInventoryAdded);
-        _stackChangedSub = _inventoryView.Bus.Subscribe<InventoryStackChanged>(OnInventoryStackChanged);
+        _addedSub ??= _inventoryView.Bus.Subscribe<InventoryItemAdded>(OnInventoryAdded);
+        _stackChangedSub ??= _inventoryView.Bus.Subscribe<InventoryStackChanged>(OnInventoryStackChanged);
+        return base.StartAsync(cancellationToken);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        await _gates.For("legolas").WaitAsync(stoppingToken).ConfigureAwait(false);
 
         // Player.log collect channel — parses ProcessScreenText
         // (ImportantInfo, "<Mineral> collected!"). Mirrors the structural
         // shape PlayerLogIngestionService uses (LiveOnly + Marshaled +
         // Legolas.PlayerLog diagnostic category) so the two services share
-        // the same delivery semantics.
+        // the same delivery semantics. Stays inside ExecuteAsync (post-gate)
+        // because the collect handler mutates SessionState (UI-bound surveys
+        // + LastLogEvent) — those mutations must wait for the lazy module
+        // to be active; the bus correlator side does not.
         var dispatcher = Application.Current?.Dispatcher;
         _logSub = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
@@ -147,13 +174,22 @@ public sealed class ItemCollectionTracker : BackgroundService
         catch (OperationCanceledException) { /* expected on host stop */ }
         finally
         {
-            _addedSub?.Dispose();
-            _addedSub = null;
-            _stackChangedSub?.Dispose();
-            _stackChangedSub = null;
             _logSub?.Dispose();
             _logSub = null;
         }
+    }
+
+    public override Task StopAsync(CancellationToken cancellationToken)
+    {
+        // Bus subs are owned across the StartAsync/StopAsync lifecycle (they
+        // attach before the pump and survive the pump's exit), so dispose them
+        // here rather than in ExecuteAsync's finally — symmetric with where
+        // they were attached.
+        _addedSub?.Dispose();
+        _addedSub = null;
+        _stackChangedSub?.Dispose();
+        _stackChangedSub = null;
+        return base.StopAsync(cancellationToken);
     }
 
     public override void Dispose()
