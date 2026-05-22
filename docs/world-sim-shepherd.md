@@ -10,7 +10,7 @@ A per-issue delivery agent that owns one world-sim migration issue end-to-end: s
 
 **Status:** design notebook + rationale, not implementation spec. The operational spec is the agent file [`../.claude/agents/world-sim-shepherd.md`](../.claude/agents/world-sim-shepherd.md). The v2 redesign rationale is in GitHub issue #646.
 
-**Version:** v2 (this rewrite). The v1 shepherd was a per-PR babysitter dispatched after a PR existed; v2 owns from issue pickup through merge. The contract bugs in the original v1 design were closed by PR #645 (commit a830456); v2 (issue #646) addresses the architectural gap that PR did not touch: cold-spawned workers and reviewers every iteration.
+**Version:** v2.1. The v1 shepherd was a per-PR babysitter dispatched after a PR existed; v2 (#646 / PR #647) expanded it to own from issue pickup through merge. v2 shipped with a `SendMessage(to: <agentId>)` continuity mechanism that didn't actually work — `SendMessage` requires the recipient to be a named teammate in a Team scope, not a raw agent ID. v2.1 (#652) corrects this by using the actual Teams primitive: `TeamCreate` at intake → `Agent({team_name, name})` to spawn teammates → `SendMessage({to: "<name>"})` to address them → `TeamDelete` on teardown. The lifecycle phases below are unchanged; only the spawn/communication API differs. The pseudocode in §The shepherd lifecycle reflects v2.1.
 
 ---
 
@@ -51,7 +51,7 @@ The single load-bearing constraint that forced v2's shape: per https://code.clau
 
 Three subagents:
 
-**`world-sim-shepherd`** — the per-issue delivery agent. Tools: `Read`, `Grep`, `Glob`, `Bash` (constrained to `gh`), `Agent`, `SendMessage`, `ToolSearch`. No `Edit`/`Write` — the shepherd never touches code; it dispatches workers to do so.
+**`world-sim-shepherd`** — the per-issue delivery agent. Tools: `Read`, `Grep`, `Glob`, `Bash` (constrained to `gh`), `Agent`, `SendMessage`, `TeamCreate`, `TeamDelete`, `ToolSearch`. No `Edit`/`Write` — the shepherd never touches code; it dispatches teammates to do so.
 
 **`world-sim-reviewer`** — the world-sim specialist reviewer the shepherd dispatches once per PR via `Agent` and then resumes via `SendMessage` on every subsequent review iteration. Four checks: principle adherence (1-13), phase-aware migration preconditions, replay-determinism inspection, audit cross-reference.
 
@@ -65,59 +65,66 @@ Three subagents:
 phase 1: intake
   read CLAUDE.md, the three required docs, the issue body, the phase slice
   build the shepherd context pack (5-15K tokens)
+  TeamCreate({team_name: "shepherd-issue-<N>", description: ...})
+    if TeamCreate errors → enter degraded mode (see §Inline degraded mode in agent file)
 
 phase 2: initial implementation
-  Agent(general-purpose, prompt: context_pack + "implement this issue, open PR")
-  capture worker_id from Agent return
+  Agent({subagent_type: "general-purpose", team_name, name: "worker", prompt: context_pack + "..."})
+    (degraded mode: plain Agent dispatch without team_name — fire-and-forget)
   parse `outcome:` line from worker return
     - success    → verify PR opened, fall through to phase 3
-    - nothing-to-do → return verdict("nothing-to-do")
-    - decomposed → return verdict("decomposed", follow_ons: filed sub-issues)
-    - needs-input → return verdict("needs-human", reason: "needs_input")
-    - failed     → return verdict("needs-human", reason: "worker_failed")
+    - nothing-to-do → terminal(verdict: "nothing-to-do")
+    - decomposed → terminal(verdict: "decomposed", follow_ons: filed sub-issues)
+    - needs-input → terminal(verdict: "needs-human", reason: "needs_input")
+    - failed     → terminal(verdict: "needs-human", reason: "worker_failed")
 
 phase 3: review-fix loop
   loop:
     pr_state = gh pr view
-    short-circuit: MERGED/CLOSED/CONFLICTING → return verdict
-    human-comment guard: any non-bot comment since last iteration → escalate
+    short-circuit: MERGED/CLOSED/CONFLICTING → terminal(...)
+    human-comment guard: any non-bot comment since last iteration → terminal("needs-human")
 
     if first iteration:
       review_results = parallel(
-        Agent(general-purpose, prompt: generic review template),
-        Agent(world-sim-reviewer, prompt: pr/issue/phase)
+        Agent({subagent_type: "general-purpose", team_name, name: "generic-reviewer", ...}),
+        Agent({subagent_type: "world-sim-reviewer", team_name, name: "specialist-reviewer", ...})
       )
-      capture generic_reviewer_id, specialist_reviewer_id
     else:
       review_results = parallel(
-        SendMessage(to: generic_reviewer_id, "re-review at SHA X"),
-        SendMessage(to: specialist_reviewer_id, "re-review at SHA X")
+        SendMessage({to: "generic-reviewer", message: "re-review at SHA X"}),
+        SendMessage({to: "specialist-reviewer", message: "re-review at SHA X"})
       )
 
     parse <!-- generic-review-verdict: -->, <!-- world-sim-review-verdict: -->
     decide posted_verdict: ready-to-merge | dispatching worker | needs-human
       (escalation reasons: max_iterations, same_issue_class, worker_no_progress,
-       unparseable reviewer output)
+       degraded_mode_cannot_iterate, unparseable reviewer output)
 
     gh pr comment <pr> --body-file <verdict marker + combined review prose + follow-ons>
 
     if posted_verdict == ready-to-merge → phase 4
-    if posted_verdict == needs-human → return verdict("needs-human", reason)
+    if posted_verdict == needs-human → terminal("needs-human", reason)
 
-    SendMessage(to: worker_id, message: review feedback delta)
-    verify head_sha advanced → if not, return verdict("needs-human", "worker_no_progress")
+    SendMessage({to: "worker", message: review feedback delta})
+      (degraded mode forces needs-human here; cannot iterate without SendMessage)
+    verify head_sha advanced → if not, terminal("needs-human", "worker_no_progress")
 
 phase 4: merge
   gh pr merge <pr> --squash --delete-branch
   verify issue auto-closed; if not, comment + manual close (log anomaly)
-  return verdict("merged", merged_sha, follow_ons, anomalies)
+  terminal("merged", merged_sha, follow_ons, anomalies)
+
+terminal(verdict, ...):
+  shutdown_request each spawned teammate via SendMessage
+  TeamDelete()
+  return verdict JSON
 ```
 
 **No PR-level CI.** This repo's CI runs at release-cut, not per-PR. The worker's local `dotnet build` + `dotnet test` (a hard gate per the orchestration plan's Global Rules) is the only build/test gate before push. If the worker pushes broken code, the next review iteration catches it.
 
 **No inter-commit timeout.** Worker and reviewer `Agent`/`SendMessage` calls are synchronous — the subagent bounds its own time. Verification of "did anything change" happens via `gh pr view --json headRefOid` after the call returns.
 
-**SendMessage is the v2 architectural commitment.** Per Claude Code docs ("Subagents work within a single session"), `SendMessage` only works while the parent (= the shepherd) is alive. The whole point of the long-lived shepherd is to keep that window open across all review iterations. Spawning a fresh `Agent` per iteration would be the v1 mistake.
+**Teams + SendMessage is the v2.1 architectural commitment.** The v2 shipped `SendMessage(to: <agentId>)` — but `SendMessage` doesn't work that way: it requires a named teammate in a Team scope. v2.1 fixes the API: `TeamCreate` at intake, `Agent({team_name, name})` to spawn teammates, `SendMessage({to: "<name>"})` to address them. Per Claude Code docs ("Subagents work within a single session"), the team — and all its teammates — live only as long as the shepherd is alive. The whole point of the long-lived per-issue shepherd is to keep that window open across all review iterations. Spawning fresh `Agent`s per iteration (without team membership) would be the v1 mistake; spawning teammates and reaching for `SendMessage(to: <id>)` was the v2 mistake. The Teams primitive in v2.1 is the actual mechanism.
 
 ---
 
