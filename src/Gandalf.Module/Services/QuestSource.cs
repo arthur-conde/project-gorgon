@@ -3,6 +3,8 @@ using Gandalf.Domain;
 using Mithril.GameState.Quests;
 using Mithril.Reference.Models.Quests;
 using Mithril.Shared.Reference;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
@@ -32,6 +34,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
     private readonly IReferenceDataService _refData;
     private readonly IPlayerQuestJournalService _questSvc;
     private readonly TimeProvider _time;
+    private readonly IWorldClock? _worldClock;
     private readonly object _lock = new();
     private readonly IDisposable _questSubscription;
     private IReadOnlyList<TimerCatalogEntry> _catalog;
@@ -42,12 +45,14 @@ public sealed class QuestSource : ITimerSource, IDisposable
         DerivedTimerProgressService derived,
         IReferenceDataService refData,
         IPlayerQuestJournalService questSvc,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        IPlayerWorld? playerWorld = null)
     {
         _derived = derived;
         _refData = refData;
         _questSvc = questSvc;
         _time = time ?? TimeProvider.System;
+        _worldClock = playerWorld?.Clock;
         _catalog = BuildCatalog();
         _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
         _lastProgressByKey = SnapshotProgress();
@@ -116,7 +121,9 @@ public sealed class QuestSource : ITimerSource, IDisposable
         // OnDerivedProgressChanged will pick up the catalog rebuild + EmitDeltas.
 
         var readyAt = startedAt + duration;
-        if (readyAt <= _time.GetUtcNow())
+        // State-decision gate: read PlayerWorld's clock (#609) so replay
+        // fires the same eager-ready events as a live attach.
+        if (readyAt <= (_worldClock?.Now ?? _time.GetUtcNow()))
         {
             TimerReady?.Invoke(this, new TimerReadyEventArgs
             {

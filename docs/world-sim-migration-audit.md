@@ -398,6 +398,9 @@ Found via Grep (`src/`, all `_time.GetUtcNow()` and `DateTime.UtcNow`):
 - `TimerExpirationScheduler.cs:98` (reschedule floor).
 - `ShiftAlarmService.cs:129` (reschedule floor).
 - `LootSource.cs:258` (cooldown expiration check).
+- `LootSource.cs:575` (`FireReady` eager-fire gate — reclassified from stamp
+  during the #609 migration; the comparison `atUtc <= _time.GetUtcNow()`
+  decides whether to fire `TimerReady`, so it's structurally a gate).
 - `QuestSource.cs:119` (cooldown ready check).
 - `TimerAlarmService.cs:69` (dismiss-tracking — borderline; check at use site).
 - `PendingCorrelator.cs:131, :216` (drain + take TTL — primitive itself).
@@ -410,7 +413,9 @@ Found via Grep (`src/`, all `_time.GetUtcNow()` and `DateTime.UtcNow`):
 - `CalibrationService.cs:167, :181, :204` (Arwen) — test-only fallback overloads.
 - `TimerProgressService.cs:93, :113` — `StartedAt` record stamps.
 - `TimerAlarmService.cs:46` — snooze-until calculation (stamp + add).
-- `LootSource.cs:199, :575` — observation stamps.
+- `LootSource.cs:199` — observation stamp (no-timestamp overload's
+  default; the public-overload path is stamping the rejection time, not
+  gating).
 - `DerivedTimerProgressService.cs:104` — `DismissedAt` stamp.
 - `DashboardAggregator.cs:54, :86, :117` — UI display projections.
 - `LegolasReportService.cs` — share-card report stamping.
@@ -420,11 +425,12 @@ Found via Grep (`src/`, all `_time.GetUtcNow()` and `DateTime.UtcNow`):
 
 **Module signal map claim that "wall-clock-gated transitions live in five
 places"** is a slight undercount — counting consumer call sites (not primitive
-sites), Gandalf alone has 5 gates (`TimerProgressService.CheckExpirations`,
+sites), Gandalf alone has 6 gates (`TimerProgressService.CheckExpirations`,
 `TimerExpirationScheduler.Reschedule`, `ShiftAlarmService.Reschedule`,
-`LootSource.cs:258`, `QuestSource.cs:119`), plus Samwise (2), Inventory (1),
-AlarmService (1) = 9 transition-gate sites across 4 components. Same migration
-mechanism, different count.
+`LootSource.cs:258`, `LootSource.cs:575`, `QuestSource.cs:119`), plus Samwise
+(2), Inventory (1), AlarmService (1) = 10 transition-gate sites across 4
+components (the `LootSource.cs:575` `FireReady` site was reclassified from
+stamp during the #609 migration). Same migration mechanism, different count.
 
 ### 9. `ServerCatalogParser` — **NOT IMPLEMENTED**
 
