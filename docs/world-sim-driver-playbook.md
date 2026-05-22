@@ -525,8 +525,23 @@ Shape:
 - PR body MUST include "Closes #<issue>" and the "🤖 Generated with Claude
   Code" trailer.
 
-### Structured outcome reporting
-Your FINAL message MUST include exactly one `outcome:` line:
+### Structured outcome reporting (CRITICAL — read carefully)
+
+When you reach a terminal outcome (you've finished — either you opened a PR, concluded nothing-to-do, decomposed into sub-issues, hit a wall, or failed), you MUST report the outcome to the team-lead via `SendMessage`. Putting `outcome:` in your plain text output is NOT enough — your text output ends a turn and you go idle, but the team-lead does not see your turn output unless you explicitly send a message.
+
+**Required final action:**
+
+```
+SendMessage({
+  to: "team-lead",
+  summary: "<outcome>: <one-line>",     # e.g., "success: PR #710 opened"
+  message: "outcome: <enum-value>\n\n<details — PR number / rationale / questions / symptom>"
+})
+```
+
+Then go idle. The team-lead waits for this SendMessage; without it, the driver doesn't know you're done and the delivery stalls until iteration ceilings escalate.
+
+**Outcome enum values** (use the `outcome: <X>` line as the literal first line of your SendMessage body):
 
   outcome: success
     A PR has been opened. Report the PR number and a one-paragraph summary.
@@ -541,7 +556,9 @@ Your FINAL message MUST include exactly one `outcome:` line:
     Build/test failure you couldn't resolve, external constraint, contradicting
     requirement. Report symptom.
 
-If your final message lacks an `outcome:` line, the driver treats it as `failed`.
+If your SendMessage to team-lead is missing or lacks an `outcome:` line, the driver treats your dispatch as `failed`.
+
+**Fallback for fire-and-forget mode** (no `team_name` was set on your invocation — degraded CLI mode): if `SendMessage` to "team-lead" errors with "no team context" or similar, fall back to including the `outcome:` line as the first line of your plain text final output. The driver's degraded-mode handler parses text output instead.
 
 === END CONTEXT PACK ===
 ```
@@ -591,8 +608,11 @@ Action:
 - Address the findings above.
 - Run dotnet build + dotnet test; both must be clean.
 - Push to the same PR branch (do NOT open a new PR).
-- Return with the same `outcome:` line convention (typically `outcome: success`
-  with a one-paragraph summary of what you changed).
+- Report completion via `SendMessage({to: "team-lead", summary: "outcome:
+  <X>: <one-line>", message: "outcome: <X>\n\n<details>"})`. Same outcome
+  enum and same reporting requirement as the initial implementation (see
+  context pack §Structured outcome reporting). Plain text output alone is
+  NOT enough — the lead doesn't see your turn output, only your SendMessages.
 ```
 
 ## Spawning named teammates
@@ -728,6 +748,8 @@ Output format (FIRST line MUST be the machine-readable marker):
 If you are receiving this prompt via SendMessage (i.e., this is iteration ≥ 2):
 - The above "Read" steps are NOT needed — your prior context already has them.
 - Just `gh pr diff <N>` again to see the updated diff and re-review.
+
+Report your verdict to team-lead via `SendMessage({to: "team-lead", summary: "generic review: <clean|findings>", message: <your full output above including the verdict marker, the verdict line, findings, and summary>})`. Plain text output alone is NOT enough — the lead doesn't see your turn output, only your SendMessages.
 
 Do NOT run `dotnet build` or `dotnet test`. Do NOT post PR comments. Do NOT edit code.
 ```
