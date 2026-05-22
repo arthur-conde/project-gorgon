@@ -1,5 +1,7 @@
 # Cross-source correlation — design contract
 
+> **Vocabulary:** see [`docs/glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
+
 > **Why this exists.** Several consumers in this repo correlate events that
 > arrive on two log streams (Player.log and ChatLogs/) or, more generally,
 > from two independent emitters. The hierarchy below — derived in

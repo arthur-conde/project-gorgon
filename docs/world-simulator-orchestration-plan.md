@@ -1,5 +1,7 @@
 # World-simulator orchestration plan
 
+> **Vocabulary:** see [`docs/glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
+
 Machine-actionable scheduling plan for the world-simulator migration. Pairs with the design notebook (`docs/world-simulator.md`), the migration audit (`docs/world-sim-migration-audit.md`), and the GitHub issue umbrella (#601) + foundation umbrella (#614).
 
 **Audience:** an orchestrator (Claude Code subagent harness, or external system) scheduling worker agents to land migration items hands-free.

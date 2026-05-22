@@ -1,5 +1,7 @@
 # World-sim migration audit
 
+> **Vocabulary:** see [`docs/glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
+
 Audit date: 2026-05-21
 Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 [`docs/module-signal-map.md`](module-signal-map.md) at commit `51e39f0` (branch
