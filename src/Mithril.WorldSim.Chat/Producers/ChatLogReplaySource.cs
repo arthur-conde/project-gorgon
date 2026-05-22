@@ -205,13 +205,21 @@ public sealed class ChatLogReplaySource : IChatLogReplaySource
 
         // 6. Live phase — poll the same tailers. They've already advanced their
         //    offsets past the replay batch, so ReadNew() now returns appended
-        //    content only.
+        //    content only. Per #640, drain each tailer into a per-poll buffer
+        //    then merge-sort by timestamp before yielding, mirroring the
+        //    replay-phase pattern at step 5 so concurrent appends across
+        //    multiple files emit in deterministic timestamp order rather than
+        //    in file-enumeration order. N (files) is typically ≤ ~10, so a
+        //    List.Sort per poll is fine; promote to a heap if profiling ever
+        //    shows this as a hotspot.
         var pollInterval = TimeSpan.FromSeconds(Math.Max(0.25, _config.PollIntervalSeconds));
+        var pollBuffer = new List<RawLogLine>();
         while (!ct.IsCancellationRequested)
         {
             try { await Task.Delay(pollInterval, _time, ct).ConfigureAwait(false); }
             catch (OperationCanceledException) { yield break; }
 
+            pollBuffer.Clear();
             foreach (var (_, tailer, _) in tailers)
             {
                 IReadOnlyList<RawLogLine> appended;
@@ -228,10 +236,14 @@ public sealed class ChatLogReplaySource : IChatLogReplaySource
                     continue;
                 }
 
-                foreach (var line in appended)
-                {
-                    yield return new LogEnvelope<RawLogLine>(line, IsReplay: false);
-                }
+                if (appended.Count > 0) pollBuffer.AddRange(appended);
+            }
+
+            if (pollBuffer.Count == 0) continue;
+            pollBuffer.Sort((a, b) => a.Timestamp.CompareTo(b.Timestamp));
+            foreach (var line in pollBuffer)
+            {
+                yield return new LogEnvelope<RawLogLine>(line, IsReplay: false);
             }
         }
     }
