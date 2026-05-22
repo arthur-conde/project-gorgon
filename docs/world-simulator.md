@@ -432,6 +432,76 @@ public interface IWordOfPowerView
 
 ---
 
+## Naming conventions
+
+The conventions below cover folder interfaces and change-event types under the world-sim architecture. They apply to types born under or after Phase 2 (#602, #603) and to existing types only when an in-flight migration PR is already touching them for behavioural reasons — there is no dedicated rename sweep.
+
+### Folder interface suffix
+
+Folder interface names take the form `I<World><Domain>State`. The world prefix (`Player` or `Chat`) is mandatory, the domain follows, `State` is the suffix. The historical suffix variants (`StateService` on Skills/Recipes/Effects/Celestial, `Service` on Inventory/Position, `StateMachine` on the chat folders, `Tracker` on Area/Position/Pin/Weather, `Journal` on QuestJournal) are dropped.
+
+The architectural primitive is "folder" (principle 10); the interface name should signal that uniformly across all folders, regardless of which historical service shape the type was carved out of.
+
+```
+IPlayerSkillState
+IPlayerRecipeState
+IPlayerInventoryState
+IPlayerEffectsState
+IPlayerPositionState
+IPlayerPinState
+IPlayerWeatherState
+IPlayerAreaState
+IPlayerCelestialState
+IPlayerQuestJournalState
+IPlayerWordOfPowerDiscoveryState
+IChatInventoryState
+IChatWordOfPowerState
+```
+
+### Change-event type suffix
+
+Change-event types are named in past-tense participle form, with no `Event` suffix. The delta-noun form (`SkillChange`, `RecipeChange`) and the `Event`-suffixed form (`EffectEvent`, `QuestEvent`, `InventoryEvent`) are both dropped.
+
+Bus consumers subscribe via `Frame<TConcreteChange>` — the type parameter already telegraphs "event"; the `Event` suffix is redundant. The participle reads naturally at the call site (`bus.Subscribe<InventoryItemAdded>(…)`).
+
+```
+InventoryItemAdded
+InventoryStackChanged
+SkillProgressed
+RecipeLearned
+WordOfPowerDiscovered
+WordOfPowerSpent
+PinSetChanged
+```
+
+### World prefix on event names
+
+Mandatory world prefix on folder-emitted events; never on view-emitted events. The first word of an event name tells the reader who emitted it: `Player…` means a PlayerWorld folder, `Chat…` means a ChatWorld folder, anything else means the view layer (cross-world composition).
+
+The prior "prefix only when a sibling exists in the other world" rule failed the at-a-glance test — readers couldn't tell whether `InventoryAdded` referred to the unified view event or to a prefix-elided folder event. The simpler invariant (world events always prefixed; view events never) is the legible one. The 4–6-character cost on Player-only events is worth the legibility win for cold readers.
+
+```
+Folder-emitted (world bus):
+  PlayerInventoryAdded
+  PlayerSkillProgressed
+  PlayerWordOfPowerDiscovered
+  ChatInventoryObserved
+  ChatWordOfPowerSpent
+
+View-emitted (view bus):
+  InventoryItemAdded
+  InventoryStackChanged
+  WordOfPowerKnowledgeChanged
+```
+
+### Migration policy
+
+The sweep is opportunistic, not big-bang. New folders born under Phase 2 (#602 Inventory split, #603 Saruman codebook split) and later phases ship under the convention; existing folders rename only when a migration PR is already touching them for behavioural reasons (e.g., #618 already touches `IPlayerSkillStateService`; #607 touches `IPlayerQuestJournalService`; #602 retires `IInventoryService`). Apply the rename inside those PRs.
+
+Existing folders not being migrated keep their historical names until they are. No dedicated rename-sweep PR is in scope.
+
+---
+
 ## Worked example 1 — Inventory composition
 
 **Today (one service spans both sources):**
@@ -646,6 +716,12 @@ See: [issue #643](https://github.com/moumantai-gg/mithril/issues/643).
 **Rationale:** the current `IFolder<TPayload>` contract ("exactly one folder per payload type; registering a second throws") forbids Option 2 (shared-stream routing) without relaxing the contract to multi-folder fanout. Per-folder producers preserve the contract and give each folder an independently testable owned parser. The "N L1 subscriptions, N parsers per line" cost is bounded because parsers fast-fail on line discrimination — parse work scales as O(folders + relevant-lines), not O(folders × lines). The clock-tick owner must be made explicit because today `ClassifiedPlayerLogProducer` emits frames with no folder consumer, advancing the world clock as an invisible side effect; dropping it naively would silently stagnate the clock during folder-irrelevant log stretches and cause Gandalf's planned scheduler-collapse alarms (principle 13) to fire late. The reshape is captured as migration item #13 above. **Implementation of the reshape is a follow-on issue; this section ratifies the design choice only.**
 
 See: [issue #644](https://github.com/moumantai-gg/mithril/issues/644).
+
+### Naming conventions for folder interfaces and change events
+
+**Decision (2026-05-22):** folder interfaces take the form `I<World><Domain>State`; change-event types are named in past-tense participle form (no `Event` suffix); folder-emitted events carry a mandatory world prefix (`Player…` / `Chat…`), view-emitted events never do. Migration is opportunistic — applied within in-flight migration PRs as they touch each type — and no dedicated rename-sweep PR is in scope.
+
+**Rationale:** Phase 2 (#602, #603) is about to land at least five new folders and a dozen new change events; without convention, the keystone PR sets precedent by accident. The "first word identifies the emitter" invariant gives cold readers an at-a-glance signal that the prior "prefix-when-sibling-exists" rule did not. Full spec lives in the "Naming conventions" section above; no GitHub issue tracks this ratification (this PR is the canonical record).
 
 ---
 
