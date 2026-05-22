@@ -204,6 +204,92 @@ public sealed class ChatLogReplaySourceTests : IDisposable
         replayLines[4].Should().Contain("a-at-5");
     }
 
+    // ── #640: live-poll merge orders appended frames across files ─────
+
+    [Fact]
+    public async Task Live_phase_merges_appended_lines_across_files_by_timestamp()
+    {
+        // Two files exist at attach (both with the same banner). After the
+        // source enters live mode, both files receive appends with
+        // interleaved timestamps before the next poll. The subscriber must
+        // see the appended frames in strictly non-decreasing timestamp
+        // order, not in file-enumeration order. Pre-#640 the iteration was
+        // foreach(tailers) → emit-each-tailer's-batch, which leaked
+        // filesystem-listing order.
+        Write("chat-A.log",
+            "26-05-19 21:00:00\t**** Logged In As Em. Server Laeth. Timezone Offset 01:00:00.\n");
+        Write("chat-B.log",
+            "26-05-19 21:00:00\t**** Logged In As Em. Server Laeth. Timezone Offset 01:00:00.\n");
+
+        var source = new ChatLogReplaySource(Config(pollSeconds: 0.25));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(2000));
+        var collector = CollectAsync(source, cts.Token);
+
+        // Let the source enter live mode before appending.
+        await Task.Delay(500);
+
+        // Interleave appends across two files. File A gets t=10 and t=30;
+        // file B gets t=20 and t=40. With the bug, the subscriber sees
+        // 10,30,20,40 (A drained, then B drained). With the fix, the
+        // subscriber sees 10,20,30,40.
+        Append("chat-A.log", "26-05-19 21:00:10\t[A] a-at-10\n");
+        Append("chat-B.log", "26-05-19 21:00:20\t[B] b-at-20\n");
+        Append("chat-A.log", "26-05-19 21:00:30\t[A] a-at-30\n");
+        Append("chat-B.log", "26-05-19 21:00:40\t[B] b-at-40\n");
+
+        var envelopes = await collector;
+        var liveTimestamps = envelopes
+            .Where(e => !e.IsReplay)
+            .Select(e => e.Payload.Timestamp)
+            .ToList();
+
+        liveTimestamps.Should().HaveCountGreaterThanOrEqualTo(4,
+            "all four appended lines should have been observed within the cancellation window");
+
+        // Strictly non-decreasing across the full live stream — the merge
+        // step must order across files within each poll cycle.
+        for (var i = 1; i < liveTimestamps.Count; i++)
+        {
+            liveTimestamps[i].Should().BeOnOrAfter(liveTimestamps[i - 1],
+                $"live-phase output must be timestamp-ordered, but index {i} ({liveTimestamps[i]:O}) precedes index {i - 1} ({liveTimestamps[i - 1]:O})");
+        }
+
+        var liveLines = envelopes.Where(e => !e.IsReplay)
+            .Select(e => e.Payload.Line).ToList();
+        liveLines.Should().Contain(l => l.Contains("a-at-10"));
+        liveLines.Should().Contain(l => l.Contains("b-at-20"));
+        liveLines.Should().Contain(l => l.Contains("a-at-30"));
+        liveLines.Should().Contain(l => l.Contains("b-at-40"));
+    }
+
+    [Fact]
+    public async Task Live_phase_single_file_emits_appends_in_write_order()
+    {
+        // Single-file steady state: the merge step must not perturb the
+        // write order when there is only one tailer.
+        Write("chat-Status.log",
+            "26-05-19 21:00:00\t**** Logged In As Em. Server Laeth. Timezone Offset 01:00:00.\n");
+
+        var source = new ChatLogReplaySource(Config(pollSeconds: 0.25));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+        var collector = CollectAsync(source, cts.Token);
+
+        await Task.Delay(500);
+        Append("chat-Status.log",
+            "26-05-19 21:00:10\t[Status] first\n" +
+            "26-05-19 21:00:20\t[Status] second\n" +
+            "26-05-19 21:00:30\t[Status] third\n");
+
+        var envelopes = await collector;
+        var liveLines = envelopes.Where(e => !e.IsReplay)
+            .Select(e => e.Payload.Line).ToList();
+
+        liveLines.Should().HaveCount(3);
+        liveLines[0].Should().Contain("first");
+        liveLines[1].Should().Contain("second");
+        liveLines[2].Should().Contain("third");
+    }
+
     // ── #639: session-shared clock offset across files ────────────────
 
     [Fact]
