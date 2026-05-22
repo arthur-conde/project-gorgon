@@ -44,11 +44,13 @@ public sealed class SamwiseModule : IMithrilModule
             diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),
             settings: sp.GetRequiredService<SamwiseSettings>(),
             referenceData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
-            activeChar: sp.GetService<Mithril.Shared.Character.IActiveCharacterService>()));
+            activeChar: sp.GetService<Mithril.Shared.Character.IActiveCharacterService>(),
+            playerWorld: sp.GetService<Mithril.WorldSim.Player.IPlayerWorld>()));
         services.AddSingleton<AlarmService>(sp => new AlarmService(
             sp.GetRequiredService<GardenStateMachine>(),
             sp.GetRequiredService<SamwiseSettings>(),
-            sp.GetRequiredService<Mithril.Shared.Audio.IAudioPlaybackSink>()));
+            sp.GetRequiredService<Mithril.Shared.Audio.IAudioPlaybackSink>(),
+            playerWorld: sp.GetService<Mithril.WorldSim.Player.IPlayerWorld>()));
 
         // Global preferences stay app-wide.
         services.AddMithrilSettings<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings);

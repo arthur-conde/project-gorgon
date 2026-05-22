@@ -3,6 +3,8 @@ using System.Windows.Threading;
 using Gandalf.Domain;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Wpf;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
@@ -29,21 +31,32 @@ public sealed class TimerAlarmService : IDisposable
     private readonly UserTimerSource _source;
     private readonly GandalfSettings _settings;
     private readonly TimeProvider _time;
+    private readonly IWorldClock? _worldClock;
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
 
-    public TimerAlarmService(UserTimerSource source, GandalfSettings settings, TimeProvider? time = null)
+    public TimerAlarmService(
+        UserTimerSource source,
+        GandalfSettings settings,
+        TimeProvider? time = null,
+        IPlayerWorld? playerWorld = null)
     {
         _source = source;
         _settings = settings;
         _time = time ?? TimeProvider.System;
+        _worldClock = playerWorld?.Clock;
         _source.TimerReady += OnTimerReady;
     }
 
+    // State-decision clock: refire-suppression + snooze gates both read from
+    // PlayerWorld (#609); writes pair with reads so the comparison is
+    // internally consistent.
+    private DateTimeOffset Now => _worldClock?.Now ?? _time.GetUtcNow();
+
     public void SnoozeAll()
     {
-        var until = _time.GetUtcNow() + TimeSpan.FromMinutes(_settings.SnoozeMinutes);
+        var until = Now + TimeSpan.FromMinutes(_settings.SnoozeMinutes);
         foreach (var key in _firedAt.Keys.ToArray()) _snoozedUntil[key] = until;
         _firedAt.Clear();
         StopAllPlayback();
@@ -66,7 +79,7 @@ public sealed class TimerAlarmService : IDisposable
     {
         if (!_settings.AlarmEnabled) return;
         var key = e.Key;
-        var now = _time.GetUtcNow();
+        var now = Now;
         // Time-based dedup, not the old "fired once, never again" set —
         // recurring game-clock alarms reach this path on every cycle.
         if (_firedAt.TryGetValue(key, out var last) && now - last < RefireSuppressionWindow) return;

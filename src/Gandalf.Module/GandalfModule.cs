@@ -99,7 +99,8 @@ public sealed class GandalfModule : IMithrilModule
             areaTracker: sp.GetService<PlayerAreaTracker>(),
             refData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             time: null,
-            diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),
+            playerWorld: sp.GetService<Mithril.WorldSim.Player.IPlayerWorld>()));
         services.AddHostedService<LootIngestionService>();
         services.AddHostedService<DefeatCalibrationBridge>();
         services.AddSingleton<LootTimersViewModel>();

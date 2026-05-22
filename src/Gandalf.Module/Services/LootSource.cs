@@ -4,6 +4,8 @@ using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
@@ -51,6 +53,7 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly PlayerAreaTracker? _areaTracker;
     private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _time;
+    private readonly IWorldClock? _worldClock;
     private readonly IDiagnosticsSink? _diag;
     private readonly object _catalogLock = new();
     private IReadOnlyDictionary<string, DefeatCatalogEntry> _calibrationByDisplayName =
@@ -66,7 +69,8 @@ public sealed class LootSource : ITimerSource, IDisposable
         PlayerAreaTracker? areaTracker = null,
         IReferenceDataService? refData = null,
         TimeProvider? time = null,
-        IDiagnosticsSink? diag = null)
+        IDiagnosticsSink? diag = null,
+        IPlayerWorld? playerWorld = null)
     {
         _derived = derived;
         _cacheStore = cacheStore;
@@ -74,6 +78,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         _areaTracker = areaTracker;
         _refData = refData;
         _time = time ?? TimeProvider.System;
+        _worldClock = playerWorld?.Clock;
         _diag = diag;
         _catalog = BuildCatalog();
         _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
@@ -255,7 +260,9 @@ public sealed class LootSource : ITimerSource, IDisposable
                 _derived.Start(Id, key, rejectionAt);
                 rowChanged = true;
             }
-            else if (prior.DismissedAt is null && prior.StartedAt + duration <= _time.GetUtcNow())
+            // State-decision gate: read PlayerWorld's clock (#609) so replay
+            // produces identical stale-anchor decisions regardless of attach time.
+            else if (prior.DismissedAt is null && prior.StartedAt + duration <= (_worldClock?.Now ?? _time.GetUtcNow()))
             {
                 // Stale anchor — recorded loot is older than this rejection
                 // implies. Refresh the anchor; the rejection guarantees the
@@ -571,8 +578,9 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     private void FireReady(string key, string displayName, TimeSpan durationOverride, DateTimeOffset atUtc)
     {
-        // Fire eagerly when stamping past-anchored: the row may already be ready.
-        if (atUtc <= _time.GetUtcNow())
+        // State-decision gate: read PlayerWorld's clock (#609) so replay
+        // fires the same eager-ready events as a live attach.
+        if (atUtc <= (_worldClock?.Now ?? _time.GetUtcNow()))
         {
             TimerReady?.Invoke(this, new TimerReadyEventArgs
             {

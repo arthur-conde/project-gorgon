@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Threading;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Wpf;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 using Samwise.State;
 
 namespace Samwise.Alarms;
@@ -13,6 +15,7 @@ public sealed class AlarmService : IDisposable
     private readonly GardenStateMachine _state;
     private readonly SamwiseSettings _settings;
     private readonly IAudioPlaybackSink _audio;
+    private readonly IWorldClock? _worldClock;
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
 
@@ -25,19 +28,29 @@ public sealed class AlarmService : IDisposable
 
     public event EventHandler<ActiveAlarm>? AlarmTriggered;
 
-    public AlarmService(GardenStateMachine state, SamwiseSettings settings, IAudioPlaybackSink audio)
+    public AlarmService(
+        GardenStateMachine state,
+        SamwiseSettings settings,
+        IAudioPlaybackSink audio,
+        IPlayerWorld? playerWorld = null)
     {
         _state = state;
         _settings = settings;
         _audio = audio;
+        _worldClock = playerWorld?.Clock;
         _state.PlotChanged += OnPlotChanged;
     }
+
+    private DateTimeOffset Now => _worldClock?.Now ?? DateTimeOffset.UtcNow;
 
     public IReadOnlyCollection<string> ActiveKeys => _firedAt.Keys.ToArray();
 
     public void SnoozeAll()
     {
-        var until = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(_settings.Alarms.SnoozeMinutes);
+        // Snooze pairs a future world-clock instant (here) with a gate later
+        // in OnPlotChanged (#609). Both ends must read the same clock so the
+        // duration comparison is internally consistent.
+        var until = Now + TimeSpan.FromMinutes(_settings.Alarms.SnoozeMinutes);
         foreach (var key in _firedAt.Keys.ToArray()) _snoozedUntil[key] = until;
         _firedAt.Clear();
         StopAllChannelPlayback();
@@ -82,11 +95,17 @@ public sealed class AlarmService : IDisposable
         // Dedupe per (plot, stage) so a re-trigger for the same stage is ignored,
         // but a later Ripe transition after an earlier Thirsty alarm still fires.
         var key = $"{e.Plot.CharName}|{e.Plot.PlotId}|{e.NewStage}";
-        if (_snoozedUntil.TryGetValue(key, out var until) && until > DateTimeOffset.UtcNow) return;
+        // State-decision gate: read PlayerWorld's clock (#609) — paired with the
+        // SnoozeAll write so both ends share one clock.
+        var now = Now;
+        if (_snoozedUntil.TryGetValue(key, out var until) && until > now) return;
         if (_firedAt.ContainsKey(key)) return;
 
-        _firedAt[key] = DateTimeOffset.UtcNow;
-        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, DateTimeOffset.UtcNow), e.NewStage, rule);
+        // _firedAt is a "fired-or-not" set — value is stamp-only (never compared
+        // as a delta); using wall-clock-ish Now here just keeps stamps coherent
+        // with the gate above.
+        _firedAt[key] = now;
+        Fire(new ActiveAlarm(key, e.Plot.CharName, e.Plot.CropType, now), e.NewStage, rule);
     }
 
     private AlarmChannel ResolveChannel(string id)

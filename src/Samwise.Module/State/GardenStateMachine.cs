@@ -1,6 +1,8 @@
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 using Samwise.Config;
 using Samwise.Parsing;
 
@@ -25,6 +27,7 @@ public sealed class GardenStateMachine
 
     private readonly ICropConfigStore _config;
     private readonly TimeProvider _time;
+    private readonly IWorldClock? _worldClock;
     private readonly IDiagnosticsSink? _diag;
     private readonly Alarms.SamwiseSettings? _settings;
     private readonly IReferenceDataService? _referenceData;
@@ -55,10 +58,12 @@ public sealed class GardenStateMachine
         IDiagnosticsSink? diag = null,
         Alarms.SamwiseSettings? settings = null,
         IReferenceDataService? referenceData = null,
-        IActiveCharacterService? activeChar = null)
+        IActiveCharacterService? activeChar = null,
+        IPlayerWorld? playerWorld = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
+        _worldClock = playerWorld?.Clock;
         _diag = diag;
         _settings = settings;
         _referenceData = referenceData;
@@ -540,7 +545,11 @@ public sealed class GardenStateMachine
     /// </summary>
     public void PruneWithered()
     {
-        var now = _time.GetUtcNow();
+        // State-decision gate: read PlayerWorld's simulated clock so replay
+        // produces identical pruning regardless of real attach time (#609).
+        // Pre-frame the clock returns DateTimeOffset.MinValue → no plot
+        // appears withered, which is the safe conservative fallback.
+        var now = _worldClock?.Now ?? _time.GetUtcNow();
         var removed = 0;
         foreach (var plots in _plotsByChar.Values)
         {
@@ -595,7 +604,10 @@ public sealed class GardenStateMachine
 
     public bool IsLikelyGarbageCollected(Plot plot)
     {
-        var age = _time.GetUtcNow() - plot.PlantedAt;
+        // State-decision gate: read PlayerWorld's clock (#609). Pre-frame
+        // (MinValue) the diff is negative → returns false, which is the
+        // safe conservative fallback (alarm still fires).
+        var age = (_worldClock?.Now ?? _time.GetUtcNow()) - plot.PlantedAt;
         return age > ExpectedEntityLifetime(plot);
     }
 }
