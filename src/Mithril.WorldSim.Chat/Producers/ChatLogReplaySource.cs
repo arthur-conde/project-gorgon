@@ -8,14 +8,15 @@ namespace Mithril.WorldSim.Chat.Producers;
 
 /// <summary>
 /// Concrete <see cref="IChatLogReplaySource"/> over <see cref="GameConfig.ChatLogDirectory"/>.
-/// On attach: enumerates every existing file in the directory, reads each via
-/// <see cref="LogSourceTailer"/> from byte 0 (so all existing lines are pulled
-/// with TZ-correct timestamps via <see cref="ChatLogClock"/>), then scans the
+/// On attach: enumerates every existing file in the directory, raw-scans the
 /// pooled content for the chat-side login banner
-/// (<see cref="ChatLoginBannerParser"/>). The globally most-recent banner's
-/// timestamp becomes the replay cutoff (principle 9 — "seek to the most recent
-/// chat banner matching the current Player.log session"); lines at-or-after
-/// that timestamp are yielded in timestamp-merged order with
+/// (<see cref="ChatLoginBannerParser"/>) to identify the globally most-recent
+/// banner, then drains each file through a <see cref="LogSourceTailer"/> from
+/// byte 0 with all per-file <see cref="ChatLogClock"/> instances pre-seeded
+/// with the canonical session offset (per #639). The cutoff timestamp folded
+/// via the session offset (principle 9 — "seek to the most recent chat banner
+/// matching the current Player.log session") gates the replay window; lines
+/// at-or-after the cutoff are yielded in timestamp-merged order with
 /// <see cref="LogEnvelope{T}.IsReplay"/> set to <c>true</c>. After the replay
 /// drain the source transitions to live-tail and yields subsequent appends with
 /// <c>IsReplay = false</c>.
@@ -25,11 +26,26 @@ namespace Mithril.WorldSim.Chat.Producers;
 /// self-scope independently). This source's job is the chat-intrinsic "most
 /// recent banner" decision.</para>
 ///
+/// <para><b>Session-shared clock offset (#639).</b> All per-file tailers in
+/// a session share the same canonical offset, so a chat file that doesn't
+/// itself contain a banner — or whose leading lines precede its own banner —
+/// still folds its local-date prefixes via the session-canonical offset
+/// rather than the host TZ fallback. Without this, a cross-machine replay
+/// (chat written on UTC-7, replayed on a UTC+1 host) would mis-stamp every
+/// no-banner file's lines by 8 hours. Each per-file clock keeps
+/// <c>_lastEmitted</c> tailer-local (so an unprefixed leading line in file B
+/// doesn't inherit file A's stamp), and the immutability of the seeded
+/// offset within a session matches the issue's "set once + reconcile on
+/// mismatch" intent for the seed path (a subsequent banner mid-session would
+/// re-anchor via the existing PG-re-login semantics, which is unchanged).</para>
+///
 /// <para><b>Phase 0 scope limits.</b> Files that exist at attach are tailed
 /// for the rest of the session; new files created post-attach (channels added
 /// mid-session — rare for PG) are not picked up. FileSystemWatcher-driven new-
 /// file pickup is a follow-on enhancement once a real world-sim consumer
-/// (#602 / #603) needs it.</para>
+/// (#602 / #603) needs it. Mid-session banner-mismatch warn-and-discard (the
+/// "step 4" in #639's fix sketch) is also deferred — current behaviour
+/// re-anchors on second banner, matching the chat-clock's pre-#639 semantics.</para>
 /// </summary>
 public sealed class ChatLogReplaySource : IChatLogReplaySource
 {
@@ -60,17 +76,75 @@ public sealed class ChatLogReplaySource : IChatLogReplaySource
             yield break;
         }
 
-        // 1. Snapshot files + drain each via LogSourceTailer.
-        var tailers = new List<(string Path, LogSourceTailer Tailer, List<RawLogLine> Lines)>();
+        // 1. Pre-scan banners. Per #639: all per-file clocks in the session
+        //    must share the same canonical session offset, so we identify
+        //    the globally-most-recent banner before stamping any line. We
+        //    read raw text here (one cheap pass per file) and look only at
+        //    the banner-line offset + local-date prefix; the actual stamped
+        //    lines are produced in pass 2 with the shared seeded offset, so
+        //    every chat-derived RawLogLine.Timestamp in the session folds
+        //    via the same offset — even unprefixed leading lines and lines
+        //    in files that don't themselves carry the banner.
+        var fileRawLines = new List<(string Path, string[] RawLines)>();
         foreach (var path in Directory.EnumerateFiles(directory))
         {
             try
             {
-                var tailer = new LogSourceTailer(path, new ChatLogClock(_time, _fallbackTz), _time);
+                // FileShare.ReadWrite | Delete matches LogSourceTailer so a
+                // concurrently-appending PG client doesn't lock us out.
+                using var fs = new FileStream(path, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                using var reader = new StreamReader(fs);
+                var text = reader.ReadToEnd();
+                fileRawLines.Add((path, text.Split('\n')));
+            }
+            catch (IOException ex)
+            {
+                _diag?.Warn("ChatLogReplaySource", $"Skipping unreadable file '{path}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                _diag?.Warn("ChatLogReplaySource", $"Skipping inaccessible file '{path}': {ex.Message}");
+            }
+        }
+
+        // 2. Find globally most-recent banner by parsing local-date prefixes
+        //    directly (offset is set per the banner itself, so we compare
+        //    *local* timestamps — every banner is consistent with itself).
+        //    Capture the canonical session offset from that banner.
+        DateTime? bannerCutoffLocal = null;
+        TimeSpan? sessionOffset = null;
+        foreach (var (_, rawLines) in fileRawLines)
+        {
+            foreach (var raw in rawLines)
+            {
+                var line = raw.EndsWith('\r') ? raw[..^1] : raw;
+                if (line.Length == 0) continue;
+                if (!ChatLoginBannerParser.TryParse(line, out var banner)) continue;
+                if (!ChatLogClock.TryParseLocalDatePrefix(line, out var local)) continue;
+                if (bannerCutoffLocal is null || local > bannerCutoffLocal)
+                {
+                    bannerCutoffLocal = local;
+                    sessionOffset = banner.Offset;
+                }
+            }
+        }
+
+        // 3. Snapshot files + drain each via LogSourceTailer, using
+        //    `ChatLogClock` instances all pre-seeded with the canonical
+        //    session offset (when known). Per-file clock instances keep
+        //    `_lastEmitted` tailer-local — only `_bannerOffset` is shared
+        //    state, and it's seeded once + immutable for the seed path
+        //    (subsequent banners would re-anchor, which is the intended
+        //    PG-re-login behaviour and unchanged from prior semantics).
+        var tailers = new List<(string Path, LogSourceTailer Tailer, List<RawLogLine> Lines)>();
+        foreach (var (path, _) in fileRawLines)
+        {
+            try
+            {
+                var clock = new ChatLogClock(_time, _fallbackTz, sessionOffset);
+                var tailer = new LogSourceTailer(path, clock, _time);
                 var lines = new List<RawLogLine>();
-                // ReadNew may return in batches (the file is small enough that
-                // a single call gets it all, but the contract is no-guarantee;
-                // loop until empty to be safe).
                 while (true)
                 {
                     var batch = tailer.ReadNew();
@@ -89,23 +163,16 @@ public sealed class ChatLogReplaySource : IChatLogReplaySource
             }
         }
 
-        // 2. Find globally most-recent banner.
+        // 4. Compute the cross-source replay cutoff in UTC terms. The
+        //    cutoff banner's local timestamp folded by the session offset
+        //    is the UTC instant downstream events are compared against.
         DateTimeOffset? bannerCutoff = null;
-        foreach (var (_, _, lines) in tailers)
+        if (bannerCutoffLocal is { } cutoffLocal && sessionOffset is { } off)
         {
-            foreach (var l in lines)
-            {
-                if (ChatLoginBannerParser.TryParse(l.Line, out _))
-                {
-                    if (bannerCutoff is null || l.Timestamp > bannerCutoff)
-                    {
-                        bannerCutoff = l.Timestamp;
-                    }
-                }
-            }
+            bannerCutoff = new DateTimeOffset(cutoffLocal, off);
         }
 
-        // 3. Replay phase — yield lines at-or-after the cutoff, merged across
+        // 5. Replay phase — yield lines at-or-after the cutoff, merged across
         //    files by timestamp. If no banner, replay is empty (matches the
         //    legacy "skip what's already there" seed behaviour for pre-banner
         //    cold attaches).
@@ -136,7 +203,7 @@ public sealed class ChatLogReplaySource : IChatLogReplaySource
                 $"No banner across {tailers.Count} file(s); skipping replay phase.");
         }
 
-        // 4. Live phase — poll the same tailers. They've already advanced their
+        // 6. Live phase — poll the same tailers. They've already advanced their
         //    offsets past the replay batch, so ReadNew() now returns appended
         //    content only.
         var pollInterval = TimeSpan.FromSeconds(Math.Max(0.25, _config.PollIntervalSeconds));

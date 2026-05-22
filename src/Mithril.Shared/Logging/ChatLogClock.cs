@@ -74,7 +74,7 @@ internal sealed partial class ChatLogClock : ILogSourceClock
     // banner (PG re-login during the same Mithril run).
     private TimeSpan? _bannerOffset;
 
-    public ChatLogClock(TimeProvider time, TimeZoneInfo? fallbackTz = null)
+    public ChatLogClock(TimeProvider time, TimeZoneInfo? fallbackTz = null, TimeSpan? seededBannerOffset = null)
     {
         _time = time;
         // Late-bind TimeZoneInfo.Local so a test can inject a fixed-offset
@@ -84,6 +84,16 @@ internal sealed partial class ChatLogClock : ILogSourceClock
         // host's). The banner-derived offset, once seen, supersedes this
         // for the cross-machine-replay case (see #538).
         _fallbackTz = fallbackTz ?? TimeZoneInfo.Local;
+        // Optional seed: a caller that has already scanned the session's
+        // canonical login banner (e.g. ChatLogReplaySource, which scans
+        // every chat file at attach to find the globally-most-recent
+        // banner) can pre-seed the offset so all per-file clocks in the
+        // session fold timestamps via the same offset from the very first
+        // line. Without this, each file's first banner anchors its own
+        // clock independently — files without a banner fall through to
+        // `_fallbackTz`, which is wrong when the originating session's
+        // offset differs from the replay host's local TZ. See #639.
+        _bannerOffset = seededBannerOffset;
     }
 
     public void EnsureAnchored(IReadOnlyList<string> lines, Func<DateTime> mtimeUtcAccessor)
