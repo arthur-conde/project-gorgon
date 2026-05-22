@@ -14,7 +14,7 @@ namespace Mithril.GameState.Quests.Parsing;
 ///
 /// Resolves the integer quest id to the quest's InternalName via
 /// <see cref="IReferenceDataService.Quests"/> so downstream consumers
-/// (e.g. <c>QuestService</c>) can track the journal by stable name.
+/// (e.g. <c>PlayerQuestJournalService</c>) can track the journal by stable name.
 ///
 /// <para>Post-#550 L1 migration: consumes the envelope-stripped
 /// <see cref="LocalPlayerLogLine.Data"/> payload — L0.5 (#532) has already

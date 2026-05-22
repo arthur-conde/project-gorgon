@@ -111,7 +111,7 @@ public sealed class GameSessionService : BackgroundService, IGameSessionService
         {
             // Replay the current session before going live so the subscriber
             // observes the same `Current` view that already-attached handlers
-            // see. Mirrors InventoryService.Subscribe / QuestService.Subscribe.
+            // see. Mirrors InventoryService.Subscribe / PlayerQuestJournalService.Subscribe.
             if (_current is not null) Invoke(handler, _current);
             _handlers.Add(handler);
             return new Subscription(this, handler);

@@ -9,12 +9,13 @@ using Xunit;
 namespace Gandalf.Tests;
 
 /// <summary>
-/// Post-#155 QuestSource is a pure projector over <see cref="Mithril.GameState.Quests.IQuestService"/>
-/// + <see cref="DerivedTimerProgressService"/>. Catalog =
+/// Post-#155 QuestSource is a pure projector over
+/// <see cref="Mithril.GameState.Quests.IPlayerQuestJournalService"/> +
+/// <see cref="DerivedTimerProgressService"/>. Catalog =
 /// <c>ActiveQuests ∪ keys-with-progress</c>; ingestion (the old
 /// <c>OnQuestJournalLoaded</c> / <c>OnQuestAccepted</c> / <c>OnQuestCompleted</c>
-/// entry points) lives in QuestService now and is exercised via
-/// <see cref="FakeQuestService"/> here.
+/// entry points) lives in PlayerQuestJournalService now and is exercised via
+/// <see cref="FakePlayerQuestJournalService"/> here.
 /// </summary>
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]
@@ -36,7 +37,7 @@ public class QuestSourceTests : IDisposable
     }
 
     private (QuestSource src, DerivedTimerProgressService derived, FakeReferenceData refData,
-             FakeQuestService questSvc, ManualTime time)
+             FakePlayerQuestJournalService questSvc, ManualTime time)
         Build(params (string Key, Mithril.Reference.Models.Quests.Quest Quest)[] quests)
     {
         var active = new FakeActiveCharacterService();
@@ -49,7 +50,7 @@ public class QuestSourceTests : IDisposable
         var derived = new DerivedTimerProgressService(derivedView, time);
 
         var refData = new FakeReferenceData(quests);
-        var questSvc = new FakeQuestService();
+        var questSvc = new FakePlayerQuestJournalService();
         var src = new QuestSource(derived, refData, questSvc, time);
         return (src, derived, refData, questSvc, time);
     }
@@ -179,7 +180,7 @@ public class QuestSourceTests : IDisposable
             src.Progress[key].DismissedAt.Should().NotBeNull();
 
             // Same Completed event re-fires (Subscribe replay on a fresh
-            // subscriber, or QuestService dispatching a duplicate). Dismissal
+            // subscriber, or PlayerQuestJournalService dispatching a duplicate). Dismissal
             // must survive — clearing it would resurrect a row the user X'd.
             questSvc.RaiseCompleted("Q1", completedAt);
             src.Progress[key].DismissedAt.Should().NotBeNull(

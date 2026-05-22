@@ -17,7 +17,7 @@ namespace Mithril.GameState.Movement;
 /// teleport — last-writer-wins keeps it advancing as the player relogs/zones.
 ///
 /// <para><b>Why a self-feeding BackgroundService.</b> Mirrors
-/// <see cref="Sessions.GameSessionService"/> / <c>QuestService</c>: the
+/// <see cref="Sessions.GameSessionService"/> / <c>PlayerQuestJournalService</c>: the
 /// position is shared live game-state and must be available to consumers
 /// (e.g. Palantir's debug surface) without depending on any other module
 /// being activated.</para>

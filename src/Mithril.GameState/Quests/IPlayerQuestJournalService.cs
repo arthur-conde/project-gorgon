@@ -21,8 +21,8 @@ public enum QuestEventKind
     /// anchor applies.</summary>
     Abandoned,
     /// <summary>Quest was turned in. Removes from active set and stamps
-    /// <see cref="IQuestService.CompletionHistory"/>; downstream cooldown
-    /// clocks anchor on <see cref="QuestEvent.Timestamp"/>.</summary>
+    /// <see cref="IPlayerQuestJournalService.CompletionHistory"/>; downstream
+    /// cooldown clocks anchor on <see cref="QuestEvent.Timestamp"/>.</summary>
     Completed,
 }
 
@@ -34,15 +34,22 @@ public sealed record QuestCompletionState(string InternalName, DateTimeOffset La
 
 /// <summary>
 /// Canonical "quests in journal" + "when did I last complete X?" map for the
-/// active character, derived by tailing <c>ProcessLoadQuests</c> /
-/// <c>ProcessBook("New Quest:" …)</c> / <c>ProcessCompleteQuest</c> on
+/// active character, derived by folding the Player.log quest events
+/// (<c>ProcessLoadQuests</c> / <c>ProcessBook("New Quest:" …)</c> /
+/// <c>ProcessCompleteQuest</c>) from
 /// <see cref="Mithril.Shared.Logging.IPlayerLogStream"/>. Persisted per-character
-/// to <c>characters/{slug}/quests.json</c> so completion anchors survive
-/// across sessions (a quest completed three days ago needs a remembered
-/// timestamp; today's session log won't carry that <c>ProcessCompleteQuest</c>
-/// line).
+/// to <c>characters/{slug}/quests.json</c> so completion anchors survive across
+/// sessions (a quest completed three days ago needs a remembered timestamp;
+/// today's session log won't carry that <c>ProcessCompleteQuest</c> line).
 ///
-/// Owning this centrally — rather than letting each quest-aware module
+/// State half of the (state, reference) split surfaced by world-sim migration
+/// item #6 (see <c>docs/world-simulator.md</c>): this service owns the live
+/// per-character ledger, while quest *reference* data (definitions, names,
+/// reuse times, requirements) continues to live in
+/// <c>IReferenceDataService.Quests</c>. Quest-aware modules join the two
+/// surfaces explicitly; the service no longer conflates them.
+///
+/// Owning the journal centrally — rather than letting each quest-aware module
 /// re-parse the log — avoids fan-out of the same journal state and lets
 /// downstream consumers (<c>QuestSource</c> for repeatable cooldowns, future
 /// Smaug repeatable-quest tracking, future quest planners) read a single
@@ -51,7 +58,7 @@ public sealed record QuestCompletionState(string InternalName, DateTimeOffset La
 /// <see cref="TryGetActive"/> / <see cref="TryGetCompletion"/>, or
 /// <see cref="Subscribe"/> for an atomic replay-then-live event stream.
 /// </summary>
-public interface IQuestService
+public interface IPlayerQuestJournalService
 {
     /// <summary>
     /// Snapshot of quests currently in the active character's journal, keyed
@@ -83,14 +90,6 @@ public interface IQuestService
     /// replay (on the subscribing thread) and during live dispatch (on the
     /// ingestion-loop thread). Subscribers that do non-trivial work should
     /// dispatch off-thread immediately to avoid blocking ingestion.
-    ///
-    /// On character switch the service atomically swaps to the new character's
-    /// state and fires diff-events: <see cref="QuestEventKind.Abandoned"/> for
-    /// quests in the old active set that aren't in the new,
-    /// <see cref="QuestEventKind.Accepted"/> for the new entries, and
-    /// <see cref="QuestEventKind.Completed"/> for every entry in the new
-    /// completion history (subscribers maintaining mirrors should idempotently
-    /// apply these).
     ///
     /// Dispose the returned subscription to stop receiving further events.
     /// </summary>

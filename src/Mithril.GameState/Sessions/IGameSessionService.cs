@@ -5,8 +5,9 @@ namespace Mithril.GameState.Sessions;
 /// for the <c>Logged in as character X. Time UTC=… Timezone Offset …</c> banner,
 /// publishes the current <see cref="GameSession"/>, and re-anchors on every
 /// fresh login. Sibling of <see cref="Mithril.GameState.Inventory.IInventoryService"/>
-/// and <see cref="Mithril.GameState.Quests.IQuestService"/>: same atomic-replay
-/// Subscribe pattern so late joiners observe the current session synchronously.
+/// and <see cref="Mithril.GameState.Quests.IPlayerQuestJournalService"/>: same
+/// atomic-replay Subscribe pattern so late joiners observe the current session
+/// synchronously.
 ///
 /// Also surfaces as <see cref="Mithril.Shared.Logging.ISessionAnchor"/> so
 /// <see cref="Mithril.Shared.Logging.PlayerLogClock"/> (the Player.log L0

@@ -3,16 +3,16 @@ using Mithril.GameState.Quests;
 namespace Mithril.TestSupport;
 
 /// <summary>
-/// Minimal <see cref="IQuestService"/> stand-in for tests that need to drive
-/// QuestSource / quest-aware modules without spinning up the real
+/// Minimal <see cref="IPlayerQuestJournalService"/> stand-in for tests that need to
+/// drive <c>QuestSource</c> / quest-aware modules without spinning up the real
 /// log-tailing service. Exposes <see cref="RaiseAccepted"/> /
 /// <see cref="RaiseAbandoned"/> / <see cref="RaiseCompleted"/> to mutate the
 /// internal maps and fan out the matching <see cref="QuestEvent"/> to
 /// subscribers — same shape as the real service's per-event dispatch path.
 /// Subscribe atomically replays current state, mirroring the real
-/// <see cref="QuestService"/>.
+/// <see cref="PlayerQuestJournalService"/>.
 /// </summary>
-internal sealed class FakeQuestService : IQuestService
+internal sealed class FakePlayerQuestJournalService : IPlayerQuestJournalService
 {
     private readonly Dictionary<string, QuestJournalEntry> _active = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, QuestCompletionState> _completed = new(StringComparer.OrdinalIgnoreCase);
@@ -129,9 +129,9 @@ internal sealed class FakeQuestService : IQuestService
 
     private sealed class Subscription : IDisposable
     {
-        private readonly FakeQuestService _svc;
+        private readonly FakePlayerQuestJournalService _svc;
         private Action<QuestEvent>? _handler;
-        public Subscription(FakeQuestService svc, Action<QuestEvent> handler) { _svc = svc; _handler = handler; }
+        public Subscription(FakePlayerQuestJournalService svc, Action<QuestEvent> handler) { _svc = svc; _handler = handler; }
         public void Dispose()
         {
             var h = Interlocked.Exchange(ref _handler, null);

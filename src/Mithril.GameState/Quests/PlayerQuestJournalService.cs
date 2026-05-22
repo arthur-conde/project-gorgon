@@ -23,22 +23,27 @@ namespace Mithril.GameState.Quests;
 /// session). Saving on each mutation; quest events arrive at most every few
 /// seconds, no debouncing needed.
 ///
+/// Character switch is a UI binding swap, not a state mutation. The service
+/// hydrates from <see cref="PerCharacterView{T}.Current"/> once at
+/// construction (so a post-restart <c>Subscribe</c> sees the persisted
+/// history before any live log line arrives) and never listens for
+/// <see cref="PerCharacterView{T}.CurrentChanged"/> — under the world-sim's
+/// per-character scope (see <c>docs/world-simulator.md</c> migration item #6),
+/// each character has its own ledger and the UI rebinds to the new
+/// character's instance rather than mutating this one.
+///
 /// Threading: ingestion runs on the L1 driver's pump thread (archetype-A
-/// default = <c>DeliveryContext.Inline</c>), character-switch reloads run on
-/// the <see cref="PerCharacterView{T}.CurrentChanged"/> callback thread
-/// (typically the active-character service thread). Both dispatch to
-/// subscribers under the same lock as the snapshot accessors — subscribers
-/// must dispatch off-thread for non-trivial work.
+/// default = <c>DeliveryContext.Inline</c>). Subscribers dispatch under the
+/// same lock as the snapshot accessors — non-trivial work must hop off-thread.
 /// </summary>
-public sealed class QuestService : BackgroundService, IQuestService
+public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJournalService
 {
     private readonly ILogStreamDriver _driver;
     private readonly QuestJournalLoadParser _journalLoadParser;
     private readonly QuestAcceptedParser _acceptedParser;
     private readonly QuestCompletedParser _completedParser;
-    private readonly PerCharacterView<QuestServiceState> _view;
+    private readonly PerCharacterView<PlayerQuestJournalState> _view;
     private readonly IReferenceDataService _refData;
-    private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
@@ -47,14 +52,13 @@ public sealed class QuestService : BackgroundService, IQuestService
     private readonly List<Action<QuestEvent>> _handlers = [];
     private ILogSubscription? _subscription;
 
-    public QuestService(
+    public PlayerQuestJournalService(
         ILogStreamDriver driver,
         QuestJournalLoadParser journalLoadParser,
         QuestAcceptedParser acceptedParser,
         QuestCompletedParser completedParser,
-        PerCharacterView<QuestServiceState> view,
+        PerCharacterView<PlayerQuestJournalState> view,
         IReferenceDataService refData,
-        TimeProvider? time = null,
         IDiagnosticsSink? diag = null)
     {
         _driver = driver;
@@ -63,14 +67,12 @@ public sealed class QuestService : BackgroundService, IQuestService
         _completedParser = completedParser;
         _view = view;
         _refData = refData;
-        _time = time ?? TimeProvider.System;
         _diag = diag;
 
-        // Hydrate from disk for the active character (if any) before any
-        // subscriber attaches. CurrentChanged covers later character switches
-        // and the case where no character is selected yet at construction.
-        ReloadFromView();
-        _view.CurrentChanged += OnViewCurrentChanged;
+        // Hydrate from disk for the active character before any subscriber
+        // attaches. No event firing here — Subscribe replays the current
+        // active/completed sets atomically when consumers attach.
+        HydrateFromView();
     }
 
     public IReadOnlyDictionary<string, QuestJournalEntry> ActiveQuests
@@ -173,7 +175,8 @@ public sealed class QuestService : BackgroundService, IQuestService
     /// ids are dropped silently (game-data drift). Fires
     /// <see cref="QuestEventKind.Accepted"/> for newly-present entries and
     /// <see cref="QuestEventKind.Abandoned"/> for entries that were active
-    /// before but aren't anymore.
+    /// before but aren't anymore — a real inference from a real log event,
+    /// stamped on the <see cref="QuestJournalLoadedEvent.Timestamp"/>.
     /// </summary>
     private void HandleJournalLoaded(QuestJournalLoadedEvent loaded)
     {
@@ -259,46 +262,20 @@ public sealed class QuestService : BackgroundService, IQuestService
         if (persist) PersistAfterMutation();
     }
 
-    private void OnViewCurrentChanged(object? sender, EventArgs e)
-    {
-        try { ReloadFromView(); }
-        catch (Exception ex) { _diag?.Warn("Quests", $"Character switch reload failed: {ex.Message}"); }
-    }
-
     /// <summary>
-    /// Atomically swap the in-memory state to whatever
-    /// <see cref="PerCharacterView{T}.Current"/> reports, firing diff events
-    /// (<see cref="QuestEventKind.Abandoned"/> for old-active-only,
-    /// <see cref="QuestEventKind.Accepted"/> for new-active-only,
-    /// <see cref="QuestEventKind.Completed"/> for new/changed completion
-    /// entries) so subscribers can update mirrors without re-subscribing.
+    /// Construction-time hydration from the persisted per-character view. No
+    /// event firing — no subscribers exist yet, and there is no prior
+    /// in-memory state to diff against. Called once from the ctor.
     /// </summary>
-    private void ReloadFromView()
+    private void HydrateFromView()
     {
         var current = _view.Current;
-        var newActive = current?.ActiveQuests ?? new Dictionary<string, QuestJournalEntry>(StringComparer.OrdinalIgnoreCase);
-        var newCompleted = current?.CompletionHistory ?? new Dictionary<string, QuestCompletionState>(StringComparer.OrdinalIgnoreCase);
+        if (current is null) return;
 
-        var events = new List<QuestEvent>();
-        var nowStamp = _time.GetUtcNow().UtcDateTime;
         lock (_lock)
         {
-            foreach (var (name, _) in _active)
-                if (!newActive.ContainsKey(name))
-                    events.Add(new QuestEvent(QuestEventKind.Abandoned, name, nowStamp));
-            foreach (var (name, entry) in newActive)
-                if (!_active.ContainsKey(name))
-                    events.Add(new QuestEvent(QuestEventKind.Accepted, name, entry.AcceptedAt.UtcDateTime));
-            foreach (var (name, c) in newCompleted)
-                if (!_completed.TryGetValue(name, out var oc) || oc.LastCompletedAt != c.LastCompletedAt)
-                    events.Add(new QuestEvent(QuestEventKind.Completed, name, c.LastCompletedAt.UtcDateTime));
-
-            _active.Clear();
-            foreach (var (k, v) in newActive) _active[k] = v;
-            _completed.Clear();
-            foreach (var (k, v) in newCompleted) _completed[k] = v;
-
-            if (events.Count > 0) FireAll(events);
+            foreach (var (k, v) in current.ActiveQuests) _active[k] = v;
+            foreach (var (k, v) in current.CompletionHistory) _completed[k] = v;
         }
     }
 
@@ -343,7 +320,6 @@ public sealed class QuestService : BackgroundService, IQuestService
 
     public override void Dispose()
     {
-        _view.CurrentChanged -= OnViewCurrentChanged;
         _subscription?.Dispose();
         _subscription = null;
         base.Dispose();
@@ -351,9 +327,9 @@ public sealed class QuestService : BackgroundService, IQuestService
 
     private sealed class Subscription : IDisposable
     {
-        private readonly QuestService _svc;
+        private readonly PlayerQuestJournalService _svc;
         private Action<QuestEvent>? _handler;
-        public Subscription(QuestService svc, Action<QuestEvent> handler) { _svc = svc; _handler = handler; }
+        public Subscription(PlayerQuestJournalService svc, Action<QuestEvent> handler) { _svc = svc; _handler = handler; }
         public void Dispose()
         {
             var h = Interlocked.Exchange(ref _handler, null);

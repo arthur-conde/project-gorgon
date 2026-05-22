@@ -202,7 +202,7 @@ lock — do non-trivial work off-thread.
   registered in `GameStateServiceCollectionExtensions.AddMithrilGameState`.
   Takes an **optional** `IReferenceDataService?` (#470, mirrors
   `InventoryService`) — DI auto-injects the registered singleton (already
-  required by `QuestService` in the same extension, so no new boot risk);
+  required by `PlayerQuestJournalService` in the same extension, so no new boot risk);
   absent in unit tests → proxy fallback.
 
 ## Reference enrichment (#470)

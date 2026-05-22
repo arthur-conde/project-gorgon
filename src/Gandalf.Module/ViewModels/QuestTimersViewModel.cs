@@ -14,7 +14,7 @@ namespace Gandalf.ViewModels;
 /// (Pending / Cooling / Ready / All) plus bulk dismiss commands.
 ///
 /// Post-#155 the source's catalog IS the active set
-/// (<c>IQuestService.ActiveQuests ∪ keys-with-progress</c>) — no need for the
+/// (<c>IPlayerQuestJournalService.ActiveQuests ∪ keys-with-progress</c>) — no need for the
 /// VM to re-filter the universe of repeatable quests, so the old
 /// <c>IsRelevant</c> predicate and the <c>PendingChanged</c> subscription are
 /// gone. Pending in the State filter just means <see cref="TimerState.Idle"/>:

@@ -194,15 +194,19 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<IServerCatalogService>(sp => sp.GetRequiredService<ServerCatalogService>())
             .AddHostedService(sp => sp.GetRequiredService<ServerCatalogService>());
 
+        // Per-character quest journal — Player.log only (state half of the
+        // split that retired the old IQuestService reference/state conflation,
+        // world-sim migration item #6, issue #607). Reference data lives in
+        // IReferenceDataService.Quests; consumers join the two surfaces.
         services.AddSingleton<QuestJournalLoadParser>();
         services.AddSingleton<QuestAcceptedParser>();
         services.AddSingleton<QuestCompletedParser>();
-        services.AddPerCharacterStore<QuestServiceState>(
-            "quests.json", QuestServiceStateJsonContext.Default.QuestServiceState);
+        services.AddPerCharacterStore<PlayerQuestJournalState>(
+            "quests.json", PlayerQuestJournalStateJsonContext.Default.PlayerQuestJournalState);
         services
-            .AddSingleton<QuestService>()
-            .AddSingleton<IQuestService>(sp => sp.GetRequiredService<QuestService>())
-            .AddHostedService(sp => sp.GetRequiredService<QuestService>());
+            .AddSingleton<PlayerQuestJournalService>()
+            .AddSingleton<IPlayerQuestJournalService>(sp => sp.GetRequiredService<PlayerQuestJournalService>())
+            .AddHostedService(sp => sp.GetRequiredService<PlayerQuestJournalService>());
 
         return services;
     }

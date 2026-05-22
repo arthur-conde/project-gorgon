@@ -35,7 +35,7 @@ public class QuestTimersViewModelTests : IDisposable
     }
 
     private (QuestTimersViewModel vm, QuestSource src, DerivedTimerProgressService derived,
-             FakeQuestService questSvc, ManualTime time)
+             FakePlayerQuestJournalService questSvc, ManualTime time)
         Build(params (string Key, Mithril.Reference.Models.Quests.Quest Quest)[] quests)
     {
         var active = new FakeActiveCharacterService();
@@ -49,7 +49,7 @@ public class QuestTimersViewModelTests : IDisposable
         var derived = new DerivedTimerProgressService(derivedView, time);
 
         var refData = new FakeReferenceData(quests);
-        var questSvc = new FakeQuestService();
+        var questSvc = new FakePlayerQuestJournalService();
         var src = new QuestSource(derived, refData, questSvc, time);
         var vm = new QuestTimersViewModel(src, derived, time);
         return (vm, src, derived, questSvc, time);
