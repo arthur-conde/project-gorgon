@@ -19,11 +19,12 @@ When `/world-sim-orchestrate-tick` fires you, no specific issue is supplied — 
 Optional caller inputs:
 
 - (none) — **autonomous tick mode.** Pick the next ready issue from the dep graph and deliver it. This is what /loop dispatches.
-- `issue` (+ `phase` required) — **manual issue dispatch mode.** Skip the dep-graph picking; deliver this specific issue. For manual debugging or human-directed work.
+- `issue` — **manual issue dispatch mode.** Skip the dep-graph picking; deliver this specific issue. For manual debugging or human-directed work.
+- `phase` (optional in all modes) — phase classification override. If omitted, the driver looks up the phase from `docs/world-simulator-orchestration-plan.md` §Dependency graph by issue number. Issues not in the YAML (follow-ons with `orchestrator-followup` label, ad-hoc issues) have no phase — pass `null` to the context pack and the reviewers/workers handle the absence.
 - `pr` — **adopt-PR mode.** Skip the dep-graph picking AND skip Phase 2 (initial implementation). Fetch the PR, resolve the linked issue from the PR body (`Closes #N`), build the context pack against that issue, jump to Phase 3 (review-fix loop). For taking over PRs opened by humans, crashed prior driver ticks, or external processes.
 - `max_iterations` (optional, default `3`) — review-fix cycle ceiling. Applies to all modes.
 
-`pr` and `issue` are mutually exclusive. If both supplied, ask once and wait. If `issue` is supplied without `phase`, ask once and wait. If `pr` is supplied, `phase` is resolved automatically from the linked issue.
+`pr` and `issue` are mutually exclusive. If both supplied, ask once and wait. `phase` is no longer required to be supplied explicitly — the driver resolves it from the orchestration plan when needed.
 
 ## Required reading on intake (each tick — cheap probe first)
 
@@ -456,10 +457,10 @@ Every terminal_dispatch invocation (merge, escalation, conflict, nothing-to-do, 
    - `merged`: remove `orchestrator-dispatch:<issue#>` label (issue should already be closed). File `state.accumulated_follow_ons` per §Follow-on filing. Post roll-up comment on the merged PR.
    - `nothing-to-do`: post the worker's summary on the issue, `gh issue close <issue#>`, remove `orchestrator-dispatch:<issue#>` label.
    - `decomposed`: file `state.accumulated_follow_ons` (the sub-issues) per §Follow-on filing. Remove `orchestrator-dispatch:<issue#>` label so the parent stays in the ready set (its `Depends on: #<sub>` edges will keep it filtered until subs close).
-   - `needs-human`: add `orchestrator-blocked` label. Post a comment on #601 with the escalation summary. Call `mcp__ccd_session__spawn_task` per §Escalation prompt template, passing the JSON return + prose.
+   - `needs-human`: add `orchestrator-blocked` label. Post a comment on #601 with the escalation summary. Call `mcp__ccd_session__spawn_task` per §Escalation prompt template, passing the verdict, escalation reason, and any review-comment trail context.
    - `conflict`: add `orchestrator-blocked` label. Call `mcp__ccd_session__spawn_task` with title "Resolve world-sim PR #<PR> merge conflict", a rebase-instruction prompt body.
 3. **Schedule next tick**: `ScheduleWakeup` in 60s (work just completed; next ready issue may unlock).
-4. **Return** — the agent's final message includes the structured JSON (see §Output contract).
+4. **Return** — post the prose tick summary (see §Tick summary).
 
 ### 5. Idle
 
@@ -482,6 +483,8 @@ In every other path — successful delivery, fallback chip emission, idle, error
 If a tick reaches a code path that doesn't obviously match one of the documented outcomes, default to: call `ScheduleWakeup` in 1800s and exit. The worst case is a wasted 30-minute sleep — the alternative (silent /loop death) is far worse.
 
 When in doubt, schedule.
+
+**`ScheduleWakeup` vs `CronCreate` equivalence.** Both schedulers operate at depth -1 (harness layer) and fire fresh top-level Claude sessions at depth 0 when they trigger. `ScheduleWakeup` is the /loop self-pacing primitive — used inside /loop's dynamic mode (no fixed interval). `CronCreate` is a session-scoped cron entry that fires independently of /loop. Either works for chaining ticks; the driver uses `ScheduleWakeup` by default because /loop is the expected invocation surface. If `ScheduleWakeup` is unavailable in a given harness's depth-0 context, fall back to `CronCreate` with a short delay (e.g., `recurring: false`, fire at `now + 60s`).
 
 ## Building the context pack
 
@@ -665,8 +668,8 @@ Use `gh pr comment <pr> -R moumantai-gg/mithril --body-file <path>`. The body sh
 **Escalation reason:** <max_iterations | same_issue_class | worker_no_progress | degraded_mode_cannot_iterate>
                        (omit this line unless Verdict is needs-human)
 
-## Follow-ons (out-of-scope findings — for human visibility; the driver
-                also surfaces these in the merge return JSON)
+## Follow-ons (out-of-scope findings — accumulated during review iterations,
+                filed as GitHub issues at merge time per §Follow-on filing)
 
 - title: <one-line summary>
   files: <comma-separated file:line refs>
@@ -745,11 +748,8 @@ Escalation reason: <max_iterations | human_review | same_issue_class
                    | merge_command_failed | shepherd_return_unparseable
                    | degraded_mode_cannot_iterate | no_dispatch_tools>
 
-Driver's terminal verdict (JSON):
-<paste the JSON block from the driver's return text>
-
-Driver summary:
-<paste the prose summary from after the JSON block>
+Driver tick summary:
+<paste the driver's tick summary — what happened, which PR if any, what the reviewers said, why it escalated>
 
 To resolve:
 - Read the PR diff (if a PR exists), the driver's review-comment trail, and
@@ -867,36 +867,19 @@ If two driver ticks ever run concurrently, both will read the same GitHub state 
 
 No mutex label is acquired at tick start, so this protection lives at the /loop layer.
 
-## Output contract
+## Tick summary
 
-Your final message includes a fenced JSON block (consumed by cross-tick recovery and any human reading the driver's tick log):
+At the end of every tick, post a brief prose summary as your final user-visible message. One paragraph, plain English, no JSON. Examples:
 
-```json
-{
-  "verdict": "merged" | "needs-human" | "conflict" | "nothing-to-do" | "decomposed"
-           | "circuit-breaker" | "idle" | "limit-hit" | "no-action",
-  "issue": <int> | null,
-  "pr": <int> | null,
-  "head_sha": "<sha>" | null,
-  "merged_sha": "<sha>" | null,
-  "iterations": <int>,
-  "escalation_reason": "max_iterations" | "human_review" | "same_issue_class"
-                     | "worker_no_progress" | "merge_conflict" | "closed_without_merge"
-                     | "initial_implementation_failed" | "nothing_to_do" | "decomposed"
-                     | "needs_input" | "worker_failed" | "merge_command_failed"
-                     | "degraded_mode_cannot_iterate" | "no_dispatch_tools"
-                     | "pr_has_no_linked_issue" | "ambiguous_inputs" | null,
-  "follow_ons": [
-    { "title": "...", "files": "...", "blocks": [<int>...], "body": "..." }
-  ],
-  "anomalies": [ "<one-line>" ],
-  "summary": "<1-2 sentences>"
-}
-```
+- *Merged delivery*: "Delivered #707 (Phase 2 — split AbilityCalendarStateService). Worker opened PR #710, reviewers converged on iteration 2, merged with merge_sha abc1234. Filed 2 follow-on issues (#711 — same-class refactor opportunity in PlannerService, #712 — missing test for Mode == Replay branch). Next tick in 60s."
+- *Idle*: "No actionable work this tick — all open world-sim issues are either dispatched, blocked, or have unresolved deps. Next tick in 30 minutes."
+- *Escalation*: "Task #707 escalated as `needs-human / same_issue_class` — workers couldn't resolve principle-12 finding in PlannerService.cs:142 across 3 review iterations. `orchestrator-blocked` label applied, spawn_task chip emitted. Next tick in 60s."
+- *Cross-tick recovery*: "Cross-tick recovery picked up PR #709's `needs-human` marker from a prior crashed tick. Applied `orchestrator-blocked` label to #708 and emitted escalation chip. Next tick in 60s."
+- *Circuit breaker*: "Driver paused — `pause` label is on #601. Remove the label and restart /loop to resume." (no ScheduleWakeup)
 
-Verdicts that don't correspond to a delivery (`circuit-breaker`, `idle`, `limit-hit`, `no-action`) carry `issue: null` and `pr: null`. They're informational — they tell /loop and any tail-reader what happened this tick.
+**Why prose, not JSON.** v3.1 emitted a structured JSON return for the orchestrator subagent to parse. In v4 there's no orchestrator — the driver IS top-level Claude, and there's no consumer for a JSON return. All inter-tick state lives in GitHub (labels, PR comment markers, filed issues, umbrella comment trail). Prose serves the only remaining consumer (the human reading the conversation).
 
-After the JSON block, include human-readable prose: a paragraph summarizing what happened.
+If a future tooling consumer ever needs structured output, the relevant fields are already persisted on GitHub: `gh issue view <N>` and `gh pr view <PR>` carry the labels, comment markers, and state needed to reconstruct what any tick did.
 
 ## On errors
 
