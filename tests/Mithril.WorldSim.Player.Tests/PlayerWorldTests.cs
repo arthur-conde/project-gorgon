@@ -361,7 +361,7 @@ public sealed class PlayerWorldTests
 
         var folderAct = () => world.RegisterFolder(new RecordingFolder<string>());
         folderAct.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Cannot register*after StartAsync*");
+            .WithMessage("*Cannot register*after StartMerger*");
 
         var producerAct = () => world.RegisterProducer(new StubFrameProducer<int>(modeAware: false));
         producerAct.Should().Throw<InvalidOperationException>();

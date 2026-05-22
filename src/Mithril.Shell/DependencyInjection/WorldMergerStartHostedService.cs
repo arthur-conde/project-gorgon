@@ -51,10 +51,12 @@ internal sealed class WorldMergerStartHostedService : IHostedService
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         try { _cts.Cancel(); } catch { /* best-effort */ }
-        if (_mergerTasks.Count == 0) return;
         try
         {
-            await Task.WhenAll(_mergerTasks).WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (_mergerTasks.Count > 0)
+            {
+                await Task.WhenAll(_mergerTasks).WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException)
         {

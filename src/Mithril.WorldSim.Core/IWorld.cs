@@ -25,7 +25,7 @@ public interface IWorld
 
     /// <summary>
     /// Register a producer (log tail, filesystem reconcile, …). Must be called
-    /// before <see cref="StartAsync"/>. The world's merger consumes from every
+    /// before <see cref="StartMerger"/>. The world's merger consumes from every
     /// registered producer and merges their frames by timestamp, breaking ties
     /// by <see cref="IFrameProducer{TPayload}.Priority"/>.
     /// </summary>

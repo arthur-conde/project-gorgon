@@ -266,8 +266,8 @@ public sealed class ChatWorld : IChatWorld, IAsyncDisposable
         if (_started)
         {
             throw new InvalidOperationException(
-                "Cannot register producers/folders/composers after StartAsync — " +
-                "the registration set closes at start (IWorld.StartAsync doc).");
+                "Cannot register producers/folders/composers after StartMerger — " +
+                "the registration set seals on entry (IWorld.StartMerger doc).");
         }
     }
 

@@ -175,6 +175,6 @@ public sealed class ChatWorldTests
 
         var folderAct = () => world.RegisterFolder(new RecordingFolder<RawLogLine>());
         folderAct.Should().Throw<InvalidOperationException>()
-            .WithMessage("*Cannot register*after StartAsync*");
+            .WithMessage("*Cannot register*after StartMerger*");
     }
 }

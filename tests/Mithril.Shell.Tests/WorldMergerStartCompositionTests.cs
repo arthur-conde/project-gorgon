@@ -1,6 +1,10 @@
+using System.IO;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Mithril.Shared.Game;
+using Mithril.Shared.Settings;
+using Mithril.Shell;
 using Mithril.Shell.DependencyInjection;
 using Mithril.WorldSim;
 using Mithril.WorldSim.Player;
@@ -50,6 +54,60 @@ public sealed class WorldMergerStartCompositionTests
 
         var after = services.Count(d => d.ServiceType == typeof(IHostedService));
         after.Should().Be(before + 1, "AddWorldMergerStart adds exactly one hosted-service descriptor");
+    }
+
+    /// <summary>
+    /// Structural-invariant test: after <c>AddMithrilApp</c>, the LAST
+    /// <see cref="IHostedService"/> descriptor in the collection is
+    /// <see cref="WorldMergerStartHostedService"/>. The promise of
+    /// <c>AddMithrilApp</c> is that the trailing-registration invariant
+    /// is enforced structurally rather than by call-site discipline — a
+    /// future regression where a contributor inadvertently adds
+    /// <c>.AddHostedService&lt;X&gt;()</c> AFTER <c>.AddWorldMergerStart()</c>
+    /// inside <c>AddMithrilApp</c> would silently restore the
+    /// merger-vs-registration race this PR eliminated. This test pins the
+    /// invariant against <c>AddMithrilApp</c>'s actual composition, not
+    /// against the <c>AddX().AddWorldMergerStart()</c> pattern in isolation.
+    /// </summary>
+    [Fact]
+    public void AddMithrilApp_appends_WorldMergerStartHostedService_as_the_last_hosted_service()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "mithril-696-trailing-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var options = MakeStubOptions(tempDir);
+            var services = new ServiceCollection();
+            services.AddMithrilApp(options);
+
+            var lastHostedService = services
+                .Where(d => d.ServiceType == typeof(IHostedService))
+                .Last();
+            lastHostedService.ImplementationType.Should().Be(
+                typeof(WorldMergerStartHostedService),
+                "AddMithrilApp must keep AddWorldMergerStart() the trailing registration so the merger drain starts after every other hosted service's StartAsync has completed");
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    private static ShellCompositionOptions MakeStubOptions(string tempDir)
+    {
+        var shellStore = new JsonSettingsStore<ShellSettings>(
+            Path.Combine(tempDir, "shell.json"), ShellSettingsJsonContext.Default.ShellSettings);
+        return new ShellCompositionOptions(
+            PreferencesPath: Path.Combine(tempDir, "preferences.json"),
+            ShellStore: shellStore,
+            ShellSettings: new ShellSettings(),
+            GameConfig: new GameConfig(),
+            LogDir: Path.Combine(tempDir, "logs"),
+            PerfDir: Path.Combine(tempDir, "perf"),
+            CharactersRootDir: Path.Combine(tempDir, "characters"),
+            ReferenceCacheDir: Path.Combine(tempDir, "ref"),
+            CommunityCalibrationCacheDir: Path.Combine(tempDir, "cal"),
+            IconCacheDir: Path.Combine(tempDir, "icons"));
     }
 
     /// <summary>
