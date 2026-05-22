@@ -1,3 +1,5 @@
+using Mithril.WorldSim;
+
 namespace Mithril.GameState.Skills;
 
 /// <summary>How a <see cref="SkillChange"/> was produced.</summary>
@@ -55,4 +57,4 @@ public readonly record struct SkillChange(
     SkillProgressSnapshot Current,
     long XpGained,
     SkillChangeKind Kind,
-    DateTime Timestamp);
+    DateTime Timestamp) : IChangeEvent;

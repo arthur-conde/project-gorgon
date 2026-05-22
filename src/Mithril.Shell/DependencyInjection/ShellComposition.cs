@@ -10,6 +10,7 @@ using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.DependencyInjection;
+using Mithril.WorldSim.Player.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Mithril.Shell.DependencyInjection;
@@ -60,6 +61,14 @@ public static class ShellComposition
             // the typed pipes + the unified pipe — #556) and
             // AddMithrilGameState (whose producers depend on ILogStreamDriver).
             .AddMithrilLogStreamDriver()
+            // PlayerWorld is registered BEFORE AddMithrilGameState so the
+            // skill-folder + producer registration (#618 — Phase 1 of the
+            // world-sim migration) can wire into the world via its own
+            // IHostedService at startup, before PlayerWorld.StartAsync fires.
+            // Hosted services run in registration order; the registration
+            // hosted service inside AddMithrilGameState therefore runs
+            // strictly before PlayerWorldHostedService.
+            .AddPlayerWorld()
             .AddMithrilGameState()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)

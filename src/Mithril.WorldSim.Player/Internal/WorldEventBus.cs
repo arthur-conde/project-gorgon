@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq.Expressions;
 
 namespace Mithril.WorldSim.Player.Internal;
 
@@ -16,6 +17,7 @@ namespace Mithril.WorldSim.Player.Internal;
 internal sealed class WorldEventBus : IWorldEventBus
 {
     private readonly ConcurrentDictionary<Type, List<Subscription>> _subscriptions = new();
+    private readonly ConcurrentDictionary<Type, Func<DateTimeOffset, object, IFrame>> _changeEventWrappers = new();
     private readonly object _mutationLock = new();
 
     public IDisposable Subscribe<T>(Action<Frame<T>> handler)
@@ -70,6 +72,55 @@ internal sealed class WorldEventBus : IWorldEventBus
             if (sub.IsDisposed) continue;
             sub.Invoke(frame);
         }
+    }
+
+    /// <summary>
+    /// Publish a folder-emitted change event as a typed
+    /// <see cref="Frame{TPayload}"/> on the bus. The payload's runtime type
+    /// determines <c>T</c>: <c>changeEvent.GetType() == typeof(TConcrete)</c>
+    /// produces a <c>Frame&lt;TConcrete&gt;</c> stamped with
+    /// <paramref name="timestamp"/>. Subscribers registered via
+    /// <see cref="Subscribe{T}(Action{Frame{T}})"/> for the concrete change-event
+    /// type see the emission; subscribers for a base type or
+    /// <see cref="IChangeEvent"/> itself do not (the routing key is the
+    /// concrete payload type, matching how composer emissions are routed).
+    ///
+    /// <para>This is the bridge that surfaces folder change events on the
+    /// world's bus — without it, single-world consumers (per design notebook
+    /// principle 4) would have to register a pass-through composer for every
+    /// folder. The folder still returns <see cref="IChangeEvent"/> lists so
+    /// the runtime-type lookup is one cached <c>Func</c> per concrete
+    /// change-event type (first publish compiles, subsequent ones are direct
+    /// delegate calls).</para>
+    /// </summary>
+    public void PublishChangeEvent(object changeEvent, DateTimeOffset timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(changeEvent);
+
+        var wrapper = _changeEventWrappers.GetOrAdd(changeEvent.GetType(), MakeWrapper);
+        Publish(wrapper(timestamp, changeEvent));
+    }
+
+    /// <summary>
+    /// Build a compiled delegate that, for a fixed runtime type <c>T</c>,
+    /// projects <c>(timestamp, boxedPayload) =&gt; (IFrame) new Frame&lt;T&gt;(timestamp, (T)boxedPayload)</c>.
+    /// One allocation per change-event type on first use; cached for the
+    /// lifetime of the bus. Equivalent to a hand-rolled
+    /// <c>MakeGenericMethod</c> + <c>Delegate.CreateDelegate</c> pair, but the
+    /// expression tree is easier to read at the call site.
+    /// </summary>
+    private static Func<DateTimeOffset, object, IFrame> MakeWrapper(Type runtimeType)
+    {
+        var frameType = typeof(Frame<>).MakeGenericType(runtimeType);
+        var ctor = frameType.GetConstructor(new[] { typeof(DateTimeOffset), runtimeType })
+            ?? throw new InvalidOperationException(
+                $"Frame<{runtimeType.FullName}> is missing the expected (DateTimeOffset, T) constructor.");
+        var tsParam = Expression.Parameter(typeof(DateTimeOffset), "timestamp");
+        var payloadParam = Expression.Parameter(typeof(object), "payload");
+        var body = Expression.Convert(
+            Expression.New(ctor, tsParam, Expression.Convert(payloadParam, runtimeType)),
+            typeof(IFrame));
+        return Expression.Lambda<Func<DateTimeOffset, object, IFrame>>(body, tsParam, payloadParam).Compile();
     }
 
     private sealed class Subscription : IDisposable

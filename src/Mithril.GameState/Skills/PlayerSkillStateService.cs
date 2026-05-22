@@ -1,18 +1,29 @@
-using Microsoft.Extensions.Hosting;
 using Mithril.GameState.Skills.Parsing;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
+using Mithril.WorldSim;
 
 namespace Mithril.GameState.Skills;
 
 /// <summary>
-/// Eagerly subscribes to the L1 (#550) driver's LocalPlayer pipe at shell
-/// startup and maintains the canonical live <see cref="PlayerSkillSnapshot"/>
-/// from <c>ProcessLoadSkills</c> (full replace) and
-/// <c>ProcessUpdateSkill</c> (per-skill upsert) lines. The single owner of
-/// player skill state derived from the log — modules depend on
+/// Player.log skill-state folder + service surface. The single owner of player
+/// skill state derived from the log — modules depend on
 /// <see cref="IPlayerSkillState"/> rather than re-parsing the stream.
+///
+/// <para><b>World-simulator migration (issue #618 — Phase 1).</b> Pre-migration
+/// this class was a <see cref="Microsoft.Extensions.Hosting.BackgroundService"/>
+/// that owned its own L1-driver subscription. Post-migration it is an
+/// <see cref="IFolder{TPayload}"/> registered with <c>IPlayerWorld</c> for the
+/// <see cref="SkillFrame"/> payload type: a sibling
+/// <see cref="Producers.SkillFrameProducer"/> owns the L1 subscription, parses
+/// each line via <see cref="SkillLogParser"/>, and emits one
+/// <see cref="SkillsSnapshotFrame"/> per <c>ProcessLoadSkills</c> /
+/// <see cref="SkillProgressUpdateFrame"/> per <c>ProcessUpdateSkill</c>. The
+/// world drives <see cref="Apply"/> per applied frame in source order; the
+/// folder returns <see cref="SkillChange"/> change events which the world
+/// publishes on its bus (<c>IPlayerWorld.Bus.Subscribe&lt;SkillChange&gt;</c>)
+/// in addition to invoking the legacy
+/// <see cref="IPlayerSkillState.SubscribeChanges"/> handlers.</para>
 ///
 /// <para><b>Self-heal / warm-up.</b> <c>ProcessLoadSkills</c> is emitted at
 /// login and again on every zone / session transition, so a wholesale replace
@@ -23,27 +34,25 @@ namespace Mithril.GameState.Skills;
 /// snapshot (better than nothing — the next <c>ProcessLoadSkills</c> makes it
 /// whole). This window is the documented contract.</para>
 ///
-/// <para><b>Threading.</b> The L1 driver delivers envelopes on its pump
-/// thread (archetype-A default = <c>DeliveryContext.Inline</c>). The
-/// snapshot reference is swapped under <see cref="_lock"/>;
-/// <see cref="Current"/> reads are lock-free (reference read of an immutable
-/// object). <see cref="Subscribe"/> replays and attaches atomically under
-/// the same lock the ingestion loop fires under, which closes the
-/// late-subscribe race exactly as <c>InventoryService</c> does.</para>
+/// <para><b>Threading.</b> The world drives <see cref="Apply"/> from its
+/// merger thread; folder mutations + legacy handler dispatch run under
+/// <see cref="_lock"/>. <see cref="Current"/> reads are lock-free (reference
+/// read of an immutable object). <see cref="Subscribe"/> replays and attaches
+/// atomically under the same lock the dispatch loop fires under, which closes
+/// the late-subscribe race exactly as the pre-migration shape did.</para>
 ///
-/// <para><b>Containment.</b> The L1 driver wraps each handler invocation
-/// in try/catch + rate-limited Warn, retiring the per-service
-/// <see cref="ThrottledWarn"/> instance this service used to hold (#550
-/// capability C). Failures surface on <c>IDiagnosticsSink</c> under the
-/// <c>GameState.Skills</c> category via the driver's
-/// <see cref="LogSubscriptionOptions.DiagnosticCategory"/> override. The
-/// parser's own <see cref="ThrottledWarn"/> (per-row numeric-overflow
-/// guard, #525) is unrelated and stays.</para>
+/// <para><b>Two consumer channels, one truth.</b>
+/// <see cref="SubscribeChanges"/> + <see cref="Subscribe"/> remain the
+/// idiomatic surfaces for snapshot / event delivery. The world's bus carries
+/// the same <see cref="SkillChange"/> stream for cross-cutting consumers that
+/// prefer the architectural <c>IPlayerWorld.Bus.Subscribe&lt;SkillChange&gt;</c>
+/// path (design notebook principle 4 — single-world consumers may subscribe
+/// directly to the world's bus). Both channels fire on identical events with
+/// identical content; back-compat consumers keep working; new code can
+/// choose either.</para>
 /// </summary>
-public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillState
+public sealed class PlayerSkillStateService : IFolder<SkillFrame>, IPlayerSkillState
 {
-    private readonly ILogStreamDriver _driver;
-    private readonly SkillLogParser _parser;
     private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
 
@@ -51,22 +60,16 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
     private readonly List<Action<PlayerSkillSnapshot>> _handlers = new();
     private readonly List<Action<SkillChange>> _changeHandlers = new();
     private volatile PlayerSkillSnapshot _current = PlayerSkillSnapshot.Empty;
-    private ILogSubscription? _subscription;
 
     /// <param name="refData">Optional (#470). When present, each projected
     /// <see cref="SkillProgressSnapshot"/> is enriched with authoritative
     /// <see cref="SkillReference"/> metadata (display name, XpTable/umbrella).
     /// Absent (tests, or reference data not yet loaded) → the snapshot keeps
-    /// the verified log-only proxies. Mirrors <c>InventoryService</c>'s
-    /// optional <c>IReferenceDataService?</c> dependency.</param>
+    /// the verified log-only proxies.</param>
     public PlayerSkillStateService(
-        ILogStreamDriver driver,
-        SkillLogParser parser,
         IReferenceDataService? refData = null,
         IDiagnosticsSink? diag = null)
     {
-        _driver = driver;
-        _parser = parser;
         _refData = refData;
         _diag = diag;
     }
@@ -96,56 +99,37 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
         }
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Apply one frame to internal state. The world routes
+    /// <see cref="SkillFrame"/> frames here in source-stream order; the folder
+    /// mutates state, fires the legacy <see cref="Subscribe"/> /
+    /// <see cref="SubscribeChanges"/> handlers, and returns the
+    /// <see cref="SkillChange"/> events for the world to surface on its bus.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="clock"/> is unused — the folder's state derivation is
+    /// driven entirely by the frame's own timestamp (which equals
+    /// <c>clock.Now</c> at apply-time per the framework). Keeping
+    /// frame-timestamp-only ensures the snapshot's
+    /// <see cref="PlayerSkillSnapshot.MeasuredAt"/> reads identically before
+    /// and after this migration.
+    /// </remarks>
+    public IReadOnlyList<IChangeEvent> Apply(Frame<SkillFrame> frame, IWorldClock clock)
     {
-        _diag?.Info("GameState.Skills", "Subscribing to L1 driver (LocalPlayer pipe) for skill-state events");
-        // archetype-A defaults — FromSessionStart replay + Inline delivery.
-        // The parser consumes the envelope-stripped LocalPlayerLogLine.Data
-        // directly — L0.5 (#532) owns actor classification, downstream
-        // never re-matches the envelope (#550 PR #555 review).
-        _subscription = _driver.Subscribe<LocalPlayerLogLine>(
-            envelope =>
-            {
-                var ts = envelope.Payload.Timestamp.UtcDateTime;
-                switch (_parser.TryParse(envelope.Payload.Data, ts))
-                {
-                    case SkillsSnapshotEvent snap:
-                        ReplaceAll(snap);
-                        break;
-                    case SkillProgressUpdateEvent upd:
-                        Upsert(upd);
-                        break;
-                }
-                return ValueTask.CompletedTask;
-            },
-            new LogSubscriptionOptions
-            {
-                ReplayMode = ReplayMode.FromSessionStart,
-                DeliveryContext = DeliveryContext.Inline,
-                DiagnosticCategory = "GameState.Skills",
-            });
-
-        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
-        catch (OperationCanceledException) { /* expected on host stop */ }
-        finally
+        _ = clock;
+        return frame.Payload switch
         {
-            _subscription?.Dispose();
-            _subscription = null;
-        }
-    }
-
-    public override void Dispose()
-    {
-        _subscription?.Dispose();
-        _subscription = null;
-        base.Dispose();
+            SkillsSnapshotFrame snap => ReplaceAll(snap, frame.Timestamp.UtcDateTime),
+            SkillProgressUpdateFrame upd => Upsert(upd, frame.Timestamp.UtcDateTime),
+            _ => Array.Empty<IChangeEvent>(),
+        };
     }
 
     /// <summary>Wholesale replace from a <c>ProcessLoadSkills</c> dump. Emits a
     /// <see cref="SkillChangeKind.SnapshotReplace"/> only for skills whose
     /// projection actually differs from (or is new vs.) the prior state — a
     /// no-op re-sync produces no change events.</summary>
-    private void ReplaceAll(SkillsSnapshotEvent snap)
+    private IReadOnlyList<IChangeEvent> ReplaceAll(SkillsSnapshotFrame snap, DateTime timestamp)
     {
         var map = new Dictionary<string, SkillProgressSnapshot>(snap.Skills.Count, StringComparer.Ordinal);
         foreach (var r in snap.Skills)
@@ -155,37 +139,35 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
             map[r.SkillKey] = Project(r);
         }
 
+        List<IChangeEvent> changes = new();
         lock (_lock)
         {
             var prev = _current.Skills;
-            List<SkillChange>? changes = _changeHandlers.Count == 0 ? null : new();
-            if (changes is not null)
+            foreach (var (key, cur) in map)
             {
-                foreach (var (key, cur) in map)
-                {
-                    bool had = prev.TryGetValue(key, out var before);
-                    if (had && before.Equals(cur)) continue; // unchanged — skip
-                    changes.Add(new SkillChange(
-                        key, had ? before : null, cur, XpGained: 0,
-                        SkillChangeKind.SnapshotReplace, snap.Timestamp));
-                }
+                bool had = prev.TryGetValue(key, out var before);
+                if (had && before.Equals(cur)) continue; // unchanged — skip
+                changes.Add(new SkillChange(
+                    key, had ? before : null, cur, XpGained: 0,
+                    SkillChangeKind.SnapshotReplace, timestamp));
             }
 
-            _current = new PlayerSkillSnapshot(map, snap.Timestamp, SkillStateSource.LiveLog);
+            _current = new PlayerSkillSnapshot(map, timestamp, SkillStateSource.LiveLog);
             _diag?.Trace("GameState.Skills",
-                $"Skill snapshot replaced: {map.Count} skills @ {snap.Timestamp:O}");
+                $"Skill snapshot replaced: {map.Count} skills @ {timestamp:O}");
             Fire(_current);
-            if (changes is not null)
-                foreach (var c in changes) FireChange(c);
+            foreach (var c in changes) FireChange((SkillChange)c);
         }
+        return changes;
     }
 
     /// <summary>Single-skill upsert from a <c>ProcessUpdateSkill</c> delta.
     /// Accepted even before the first full snapshot — the resulting partial
     /// state is intentional (see the type docs). Emits one
     /// <see cref="SkillChangeKind.Delta"/> carrying the tick's XP.</summary>
-    private void Upsert(SkillProgressUpdateEvent upd)
+    private IReadOnlyList<IChangeEvent> Upsert(SkillProgressUpdateFrame upd, DateTime timestamp)
     {
+        SkillChange change;
         lock (_lock)
         {
             var key = upd.Skill.SkillKey;
@@ -199,13 +181,17 @@ public sealed class PlayerSkillStateService : BackgroundService, IPlayerSkillSta
             {
                 [key] = cur,
             };
-            _current = new PlayerSkillSnapshot(map, upd.Timestamp, SkillStateSource.LiveLog);
+            _current = new PlayerSkillSnapshot(map, timestamp, SkillStateSource.LiveLog);
             _diag?.Trace("GameState.Skills",
-                $"Skill upsert: {key} raw={upd.Skill.Level} +{upd.XpGained}xp @ {upd.Timestamp:O}");
+                $"Skill upsert: {key} raw={upd.Skill.Level} +{upd.XpGained}xp @ {timestamp:O}");
+
+            change = new SkillChange(
+                key, before, cur, upd.XpGained, SkillChangeKind.Delta, timestamp);
+
             Fire(_current);
-            FireChange(new SkillChange(
-                key, before, cur, upd.XpGained, SkillChangeKind.Delta, upd.Timestamp));
+            FireChange(change);
         }
+        return new IChangeEvent[] { change };
     }
 
     private SkillProgressSnapshot Project(SkillProgressRecord r) => new(

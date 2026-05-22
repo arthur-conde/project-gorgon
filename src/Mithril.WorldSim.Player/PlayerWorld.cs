@@ -263,6 +263,16 @@ public sealed class PlayerWorld : IPlayerWorld, IAsyncDisposable
         var workQueue = new Queue<object>(changes.Count);
         foreach (var c in changes)
         {
+            // Surface folder change events on the bus AS WELL AS routing them
+            // to intra-world composers. Single-world consumers (per design
+            // notebook principle 4 — "modules needing only one source's
+            // state may subscribe directly to that world's bus") subscribe
+            // to the concrete change-event type; the bus wraps the runtime
+            // type into Frame<T> via a cached compiled delegate, so no
+            // pass-through composer is needed per folder. Composer emissions
+            // continue to publish via Bus.Publish in the resolution loop
+            // below; both flow through the same subscriber pipeline.
+            _bus.PublishChangeEvent(c, frame.Timestamp);
             workQueue.Enqueue(c);
         }
 
