@@ -1,5 +1,7 @@
 # World-sim shepherd — design notebook
 
+> **Vocabulary:** see [`docs/glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
+
 A single agent at /loop depth that drives the world-sim migration umbrella (#601) end-to-end. Per tick: pick the next ready issue from the dep graph, dispatch a worker + reviewers as named teammates via Teams + SendMessage, iterate the review-fix loop, merge the PR itself, file follow-ons, and schedule the next tick. Returns a structured verdict via JSON each tick (delivery outcome or `idle` / `no-action` / `circuit-breaker`).
 
 **Pairs with:**

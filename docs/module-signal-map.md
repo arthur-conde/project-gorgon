@@ -1,5 +1,7 @@
 # Module signal map
 
+> **Vocabulary:** see [`docs/glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
+
 Snapshot of every component's signal topology — what flows in, what closed mini-FSMs the component owns, what flows out. The inverse of [`module-charters.md`](module-charters.md): charters say *what each module is responsible for*; this doc says *what each module actually consumes and emits today.*
 
 ## Why this exists
