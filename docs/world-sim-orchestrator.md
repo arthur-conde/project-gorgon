@@ -12,17 +12,22 @@ An autonomous orchestrator subagent that drives the world-sim migration umbrella
 
 ---
 
-## v2 status (current)
+## v2.1 status (current)
 
-The orchestrator collapsed from 5 steps to 3 in v2 (issue #646). The per-issue shepherd now owns the full delivery lifecycle (initial implementation → PR → review-fix → merge), so the orchestrator no longer needs to dispatch general-purpose workers directly, hand existing PRs to shepherds mid-flight, or call `gh pr merge` itself.
+The orchestrator collapsed from 5 steps to 3 in v2 (issue #646, PR #647). The per-issue shepherd now owns the full delivery lifecycle (initial implementation → PR → review-fix → merge), so the orchestrator no longer needs to dispatch general-purpose workers directly, hand existing PRs to shepherds mid-flight, or call `gh pr merge` itself.
 
-**The v2 tick shape:**
+v2.1 (issue #652) closed two robustness gaps that surfaced in the live /loop:
+
+- **Inline `spawn_task` fallback in step 2.** v2 had the fallback in a separate section that the agent had to navigate to when `Agent` errored. In practice the agent didn't reliably make that jump and exited without calling `ScheduleWakeup`, killing /loop silently. v2.1 moves the fallback body inline into step 2's dispatch path so the recovery is the natural continuation.
+- **§ScheduleWakeup invariant.** Every non-kill-switch exit MUST call `ScheduleWakeup`. The invariant is documented near the bottom of the agent file with the explicit list of the three exceptions (pause label, umbrella closed, 3-strike error escalation). Anywhere else, the default is `ScheduleWakeup` in 1800s if the agent isn't sure what cadence to schedule.
+
+**The v2 tick shape (unchanged in v2.1):**
 
 | Step | What it does | When it fires |
 |------|--------------|---------------|
 | 0. Circuit breaker | Honor `pause` label or umbrella-closed state | Always check first |
 | 1. Cross-tick recovery | Process a shepherd's `needs-human` marker comment left on a PR after a prior tick crashed mid-handler | Rare — only when a prior tick didn't complete inline handling |
-| 2. Dispatch shepherd | Pick a ready issue from the dep graph, dispatch the shepherd via `Agent`, handle the terminal verdict (`merged` / `needs-human` / `conflict` / `nothing-to-do` / `decomposed`) inline in the same tick | The primary work step |
+| 2. Dispatch shepherd | Pick a ready issue from the dep graph, dispatch the shepherd via `Agent` (or inline `spawn_task` chip if `Agent` errors), handle the terminal verdict inline | The primary work step |
 | 3. Idle | 30-minute sleep | When 0-2 found nothing actionable |
 
 **What was removed in v2:**
@@ -32,7 +37,9 @@ The orchestrator collapsed from 5 steps to 3 in v2 (issue #646). The per-issue s
 - v1 §Worker dispatch contract — shepherd assembles the worker prompt from the issue body + context pack
 - v1 follow-on parsing from PR comment — orchestrator parses `follow_ons` from the shepherd's return JSON now
 
-**Why the change:** see issue #646 and [`world-sim-shepherd.md`](world-sim-shepherd.md) §"v2 vs v1 — what changed". Short version: `SendMessage` only works while the parent subagent is alive (per Claude Code docs), so the only way to keep worker/reviewer context across iterations is a long-lived per-issue shepherd. That collapsed the orchestrator's role from "dispatch worker, then wait, then dispatch shepherd, then wait, then merge" into "dispatch shepherd, wait, process return."
+**What was removed in v2.1:** the standalone §spawn_task fallback section (now inlined into step 2).
+
+**Why the v2 change:** see issue #646 and [`world-sim-shepherd.md`](world-sim-shepherd.md). Short version: `SendMessage` only works while the parent subagent is alive (per Claude Code docs), so the only way to keep worker/reviewer context across iterations is a long-lived per-issue shepherd. That collapsed the orchestrator's role from "dispatch worker, then wait, then dispatch shepherd, then wait, then merge" into "dispatch shepherd, wait, process return."
 
 **What remains relevant from the v1 narrative below.** The dep-graph derivation, follow-on filing schema, error-breadcrumb pattern, and concurrency assumption are all unchanged. The Per-tick decision logic section that follows describes the v1 5-step flow — useful for context on why v2 collapsed the way it did, but consult the agent file for current behavior.
 

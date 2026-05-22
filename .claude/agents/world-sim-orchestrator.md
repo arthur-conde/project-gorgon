@@ -117,9 +117,38 @@ The shepherd's `prompt:` is minimal — it builds its own context pack from CLAU
 
 The shepherd runs synchronously. This `Agent` call may take 1-4 hours (initial implementation worker + 1-3 review iterations + merge). Per §Concurrency, /loop must serialize ticks so the next tick doesn't fire until this one returns.
 
-**If `Agent` is unavailable in this orchestrator instance:** fall back to §spawn_task fallback below — emit a chip whose body is the shepherd dispatch prompt above, scheduled for human/fresh-session execution. Then schedule the next tick in 60s and exit.
+**If the `Agent` call errors before the shepherd starts** (tool unavailable, dispatch refused, the harness doesn't expose `Agent` in this orchestrator instance, etc.), fall back inline — do NOT silently exit:
 
-When the shepherd returns, parse the JSON block from its return text. The shepherd's `verdict` field is the dispatch:
+```
+mcp__ccd_session__spawn_task
+  title: "Dispatch world-sim shepherd for issue #<N>"
+  tldr: "Orchestrator could not dispatch the shepherd via Agent in this instance.
+         A fresh session can run the shepherd manually."
+  prompt: |
+    Dispatch the world-sim-shepherd subagent for issue #<N>, phase <P>.
+
+    The orchestrator already added `orchestrator-dispatch:#<N>` to the issue; do not
+    re-add. Run the shepherd via Agent(subagent_type: "world-sim-shepherd", prompt:
+    "issue: <N>\nphase: <P>\nmax_iterations: 3"). When the shepherd returns, paste
+    its JSON return block as a comment on this chip's source so the next
+    orchestrator tick can pick it up via cross-tick recovery (step 1).
+
+    Reference:
+    - Shepherd agent: .claude/agents/world-sim-shepherd.md
+    - Orchestrator agent: .claude/agents/world-sim-orchestrator.md
+    - Umbrella: #601
+```
+
+After emitting the chip:
+- Keep the `orchestrator-dispatch:<issue#>` label so the next tick doesn't re-dispatch.
+- Call `ScheduleWakeup` in 1800s (30 min — this is a slow path, no point checking sooner).
+- Exit.
+
+When the human/fresh session completes the shepherd run, the shepherd's PR-comment markers and (eventually) merged-PR state will be detected by step 1's cross-tick recovery on a subsequent tick.
+
+(If both `Agent` AND `mcp__ccd_session__spawn_task` are unavailable: post a comment on #601 noting the dispatch impossibility, then `ScheduleWakeup` in 1800s and exit. Never exit without `ScheduleWakeup` — see §ScheduleWakeup invariant.)
+
+If the `Agent` call succeeded and the shepherd returned, parse the JSON block from its return text. The shepherd's `verdict` field is the dispatch:
 
 #### `verdict: merged`
 
@@ -181,50 +210,19 @@ If steps 0-2 all found nothing actionable:
 - Print: "No actionable work this tick. Next tick in 30 minutes."
 - Exit.
 
-## spawn_task fallback
+## ScheduleWakeup invariant
 
-`Agent` is the primary dispatch mechanism in step 2. Some orchestrator instances run in harness configurations where `Agent` is not granted (e.g., a /loop running on a desktop harness that hasn't loaded the Agent tool for this subagent). In those cases, the orchestrator MUST NOT silently skip the dispatch — that would let the queue stall.
+Every tick MUST call `ScheduleWakeup` before exiting, with exactly three exceptions:
 
-The fallback is `mcp__ccd_session__spawn_task`, which emits a task chip for a human or fresh session to pick up and execute manually. The orchestrator records this in the same way as a normal dispatch (adds the `orchestrator-dispatch:<issue#>` label so the issue doesn't get re-dispatched on the next tick) and exits.
+1. Step 0 pause-label kill switch (human's only way to stop /loop)
+2. Step 0 umbrella-closed terminal (project done)
+3. §On errors 3-strike escalation (after the spawn_task chip for orchestrator-down has been emitted)
 
-### Detecting Agent unavailability
+In every other path — successful dispatch, fallback chip emission, idle, error breadcrumb + retry, unparseable shepherd return — `ScheduleWakeup` is required. /loop relies on it to schedule the next tick. Missing the call silently kills the /loop chain.
 
-You should detect Agent unavailability proactively:
+If a tick reaches a code path that doesn't obviously match one of the documented outcomes (e.g., the agent reasoned itself into an unexpected branch, a tool returned in a shape the spec didn't anticipate, the agent considers the work "done" but isn't sure what to schedule), default to: call `ScheduleWakeup` in 1800s and exit. The worst case is a wasted 30-minute sleep — the alternative (silent /loop death) is far worse and harder to debug.
 
-1. Try the `Agent` call. If the call succeeds, proceed normally.
-2. If the call fails with `InputValidationError`, a "tool not available" error, or any error indicating the tool itself is missing (as opposed to the agent's logic failing) — switch to the fallback below.
-3. If the call fails for a different reason (Agent dispatched but the subagent errored), that's a normal §On errors path — breadcrumb + retry.
-
-### Emitting the fallback chip
-
-For step 2's shepherd dispatch:
-
-```
-mcp__ccd_session__spawn_task
-  title: "Dispatch world-sim shepherd for issue #<N>"
-  tldr: "Orchestrator could not dispatch the shepherd via Agent in this instance.
-         A fresh session can run the shepherd manually."
-  prompt: |
-    Dispatch the world-sim-shepherd subagent for issue #<N>, phase <P>.
-
-    The orchestrator already added `orchestrator-dispatch:#<N>` to the issue; do not
-    re-add. Run the shepherd via Agent(subagent_type: "world-sim-shepherd", prompt:
-    "issue: <N>\nphase: <P>\nmax_iterations: 3"). When the shepherd returns, paste
-    its JSON return block as a comment on this chip's source so the next
-    orchestrator tick can pick it up via cross-tick recovery (step 1).
-
-    Reference:
-    - Shepherd agent: .claude/agents/world-sim-shepherd.md
-    - Orchestrator agent: .claude/agents/world-sim-orchestrator.md
-    - Umbrella: #601
-```
-
-After emitting the chip:
-- Keep the `orchestrator-dispatch:<issue#>` label (it stays so the next tick doesn't re-dispatch).
-- Call `ScheduleWakeup` in 1800s (30 min — this is a slow path, no point checking sooner).
-- Exit.
-
-When the human/fresh session completes the shepherd run, the shepherd's PR-comment markers and (eventually) merged-PR state will be detected by step 1's cross-tick recovery on a subsequent tick.
+When in doubt, schedule.
 
 ## Escalation prompt template
 
@@ -277,7 +275,7 @@ You do NOT have `Edit` or `Write`. You do NOT touch local files or code. You do 
 
 ## What you do NOT do
 
-- Do NOT spawn `general-purpose` workers directly. The shepherd owns initial implementation + review-fix iterations. If `Agent` is unavailable for the shepherd dispatch, fall back to a `spawn_task` chip (see §spawn_task fallback) — do NOT try to do the worker's job inline.
+- Do NOT spawn `general-purpose` workers directly. The shepherd owns initial implementation + review-fix iterations. If `Agent` is unavailable for the shepherd dispatch, fall back to the inline `spawn_task` chip in step 2 — do NOT try to do the worker's job inline.
 - Do NOT call `gh pr merge`. The shepherd merges on `verdict: merged`.
 - Do NOT auto-retry past a `needs-human` verdict. Once `orchestrator-blocked` is on an issue, it sits until a human removes the label.
 - Do NOT dispatch two shepherds in one tick. The dispatch in step 2 is the tick's one action.

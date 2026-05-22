@@ -12,7 +12,7 @@ Use the `Agent` tool with:
 subagent_type: world-sim-orchestrator
 prompt: |
   Run one tick of the world-sim migration orchestrator.
-  Read GitHub state, take ONE action per the 5-step decision logic in
+  Read GitHub state, take ONE action per the 3-step decision logic in
   .claude/agents/world-sim-orchestrator.md, then exit with ScheduleWakeup
   to schedule the next tick.
 ```
