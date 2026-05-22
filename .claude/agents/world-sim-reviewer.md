@@ -1,6 +1,7 @@
 ---
 name: world-sim-reviewer
 description: World-sim migration specialist reviewer. Use when a world-sim migration PR needs review against principles 1-13, phase-aware migration checks, replay-determinism inspection, and the migration audit. Input is a PR number, issue number, and phase. Reports structured findings; does not edit code or post PR comments — the caller (typically world-sim-shepherd) handles posting and dispatching.
+tools: Read, Grep, Glob, Bash, ToolSearch
 ---
 
 # World-sim migration specialist reviewer
