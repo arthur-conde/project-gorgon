@@ -19,7 +19,7 @@ namespace Mithril.GameState.Skills.Producers;
 /// frames.
 ///
 /// <para><b>Mode awareness.</b> Mirrors
-/// <see cref="Mithril.WorldSim.Player.Producers.ClassifiedPlayerLogProducer"/>'s
+/// <see cref="Mithril.WorldSim.Player.Producers.WorldClockTickProducer"/>'s
 /// shape — <see cref="ReachedLive"/> completes the moment the producer reads
 /// the first non-replay envelope from the L1 driver, irrespective of whether
 /// that envelope is itself a skill line. PG's <c>ProcessLoadSkills</c> only
@@ -128,7 +128,7 @@ public sealed class SkillFrameProducer : IFrameProducer<SkillFrame>, IModeAwareF
             subscription.Dispose();
             // Guarantee ReachedLive completes even if the stream ended without
             // ever flipping (degenerate test fixture, or a replay-only file
-            // tail). Matches ClassifiedPlayerLogProducer's terminal fallback.
+            // tail). Matches WorldClockTickProducer's terminal fallback.
             _reachedLive.TrySetResult();
         }
     }

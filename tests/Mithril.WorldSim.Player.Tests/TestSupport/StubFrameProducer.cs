@@ -10,7 +10,7 @@ namespace Mithril.WorldSim.Player.Tests.TestSupport;
 /// <see cref="IModeAwareFrameProducer{TPayload}.ReachedLive"/> the moment it
 /// yields the first non-replay entry, *before* the yield returns control to
 /// the world's merger. This matches
-/// <see cref="Mithril.WorldSim.Player.Producers.ClassifiedPlayerLogProducer"/>'s
+/// <see cref="Mithril.WorldSim.Player.Producers.WorldClockTickProducer"/>'s
 /// signalling shape exactly, so tests exercise the same boundary the
 /// production producer drives.
 /// </summary>
@@ -53,7 +53,7 @@ internal sealed class StubFrameProducer<T> : IFrameProducer<T>, IModeAwareFrameP
     /// triggers the
     /// <see cref="IModeAwareFrameProducer{TPayload}.ReachedLive"/> signal
     /// immediately before the yield — matching the production
-    /// <see cref="Mithril.WorldSim.Player.Producers.ClassifiedPlayerLogProducer"/>
+    /// <see cref="Mithril.WorldSim.Player.Producers.WorldClockTickProducer"/>
     /// behaviour against the L1 envelope.
     /// </summary>
     public void PostLive(Frame<T> frame)
