@@ -16,8 +16,11 @@ using Mithril.GameState.Servers.Parsing;
 using Mithril.GameState.Sessions;
 using Mithril.GameState.Skills;
 using Mithril.GameState.Skills.Parsing;
+using Mithril.GameState.Skills.Producers;
 using Mithril.GameState.Weather;
 using Mithril.Shared.DependencyInjection;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -94,11 +97,23 @@ public static class GameStateServiceCollectionExtensions
         // Shared live skill state from Player.log (ProcessLoadSkills /
         // ProcessUpdateSkill) — no character re-export required. Single parser,
         // single tracker; consumers inject IPlayerSkillState. See issue #462.
+        //
+        // World-simulator migration (issue #618 — Phase 1): the service is now
+        // an IFolder<SkillFrame> registered with IPlayerWorld; a sibling
+        // SkillFrameProducer owns the L1 subscription and feeds skill frames
+        // into the world's merger. The PlayerSkillStateWorldRegistration
+        // hosted service wires both into the world before the world's own
+        // hosted service drains (hosted services run in registration order,
+        // and AddPlayerWorld is called BEFORE AddMithrilGameState in
+        // ShellComposition, so the world singleton is already constructed by
+        // the time this runs but its StartAsync hasn't fired yet).
         services.AddSingleton<SkillLogParser>();
         services
             .AddSingleton<PlayerSkillStateService>()
             .AddSingleton<IPlayerSkillState>(sp => sp.GetRequiredService<PlayerSkillStateService>())
-            .AddHostedService(sp => sp.GetRequiredService<PlayerSkillStateService>());
+            .AddSingleton<IFolder<SkillFrame>>(sp => sp.GetRequiredService<PlayerSkillStateService>())
+            .AddSingleton<SkillFrameProducer>()
+            .AddHostedService<PlayerSkillStateWorldRegistration>();
 
         // Shared live recipe state from Player.log (ProcessLoadRecipes /
         // ProcessUpdateRecipe) — known recipes + per-recipe completion counts,
@@ -190,5 +205,43 @@ public static class GameStateServiceCollectionExtensions
             .AddHostedService(sp => sp.GetRequiredService<QuestService>());
 
         return services;
+    }
+
+    /// <summary>
+    /// Hosted service that wires <see cref="PlayerSkillStateService"/> (as a
+    /// folder) and <see cref="SkillFrameProducer"/> (as a producer) into the
+    /// <see cref="IPlayerWorld"/> singleton at host start, before
+    /// <c>PlayerWorld.StartAsync</c> fires. Ordering relies on
+    /// <c>ShellComposition</c> calling <c>AddPlayerWorld</c> before
+    /// <c>AddMithrilGameState</c>: registration order = hosted-service start
+    /// order, so this registration runs first; the world's own hosted service
+    /// (which calls <c>world.StartAsync</c>) runs second and observes the
+    /// folder + producer already attached. Registrations must close before
+    /// <c>StartAsync</c>; the world enforces that explicitly.
+    /// </summary>
+    private sealed class PlayerSkillStateWorldRegistration : IHostedService
+    {
+        private readonly IPlayerWorld _world;
+        private readonly IFolder<SkillFrame> _folder;
+        private readonly SkillFrameProducer _producer;
+
+        public PlayerSkillStateWorldRegistration(
+            IPlayerWorld world,
+            IFolder<SkillFrame> folder,
+            SkillFrameProducer producer)
+        {
+            _world = world;
+            _folder = folder;
+            _producer = producer;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _world.RegisterProducer(_producer);
+            _world.RegisterFolder(_folder);
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

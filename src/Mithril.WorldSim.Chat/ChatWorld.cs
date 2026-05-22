@@ -232,7 +232,14 @@ public sealed class ChatWorld : IChatWorld, IAsyncDisposable
         if (changes.Count == 0) return;
 
         var workQueue = new Queue<object>(changes.Count);
-        foreach (var c in changes) workQueue.Enqueue(c);
+        foreach (var c in changes)
+        {
+            // Surface folder change events on the bus AS WELL AS routing them
+            // to intra-world composers — parity with PlayerWorld. See
+            // PlayerWorld.DispatchFrame for the design rationale (principle 4).
+            _bus.PublishChangeEvent(c, frame.Timestamp);
+            workQueue.Enqueue(c);
+        }
 
         while (workQueue.Count > 0)
         {

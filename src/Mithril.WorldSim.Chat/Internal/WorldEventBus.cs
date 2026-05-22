@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Linq.Expressions;
 
 namespace Mithril.WorldSim.Chat.Internal;
 
@@ -12,6 +13,7 @@ namespace Mithril.WorldSim.Chat.Internal;
 internal sealed class WorldEventBus : IWorldEventBus
 {
     private readonly ConcurrentDictionary<Type, List<Subscription>> _subscriptions = new();
+    private readonly ConcurrentDictionary<Type, Func<DateTimeOffset, object, IFrame>> _changeEventWrappers = new();
     private readonly object _mutationLock = new();
 
     public IDisposable Subscribe<T>(Action<Frame<T>> handler)
@@ -61,6 +63,34 @@ internal sealed class WorldEventBus : IWorldEventBus
             if (sub.IsDisposed) continue;
             sub.Invoke(frame);
         }
+    }
+
+    /// <summary>
+    /// Surface a folder change event on the bus as a typed
+    /// <see cref="Frame{TPayload}"/>. Mirrors the PlayerWorld bus implementation;
+    /// see that copy for the design rationale (principle 4 — single-world
+    /// consumers subscribe directly to the world's bus).
+    /// </summary>
+    public void PublishChangeEvent(object changeEvent, DateTimeOffset timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(changeEvent);
+
+        var wrapper = _changeEventWrappers.GetOrAdd(changeEvent.GetType(), MakeWrapper);
+        Publish(wrapper(timestamp, changeEvent));
+    }
+
+    private static Func<DateTimeOffset, object, IFrame> MakeWrapper(Type runtimeType)
+    {
+        var frameType = typeof(Frame<>).MakeGenericType(runtimeType);
+        var ctor = frameType.GetConstructor(new[] { typeof(DateTimeOffset), runtimeType })
+            ?? throw new InvalidOperationException(
+                $"Frame<{runtimeType.FullName}> is missing the expected (DateTimeOffset, T) constructor.");
+        var tsParam = Expression.Parameter(typeof(DateTimeOffset), "timestamp");
+        var payloadParam = Expression.Parameter(typeof(object), "payload");
+        var body = Expression.Convert(
+            Expression.New(ctor, tsParam, Expression.Convert(payloadParam, runtimeType)),
+            typeof(IFrame));
+        return Expression.Lambda<Func<DateTimeOffset, object, IFrame>>(body, tsParam, payloadParam).Compile();
     }
 
     private sealed class Subscription : IDisposable

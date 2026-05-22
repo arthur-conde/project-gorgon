@@ -1,28 +1,37 @@
-using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Skills;
 using Mithril.GameState.Skills.Parsing;
-using Mithril.GameState.Tests.TestSupport;
-using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Mithril.TestSupport;
+using Mithril.WorldSim;
 using Xunit;
 
 namespace Mithril.GameState.Tests.Skills;
 
+/// <summary>
+/// Folder-level tests for <see cref="PlayerSkillStateService"/>. Post-#618
+/// (Phase 1 of the world-sim migration) the service is an
+/// <see cref="IFolder{TPayload}"/> for <see cref="SkillFrame"/>; the world's
+/// merger drives <see cref="PlayerSkillStateService.Apply"/> per applied frame.
+/// These tests drive <c>Apply</c> directly with synthetic
+/// <see cref="SkillFrame"/> payloads — the producer + world wiring is covered
+/// separately in <see cref="SkillFolderEndToEndTests"/>. Behaviour expectations
+/// (snapshot semantics, change-event emission, reference enrichment) are
+/// preserved from the pre-migration test suite.
+/// </summary>
 public sealed class PlayerSkillStateServiceTests
 {
+    // The original parser-fed test lines, preserved so we can re-parse them
+    // via SkillLogParser when convenient (e.g. real captures) and feed the
+    // parsed events as SkillFrame payloads.
     private const string LoadLine =
-        "[08:22:21] LocalPlayer: ProcessLoadSkills(" +
+        "ProcessLoadSkills(" +
         "{type=Toolcrafting,raw=15,bonus=0,xp=26,tnl=680,max=50}, " +
         "{type=Tanning,raw=50,bonus=3,xp=0,tnl=5280,max=50}, " +
         "{type=Augmentation,raw=0,bonus=2,xp=0,tnl=1,max=0})";
 
-    private static PlayerSkillStateService NewService(ScriptedStream stream)
-        => new(stream.Driver, new SkillLogParser());
-
-    private static PlayerSkillStateService NewService(ScriptedStream stream, IReferenceDataService refData)
-        => new(stream.Driver, new SkillLogParser(), refData);
+    private static PlayerSkillStateService NewService() => new();
+    private static PlayerSkillStateService NewService(IReferenceDataService refData) => new(refData);
 
     private static SkillEntry SkillRef(string key, string display, string xpTable, int maxBonus = 25)
         => new(key, display, Id: 0, Combat: false, XpTable: xpTable, MaxBonusLevels: maxBonus,
@@ -35,10 +44,35 @@ public sealed class PlayerSkillStateServiceTests
         return f;
     }
 
+    private static DateTime Ts(int h, int m, int s) => new(2026, 5, 18, h, m, s, DateTimeKind.Utc);
+
+    /// <summary>
+    /// Parse a real log line via <see cref="SkillLogParser"/> and apply it to
+    /// the folder as a <see cref="SkillFrame"/>. Keeps the test surface
+    /// close to the pre-migration "feed a line through the L1 driver" path:
+    /// the producer in production code does exactly this projection, so
+    /// driving the folder through it exercises the same final shape with
+    /// none of the async / lifetime ceremony.
+    /// </summary>
+    private static IReadOnlyList<IChangeEvent> ApplyLine(PlayerSkillStateService svc, DateTime timestamp, string line)
+    {
+        var parser = new SkillLogParser();
+        var evt = parser.TryParse(line, timestamp);
+        SkillFrame payload = evt switch
+        {
+            SkillsSnapshotEvent snap => new SkillsSnapshotFrame(snap.Skills),
+            SkillProgressUpdateEvent upd => new SkillProgressUpdateFrame(upd.Skill, upd.XpGained),
+            _ => throw new InvalidOperationException(
+                $"Test line did not parse as a skill event: {line}"),
+        };
+        var frame = new Frame<SkillFrame>(new DateTimeOffset(timestamp, TimeSpan.Zero), payload);
+        return ((IFolder<SkillFrame>)svc).Apply(frame, NoopClock.Instance);
+    }
+
     [Fact]
     public void Cold_start_is_Empty_with_no_measurement()
     {
-        var svc = NewService(new ScriptedStream());
+        var svc = NewService();
         svc.Current.Should().BeSameAs(PlayerSkillSnapshot.Empty);
         svc.Current.Source.Should().Be(SkillStateSource.None);
         svc.Current.MeasuredAt.Should().BeNull();
@@ -46,11 +80,10 @@ public sealed class PlayerSkillStateServiceTests
     }
 
     [Fact]
-    public async Task ProcessLoadSkills_populates_full_snapshot_with_caveat_flags()
+    public void ProcessLoadSkills_populates_full_snapshot_with_caveat_flags()
     {
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 22, 21), LoadLine));
-        var svc = NewService(stream);
-        await RunUntilDrainedAsync(svc, stream);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 22, 21), LoadLine);
 
         var cur = svc.Current;
         cur.Source.Should().Be(SkillStateSource.LiveLog);
@@ -72,29 +105,25 @@ public sealed class PlayerSkillStateServiceTests
     }
 
     [Fact]
-    public async Task ProcessLoadSkills_is_a_wholesale_replace_not_a_merge()
+    public void ProcessLoadSkills_is_a_wholesale_replace_not_a_merge()
     {
-        var stream = new ScriptedStream(
-            new RawLogLine(Ts(8, 0, 0),
-                "LocalPlayer: ProcessLoadSkills({type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50})"),
-            new RawLogLine(Ts(9, 0, 0),
-                "LocalPlayer: ProcessLoadSkills({type=Cooking,raw=20,bonus=0,xp=1,tnl=2,max=50})"));
-        var svc = NewService(stream);
-        await RunUntilDrainedAsync(svc, stream);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 0, 0),
+            "ProcessLoadSkills({type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50})");
+        ApplyLine(svc, Ts(9, 0, 0),
+            "ProcessLoadSkills({type=Cooking,raw=20,bonus=0,xp=1,tnl=2,max=50})");
 
         svc.Current.Skills.Keys.Should().Equal("Cooking"); // Sword gone
         svc.Current.MeasuredAt.Should().Be(Ts(9, 0, 0));
     }
 
     [Fact]
-    public async Task ProcessUpdateSkill_upserts_one_skill_keeping_the_rest()
+    public void ProcessUpdateSkill_upserts_one_skill_keeping_the_rest()
     {
-        var stream = new ScriptedStream(
-            new RawLogLine(Ts(8, 22, 21), LoadLine),
-            new RawLogLine(Ts(8, 30, 0),
-                "LocalPlayer: ProcessUpdateSkill({type=Toolcrafting,raw=16,bonus=0,xp=5,tnl=700,max=50}, True, 4, 0, 0)"));
-        var svc = NewService(stream);
-        await RunUntilDrainedAsync(svc, stream);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 22, 21), LoadLine);
+        ApplyLine(svc, Ts(8, 30, 0),
+            "ProcessUpdateSkill({type=Toolcrafting,raw=16,bonus=0,xp=5,tnl=700,max=50}, True, 4, 0, 0)");
 
         svc.Current.Skills.Should().HaveCount(3); // Tanning + Augmentation untouched
         svc.Current.TryGet("Toolcrafting", out var tool).Should().BeTrue();
@@ -104,25 +133,21 @@ public sealed class PlayerSkillStateServiceTests
     }
 
     [Fact]
-    public async Task ProcessUpdateSkill_before_any_snapshot_yields_partial_state()
+    public void ProcessUpdateSkill_before_any_snapshot_yields_partial_state()
     {
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 30, 0),
-            "LocalPlayer: ProcessUpdateSkill({type=NatureAppreciation,raw=26,bonus=2,xp=315,tnl=1350,max=50}, True, 110, 0, 0)"));
-        var svc = NewService(stream);
-        await RunUntilDrainedAsync(svc, stream);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 30, 0),
+            "ProcessUpdateSkill({type=NatureAppreciation,raw=26,bonus=2,xp=315,tnl=1350,max=50}, True, 110, 0, 0)");
 
         svc.Current.Source.Should().Be(SkillStateSource.LiveLog);
         svc.Current.Skills.Keys.Should().Equal("NatureAppreciation");
     }
 
     [Fact]
-    public async Task Subscribe_replays_current_then_delivers_live_changes()
+    public void Subscribe_replays_current_then_delivers_live_changes()
     {
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 22, 21), LoadLine));
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 22, 21), LoadLine);
 
         var seen = new List<PlayerSkillSnapshot>();
         using (svc.Subscribe(seen.Add))
@@ -130,53 +155,43 @@ public sealed class PlayerSkillStateServiceTests
             seen.Should().HaveCount(1); // replay of current
             seen[0].Skills.Should().HaveCount(3);
 
-            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
-            await stream.WaitForDrainAsync(cts.Token);
+            ApplyLine(svc, Ts(8, 30, 0),
+                "ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
         }
 
         seen.Should().HaveCount(2);
         seen[1].TryGet("Sword", out _).Should().BeTrue();
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task Disposed_subscription_stops_receiving()
+    public void Disposed_subscription_stops_receiving()
     {
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 22, 21), LoadLine));
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 22, 21), LoadLine);
 
         var seen = new List<PlayerSkillSnapshot>();
         var sub = svc.Subscribe(seen.Add);
         sub.Dispose();
 
-        stream.Push("LocalPlayer: ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
-        await stream.WaitForDrainAsync(cts.Token);
+        ApplyLine(svc, Ts(8, 30, 0),
+            "ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
 
         seen.Should().HaveCount(1); // only the replay; no live event after dispose
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task SubscribeChanges_has_no_replay_then_delivers_Delta_with_XpGained()
+    public void SubscribeChanges_has_no_replay_then_delivers_Delta_with_XpGained()
     {
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 22, 21), LoadLine));
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 22, 21), LoadLine);
 
         var changes = new List<SkillChange>();
         using (svc.SubscribeChanges(changes.Add))
         {
             changes.Should().BeEmpty(); // no replay — a change is an event, not state
 
-            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Toolcrafting,raw=16,bonus=0,xp=5,tnl=700,max=50}, True, 4, 0, 0)");
-            await stream.WaitForDrainAsync(cts.Token);
+            ApplyLine(svc, Ts(8, 30, 0),
+                "ProcessUpdateSkill({type=Toolcrafting,raw=16,bonus=0,xp=5,tnl=700,max=50}, True, 4, 0, 0)");
         }
 
         changes.Should().HaveCount(1);
@@ -186,50 +201,40 @@ public sealed class PlayerSkillStateServiceTests
         c.Previous!.Value.Level.Should().Be(15); // from LoadLine
         c.Current.Level.Should().Be(16);
         c.XpGained.Should().Be(4);
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task Delta_for_never_seen_skill_has_null_Previous()
+    public void Delta_for_never_seen_skill_has_null_Previous()
     {
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await svc.StartAsync(cts.Token);
+        var svc = NewService();
 
         var changes = new List<SkillChange>();
         using (svc.SubscribeChanges(changes.Add))
         {
-            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
-            await stream.WaitForDrainAsync(cts.Token);
+            ApplyLine(svc, Ts(8, 30, 0),
+                "ProcessUpdateSkill({type=Sword,raw=2,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
         }
 
         changes.Should().ContainSingle();
         changes[0].Previous.Should().BeNull();
         changes[0].Current.Level.Should().Be(2);
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task SnapshotReplace_emits_only_skills_that_actually_changed()
+    public void SnapshotReplace_emits_only_skills_that_actually_changed()
     {
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 0, 0),
-            "LocalPlayer: ProcessLoadSkills({type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50})"));
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 0, 0),
+            "ProcessLoadSkills({type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50})");
 
         var changes = new List<SkillChange>();
         using (svc.SubscribeChanges(changes.Add))
         {
             // Re-sync: Sword identical (no-op), Cooking new.
-            stream.Push("LocalPlayer: ProcessLoadSkills(" +
-                        "{type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50}, " +
-                        "{type=Cooking,raw=20,bonus=0,xp=3,tnl=4,max=50})");
-            await stream.WaitForDrainAsync(cts.Token);
+            ApplyLine(svc, Ts(8, 30, 0),
+                "ProcessLoadSkills(" +
+                "{type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50}, " +
+                "{type=Cooking,raw=20,bonus=0,xp=3,tnl=4,max=50})");
         }
 
         changes.Should().ContainSingle(); // Sword unchanged → suppressed
@@ -237,59 +242,43 @@ public sealed class PlayerSkillStateServiceTests
         changes[0].SkillKey.Should().Be("Cooking");
         changes[0].Previous.Should().BeNull();
         changes[0].XpGained.Should().Be(0); // snapshot is not a gain event
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task Capped_tick_emits_IsCapped_transition_then_skill_goes_silent()
+    public void Capped_tick_emits_IsCapped_transition_then_skill_goes_silent()
     {
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 0, 0),
-            "LocalPlayer: ProcessLoadSkills({type=Sword,raw=49,bonus=0,xp=10,tnl=20,max=50})"));
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 0, 0),
+            "ProcessLoadSkills({type=Sword,raw=49,bonus=0,xp=10,tnl=20,max=50})");
 
         var changes = new List<SkillChange>();
         using (svc.SubscribeChanges(changes.Add))
         {
-            // The capping tick: raw reaches max. PG then emits no further
-            // ProcessUpdateSkill for Sword — modelled by a subsequent unrelated
-            // skill update producing no Sword change.
-            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Sword,raw=50,bonus=0,xp=0,tnl=20,max=50}, True, 5, 0, 0)");
-            stream.Push("LocalPlayer: ProcessUpdateSkill({type=Cooking,raw=3,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
-            await stream.WaitForDrainAsync(cts.Token);
+            ApplyLine(svc, Ts(8, 30, 0),
+                "ProcessUpdateSkill({type=Sword,raw=50,bonus=0,xp=0,tnl=20,max=50}, True, 5, 0, 0)");
+            ApplyLine(svc, Ts(8, 31, 0),
+                "ProcessUpdateSkill({type=Cooking,raw=3,bonus=0,xp=1,tnl=9,max=50}, True, 1, 0, 0)");
         }
 
         var swordChanges = changes.Where(c => c.SkillKey == "Sword").ToList();
         swordChanges.Should().ContainSingle();
         swordChanges[0].Previous!.Value.IsCapped.Should().BeFalse(); // 49 < 50
         swordChanges[0].Current.IsCapped.Should().BeTrue();          // 50 == 50
-        // No further Sword event despite later activity — the "goes silent" contract.
         changes.Count(c => c.SkillKey == "Sword").Should().Be(1);
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task Real_Tailoring_level_up_emits_level_up_SkillChange_with_gross_XpGained()
+    public void Real_Tailoring_level_up_emits_level_up_SkillChange_with_gross_XpGained()
     {
-        // The captured Tailoring level-up, fed through the service. Asserts the
-        // level-up is detectable purely from raw incrementing (no dedicated
-        // log line) and XpGained is the gross 160 (chat-matched), not split.
-        var stream = new ScriptedStream(new RawLogLine(Ts(12, 38, 57),
-            "[12:38:57] LocalPlayer: ProcessUpdateSkill({type=Tailoring,raw=9,bonus=2,xp=199,tnl=210,max=50}, True, 160, 0, 0)"));
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
+        var svc = NewService();
+        ApplyLine(svc, Ts(12, 38, 57),
+            "ProcessUpdateSkill({type=Tailoring,raw=9,bonus=2,xp=199,tnl=210,max=50}, True, 160, 0, 0)");
 
         var changes = new List<SkillChange>();
         using (svc.SubscribeChanges(changes.Add))
         {
-            stream.Push("[12:39:02] LocalPlayer: ProcessUpdateSkill({type=Tailoring,raw=10,bonus=2,xp=149,tnl=420,max=50}, True, 160, 0, 0)");
-            await stream.WaitForDrainAsync(cts.Token);
+            ApplyLine(svc, Ts(12, 39, 2),
+                "ProcessUpdateSkill({type=Tailoring,raw=10,bonus=2,xp=149,tnl=420,max=50}, True, 160, 0, 0)");
         }
 
         changes.Should().ContainSingle();
@@ -301,28 +290,23 @@ public sealed class PlayerSkillStateServiceTests
         (c.Previous!.Value.Level < c.Current.Level).Should().BeTrue(); // level-up signal
         c.Current.XpTowardNextLevel.Should().Be(149);
         c.XpGained.Should().Be(160); // gross gain across the rollover
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     // ── #470: reference-data enrichment ───────────────────────────────────
 
     private const string ProxyVsAuthLine =
-        "LocalPlayer: ProcessLoadSkills(" +
-        // log proxy (max==0) → not trainable, but reference says it IS:
+        "ProcessLoadSkills(" +
         "{type=Foo,raw=0,bonus=2,xp=0,tnl=1,max=0}, " +
-        // log proxy (max>0) → trainable, but reference says umbrella:
         "{type=Bar,raw=10,bonus=0,xp=1,tnl=2,max=50})";
 
     [Fact]
-    public async Task Reference_enrichment_makes_IsTrainable_authoritative_over_the_log_proxy()
+    public void Reference_enrichment_makes_IsTrainable_authoritative_over_the_log_proxy()
     {
         var refData = RefDataWith(
             SkillRef("Foo", "Foocraft", xpTable: "TypicalNoncombatSkill", maxBonus: 25),
             SkillRef("Bar", "Bar (umbrella)", xpTable: "None", maxBonus: 125));
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 0, 0), ProxyVsAuthLine));
-        var svc = NewService(stream, refData);
-        await RunUntilDrainedAsync(svc, stream);
+        var svc = NewService(refData);
+        ApplyLine(svc, Ts(8, 0, 0), ProxyVsAuthLine);
 
         svc.Current.TryGet("Foo", out var foo).Should().BeTrue();
         foo.MaxLevel.Should().Be(0);          // log proxy would say not trainable…
@@ -335,16 +319,13 @@ public sealed class PlayerSkillStateServiceTests
         bar.IsTrainable.Should().BeFalse();   // …reference (XpTable == None) overrides
         bar.DisplayName.Should().Be("Bar (umbrella)");
         bar.Reference!.MaxBonusLevels.Should().Be(125);
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task Without_reference_data_falls_back_to_the_verified_log_proxy()
+    public void Without_reference_data_falls_back_to_the_verified_log_proxy()
     {
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 0, 0), ProxyVsAuthLine));
-        var svc = NewService(stream); // no refData
-        await RunUntilDrainedAsync(svc, stream);
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 0, 0), ProxyVsAuthLine);
 
         svc.Current.TryGet("Foo", out var foo).Should().BeTrue();
         foo.Reference.Should().BeNull();
@@ -353,34 +334,27 @@ public sealed class PlayerSkillStateServiceTests
 
         svc.Current.TryGet("Bar", out var bar).Should().BeTrue();
         bar.IsTrainable.Should().BeTrue();  // proxy: max>0
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task Skill_absent_from_catalog_falls_back_to_proxy()
+    public void Skill_absent_from_catalog_falls_back_to_proxy()
     {
-        // refData present but doesn't know "Foo"/"Bar" → null Reference, proxy used.
-        var stream = new ScriptedStream(new RawLogLine(Ts(8, 0, 0), ProxyVsAuthLine));
-        var svc = NewService(stream, RefDataWith(SkillRef("Unrelated", "Unrelated", "None")));
-        await RunUntilDrainedAsync(svc, stream);
+        var svc = NewService(RefDataWith(SkillRef("Unrelated", "Unrelated", "None")));
+        ApplyLine(svc, Ts(8, 0, 0), ProxyVsAuthLine);
 
         svc.Current.TryGet("Foo", out var foo).Should().BeTrue();
         foo.Reference.Should().BeNull();
         foo.IsTrainable.Should().BeFalse(); // proxy fallback
-
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
     }
 
     [Fact]
-    public async Task Real_skill_delta_carries_authoritative_DisplayName_and_Reference()
+    public void Real_skill_delta_carries_authoritative_DisplayName_and_Reference()
     {
         var refData = RefDataWith(
             SkillRef("Tailoring", "Tailoring", xpTable: "TypicalNoncombatSkill", maxBonus: 25));
-        var stream = new ScriptedStream(new RawLogLine(Ts(12, 39, 2),
-            "[12:39:02] LocalPlayer: ProcessUpdateSkill({type=Tailoring,raw=10,bonus=2,xp=149,tnl=420,max=50}, True, 160, 0, 0)"));
-        var svc = NewService(stream, refData);
-        await RunUntilDrainedAsync(svc, stream);
+        var svc = NewService(refData);
+        ApplyLine(svc, Ts(12, 39, 2),
+            "ProcessUpdateSkill({type=Tailoring,raw=10,bonus=2,xp=149,tnl=420,max=50}, True, 160, 0, 0)");
 
         svc.Current.TryGet("Tailoring", out var t).Should().BeTrue();
         t.DisplayName.Should().Be("Tailoring");
@@ -390,95 +364,74 @@ public sealed class PlayerSkillStateServiceTests
     }
 
     /// <summary>
-    /// Byte-equivalence regression test (#550 PR 2 + PR #555 review): the
-    /// producer is a state-rebuilder, so feeding the same backlog twice
-    /// (cold start, then split replay→live like the production
-    /// FromSessionStart shape) must yield identical snapshot state on both
-    /// runs. Splitting the input across the replay boundary catches a
-    /// regression where a handler early-outs on
-    /// <c>envelope.IsReplay == true</c>.
+    /// Replay idempotence — a folder is a state-rebuilder, so feeding the
+    /// same payload twice (cold start, then re-applied with identical
+    /// content) must produce identical snapshot state and no spurious
+    /// change events on the second application. Replaces the pre-migration
+    /// L1-replay byte-equivalence test (which exercised the L1 driver's
+    /// replay→live split — now covered by
+    /// <see cref="SkillFolderEndToEndTests"/>'s producer + world test).
     /// </summary>
     [Fact]
-    public async Task L1_replay_idempotence_byte_equivalence()
+    public void Apply_is_idempotent_under_identical_re_emission()
     {
-        IReadOnlyDictionary<string, SkillProgressSnapshot> firstPass;
-        DateTime firstMeasured;
+        var svc1 = NewService();
+        ApplyLine(svc1, Ts(8, 22, 21), LoadLine);
+        var firstPass = svc1.Current.Skills;
+        var firstMeasured = svc1.Current.MeasuredAt!.Value;
+
+        var svc2 = NewService();
+        ApplyLine(svc2, Ts(8, 22, 21), LoadLine);
+        // Second application of the SAME content: assert state stays equal
+        // AND no per-skill change events fire (SnapshotReplace path skips
+        // unchanged projections by construction).
+        var changes = new List<SkillChange>();
+        using (svc2.SubscribeChanges(changes.Add))
         {
-            using var stream = new ScriptedStream(new RawLogLine(Ts(8, 22, 21), LoadLine));
-            var svc = NewService(stream);
-            await RunUntilDrainedAsync(svc, stream);
-            firstPass = svc.Current.Skills;
-            firstMeasured = svc.Current.MeasuredAt!.Value;
+            ApplyLine(svc2, Ts(8, 22, 21), LoadLine);
         }
 
-        // Second pass — split input across the replay→live boundary. The full
-        // skill snapshot arrives as IsReplay=true; a subsequent re-emit of
-        // the same ProcessLoadSkills line arrives as live. The state-rebuilder
-        // must yield identical final state (the second snapshot replaces
-        // with the same content at the same timestamp, so MeasuredAt also
-        // matches the first pass).
-        {
-            using var stream = new ScriptedStream();
-            stream.Driver.PushReplay(TestLogEnvelopeFactory.FromRawLine(LoadLine, Ts(8, 22, 21)));
-            var svc = NewService(stream);
-            try
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await svc.StartAsync(cts.Token);
-                await stream.WaitForDrainAsync(cts.Token);
-
-                // Live tail: same line, same timestamp. Snapshot replaces
-                // with identical content → no spurious state change.
-                stream.Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(LoadLine, Ts(8, 22, 21)));
-                await stream.WaitForDrainAsync(cts.Token);
-
-                svc.Current.Skills.Should().BeEquivalentTo(firstPass);
-                svc.Current.MeasuredAt!.Value.Should().Be(firstMeasured);
-
-                try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-            }
-            catch
-            {
-                try { await svc.StopAsync(CancellationToken.None); } catch { }
-                throw;
-            }
-        }
-    }
-
-    private static DateTime Ts(int h, int m, int s) => new(2026, 5, 18, h, m, s, DateTimeKind.Utc);
-
-    private static async Task RunUntilDrainedAsync(PlayerSkillStateService svc, ScriptedStream stream)
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
+        svc2.Current.Skills.Should().BeEquivalentTo(firstPass);
+        svc2.Current.MeasuredAt!.Value.Should().Be(firstMeasured);
+        changes.Should().BeEmpty(
+            "a re-emission with identical content must produce no per-skill change events");
     }
 
     /// <summary>
-    /// Post-#550 PR 2: thin adapter that lets the existing test fixtures keep
-    /// scripting <see cref="RawLogLine"/>s while the service-under-test
-    /// consumes <see cref="LocalPlayerLogLine"/>s via the L1 driver.
-    /// Stripping is delegated to <see cref="TestLogEnvelopeFactory"/> so all
-    /// four producer-tests share one strip semantics.
+    /// Apply returns the same <see cref="SkillChange"/> set that legacy
+    /// <see cref="IPlayerSkillState.SubscribeChanges"/> subscribers see —
+    /// pinning the contract that the world's bus emissions and the legacy
+    /// channel deliver identical content.
     /// </summary>
-    private sealed class ScriptedStream : IDisposable
+    [Fact]
+    public void Apply_returns_change_events_equal_to_legacy_SubscribeChanges_deliveries()
     {
-        public TestLogStreamDriver Driver { get; } = new();
+        var svc = NewService();
+        ApplyLine(svc, Ts(8, 0, 0),
+            "ProcessLoadSkills({type=Sword,raw=10,bonus=0,xp=1,tnl=2,max=50})");
 
-        public ScriptedStream(params RawLogLine[] lines)
-        {
-            foreach (var line in lines) Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(line));
-        }
+        var legacy = new List<SkillChange>();
+        using var _ = svc.SubscribeChanges(legacy.Add);
 
-        public void Push(string line) =>
-            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(DateTime.UtcNow, line)));
+        var returned = ApplyLine(svc, Ts(8, 30, 0),
+            "ProcessUpdateSkill({type=Sword,raw=11,bonus=0,xp=2,tnl=3,max=50}, True, 50, 0, 0)");
 
-        public Task WaitForDrainAsync(CancellationToken ct) =>
-            Driver.DrainLocalPlayerAsync().WaitAsync(ct);
-        public Task WaitForDrainAsync(TimeSpan timeout) =>
-            Driver.DrainLocalPlayerAsync(timeout);
+        returned.Should().HaveCount(1);
+        legacy.Should().HaveCount(1);
+        returned[0].Should().BeOfType<SkillChange>();
+        ((SkillChange)returned[0]).Should().Be(legacy[0]);
+    }
 
-        public void Dispose() => Driver.Dispose();
+    /// <summary>
+    /// Stand-in clock for direct folder tests — Apply never reads the clock
+    /// surface (the folder uses the frame's own timestamp), so a zero-valued
+    /// stub is sufficient to satisfy the parameter.
+    /// </summary>
+    private sealed class NoopClock : IWorldClock
+    {
+        public static readonly NoopClock Instance = new();
+        public DateTimeOffset Now => DateTimeOffset.MinValue;
+        public long Frame => 0;
+        public WorldMode Mode => WorldMode.Live;
     }
 }
