@@ -43,6 +43,8 @@ Each tick, the orchestrator runs this priority list and takes the FIRST applicab
    → gh pr merge --squash <PR>
    → close linked task issue (auto-closed by Closes #N in PR body, but verify)
    → remove orchestrator-dispatch label from the issue
+   → parse the shepherd's last comment for a §Follow-ons section; if present,
+     file one GitHub issue per entry — see §Follow-on handling
    → ScheduleWakeup in 60s (new state may unlock downstream tasks)
 
 2. ESCALATE BLOCKED — Is there a PR whose latest shepherd comment is "Verdict: needs-human"?
@@ -63,8 +65,12 @@ Each tick, the orchestrator runs this priority list and takes the FIRST applicab
 
 4. DISPATCH WORKER — Is there a task issue with no orchestrator-dispatch label,
    no orchestrator-blocked label, and all its dep issues closed?
-   → pick the issue with the highest priority (earliest phase per the
-     orchestration plan's YAML §Dependency graph; ties broken by lowest issue#)
+   → build the dep graph as the UNION of (a) the orchestration plan's YAML
+     §Dependency graph, (b) every open `module:world-sim` issue, (c)
+     `Blocks #N` / `Depends on #N` references in issue bodies — see §Dep graph
+     derivation
+   → pick the highest-priority candidate from the resulting ready set (YAML
+     tasks first by phase, then `orchestrator-followup` issues by issue#)
    → add orchestrator-dispatch:<issue#> label (matches existing convention)
    → dispatch a worker via Agent (subagent_type: general-purpose) with the
      prompt assembled per §Worker dispatch contract below
@@ -136,6 +142,127 @@ When implementation is complete:
 
 ---
 
+## Follow-on handling
+
+The shepherd surfaces out-of-scope findings during review — bugs in code adjacent to but not within the current PR's scope. Without action these accumulate in shepherd comments and fall on the floor. The orchestrator picks them up at merge time and files each as a GitHub issue, returning the discovery to the dispatch loop.
+
+### Shepherd's `## Follow-ons` section
+
+Each shepherd PR comment gains a new `## Follow-ons` section appended after the verdict line, before the signature. The section is omitted entirely if no follow-ons exist. When present, each entry uses this shape:
+
+```markdown
+## Follow-ons (out-of-scope findings — orchestrator will file as issues on merge)
+
+- title: <one-line summary, becomes the GitHub issue title>
+  files: <comma-separated file:line refs>
+  blocks: [<comma-separated issue numbers this is a prerequisite for, or empty>]
+  body: |
+    <multi-line prose body for the issue>
+
+- title: ...
+  files: ...
+  blocks: ...
+  body: |
+    ...
+```
+
+The shape is loose YAML inside markdown. Entries are delimited by lines starting with `- title:`. The orchestrator extracts entries by scanning for that marker; everything between two markers belongs to the prior entry. `body:` uses `|` block-scalar syntax (verbatim preserved).
+
+**Shepherd populates the section in every iteration.** Each iteration's comment fully replaces the previous's view of follow-ons — accumulating known follow-ons, dropping any that the worker fixed between iterations. The orchestrator reads only the LATEST shepherd comment so the section's most-recent content is canonical.
+
+### Orchestrator filing logic (step 1 extension)
+
+After `gh pr merge --squash <PR>` succeeds in step 1, BEFORE `ScheduleWakeup`:
+
+```
+1.a. Fetch the latest shepherd comment on the just-merged PR via
+     gh pr view <PR> --json comments
+
+1.b. If the comment has no `## Follow-ons` section, skip the rest. Continue
+     to ScheduleWakeup.
+
+1.c. For each follow-on entry parsed from the section, run:
+     gh issue create
+       --title "<entry.title>"
+       --label "module:world-sim,orchestrator-followup"
+       --body  "<entry.body>
+
+       ---
+       Surfaced by PR #<merged-PR>.
+       Files affected: <entry.files>
+       <if entry.blocks non-empty>Blocks: #N, #M, ...</if>"
+
+1.d. After all issues are filed (some may have failed individually; continue),
+     post a single roll-up comment on the merged PR:
+       "Filed N follow-on issue(s): #X, #Y, #Z."
+
+1.e. If gh issue create fails for one entry (e.g., GitHub API error, title
+     conflict), continue with the next; do not block the merge or other
+     follow-ons. Log the failure in the roll-up comment.
+```
+
+### Issue shape
+
+- **Title** comes from the shepherd's `title:` field verbatim. The shepherd should produce titles that read like commit subjects.
+- **Body** has two parts: the shepherd's `body:` field, then a `---` separator, then auto-generated metadata: backlink to the surfacing PR, files affected, `Blocks: #N` lines if applicable.
+- **Labels** are `module:world-sim` (so the issue is picked up by `gh issue list --label module:world-sim`) and `orchestrator-followup` (so it's distinguishable from planned phase work).
+
+The `Blocks: #N` line in the issue body is the **load-bearing** part: the orchestrator's dep graph derivation (next section) parses it to know which planned-phase issues now depend on this follow-on.
+
+### When follow-ons are NOT filed
+
+- The PR was merged outside the orchestrator (e.g., human ran `gh pr merge` directly). The follow-ons in the shepherd's comments are still there but never get filed. Acceptable cost — human-merged PRs are out of the orchestrator's automation envelope.
+- The shepherd produced no `## Follow-ons` section. Nothing to file.
+- The merge itself failed (e.g., branch protection violation). The orchestrator escalates via spawn_task; follow-ons stay in the shepherd's comments until a future merge succeeds.
+
+---
+
+## Dep graph derivation
+
+Step 4 (DISPATCH WORKER) needs to know about follow-on issues that aren't in the orchestration plan YAML. Rather than auto-editing the YAML each tick (a meta-loop with its own PR overhead), the orchestrator derives its dep graph dynamically as a UNION:
+
+```
+nodes = (set of all open issues with `module:world-sim` label)
+      ∪ (YAML nodes from orchestration plan, i.e., the phase-1-through-4 chain)
+
+edges = (YAML edges)
+      ∪ {for each issue body, parse "Depends on #N" → edge from this issue to N
+                                       "Blocks #M"      → edge from M to this issue}
+
+ready set = {n ∈ nodes : n is open
+                       ∧ no `orchestrator-dispatch:<n>` label
+                       ∧ no `orchestrator-blocked` label
+                       ∧ all incoming "depends-on" edges point to closed issues}
+```
+
+The orchestration plan's YAML stays canonical for the planned migration chain (phase ordering, named tasks). Follow-on issues — which arrive dynamically and have no phase assignment — become first-class graph nodes via their GitHub presence.
+
+### Sort order within the ready set
+
+Two tiers:
+
+1. **Planned migration tasks** (in the YAML) — sorted by phase order: `0a` → `0b` → `1` → `2` → `3` → `4` → `parallel`. Within a phase, sorted by issue number ascending.
+2. **Follow-on issues** (have `orchestrator-followup` label) — sorted by issue number ascending.
+
+Tier 1 fully completes its ready set before tier 2 gets a dispatch. The intent: the planned migration chain is the user's primary roadmap; follow-ons are debt the user wants paid down, but only after the main chain has nothing immediately dispatchable.
+
+### Edge-parsing conventions
+
+The orchestrator parses these literal patterns from issue bodies (case-sensitive, line-anchored, `#` followed by digits):
+
+- `Blocks: #N` or `Blocks: #N, #M` — one comma-separated line
+- `Depends on: #N` or `Depends on: #N, #M`
+
+Older issues may not have these markers; that's fine — they're treated as graph nodes with no dynamic edges (only YAML-declared edges apply).
+
+The shepherd is responsible for emitting `Blocks:` in the issue body via the auto-generated metadata block (per the filing logic above). `Depends on:` is rarely used by follow-ons (they're typically prerequisites for other things, not the reverse) but supported for completeness.
+
+### Under-specified follow-ons
+
+If a follow-on issue's body lacks enough detail for a cold-session worker to implement, the worker reports BLOCKED. The orchestrator's existing step-4 worker-failure path applies: label `orchestrator-blocked`, spawn a task chip with the failure context, continue. No new mechanism needed.
+
+---
+
 ## Tools the orchestrator subagent has
 
 | Tool | Why |
@@ -181,6 +308,7 @@ The orchestrator pauses for human review under any of these conditions:
 5. New repo labels (created via `gh label create` as a setup step in the implementation plan):
    - `orchestrator-blocked` — escalation flag the orchestrator sets on task issues
    - `pause` — manual circuit breaker on the umbrella (#601)
+   - `orchestrator-followup` — auto-filed follow-on issues (see §Follow-on handling). Distinguishes from planned phase work in step 4's ready-set sort.
 
    The per-issue `orchestrator-dispatch:<issue#>` labels are created dynamically by the orchestrator at runtime (matching the existing convention for #604, #615).
 
@@ -200,6 +328,10 @@ Optional follow-ons (separate PRs):
 4. **Cost.** Each shepherd dispatch is expensive (2 parallel reviewer agents per iteration, up to 3 iterations). The orchestrator dispatches shepherds aggressively — every fresh worker push triggers a re-shepherd. If cost becomes prohibitive, a debounce (don't shepherd within N minutes of a previous shepherd verdict) would help, but isn't in v1.
 
 5. **`world-sim-shepherd` companion patch.** Bundling the shepherd's worker-prompt LSP/XAML fix in the same PR as the orchestrator is a scope-expansion. Justification: the orchestrator needs the rule, and re-using the same prompt template across the two callers (orchestrator → worker, shepherd → fix-up worker) keeps them aligned. Alternative: ship the shepherd patch as a tiny separate PR first; orchestrator follows.
+
+6. **Follow-on schema parsing fragility.** The shepherd's `## Follow-ons` section uses a custom YAML-inside-markdown format the orchestrator parses heuristically (regex on `- title:` markers, line-anchored). If the shepherd produces malformed content — missing `body:` block, unbalanced quotes, etc. — the orchestrator's safest behavior is to skip the malformed entry and log a warning to the merge-time roll-up comment ("Skipped 1 unparseable follow-on entry"). Long-term, a stricter schema (e.g., a fenced JSON block) would be more robust, but the markdown-friendly format keeps the section human-readable in the PR comment trail, which is its primary surface.
+
+7. **Follow-on deduplication across PRs.** If two separate PRs surface the same underlying bug, the orchestrator files two near-identical issues. v1 doesn't auto-dedup. The user manually closes the dupe; a future enhancement could `gh issue list --search` by title fingerprint before filing, but title fingerprinting is fuzzy and risks false-positive suppression (legitimately distinct follow-ons that happen to share a title prefix). v1 cost: occasional dupe issue.
 
 ---
 
