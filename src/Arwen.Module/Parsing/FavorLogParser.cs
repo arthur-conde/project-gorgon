@@ -11,12 +11,13 @@ public sealed record FavorUpdate(DateTime Timestamp, string NpcKey, double Absol
 public sealed record FavorDelta(DateTime Timestamp, string NpcKey, double Delta) : FavorEvent(Timestamp);
 
 /// <summary>
-/// Parses Player.log lines for NPC favor events. The gift-detection FSM
-/// receives <c>ProcessDeleteItem</c> via the PlayerWorld bus
-/// (<see cref="Mithril.GameState.Inventory.PlayerInventoryRemoved"/>) post-#608
-/// — the inventory folder's upstream application of the verb guarantees the
-/// <c>InternalName</c> is resolved, even on replay-from-session-start. This
-/// parser therefore handles only the two favor-side verbs.
+/// Parses Player.log lines for NPC favor events. The gift-detection FSM is
+/// lifted into <c>Mithril.GameState.Gifting.IGiftSignalService</c> (Tier-2
+/// signal service in <c>Mithril.GameState.Gifting</c>); the signal service
+/// owns its own <c>LocalPlayerLogLine</c> subscription and parses
+/// <c>ProcessDeleteItem</c> there. This parser handles only the two
+/// favor-side verbs that drive Arwen's <c>ArwenFavorState</c> snapshot
+/// (<see cref="FavorUpdate"/>, <see cref="FavorDelta"/>).
 ///
 /// <para>Active-character tracking lives in <c>ActiveCharacterLogSynchronizer</c> —
 /// this parser does not handle <c>ProcessAddPlayer</c>.</para>

@@ -18,9 +18,9 @@ namespace Arwen.State;
 /// <list type="bullet">
 ///   <item><b>L1 LocalPlayer pipe</b> — drives the per-character exact-favor
 ///   snapshot off <see cref="FavorUpdate"/> (parsed from
-///   <c>ProcessStartInteraction</c>). Other favor verbs flow through this
-///   subscription too but the gift-detection FSM is no longer wired here in
-///   production (see below); only the favor-snapshot side is.</item>
+///   <c>ProcessStartInteraction</c>). This is the only L1 signal the
+///   ingestion path consumes; the gift-detection FSM lives in
+///   <see cref="IGiftSignalService"/> (see below).</item>
 ///   <item><b><see cref="IGiftSignalService"/></b> — the Tier-2 lift of
 ///   Arwen's gift-detection FSM. The signal service owns a single L1
 ///   subscription with its own <c>ProcessAddItem</c> map, correlates the
@@ -156,34 +156,24 @@ public sealed class FavorIngestionService : BackgroundService
                 // (#513) and stable across Mithril restarts. Plumb it through so
                 // replay produces the same persisted GiftObservation.Timestamp
                 // and CalibrationService's sink-layer dedup short-circuits.
-                switch (evt)
+                if (evt is FavorUpdate update)
                 {
-                    case FavorUpdate update:
-                        _diag?.Trace("Arwen.Parse", $"FavorUpdate npc={update.NpcKey} favor={update.AbsoluteFavor:F1}");
-                        _calibration.OnStartInteraction(update.NpcKey, ts);
-                        var favor = _favorView.Current;
-                        if (favor is not null)
-                        {
-                            favor.SetExactFavor(update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
-                            _favorView.Save();
-                            _state.OnFavorUpdated(update.NpcKey);
-                        }
-                        break;
-
-                    case FavorDelta delta:
-                        // The L1 FavorDelta path keeps the legacy FSM transient
-                        // state in sync so any direct (test-only) caller of the
-                        // FSM On* methods continues to function. Production
-                        // gift detection runs through IGiftSignalService, which
-                        // owns its own L1 subscription + ProcessAddItem map.
-                        _diag?.Trace("Arwen.Parse", $"FavorDelta npc={delta.NpcKey} delta={delta.Delta:F1}");
-                        _calibration.OnDeltaFavor(delta.NpcKey, delta.Delta, ts);
-                        break;
-
-                    // ProcessDeleteItem intentionally NOT parsed here post-#608.
-                    // GiftSignalService owns the verb correlation; we consume
-                    // the resolved GiftAccepted events via the Tier-2 service.
+                    _diag?.Trace("Arwen.Parse", $"FavorUpdate npc={update.NpcKey} favor={update.AbsoluteFavor:F1}");
+                    var favor = _favorView.Current;
+                    if (favor is not null)
+                    {
+                        favor.SetExactFavor(update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
+                        _favorView.Save();
+                        _state.OnFavorUpdated(update.NpcKey);
+                    }
                 }
+                // FavorDelta and ProcessDeleteItem are intentionally not
+                // consumed here. IGiftSignalService owns the verb-triple
+                // correlation on its own single L1 pump; production gifts
+                // arrive at calibration via OnGiftAccepted on the React
+                // channel. FavorLogParser still emits FavorDelta for its
+                // own unit-test coverage; nothing on the ingestion path
+                // consumes it.
                 return ValueTask.CompletedTask;
             },
             new LogSubscriptionOptions
