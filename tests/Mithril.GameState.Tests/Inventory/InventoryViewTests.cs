@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Mithril.GameReports;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Sessions;
 using Mithril.GameState.Servers;
@@ -162,8 +163,125 @@ public sealed class InventoryViewTests
         public event EventHandler<string>? FileUpdated { add { } remove { } }
     }
 
+    /// <summary>
+    /// Reference-data stub whose item maps can be mutated mid-test — used by the
+    /// non-stackable reconcile pin to simulate "ref data was incomplete at Add
+    /// time but the CDN later filled in the entry, and the next storage-report
+    /// refresh promotes the still-unconfirmed live entry."
+    /// </summary>
+    private sealed class MutableRefData : IReferenceDataService
+    {
+        private readonly Dictionary<long, Item> _items = new();
+        private readonly Dictionary<string, Item> _byName = new(StringComparer.Ordinal);
+
+        public void Register(Item item)
+        {
+            _items[item.Id] = item;
+            if (!string.IsNullOrEmpty(item.InternalName))
+                _byName[item.InternalName!] = item;
+        }
+
+        public IReadOnlyList<string> Keys { get; } = ["items"];
+        public IReadOnlyDictionary<long, Item> Items => _items;
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName => _byName;
+        public ItemKeywordIndex KeywordIndex => new(_items);
+        public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
+        public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
+        public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);
+        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
+        public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
+        public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> Quests { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByInternalName { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
+        public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+        public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 1);
+        public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public void BeginBackgroundRefresh() { }
+        public event EventHandler<string>? FileUpdated { add { } remove { } }
+    }
+
+    /// <summary>
+    /// In-memory <see cref="IGameReportsService"/> — backs the export-seed +
+    /// reconcile pins. Pre-#602 the seed path was exercised against a real
+    /// temp directory + <c>FileSystemWatcher</c> (see the retired
+    /// <c>InventoryServiceStackSizeTests.SeedFixture</c>); after the split the
+    /// view consumes the service interface so an in-memory fake is sufficient.
+    /// </summary>
+    private sealed class FakeGameReportsService : IGameReportsService
+    {
+        private ReportFileInfo? _newest;
+        private StorageReport? _report;
+
+        public IReadOnlyList<ReportFileInfo> StorageReports =>
+            _newest is null ? Array.Empty<ReportFileInfo>() : new[] { _newest };
+        public ReportFileInfo? GetStorageReport(string? character, string? server) => _newest;
+        public StorageReport? GetStorageContents(string? character, string? server) => _report;
+        public event EventHandler? StorageReportsChanged;
+        public event EventHandler? CharacterSnapshotsChanged { add { } remove { } }
+        public IReadOnlyList<CharacterSnapshot> CharacterSnapshots { get; } = Array.Empty<CharacterSnapshot>();
+        public CharacterSnapshot? GetCharacterSnapshot(string? character, string? server) => null;
+        public void Refresh() { }
+        public void Dispose() { }
+
+        /// <summary>Install an export without firing the storage-changed event — used to pre-seed the view before <c>Start</c>.</summary>
+        public void Preload(StorageReport report)
+        {
+            _newest = new ReportFileInfo(
+                FilePath: $"{report.Character}_{report.ServerName}_items_2026-05-22.json",
+                Character: report.Character,
+                Server: report.ServerName,
+                LastModifiedUtc: new DateTime(2026, 5, 22, 0, 0, 0, DateTimeKind.Utc));
+            _report = report;
+        }
+
+        /// <summary>Install an export and fire the storage-changed event — simulates a mid-session export landing.</summary>
+        public void Publish(StorageReport report)
+        {
+            Preload(report);
+            StorageReportsChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private static StorageReport ItemsReport(params StorageItem[] items) => new(
+        Character: "Hits",
+        ServerName: "Pluto",
+        Timestamp: "2026-05-22T00:00:00Z",
+        Report: "items",
+        ReportVersion: 1,
+        Items: items);
+
+    private static StorageItem StorageEntry(int typeID, string name, int stackSize) => new(
+        TypeID: typeID,
+        Name: name,
+        StackSize: stackSize,
+        Value: 0,
+        StorageVault: null,
+        Rarity: null,
+        Slot: null,
+        Level: null,
+        IsInInventory: true,
+        IsCrafted: false,
+        AttunedTo: null,
+        Crafter: null,
+        Durability: null,
+        TransmuteCount: null,
+        CraftPoints: null,
+        TSysPowers: null,
+        TSysImbuePower: null,
+        TSysImbuePowerTier: null,
+        PetHusbandryState: null);
+
     private static (InventoryView view, FakeWorld playerWorld, FakeWorld chatWorld, FakePlayerInventoryState pstate)
-        Build(IGameSessionService? playerSession = null, IChatSessionService? chatSession = null, IReferenceDataService? refData = null)
+        Build(
+            IGameSessionService? playerSession = null,
+            IChatSessionService? chatSession = null,
+            IReferenceDataService? refData = null,
+            IGameReportsService? gameReports = null)
     {
         var playerWorld = new FakeWorld();
         var chatWorld = new FakeWorld();
@@ -172,7 +290,8 @@ public sealed class InventoryViewTests
             playerWorld, chatWorld, pstate,
             refData: refData ?? new TwoItemRefData(),
             playerSession: playerSession,
-            chatSession: chatSession);
+            chatSession: chatSession,
+            gameReports: gameReports);
         view.Start();
         return (view, playerWorld, chatWorld, pstate);
     }
@@ -387,5 +506,146 @@ public sealed class InventoryViewTests
             InventoryEventKind.StackChanged,
             InventoryEventKind.Deleted,
         });
+    }
+
+    // ── Export seed + reconcile (issue #681) ────────────────────────────
+    //
+    // PR #679 retired InventoryServiceStackSizeTests.cs (530 lines) when the
+    // legacy InventoryService deleted. Most of those pins were re-homed onto
+    // the producer/folder/view harness, but LoadExportSeeds is load-bearing
+    // for Arwen's gift-attribution path (export-seeded sizes for carryover
+    // items whose AddItem predates the session log) and had no remaining
+    // coverage. These four pins port the seed + reconcile scenarios from
+    // the retired tests onto the view harness.
+
+    [Fact]
+    public void Export_seed_is_consumed_on_first_PlayerAdded_for_stackable_single_instance()
+    {
+        // The pre-Start LoadExportSeeds populates _seededStackSizes for any
+        // stackable InternalName the export shows exactly once. The next
+        // matching AddItem must consume that seed and emit a confirmed Added
+        // with the export's size — without it, a Mithril restart mid-PG-session
+        // would replay carryover AddItems at the unconfirmed default-1 and
+        // Arwen would lose stack-size attribution for those instances.
+        var gameReports = new FakeGameReportsService();
+        gameReports.Preload(ItemsReport(StorageEntry(typeID: 1, name: "Moonstone", stackSize: 23)));
+
+        var (view, pw, _, _) = Build(gameReports: gameReports);
+        var added = new List<Frame<InventoryItemAdded>>();
+        view.Bus.Subscribe<InventoryItemAdded>(added.Add);
+
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+
+        added.Should().ContainSingle();
+        added[0].Payload.InstanceId.Should().Be(42L);
+        added[0].Payload.StackSize.Should().Be(23, "the export-seeded size beats the default-1");
+        added[0].Payload.SizeConfirmed.Should().BeTrue();
+        view.TryGetStackSize(42, out var s).Should().BeTrue();
+        s.Should().Be(23);
+
+        // The seed is one-shot — a second AddItem of the same InternalName
+        // must NOT inherit it (otherwise we'd over-claim sizes for items the
+        // player picked up in-session after the export was written).
+        PlayerAdd(pw, 99, "Moonstone", Ts(2));
+        added.Should().HaveCount(2);
+        added[1].Payload.InstanceId.Should().Be(99L);
+        added[1].Payload.StackSize.Should().Be(1);
+        added[1].Payload.SizeConfirmed.Should().BeFalse("seed already consumed; falls through to unconfirmed default-1");
+    }
+
+    [Fact]
+    public void Reconcile_promotes_unconfirmed_non_stackable_live_entry_to_confirmed()
+    {
+        // CDN-refresh resilience: an AddItem for an InternalName the reference
+        // data didn't know yet leaves the entry at the unconfirmed default-1.
+        // Once a later refresh fills in the item (here simulated by mutating
+        // the ref-data fake before the storage-report event), the non-stackable
+        // confirm pass inside LoadExportSeeds promotes the live entry to
+        // confirmed and fires StackChanged so event-driven subscribers see it.
+        var refData = new MutableRefData();
+        var gameReports = new FakeGameReportsService();
+
+        var (view, pw, _, _) = Build(refData: refData, gameReports: gameReports);
+        var changed = new List<Frame<InventoryStackChanged>>();
+        view.Bus.Subscribe<InventoryStackChanged>(changed.Add);
+
+        // Ref data is empty at Add time → confirmed=false (unconfirmed default-1).
+        PlayerAdd(pw, 99, "RingOfPower", Ts(1));
+        view.TryGetStackSize(99, out _).Should().BeFalse(
+            because: "no confirming source has spoken yet — the default-1 is a guess");
+
+        // Reference data later learns about the item (CDN refresh shape).
+        refData.Register(new Item
+        {
+            Id = 2, Name = "RingOfPower", InternalName = "RingOfPower",
+            MaxStackSize = 1, IconId = 0, Keywords = [],
+        });
+
+        // A storage-report refresh re-runs LoadExportSeeds. The export itself
+        // is empty of interesting items — the non-stackable confirm pass is
+        // independent of the export contents.
+        gameReports.Publish(ItemsReport());
+
+        changed.Should().ContainSingle();
+        changed[0].Payload.InstanceId.Should().Be(99L);
+        changed[0].Payload.StackSize.Should().Be(1);
+        changed[0].Payload.SizeConfirmed.Should().BeTrue();
+        view.TryGetStackSize(99, out var s).Should().BeTrue();
+        s.Should().Be(1);
+    }
+
+    [Fact]
+    public void Reconcile_fires_StackChanged_when_export_disagrees_with_stackable_single_live_entry()
+    {
+        // Mid-session export landing for an InternalName already tracked once
+        // in the live map with a stale or default size: the stackable reconcile
+        // pass must update the live entry to the export's authoritative size
+        // and fire StackChanged so subscribers (Palantir's live-inventory grid)
+        // see the corrected value.
+        var gameReports = new FakeGameReportsService();
+        var (view, pw, _, _) = Build(gameReports: gameReports);
+        var changed = new List<Frame<InventoryStackChanged>>();
+        view.Bus.Subscribe<InventoryStackChanged>(changed.Add);
+
+        // No export at startup → the AddItem lands at unconfirmed default-1.
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        view.TryGetStackSize(42, out _).Should().BeFalse();
+
+        // Export now lands with StackSize=23 for that single Moonstone instance.
+        gameReports.Publish(ItemsReport(StorageEntry(typeID: 1, name: "Moonstone", stackSize: 23)));
+
+        changed.Should().ContainSingle("the reconcile pass must fire StackChanged for the corrected entry");
+        changed[0].Payload.InstanceId.Should().Be(42L);
+        changed[0].Payload.StackSize.Should().Be(23);
+        changed[0].Payload.SizeConfirmed.Should().BeTrue();
+        view.TryGetStackSize(42, out var s).Should().BeTrue();
+        s.Should().Be(23);
+    }
+
+    [Fact]
+    public void OnGameReportsStorageChanged_re_triggers_LoadExportSeeds_for_subsequent_adds()
+    {
+        // The wired StorageReportsChanged handler is the sole seed-refresh
+        // signal post-#612 (the in-view FileSystemWatcher retired). After Start
+        // with no export, a later report-landing event must populate
+        // _seededStackSizes so the next AddItem of the seeded InternalName
+        // consumes it. This pins the event-handler wiring, not just the
+        // LoadExportSeeds body.
+        var gameReports = new FakeGameReportsService();
+        var (view, pw, _, _) = Build(gameReports: gameReports);
+        var added = new List<Frame<InventoryItemAdded>>();
+        view.Bus.Subscribe<InventoryItemAdded>(added.Add);
+
+        // Mid-session export lands AFTER Start — must re-trigger LoadExportSeeds.
+        gameReports.Publish(ItemsReport(StorageEntry(typeID: 1, name: "Moonstone", stackSize: 42)));
+
+        // Subsequent Add must pick up the freshly seeded size.
+        PlayerAdd(pw, 7, "Moonstone", Ts(1));
+
+        added.Should().ContainSingle();
+        added[0].Payload.InstanceId.Should().Be(7L);
+        added[0].Payload.StackSize.Should().Be(42,
+            because: "the storage-changed event re-ran LoadExportSeeds and populated the seed map");
+        added[0].Payload.SizeConfirmed.Should().BeTrue();
     }
 }
