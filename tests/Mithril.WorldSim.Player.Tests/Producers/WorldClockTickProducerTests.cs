@@ -7,34 +7,46 @@ using Xunit;
 
 namespace Mithril.WorldSim.Player.Tests.Producers;
 
-public sealed class ClassifiedPlayerLogProducerTests
+public sealed class WorldClockTickProducerTests
 {
     private static DateTimeOffset Ts(int sec) => new(2026, 1, 1, 12, 0, sec, TimeSpan.Zero);
 
     [Fact]
-    public async Task Yields_one_frame_per_envelope_carrying_envelope_payload_timestamp()
+    public async Task Yields_one_tick_per_envelope_at_the_source_stream_cadence()
     {
+        // The reshape's load-bearing property: the producer's emission cadence
+        // matches the source-stream cadence so the world clock can never stall
+        // behind player activity. One envelope → one Frame<WorldClockTick>
+        // stamped with the envelope's payload timestamp.
         var stream = new ScriptedClassifiedStream(
             new LogEnvelope<IClassifiedPlayerLogLine>(
                 new ScriptedLine(Ts(1), "line-a"), IsReplay: true),
             new LogEnvelope<IClassifiedPlayerLogLine>(
-                new ScriptedLine(Ts(2), "line-b"), IsReplay: false));
+                new ScriptedLine(Ts(2), "line-b"), IsReplay: false),
+            new LogEnvelope<IClassifiedPlayerLogLine>(
+                new ScriptedLine(Ts(2), "line-c"), IsReplay: false));
         stream.Complete();
 
-        var producer = new ClassifiedPlayerLogProducer(stream);
+        var producer = new WorldClockTickProducer(stream);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        var yielded = new List<Frame<IClassifiedPlayerLogLine>>();
+        var yielded = new List<Frame<WorldClockTick>>();
         await foreach (var frame in producer.SubscribeAsync(cts.Token))
         {
             yielded.Add(frame);
         }
 
-        yielded.Should().HaveCount(2);
+        yielded.Should().HaveCount(3);
         yielded[0].Timestamp.Should().Be(Ts(1));
-        yielded[0].Payload.Data.Should().Be("line-a");
+        yielded[0].Payload.At.Should().Be(Ts(1));
         yielded[1].Timestamp.Should().Be(Ts(2));
-        yielded[1].Payload.Data.Should().Be("line-b");
+        yielded[1].Payload.At.Should().Be(Ts(2));
+        // Same-second back-to-back envelopes still each emit a tick — the
+        // wall-clock-second dedup is the folder's job, not the producer's.
+        // (If the producer dedup'd here the world clock could miss a frame
+        // index tick, breaking the per-frame tie-break invariant.)
+        yielded[2].Timestamp.Should().Be(Ts(2));
+        yielded[2].Payload.At.Should().Be(Ts(2));
     }
 
     [Fact]
@@ -46,11 +58,9 @@ public sealed class ClassifiedPlayerLogProducerTests
             new LogEnvelope<IClassifiedPlayerLogLine>(
                 new ScriptedLine(Ts(2), "replay-2"), IsReplay: true));
 
-        var producer = new ClassifiedPlayerLogProducer(stream);
+        var producer = new WorldClockTickProducer(stream);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
-        // Start consuming on a background task so the producer can read its
-        // first batch from the stream channel.
         var consumer = Task.Run(async () =>
         {
             await foreach (var _ in producer.SubscribeAsync(cts.Token)) { }
@@ -66,7 +76,6 @@ public sealed class ClassifiedPlayerLogProducerTests
         stream.Post(new LogEnvelope<IClassifiedPlayerLogLine>(
             new ScriptedLine(Ts(3), "live-1"), IsReplay: false));
 
-        // Wait briefly for the producer's loop to observe the envelope.
         var completed = await Task.WhenAny(producer.ReachedLive, Task.Delay(2000));
         completed.Should().BeSameAs(producer.ReachedLive);
 
@@ -84,7 +93,7 @@ public sealed class ClassifiedPlayerLogProducerTests
                 new ScriptedLine(Ts(1), "only"), IsReplay: true));
         stream.Complete();
 
-        var producer = new ClassifiedPlayerLogProducer(stream);
+        var producer = new WorldClockTickProducer(stream);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         await foreach (var _ in producer.SubscribeAsync(cts.Token)) { }
@@ -93,9 +102,9 @@ public sealed class ClassifiedPlayerLogProducerTests
     }
 
     [Fact]
-    public void Priority_is_zero_so_future_producers_can_strictly_outrank_or_undercut()
+    public void Priority_is_zero_so_per_folder_producers_can_outrank_at_same_timestamp()
     {
-        var producer = new ClassifiedPlayerLogProducer(new ScriptedClassifiedStream());
+        var producer = new WorldClockTickProducer(new ScriptedClassifiedStream());
         producer.Priority.Should().Be(0);
     }
 
