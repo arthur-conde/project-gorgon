@@ -45,7 +45,7 @@ internal sealed class FakePlayerWorld : IPlayerWorld
         throw new NotSupportedException("FakePlayerWorld is read-only.");
     public void RegisterComposer(IComposer composer) =>
         throw new NotSupportedException("FakePlayerWorld is read-only.");
-    public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+    public Task StartMerger(CancellationToken ct) => Task.CompletedTask;
 }
 
 internal sealed class InMemoryCropConfig : ICropConfigStore

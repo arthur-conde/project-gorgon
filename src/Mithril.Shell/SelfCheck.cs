@@ -90,7 +90,11 @@ internal static class SelfCheck
                 ValidateOnBuild = true,
                 ValidateScopes = true,
             }));
-            builder.Services.AddMithrilShell(options);
+            // AddMithrilApp = AddMithrilShell + AddWorldMergerStart (trailing
+            // per #696 Call 2). Self-check validates the same composition the
+            // real launch does, so any future trailing additions are caught
+            // by the DI-cycle guard.
+            builder.Services.AddMithrilApp(options);
 
             // Self-test hook (CI guard-of-the-guard, never set in prod): inject a
             // re-entrant factory-lambda cycle of the exact shape #365 was — two

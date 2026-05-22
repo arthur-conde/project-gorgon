@@ -27,7 +27,7 @@ public sealed class PlayerWorldTests
         world.RegisterFolder(folder);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         folder.Applied.Select(a => a.Frame.Payload).Should().Equal("a", "b", "c");
         folder.Applied.Select(a => a.ClockNow).Should().Equal(Ts(1), Ts(2), Ts(3));
@@ -55,7 +55,7 @@ public sealed class PlayerWorldTests
         world.RegisterFolder(folder);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         folder.Applied.Select(x => x.Frame.Payload).Should().Equal("a1", "b2", "a3", "b4");
     }
@@ -82,7 +82,7 @@ public sealed class PlayerWorldTests
         world.RegisterFolder(folder);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         // Within the same timestamp: every priority-0 frame fires before any
         // priority-5 frame. Within a single producer the producer's own
@@ -111,7 +111,7 @@ public sealed class PlayerWorldTests
         world.RegisterFolder(folder);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         folder.Applied.Select(x => x.Frame.Payload).Should().Equal("first", "second");
     }
@@ -132,7 +132,7 @@ public sealed class PlayerWorldTests
         world.RegisterFolder(folder);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         world.Clock.Mode.Should().Be(WorldMode.Live);
         folder.Applied.Single().Mode.Should().Be(WorldMode.Live);
@@ -154,7 +154,7 @@ public sealed class PlayerWorldTests
         world.RegisterProducer(producer);
         world.RegisterFolder(folder);
 
-        var run = world.StartAsync(cts.Token);
+        var run = world.StartMerger(cts.Token);
         try { await run; }
         catch (OperationCanceledException) { /* expected */ }
 
@@ -186,7 +186,7 @@ public sealed class PlayerWorldTests
         producer.Complete();
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         // World caught up at the timestamp of the last replay frame (Ts(11)) —
         // the mode flip is observed between dispatches, so the bus emission's
@@ -228,7 +228,7 @@ public sealed class PlayerWorldTests
         using var sub = world.Bus.Subscribe<ModeChanged>(modeChanges.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         world.Clock.Mode.Should().Be(WorldMode.Live);
         modeChanges.Should().BeEmpty();
@@ -258,7 +258,7 @@ public sealed class PlayerWorldTests
         using var sub = world.Bus.Subscribe<ModeChanged>(modeChanges.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         modeChanges.Should().BeEmpty();
         world.Clock.Mode.Should().Be(WorldMode.Live);
@@ -297,7 +297,7 @@ public sealed class PlayerWorldTests
         using var s2 = world.Bus.Subscribe<SecondDomainFrame>(f => observed.Add("second:" + f.Payload.Tag));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         // First composer fires on TriggerEvent → emits FirstDomainFrame.
         // Second composer (subscribed to FirstDomainFrame) cascades →
@@ -328,7 +328,7 @@ public sealed class PlayerWorldTests
         using var s3 = world.Bus.Subscribe<FirstDomainFrame>(f => observed.Add("C:" + f.Payload.Tag));
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         observed.Should().Equal("A:ping", "B:ping", "C:ping");
     }
@@ -357,7 +357,7 @@ public sealed class PlayerWorldTests
         world.RegisterProducer(producer);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         var folderAct = () => world.RegisterFolder(new RecordingFolder<string>());
         folderAct.Should().Throw<InvalidOperationException>()

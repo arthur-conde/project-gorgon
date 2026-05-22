@@ -162,7 +162,11 @@ public static class Program
             // shared across modules, not nested under Shell/.
             var preferencesPath = Path.Combine(localApp, "Mithril", "preferences.json");
 
-            builder.Services.AddMithrilShell(new ShellCompositionOptions(
+            // AddMithrilApp = AddMithrilShell + AddWorldMergerStart (trailing).
+            // The trailing-registration invariant (#696 Call 2) is what makes
+            // each world's merger drain start strictly after every other hosted
+            // service has completed its registration work.
+            builder.Services.AddMithrilApp(new ShellCompositionOptions(
                 preferencesPath, shellStore, shellSettings, gameConfig,
                 logDir, perfDir, charactersRootDir, referenceCacheDir,
                 communityCalibrationCacheDir, iconCacheDir, Boot));

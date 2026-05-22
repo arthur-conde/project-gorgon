@@ -84,7 +84,7 @@ public sealed class ChatInventoryFolderEndToEndTests
         });
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var run = world.StartAsync(cts.Token);
+        var run = world.StartMerger(cts.Token);
         await allReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         cts.Cancel();
@@ -137,7 +137,7 @@ public sealed class ChatInventoryFolderEndToEndTests
             });
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var run = world.StartAsync(cts.Token);
+            var run = world.StartMerger(cts.Token);
             await done.Task.WaitAsync(TimeSpan.FromSeconds(5));
             cts.Cancel();
             try { await run; } catch (OperationCanceledException) { }

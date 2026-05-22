@@ -40,7 +40,7 @@ public sealed class InventoryViewTests
         public void RegisterProducer<T>(IFrameProducer<T> producer) { }
         public void RegisterFolder<T>(IFolder<T> folder) { }
         public void RegisterComposer(IComposer composer) { }
-        public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+        public Task StartMerger(CancellationToken ct) => Task.CompletedTask;
     }
 
     private sealed class TestBus : IWorldEventBus

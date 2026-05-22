@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Logging;
 using Mithril.WorldSim.Player.Internal;
 using Mithril.WorldSim.Player.Producers;
@@ -8,14 +7,21 @@ namespace Mithril.WorldSim.Player.DependencyInjection;
 
 /// <summary>
 /// DI registration for the Phase 0 PlayerWorld shell (issue #616, reshaped by
-/// #655). Registers the world singleton, the world-clock-tick producer + its
-/// owned folder, and a <see cref="BackgroundService"/> shim that calls
-/// <see cref="IWorld.StartAsync"/> once the host boots. Per-folder migrations
-/// (Phase 1+) wire their folder / composer / producer registrations against
-/// the same world singleton — typically via dedicated DI extensions of their
-/// own that resolve the world and call
+/// #655). Registers the world singleton + the world-clock-tick producer + its
+/// owned folder. Per-folder migrations (Phase 1+) wire their folder / composer
+/// / producer registrations against the same world singleton — typically via
+/// dedicated DI extensions of their own that resolve the world and call
 /// <see cref="IWorld.RegisterFolder{T}"/> / <see cref="IWorld.RegisterComposer"/>
 /// before the host starts.
+///
+/// <para><b>Merger start is OUT of this extension</b> (#696 Call 2). The
+/// merger drain is started trailing the entire shell composition by
+/// <c>Mithril.Shell.DependencyInjection.WorldMergerStartHostedService</c>,
+/// appended LAST by <c>ShellComposition.AddMithrilApp</c>. That hosted
+/// service resolves <see cref="IEnumerable{IWorld}"/> and calls
+/// <see cref="IWorld.StartMerger"/> on each registered world, which is why
+/// this extension registers the concrete world AS <see cref="IWorld"/> as
+/// well as <see cref="IPlayerWorld"/>.</para>
 /// </summary>
 public static class PlayerWorldServiceCollectionExtensions
 {
@@ -37,18 +43,12 @@ public static class PlayerWorldServiceCollectionExtensions
                 return world;
             })
             .AddSingleton<IPlayerWorld>(sp => sp.GetRequiredService<PlayerWorld>())
-            .AddHostedService<PlayerWorldHostedService>();
+            // Also register as IWorld so the trailing
+            // WorldMergerStartHostedService (#696 Call 2) can resolve every
+            // registered world via IEnumerable<IWorld> without binding
+            // explicitly to IPlayerWorld / IChatWorld.
+            .AddSingleton<IWorld>(sp => sp.GetRequiredService<PlayerWorld>());
 
         return services;
-    }
-
-    private sealed class PlayerWorldHostedService : BackgroundService
-    {
-        private readonly PlayerWorld _world;
-
-        public PlayerWorldHostedService(PlayerWorld world) => _world = world;
-
-        protected override Task ExecuteAsync(CancellationToken stoppingToken)
-            => _world.StartAsync(stoppingToken);
     }
 }

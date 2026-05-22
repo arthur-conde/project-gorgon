@@ -35,7 +35,7 @@ public sealed class WorldClockTickIntegrationTests
         var (world, producer) = BuildWorld(stream);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         world.Clock.Now.Should().Be(Ts(3));
         world.Clock.Frame.Should().Be(3L);
@@ -61,7 +61,7 @@ public sealed class WorldClockTickIntegrationTests
         using var _sub = world.Bus.Subscribe<CalendarTimeAdvanced>(ticks.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         ticks.Should().HaveCount(3);
         ticks.Select(t => t.Payload.Now).Should().Equal(Ts(1), Ts(2), Ts(3));
@@ -91,7 +91,7 @@ public sealed class WorldClockTickIntegrationTests
         using var _m = world.Bus.Subscribe<ModeChanged>(modeChanges.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         ticks.Should().HaveCount(3);
         ticks[0].Payload.Should().Be(new CalendarTimeAdvanced(Ts(10), WorldMode.Replaying));
@@ -118,7 +118,7 @@ public sealed class WorldClockTickIntegrationTests
         using var _sub = world.Bus.Subscribe<CalendarTimeAdvanced>(ticks.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         ticks.Should().BeEmpty();
         world.Clock.Frame.Should().Be(0L);

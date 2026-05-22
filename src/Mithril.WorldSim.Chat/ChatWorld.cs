@@ -92,7 +92,7 @@ public sealed class ChatWorld : IChatWorld, IAsyncDisposable
         }
     }
 
-    public async Task StartAsync(CancellationToken ct)
+    public async Task StartMerger(CancellationToken ct)
     {
         EnsureNotStarted();
         _started = true;

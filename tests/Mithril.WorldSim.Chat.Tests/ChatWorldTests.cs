@@ -32,7 +32,7 @@ public sealed class ChatWorldTests
         world.RegisterFolder(folder);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         folder.Applied.Select(a => a.Frame.Payload.Line).Should().Equal(
             "26-05-19 21:00:01\tone",
@@ -65,7 +65,7 @@ public sealed class ChatWorldTests
         using var _sub = world.Bus.Subscribe<ModeChanged>(modeChanges.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         modeChanges.Should().HaveCount(1);
         modeChanges[0].Payload.From.Should().Be(WorldMode.Replaying);
@@ -106,7 +106,7 @@ public sealed class ChatWorldTests
         using var sub = world.Bus.Subscribe<ModeChanged>(modeChanges.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         modeChanges.Should().BeEmpty();
         world.Clock.Mode.Should().Be(WorldMode.Live);
@@ -136,7 +136,7 @@ public sealed class ChatWorldTests
         world.RegisterFolder(folder);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         session.Current.Should().NotBeNull();
         session.Current!.Server.Should().Be("Laeth");
@@ -171,7 +171,7 @@ public sealed class ChatWorldTests
         world.RegisterProducer(producer);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        await world.StartAsync(cts.Token);
+        await world.StartMerger(cts.Token);
 
         var folderAct = () => world.RegisterFolder(new RecordingFolder<RawLogLine>());
         folderAct.Should().Throw<InvalidOperationException>()
