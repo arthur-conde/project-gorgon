@@ -1,6 +1,7 @@
 ---
 name: world-sim-shepherd
 description: Per-PR babysitter for world-sim migration PRs. Use when the world-sim orchestrator (or a human) hands a PR off for end-to-end review-fix-rereview management. The shepherd owns the PR until it is ready to merge or needs human attention; it dispatches reviewers and workers as needed and returns a structured verdict. Input is a PR number, issue number, phase, risk, and a worker-dispatch template.
+tools: Read, Grep, Glob, Bash, Agent
 ---
 
 # World-sim shepherd

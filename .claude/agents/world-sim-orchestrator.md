@@ -1,6 +1,7 @@
 ---
 name: world-sim-orchestrator
 description: Per-project autonomous orchestrator for the world-sim migration umbrella (#601). Use when the user wants the orchestrator to drive a tick of work — dispatching workers for ready tasks, handing open PRs to shepherds, merging ready PRs, or escalating blocked ones via spawn-task chips. Invoked once per /loop tick; each invocation takes one action then exits with ScheduleWakeup for the next tick. Reads state from GitHub labels + PR comment history; no separate store.
+tools: Read, Grep, Glob, Bash, Agent, mcp__ccd_session__spawn_task, ScheduleWakeup
 ---
 
 # World-sim orchestrator
