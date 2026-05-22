@@ -245,26 +245,33 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
   remains, but as a same-source read against the view's composed map
   (sim-coherent under the Player.log dispatch order, with the cross-source
   composition encapsulated inside the view layer per principle 4).
-- **Cross-FSM TryResolve peek**: **eliminated in #608**.
-  `FavorIngestionService` now subscribes to `PlayerInventoryRemoved` on
-  `IPlayerWorld.Bus` for the delete signal instead of parsing
-  `ProcessDeleteItem` from L1 directly. The inventory folder runs upstream
-  of the bus subscriber in the world's dispatch graph, so the change event
-  always carries a resolved `InternalName` — even under
-  replay-from-session-start where the pre-#608 L1-direct path would race
-  the folder and silently drop the gift. The new
-  `CalibrationService.OnItemDeleted(instanceId, internalName, timestamp)`
-  overload skips `IInventoryService.TryResolve` entirely.
+- **Cross-FSM TryResolve peek**: **eliminated in #608** via the Tier-2
+  `IGiftSignalService` lift (the architectural payoff #594 / #596 created
+  the signal service for). `FavorIngestionService` now subscribes to
+  `IGiftSignalService.Subscribe` for resolved gift events;
+  `GiftSignalService` owns a single L1 subscription with its own
+  `ProcessAddItem`-fed `instanceId → InternalName` map, correlates the
+  full verb triple (`ProcessStartInteraction` / `ProcessDeleteItem` /
+  `ProcessDeltaFavor`) on its own pump, and emits a fully-resolved
+  `GiftAccepted` with the `InternalName` baked in. The React-channel
+  `Subscribe` contract replays the in-session event log atomically to
+  late subscribers (#585 contract), so attach order vs the L1 driver is
+  irrelevant — no cross-pump race on subscribe-late, no `TryResolve`
+  needed. The new `CalibrationService.OnGiftAccepted(GiftAccepted)`
+  entry point goes directly to `RecordObservation`.
 - **Wall-clock**: `_time.GetUtcNow()` at the no-timestamp `OnStartInteraction`
   / `OnItemDeleted` / `OnDeltaFavor` overloads — all **test-only fallback
   overloads** for callers that don't plumb a real timestamp. Production
-  calls go through the timestamp-aware overloads. Not gating.
+  calls go through `OnGiftAccepted` (uses the signal service's resolved
+  timestamps) and the timestamp-aware L1 overloads. Not gating.
 - **Migration**: Arwen does not consume the
-  `Subscribe(Action<InventoryEvent>)` shim — it uses `TryGetStackSize` (not
-  on the `[Obsolete]` surface) and the new bus subscription, so it has no
-  #659 cleanup obligation.
-- **Status**: **resolved post-#608** — cross-FSM peek replaced by declared
-  PlayerWorld dispatch dependency.
+  `Subscribe(Action<InventoryEvent>)` shim — it uses `TryGetStackSize`
+  (not on the `[Obsolete]` surface) and the Tier-2
+  `IGiftSignalService.Subscribe` channel, so it has no #659 cleanup
+  obligation.
+- **Status**: **resolved post-#608** — cross-FSM peek replaced by
+  consumption of the Tier-2 signal service that owns the verb-triple
+  correlation on a single L1 pump.
 
 ### Saruman (Words of Power) ⚠️ **CROSS-SOURCE**
 
@@ -454,10 +461,13 @@ character-switch is a UI binding swap not a state mutation. The log-derived
 ### 7. Arwen's `_inventory.TryResolve` peek — **RESOLVED in #608**
 
 `TryResolve` no longer called on the gift-detection path.
-`FavorIngestionService` subscribes to `PlayerInventoryRemoved` on
-`IPlayerWorld.Bus`; the change event carries the resolved `InternalName`
-from the inventory folder's upstream application of `ProcessDeleteItem`,
-which the world's dispatch graph guarantees runs before the bus subscriber.
+`FavorIngestionService` subscribes to `IGiftSignalService.Subscribe` for
+fully-resolved `GiftAccepted` events; the Tier-2 signal service owns a
+single L1 subscription with its own `ProcessAddItem`-fed
+`instanceId → InternalName` map and correlates the verb triple on that
+one pump. The signal service's React-channel `Subscribe` contract
+replays the in-session resolved-gift log atomically to late subscribers
+(#585), so the iteration-1 "bus has no replay" gap is closed as well.
 `TryGetStackSize` (inside `RecordObservation`) remains as a same-source
 read against the view's composed map — sim-coherent under the Player.log
 sim's dispatch order with the cross-source composition encapsulated inside

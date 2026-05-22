@@ -5,6 +5,7 @@ using System.Text.Json;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
+using Mithril.GameState.Gifting;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Sessions;
 using Mithril.Shared.Reference;
@@ -188,33 +189,6 @@ public sealed class CalibrationService
             _diag?.Trace("Arwen.Calibration", $"Delete id={instanceId} unresolved while talking to {_activeNpcKey}");
             return;
         }
-        OnItemDeleted(instanceId, internalName, timestamp);
-    }
-
-    /// <summary>
-    /// Resolved-delete overload (#608). Production callers — chiefly
-    /// <see cref="State.FavorIngestionService"/>'s
-    /// <c>PlayerInventoryRemoved</c> subscription on the PlayerWorld bus —
-    /// route through here so the <see cref="GameState.Inventory.IInventoryService.TryResolve"/>
-    /// peek is no longer on the gift-detection path. The PlayerWorld dispatch
-    /// graph runs the inventory folder before the bus subscriber, so the
-    /// <paramref name="internalName"/> carried on the change event is
-    /// guaranteed populated even under replay-from-session-start (where the
-    /// pre-#608 L1-direct path would race the folder and silently drop the
-    /// gift). The legacy <c>OnItemDeleted(long, DateTimeOffset)</c> overload
-    /// is preserved for existing unit tests that pre-seed an inventory fake;
-    /// it now forwards through this path after the fake-driven TryResolve
-    /// succeeds.
-    /// </summary>
-    public void OnItemDeleted(long instanceId, string internalName, DateTimeOffset timestamp)
-    {
-        if (_activeNpcKey is null) return;
-        if (string.IsNullOrEmpty(internalName))
-        {
-            _diag?.Trace("Arwen.Calibration",
-                $"Delete id={instanceId} carried empty InternalName while talking to {_activeNpcKey} — skipping");
-            return;
-        }
 
         if (_pendingDelta is var (npcKey, delta, deltaTs))
         {
@@ -225,6 +199,40 @@ public sealed class CalibrationService
         }
 
         _pendingDeletedItem = (instanceId, internalName, timestamp);
+    }
+
+    /// <summary>
+    /// Production gift-detection entry point (#608, iteration 2). Consumed by
+    /// <see cref="State.FavorIngestionService"/>'s
+    /// <see cref="IGiftSignalService.Subscribe"/> handler — the Tier-2 signal
+    /// service correlates the <c>ProcessStartInteraction</c> /
+    /// <c>ProcessDeleteItem</c> / <c>ProcessDeltaFavor</c> verb triple on its
+    /// own single L1 subscription (with its own <c>ProcessAddItem</c> map)
+    /// and emits a fully-resolved <see cref="GiftAccepted"/>. By the time
+    /// this method fires, the <c>InternalName</c> is resolved, the NPC key
+    /// is known, and the favor delta is paired — no cross-pump
+    /// <c>TryResolve</c> peek, no FSM ordering dependency on cross-source
+    /// arrival.
+    ///
+    /// <para>Goes directly to <see cref="RecordObservation"/>. The legacy
+    /// <see cref="OnStartInteraction(string)"/> /
+    /// <see cref="OnItemDeleted(long)"/> /
+    /// <see cref="OnDeltaFavor(string, double)"/> FSM overloads remain — they
+    /// were never on the production path; existing unit tests drive them
+    /// directly to exercise the FSM transitions and verify
+    /// <see cref="RecordObservation"/> integration.</para>
+    /// </summary>
+    public void OnGiftAccepted(GiftAccepted gift)
+    {
+        if (string.IsNullOrEmpty(gift.NpcKey)) return;
+        if (string.IsNullOrEmpty(gift.ItemInternalName)) return;
+        if (gift.DeltaFavor <= 0) return;
+        RecordObservation(
+            gift.NpcKey,
+            gift.ItemInstanceId,
+            gift.ItemInternalName,
+            gift.DeltaFavor,
+            gift.Timestamp);
     }
 
     public void OnDeltaFavor(string npcKey, double delta)
