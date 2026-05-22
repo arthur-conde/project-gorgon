@@ -5,6 +5,7 @@
     <Project Path="src/Mithril.Shared/Mithril.Shared.csproj" />
     <Project Path="src/Mithril.WorldSim.Core/Mithril.WorldSim.Core.csproj" />
     <Project Path="src/Mithril.WorldSim.Player/Mithril.WorldSim.Player.csproj" />
+    <Project Path="src/Mithril.WorldSim.Chat/Mithril.WorldSim.Chat.csproj" />
     <Project Path="src/Mithril.Shared.Wpf/Mithril.Shared.Wpf.csproj" />
     <Project Path="src/Mithril.GameState/Mithril.GameState.csproj" />
     <Project Path="src/Mithril.Leveling/Mithril.Leveling.csproj" />
@@ -34,6 +35,7 @@
     <Project Path="tests/Mithril.Shared.Tests/Mithril.Shared.Tests.csproj" />
     <Project Path="tests/Mithril.GameState.Tests/Mithril.GameState.Tests.csproj" />
     <Project Path="tests/Mithril.WorldSim.Player.Tests/Mithril.WorldSim.Player.Tests.csproj" />
+    <Project Path="tests/Mithril.WorldSim.Chat.Tests/Mithril.WorldSim.Chat.Tests.csproj" />
     <Project Path="tests/Mithril.Leveling.Tests/Mithril.Leveling.Tests.csproj" />
     <Project Path="tests/Mithril.LogSanitizer.Tests/Mithril.LogSanitizer.Tests.csproj" />
     <Project Path="tests/Mithril.Planning.Tests/Mithril.Planning.Tests.csproj" />

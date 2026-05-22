@@ -1,0 +1,221 @@
+using System.IO;
+using FluentAssertions;
+using Mithril.Shared.Game;
+using Mithril.Shared.Logging;
+using Mithril.WorldSim.Chat.Producers;
+using Xunit;
+
+namespace Mithril.WorldSim.Chat.Tests.Producers;
+
+public sealed class ChatLogReplaySourceTests : IDisposable
+{
+    private readonly string _gameRoot;
+    private readonly string _chatDir;
+
+    public ChatLogReplaySourceTests()
+    {
+        _gameRoot = Path.Combine(Path.GetTempPath(), $"mithril-chatreplay-{Guid.NewGuid():N}");
+        _chatDir = Path.Combine(_gameRoot, "ChatLogs");
+        Directory.CreateDirectory(_chatDir);
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_gameRoot, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
+    private GameConfig Config(double pollSeconds = 0.25) => new()
+    {
+        GameRoot = _gameRoot,
+        PollIntervalSeconds = pollSeconds,
+    };
+
+    private void Write(string fileName, string content)
+        => File.WriteAllText(Path.Combine(_chatDir, fileName), content);
+
+    private void Append(string fileName, string content)
+        => File.AppendAllText(Path.Combine(_chatDir, fileName), content);
+
+    [Fact]
+    public async Task Empty_directory_yields_no_envelopes_in_replay_phase()
+    {
+        var source = new ChatLogReplaySource(Config(pollSeconds: 0.25));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(750));
+
+        var envelopes = await CollectAsync(source, cts.Token);
+
+        envelopes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Missing_directory_yields_no_envelopes()
+    {
+        // Point at a directory that doesn't exist — source must yield no
+        // frames (logged diagnostic) rather than throwing.
+        var config = new GameConfig
+        {
+            GameRoot = Path.Combine(Path.GetTempPath(), $"does-not-exist-{Guid.NewGuid():N}"),
+            PollIntervalSeconds = 0.25,
+        };
+        var source = new ChatLogReplaySource(config);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+        var envelopes = await CollectAsync(source, cts.Token);
+
+        envelopes.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task No_banner_skips_replay_phase_and_emits_only_appended_lines_live()
+    {
+        // Existing files have no banner — replay phase is empty. Appends
+        // post-attach come through as IsReplay=false.
+        Write("chat-Status.log",
+            "26-05-19 21:00:01\t[Status] pre-existing line 1\n" +
+            "26-05-19 21:00:02\t[Status] pre-existing line 2\n");
+
+        var source = new ChatLogReplaySource(Config(pollSeconds: 0.25));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+
+        var collector = CollectAsync(source, cts.Token);
+
+        await Task.Delay(500);  // let the source enter live mode
+        Append("chat-Status.log", "26-05-19 21:00:03\t[Status] appended\n");
+
+        var envelopes = await collector;
+        envelopes.Where(e => e.IsReplay).Should().BeEmpty();
+        envelopes.Where(e => !e.IsReplay)
+            .Select(e => e.Payload.Line)
+            .Should().Contain(l => l.Contains("appended"));
+    }
+
+    [Fact]
+    public async Task Most_recent_banner_anchors_replay_and_emits_at_or_after_lines()
+    {
+        // Banner line at 21:00:02 — pre-banner line should NOT replay;
+        // banner + post-banner lines should.
+        Write("chat-Status.log",
+            "26-05-19 21:00:00\t[Status] pre-banner-A\n" +
+            "26-05-19 21:00:01\t[Status] pre-banner-B\n" +
+            "26-05-19 21:00:02\t**** Logged In As Emraell. Server Laeth. Timezone Offset 01:00:00.\n" +
+            "26-05-19 21:00:03\t[Status] post-banner-A\n" +
+            "26-05-19 21:00:04\t[Status] post-banner-B\n");
+
+        var source = new ChatLogReplaySource(Config());
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(750));
+
+        var envelopes = await CollectAsync(source, cts.Token);
+
+        var replayed = envelopes.Where(e => e.IsReplay).Select(e => e.Payload.Line).ToList();
+        replayed.Should().HaveCount(3);
+        replayed[0].Should().Contain("Logged In As Emraell");
+        replayed[1].Should().Contain("post-banner-A");
+        replayed[2].Should().Contain("post-banner-B");
+
+        // pre-banner lines must NOT appear at all
+        envelopes.Should().NotContain(e => e.Payload.Line.Contains("pre-banner"));
+    }
+
+    [Fact]
+    public async Task Most_recent_banner_chosen_globally_across_multiple_files()
+    {
+        // Three channel files. The newer banner is in the second file; the
+        // older banner in the first file. The seek anchor must be the newer
+        // one, even though its file isn't the lex-first file in the directory.
+        Write("chat-Trade.log",
+            "26-05-19 20:00:00\t**** Logged In As Old. Server X. Timezone Offset 01:00:00.\n" +
+            "26-05-19 20:00:01\t[Trade] old-session-line\n");
+        Write("chat-Status.log",
+            "26-05-19 21:00:00\t**** Logged In As New. Server X. Timezone Offset 01:00:00.\n" +
+            "26-05-19 21:00:01\t[Status] new-session-line\n");
+        Write("chat-General.log",
+            "26-05-19 21:00:02\t[General] also-new-session\n" +
+            "26-05-19 20:30:00\t[General] mid-session-orphan\n");
+
+        var source = new ChatLogReplaySource(Config());
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(750));
+
+        var envelopes = await CollectAsync(source, cts.Token);
+
+        var replayed = envelopes.Where(e => e.IsReplay).Select(e => e.Payload.Line).ToList();
+
+        // The newer banner anchors the replay window to 21:00:00 onward.
+        replayed.Should().Contain(l => l.Contains("Logged In As New"));
+        replayed.Should().Contain(l => l.Contains("new-session-line"));
+        replayed.Should().Contain(l => l.Contains("also-new-session"));
+
+        // Older session lines (before the newer banner's timestamp) must NOT
+        // appear in the replay set.
+        replayed.Should().NotContain(l => l.Contains("Logged In As Old"));
+        replayed.Should().NotContain(l => l.Contains("old-session-line"));
+        replayed.Should().NotContain(l => l.Contains("mid-session-orphan"));
+    }
+
+    [Fact]
+    public async Task Replay_envelopes_carry_IsReplay_true_and_live_envelopes_carry_IsReplay_false()
+    {
+        Write("chat-Status.log",
+            "26-05-19 21:00:00\t**** Logged In As Em. Server Laeth. Timezone Offset 01:00:00.\n" +
+            "26-05-19 21:00:01\t[Status] replay-line\n");
+
+        var source = new ChatLogReplaySource(Config(pollSeconds: 0.25));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(1500));
+        var collector = CollectAsync(source, cts.Token);
+
+        await Task.Delay(500);
+        Append("chat-Status.log", "26-05-19 21:00:05\t[Status] live-line\n");
+
+        var envelopes = await collector;
+        var replayLines = envelopes.Where(e => e.IsReplay).Select(e => e.Payload.Line).ToList();
+        var liveLines = envelopes.Where(e => !e.IsReplay).Select(e => e.Payload.Line).ToList();
+
+        replayLines.Should().Contain(l => l.Contains("Logged In As Em"));
+        replayLines.Should().Contain(l => l.Contains("replay-line"));
+        liveLines.Should().Contain(l => l.Contains("live-line"));
+    }
+
+    [Fact]
+    public async Task Replay_emits_lines_in_timestamp_order_across_files()
+    {
+        // Two files share the post-banner window; their lines should
+        // interleave by timestamp in the replay stream.
+        Write("chat-A.log",
+            "26-05-19 21:00:00\t**** Logged In As Em. Server Laeth. Timezone Offset 01:00:00.\n" +
+            "26-05-19 21:00:02\t[A] a-at-2\n" +
+            "26-05-19 21:00:05\t[A] a-at-5\n");
+        Write("chat-B.log",
+            "26-05-19 21:00:03\t[B] b-at-3\n" +
+            "26-05-19 21:00:04\t[B] b-at-4\n");
+
+        var source = new ChatLogReplaySource(Config());
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(750));
+
+        var envelopes = await CollectAsync(source, cts.Token);
+        var replayLines = envelopes.Where(e => e.IsReplay).Select(e => e.Payload.Line).ToList();
+
+        // Banner at :00, [A] at :02, [B] at :03, [B] at :04, [A] at :05.
+        replayLines.Should().HaveCount(5);
+        replayLines[0].Should().Contain("Logged In As Em");
+        replayLines[1].Should().Contain("a-at-2");
+        replayLines[2].Should().Contain("b-at-3");
+        replayLines[3].Should().Contain("b-at-4");
+        replayLines[4].Should().Contain("a-at-5");
+    }
+
+    private static async Task<List<LogEnvelope<RawLogLine>>> CollectAsync(
+        IChatLogReplaySource source, CancellationToken ct)
+    {
+        var envelopes = new List<LogEnvelope<RawLogLine>>();
+        try
+        {
+            await foreach (var e in source.SubscribeWithReplayMarkerAsync(ct))
+            {
+                envelopes.Add(e);
+            }
+        }
+        catch (OperationCanceledException) { /* expected on poll-timeout */ }
+        return envelopes;
+    }
+}
