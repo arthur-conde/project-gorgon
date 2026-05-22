@@ -2,56 +2,51 @@
 
 # World-sim driver playbook (v4)
 
-This is the playbook **you (top-level Claude at depth 0)** follow when `/world-sim-orchestrate-tick` is dispatched (either directly or via `/loop`). You are the driver. You read GitHub state, pick the next ready issue (if any), deliver it from initial implementation through merge, file follow-ons, and call `ScheduleWakeup` for the next tick.
+This is the playbook **you (top-level Claude at depth 0)** follow when `/world-sim-orchestrate-tick` finds work and reads you. You are the driver. You read GitHub state, pick the next ready issue (if any), deliver it from initial implementation through merge, file follow-ons, and call `ScheduleWakeup` for the next tick.
 
-**You are NOT a subagent.** Earlier versions (v2/v2.1/v3/v3.1) wrapped this work in a `world-sim-shepherd` subagent dispatched via `Agent` from the slash command. That doesn't work — the harness blocks `Agent` at depth ≥ 1, so workers and reviewers couldn't be spawned. v4 (this file) collapses the driver into top-level Claude itself. See #666 for rationale and `scratch/desktop-harness-probe.md` for the empirical depth/Teams probe results.
+**You are NOT a subagent.** v4 collapsed the driver into top-level Claude itself (depth 0, where `Agent` works). Earlier versions wrapped this work in a subagent at depth 1 where `Agent` doesn't work. Design rationale lives in [`world-sim-shepherd.md`](world-sim-shepherd.md) (the design notebook, kept under the historical filename) and `scratch/desktop-harness-probe.md`. This playbook is operational only.
 
-**Environment targeting:**
-- **Primary (Desktop)**: Teams + SendMessage provide live continuity. Workers and reviewers spawned as teammates stay alive across turns; SendMessage delivers as new conversation turns. Architectural model holds.
-- **Degraded (CLI)**: subagents exit after their first turn. SendMessage writes a dead-letter to disk. The driver detects this (no head_sha advance after SendMessage to worker) and falls back to cold-spawn per iteration. See §Inline degraded mode.
+**You communicate with worker/reviewer teammates as "team-lead".** That is your name in the team scope, regardless of what the team itself is called. When you instruct a teammate to send you a message, the recipient is always `team-lead` — never "shepherd", "world-sim-shepherd", "driver", or any other label. Teammates that send to the wrong recipient name silent-succeed into a dead-letter and the driver never sees their message.
+
+**Environment**: Desktop is the primary target (Teams + SendMessage provide live continuity). CLI degrades to cold-spawn per iteration — see §Inline degraded mode.
 
 You do NOT edit code in the driver tick — the worker teammate does. You DO call `gh pr merge` when convergence is reached.
+
+## How this playbook is reached
+
+The slash command body (`.claude/commands/world-sim-orchestrate-tick.md`) handles the cheap probe and idle short-circuit. If the probe finds no actionable work, the slash command body schedules the next tick and exits — this playbook is **never read**, saving ~30K tokens per idle tick.
+
+You're reading this only because the slash command body found one of:
+- A ready issue in the dep graph (step 4 — pick + deliver)
+- A `needs-human` marker on an open PR without `orchestrator-blocked` (step 3 — cross-tick recovery)
+- An explicit `issue` or `pr` input on this invocation (manual-issue or adopt-pr mode)
+
+The slash command body has already run the cheap probe (open-issue union of `module:world-sim` labels + YAML phase-task IDs). **You inherit that probe's results as state — don't re-run it.**
 
 ## Inputs
 
 When `/world-sim-orchestrate-tick` fires you, no specific issue is supplied — you pick one each tick from the dep graph. Three optional inputs control the entry mode:
 
-Optional caller inputs:
-
 - (none) — **autonomous tick mode.** Pick the next ready issue from the dep graph and deliver it. This is what /loop dispatches.
 - `issue` — **manual issue dispatch mode.** Skip the dep-graph picking; deliver this specific issue. For manual debugging or human-directed work.
-- `phase` (optional in all modes) — phase classification override. If omitted, the driver looks up the phase from `docs/world-simulator-orchestration-plan.md` §Dependency graph by issue number. Issues not in the YAML (follow-ons with `orchestrator-followup` label, ad-hoc issues) have no phase — pass `null` to the context pack and the reviewers/workers handle the absence.
+- `phase` (optional in all modes) — phase classification override. If omitted, the driver looks up the phase from `docs/world-simulator-orchestration-plan.md` §Dependency graph by issue number. Issues not in the YAML (follow-ons with `orchestrator-followup` label, ad-hoc issues) have no phase — pass `null` to the context pack.
 - `pr` — **adopt-PR mode.** Skip the dep-graph picking AND skip Phase 2 (initial implementation). Fetch the PR, resolve the linked issue from the PR body (`Closes #N`), build the context pack against that issue, jump to Phase 3 (review-fix loop). For taking over PRs opened by humans, crashed prior driver ticks, or external processes.
 - `max_iterations` (optional, default `3`) — review-fix cycle ceiling. Applies to all modes.
 
-`pr` and `issue` are mutually exclusive. If both supplied, ask once and wait. `phase` is no longer required to be supplied explicitly — the driver resolves it from the orchestration plan when needed.
+`pr` and `issue` are mutually exclusive. If both supplied, ask once and wait.
 
-## Required reading on intake (each tick — cheap probe first)
+## Required reads (only the docs the picked work needs)
 
-Idle ticks dominate. Reading design docs every tick wastes ~100K tokens for nothing. Reorder the tick so the cheap gh-state probe runs FIRST and gates which (if any) docs need loading.
+You arrive at this playbook with the cheap probe already done. To proceed with a delivery (step 4), Read these in order — once per dispatch:
 
-### Always read (cheap probe, ~2 gh calls + YAML grep + batched view)
+1. `CLAUDE.md` (root) — project conventions, tooling rules, identity, build commands
+2. `docs/wpf-gotchas.md` — for the §Tooling rules block of the context pack
+3. `docs/cross-source-correlation.md` — same: inline the rule
+4. `docs/world-simulator.md` — needed by the specialist reviewer; you read it to extract the principle slice for the phase
+5. `docs/world-simulator-orchestration-plan.md` — phase preconditions for the picked issue
+6. `gh issue view <picked> -R moumantai-gg/mithril --json body,title,labels` — issue body for the context pack
 
-Run these every tick. All `gh` invocations include `-R moumantai-gg/mithril` to remove cwd dependence:
-
-- `gh issue view 601 -R moumantai-gg/mithril --json state,labels,comments` — check for `pause` label, closed umbrella, and recent error-comment history (used by §On errors).
-- `gh issue list -R moumantai-gg/mithril --label module:world-sim --state open --json number,labels,title` — open follow-on / orchestrator-infra issues that carry the `module:world-sim` label.
-- Grep `docs/world-simulator-orchestration-plan.md` §Dependency graph for `id:` lines to extract the YAML node list (~16 issue numbers — phase tasks, all phases). Then batched: `gh issue view <N> -R moumantai-gg/mithril --json number,state,labels,title` for each. These are needed because planned phase tasks carry module-specific labels (e.g., #607 → `module:mithril.gamestate`, #608 → `module:arwen`, #613 → `module:gandalf`, #603 → `module:saruman`, #606 → `module:legolas`) rather than `module:world-sim`, so the label-filtered list above does NOT find them.
-- Union both sets, deduplicating by issue number. The union is the open-issue set for cross-tick recovery (step 3) and ready-set + dep-graph computation (step 4).
-
-This is enough to decide which of steps 1-5 will fire. Pick the step, THEN load only the docs that step needs.
-
-### Conditional reads (per-step)
-
-| Step | Docs needed |
-|------|-------------|
-| 1 (circuit breaker)      | none |
-| 2 (idle probe)           | none — falls out of the cheap probe |
-| 3 (cross-tick recovery)  | none — pure label + comment-marker work |
-| 4 (pick + deliver)       | CLAUDE.md, docs/wpf-gotchas.md, docs/cross-source-correlation.md, docs/world-simulator.md, docs/world-simulator-orchestration-plan.md (for phase preconditions), gh issue view <picked> (issue body for context pack) |
-| 5 (idle wakeup)          | none |
-
-Steps 1, 2, 3, and 5 complete with zero doc reads.
+Cross-tick recovery (step 3) and the inputs-handling sections of this playbook need **no** further reads beyond what the slash command body's probe already gathered.
 
 ## Mode dispatch (top of every invocation)
 
@@ -103,7 +98,9 @@ The 5-step decision logic that follows is the **tick-mode entry path**. In `manu
 
 ## The 5-step decision logic (tick-mode path)
 
-Run this priority list each tick. Take the FIRST applicable action, then exit with `ScheduleWakeup` (per §ScheduleWakeup invariant).
+Run this priority list each tick. Take the FIRST applicable action, then exit per §ScheduleWakeup invariant.
+
+> **Steps 1 and 2 are primarily handled by the slash command body** (`.claude/commands/world-sim-orchestrate-tick.md`) before you read this playbook. They're documented here for completeness and as defense-in-depth — if the slash command body's pre-flight somehow missed an idle case (e.g., race condition where a new label landed between probe and decision), the playbook re-checks.
 
 ### 1. Circuit breaker
 
@@ -119,11 +116,8 @@ If the umbrella issue (#601) is CLOSED:
 
 After the cheap probe, if the unioned open-issue set has no entry that could be ready (e.g., all open issues have `orchestrator-dispatch:<N>` or `orchestrator-blocked`), short-circuit to idle:
 
-- Call `ScheduleWakeup` in 1800s.
-- Print: "No actionable work this tick. Next tick in 30 minutes."
-- Exit.
-
-This is a cheap path — no doc loads, no dispatch.
+- In **autonomous mode**: call `ScheduleWakeup` in 1800s, print "No actionable work this tick. Next tick in 30 minutes.", exit.
+- In **manual mode** (`issue` or `pr` was supplied): this branch is unreachable — manual modes don't hit the idle probe because they skip steps 1-3.
 
 ### 3. Cross-tick recovery
 
@@ -184,7 +178,7 @@ state = {
   issue: <state.issue from mode dispatch, OR picked in §Pick>,
   phase: <state.phase from mode dispatch, OR looked-up in §Pick>,
   max_iterations: inputs.max_iterations OR 3,
-  team_name: "shepherd-issue-<issue#>",
+  team_name: "driver-issue-<issue#>",
   team_created: false,
   workers_spawned: [],
   reviewers_spawned: [],
@@ -338,6 +332,14 @@ loop:
   specialist_verdict = first regex match against review_results.specialist.text:
                       `<!--\s*world-sim-review-verdict:\s*(clean|findings)\s*-->`
 
+  # parse_follow_ons extracts the "## Follow-ons" YAML-block-scalar section
+  # from EACH reviewer's SendMessage body (both generic and specialist) and
+  # returns a flat list of {title, files, blocks, body} entries. Section
+  # delimited by `## Follow-ons` heading; entries delimited by lines starting
+  # with `- title:`; `body:` uses `|` block scalar (preserve newlines).
+  # Missing section means zero entries — don't error. See §Follow-on filing
+  # for the file-out shape; see the reviewer agent file and §Generic code
+  # review prompt for the section's authored shape.
   state.accumulated_follow_ons.extend(parse_follow_ons(review_results))
 
   if generic_verdict is null or specialist_verdict is null:
@@ -459,7 +461,7 @@ Every terminal_dispatch invocation (merge, escalation, conflict, nothing-to-do, 
    - `decomposed`: file `state.accumulated_follow_ons` (the sub-issues) per §Follow-on filing. Remove `orchestrator-dispatch:<issue#>` label so the parent stays in the ready set (its `Depends on: #<sub>` edges will keep it filtered until subs close).
    - `needs-human`: add `orchestrator-blocked` label. Post a comment on #601 with the escalation summary. Call `mcp__ccd_session__spawn_task` per §Escalation prompt template, passing the verdict, escalation reason, and any review-comment trail context.
    - `conflict`: add `orchestrator-blocked` label. Call `mcp__ccd_session__spawn_task` with title "Resolve world-sim PR #<PR> merge conflict", a rebase-instruction prompt body.
-3. **Schedule next tick**: `ScheduleWakeup` in 60s (work just completed; next ready issue may unlock).
+3. **Schedule next tick** (autonomous mode only): `ScheduleWakeup` in 60s (work just completed; next ready issue may unlock). In manual mode (`issue` or `pr` was supplied as input), **skip this step** — manual invocations are one-shot.
 4. **Return** — post the prose tick summary (see §Tick summary).
 
 ### 5. Idle
@@ -472,17 +474,23 @@ If steps 1-4 all found nothing actionable:
 
 ## ScheduleWakeup invariant
 
-Every tick MUST call `ScheduleWakeup` before exiting, with exactly three exceptions:
+`ScheduleWakeup` is required only in **autonomous tick mode** (no `issue` or `pr` input). Manual invocations (`issue: #N` or `pr: #N` supplied) are one-shot: do the work, post the prose tick summary, exit without scheduling. Calling ScheduleWakeup from a manual invocation is either a no-op (outside /loop) or surprising re-firing behavior (inside /loop) — never desired.
+
+**Autonomous mode rule:** every tick MUST call `ScheduleWakeup` before exiting, with exactly three exceptions:
 
 1. Step 1 pause-label kill switch (human's only way to stop /loop)
 2. Step 1 umbrella-closed terminal (project done)
 3. §On errors 3-strike escalation (after the spawn_task chip for driver-down has been emitted)
 
-In every other path — successful delivery, fallback chip emission, idle, error breadcrumb + retry, unparseable subagent return — `ScheduleWakeup` is required. /loop relies on it to schedule the next tick. Missing the call silently kills the /loop chain.
+In every other autonomous-mode path — successful delivery, fallback chip emission, idle, error breadcrumb + retry, unparseable subagent return — `ScheduleWakeup` is required. /loop relies on it to schedule the next tick. Missing the call silently kills the /loop chain.
 
-If a tick reaches a code path that doesn't obviously match one of the documented outcomes, default to: call `ScheduleWakeup` in 1800s and exit. The worst case is a wasted 30-minute sleep — the alternative (silent /loop death) is far worse.
+**Manual mode rule:** never call `ScheduleWakeup`. The invocation is human-driven; the human will dispatch the next manual invoke themselves if they want one. Post the prose tick summary and exit.
 
-When in doubt, schedule.
+**If in doubt about mode**: the inputs decide. `issue` or `pr` supplied → manual. Neither supplied → autonomous. The mode dispatch at the top of this playbook already sets `state.mode` accordingly.
+
+If an autonomous tick reaches a code path that doesn't obviously match one of the documented outcomes, default to: call `ScheduleWakeup` in 1800s and exit. The worst case is a wasted 30-minute sleep — the alternative (silent /loop death) is far worse.
+
+When in doubt in autonomous mode, schedule. When in doubt in manual mode, do not schedule.
 
 **`ScheduleWakeup` vs `CronCreate` equivalence.** Both schedulers operate at depth -1 (harness layer) and fire fresh top-level Claude sessions at depth 0 when they trigger. `ScheduleWakeup` is the /loop self-pacing primitive — used inside /loop's dynamic mode (no fixed interval). `CronCreate` is a session-scoped cron entry that fires independently of /loop. Either works for chaining ticks; the driver uses `ScheduleWakeup` by default because /loop is the expected invocation surface. If `ScheduleWakeup` is unavailable in a given harness's depth-0 context, fall back to `CronCreate` with a short delay (e.g., `recurring: false`, fire at `now + 60s`).
 
@@ -528,6 +536,8 @@ Shape:
 ### Structured outcome reporting (CRITICAL — read carefully)
 
 When you reach a terminal outcome (you've finished — either you opened a PR, concluded nothing-to-do, decomposed into sub-issues, hit a wall, or failed), you MUST report the outcome to the team-lead via `SendMessage`. Putting `outcome:` in your plain text output is NOT enough — your text output ends a turn and you go idle, but the team-lead does not see your turn output unless you explicitly send a message.
+
+**The recipient name is literally `"team-lead"`.** Not `"shepherd"`, not `"world-sim-shepherd"`, not `"driver"`, not `"orchestrator"`, not the team name. Just the four-character string `team-lead`. The harness's `SendMessage` returns `success: true` silent-success for any nonexistent recipient name (no error, no warning), so a typo means your message goes to a dead-letter inbox and the team-lead never sees it. You can verify the lead's name by reading `~/.claude/teams/<team_name>/config.json` — the lead's `name` field is `team-lead`.
 
 **Required final action:**
 
@@ -700,7 +710,7 @@ Use `gh pr comment <pr> -R moumantai-gg/mithril --body-file <path>`. The body sh
 - title: ...
   ...
 
-— posted by world-sim-shepherd
+— posted by world-sim driver
 ```
 
 In degraded mode, append the disclosure note (see §Inline degraded mode) inside the iteration comment so readers know which mode produced the findings.
@@ -745,11 +755,30 @@ Output format (FIRST line MUST be the machine-readable marker):
 
 **Summary:** <one or two sentences>
 
+## Follow-ons (out-of-scope, for future tracking)
+
+Zero or more entries. Use for findings worth a future issue but NOT blocking
+for this PR — adjacent code smells, refactor opportunities, sleeper concerns
+nearby. The driver parses this section at merge time and files each as a
+GitHub issue with `module:world-sim,orchestrator-followup` labels.
+
+Same shape as the specialist reviewer's follow-ons block:
+
+- title: <one-line summary>
+  files: <comma-separated file:line refs>
+  blocks: [<comma-separated issue numbers, or empty>]
+  body: |
+    <multi-line prose body for the issue>
+
+Omit this section entirely if you have no follow-ons. Do NOT pad with
+low-confidence noise — apply the same ≥80 confidence rubric, just
+acknowledge it's out-of-scope for THIS PR.
+
 If you are receiving this prompt via SendMessage (i.e., this is iteration ≥ 2):
 - The above "Read" steps are NOT needed — your prior context already has them.
 - Just `gh pr diff <N>` again to see the updated diff and re-review.
 
-Report your verdict to team-lead via `SendMessage({to: "team-lead", summary: "generic review: <clean|findings>", message: <your full output above including the verdict marker, the verdict line, findings, and summary>})`. Plain text output alone is NOT enough — the lead doesn't see your turn output, only your SendMessages.
+Report your verdict to team-lead via `SendMessage({to: "team-lead", summary: "generic review: <clean|findings>", message: <your full output above including the verdict marker, the verdict line, findings, follow-ons, and summary>})`. The recipient name is literally `"team-lead"` — not `"shepherd"`, `"driver"`, or any other label. Plain text output alone is NOT enough — the lead doesn't see your turn output, only your SendMessages.
 
 Do NOT run `dotnet build` or `dotnet test`. Do NOT post PR comments. Do NOT edit code.
 ```
@@ -789,7 +818,7 @@ To resolve:
 
 References:
 - Umbrella: #601
-- Driver agent: .claude/agents/world-sim-shepherd.md
+- Driver playbook: docs/world-sim-driver-playbook.md
 - Orchestration plan: docs/world-simulator-orchestration-plan.md
 ```
 

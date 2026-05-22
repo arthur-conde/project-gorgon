@@ -96,7 +96,7 @@ Apply the standard false-positive filters:
 
 ## Output format
 
-Return a structured response. The shepherd parses this — keep it predictable.
+Return a structured response. The driver parses this — keep it predictable.
 
 ```
 <!-- world-sim-review-verdict: clean | findings -->
@@ -117,11 +117,33 @@ Return a structured response. The shepherd parses this — keep it predictable.
 [same shape]
 
 **Summary:** <one or two sentences>
+
+## Follow-ons (out-of-scope, for future tracking)
+
+Zero or more entries. Use for findings that are NOT blocking for THIS PR but are
+worth a follow-up issue — adjacent code smells, refactor opportunities, missing
+tests in nearby files, sleeper concerns in components the PR didn't change. The
+distinction from blocking findings: the worker shouldn't be asked to address
+these in the current review-fix loop; they'd just bloat scope.
+
+Each entry shape (omit the section entirely if zero entries):
+
+- title: <one-line summary, becomes the GitHub issue title>
+  files: <comma-separated file:line refs>
+  blocks: [<comma-separated issue numbers this would help unblock, or empty>]
+  body: |
+    <multi-line prose body for the issue. Explain the concern, why it's
+    out of scope for the current PR, and what's needed to address it.>
+
+- title: ...
+  ...
 ```
 
-The first line MUST be the HTML-comment marker `<!-- world-sim-review-verdict: clean -->` or `<!-- world-sim-review-verdict: findings -->`. The shepherd parses this marker — the prose `**Verdict:**` line is for humans and may shift formatting; the marker is the machine-readable contract.
+The first line MUST be the HTML-comment marker `<!-- world-sim-review-verdict: clean -->` or `<!-- world-sim-review-verdict: findings -->`. The driver parses this marker — the prose `**Verdict:**` line is for humans and may shift formatting; the marker is the machine-readable contract.
 
-If you find nothing, emit a clean verdict with one sentence: `No findings against principles, phase preconditions, replay-determinism, or the audit.`
+The `## Follow-ons` section is parsed by the driver at merge time and filed as separate GitHub issues with `module:world-sim,orchestrator-followup` labels. Include it whenever you spot something worth tracking — but DON'T pad it with low-confidence noise (apply the same ≥75 confidence rubric as for blocking findings, just acknowledge it's out-of-scope for THIS PR).
+
+If you find nothing (no findings, no follow-ons), emit a clean verdict with one sentence: `No findings against principles, phase preconditions, replay-determinism, or the audit.`
 
 ## Returning your verdict to the caller (Teams model)
 
