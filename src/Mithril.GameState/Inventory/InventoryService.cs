@@ -87,8 +87,6 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
     // Null in test contexts that don't wire the service.
     private readonly IGameReportsService? _gameReports;
     private readonly TimeProvider _time;
-    private FileSystemWatcher? _seedWatcher;
-    private Timer? _seedDebounce;
     private ILogSubscription? _playerSubscription;
     private ILogSubscription? _chatSubscription;
 
@@ -305,8 +303,6 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
             _playerSubscription = null;
             _chatSubscription?.Dispose();
             _chatSubscription = null;
-            _seedDebounce?.Dispose();
-            _seedWatcher?.Dispose();
             if (_gameReports is not null)
                 _gameReports.StorageReportsChanged -= OnGameReportsStorageChanged;
         }
@@ -732,35 +728,15 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
 
     private void SetupSeedWatcher()
     {
-        // #612: when IGameReportsService is wired, subscribe to its already-
-        // debounced StorageReportsChanged event — no second FileSystemWatcher.
-        // The shell wires this; only legacy tests that pass GameConfig without
-        // the service fall back to the local watcher.
+        // #612 + #602: the FileSystemWatcher fallback retired with the
+        // world-sim split. The single source of seed-refresh notifications is
+        // IGameReportsService.StorageReportsChanged. The previously-supported
+        // GameConfig-direct fallback existed for legacy test contexts that
+        // didn't wire the service; tests now provide the service via DI
+        // (or pass null to opt out of seed reconciliation entirely).
         if (_gameReports is not null)
         {
             _gameReports.StorageReportsChanged += OnGameReportsStorageChanged;
-            return;
-        }
-
-        if (_gameConfig is null) return;
-        var dir = _gameConfig.ReportsDirectory;
-        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return;
-
-        try
-        {
-            _seedWatcher = new FileSystemWatcher(dir)
-            {
-                Filter = "*.json",
-                NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.CreationTime | NotifyFilters.Size,
-                EnableRaisingEvents = true,
-            };
-            _seedWatcher.Created += OnSeedReportsChanged;
-            _seedWatcher.Changed += OnSeedReportsChanged;
-            _seedWatcher.Renamed += OnSeedReportsChanged;
-        }
-        catch (Exception ex)
-        {
-            _diag?.Warn("GameState.Inventory", $"Seed: watcher setup failed: {ex.Message}");
         }
     }
 
@@ -770,19 +746,6 @@ public sealed partial class InventoryService : BackgroundService, IInventoryServ
         // immediately on its notification — no second debounce timer here.
         try { LoadExportSeeds(); }
         catch (Exception ex) { _diag?.Warn("GameState.Inventory", $"Seed: refresh failed: {ex.Message}"); }
-    }
-
-    private void OnSeedReportsChanged(object sender, FileSystemEventArgs e)
-    {
-        // Debounce chunked writes — PG can flush an export across multiple ticks.
-        // The 500 ms window matches ActiveCharacterService's own watcher.
-        var prev = Interlocked.Exchange(ref _seedDebounce,
-            new Timer(_ =>
-            {
-                try { LoadExportSeeds(); }
-                catch (Exception ex) { _diag?.Warn("GameState.Inventory", $"Seed: refresh failed: {ex.Message}"); }
-            }, null, TimeSpan.FromMilliseconds(500), Timeout.InfiniteTimeSpan));
-        prev?.Dispose();
     }
 
     /// <summary>

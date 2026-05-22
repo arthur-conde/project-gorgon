@@ -4,7 +4,18 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <WarningsNotAsErrors>CS1591</WarningsNotAsErrors>
+    <!-- CS0618: usages of [Obsolete]-annotated APIs.
+         Demoted to a non-error warning during the world-sim migration window
+         (#602 / #659) — the inventory split annotates the legacy
+         InventoryEvent type and the IInventoryView.Subscribe shim as
+         [Obsolete] to signal the deprecation, but the six pre-existing
+         consumers (Arwen, Samwise, Palantir, Legolas, Saruman, Motherlode)
+         migrate one PR at a time under #659. Treating CS0618 as an error
+         would force a 1500+-line consumer rewrite in the keystone PR,
+         contradicting the spec's "preserves all six consumers' behaviour
+         without code changes in this PR" requirement. Re-promote to error
+         once #659 closes. -->
+    <WarningsNotAsErrors>CS1591;CS0618</WarningsNotAsErrors>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
 

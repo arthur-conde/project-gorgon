@@ -24,6 +24,7 @@ namespace Mithril.GameState.Inventory;
 /// <see cref="InventoryEventKind.StackChanged"/> events always carry
 /// <c>SizeConfirmed = true</c>.
 /// </summary>
+[Obsolete("Subscribe to Frame<InventoryItemAdded> et al. on IInventoryView.Bus. Cleanup tracked in #659.")]
 public readonly record struct InventoryEvent(
     InventoryEventKind Kind,
     long InstanceId,

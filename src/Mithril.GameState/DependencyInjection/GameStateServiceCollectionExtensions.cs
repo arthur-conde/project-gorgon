@@ -5,6 +5,7 @@ using Mithril.GameState.Celestial.Parsing;
 using Mithril.GameState.Effects;
 using Mithril.GameState.Gifting;
 using Mithril.GameState.Inventory;
+using Mithril.GameState.Inventory.Producers;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
 using Mithril.GameState.Recipes;
@@ -20,6 +21,7 @@ using Mithril.GameState.Skills.Producers;
 using Mithril.GameState.Weather;
 using Mithril.Shared.DependencyInjection;
 using Mithril.WorldSim;
+using Mithril.WorldSim.Chat;
 using Mithril.WorldSim.Player;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -51,10 +53,53 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<IGameSessionService>(sp => sp.GetRequiredService<GameSessionService>())
             .AddHostedService(sp => sp.GetRequiredService<GameSessionService>());
 
+        // Pre-#602 inventory implementation retained for back-compat with the
+        // six pre-existing consumers (Arwen, Samwise, Palantir, Legolas,
+        // Saruman, Motherlode). Each consumer migrates to the new typed
+        // IInventoryView.Bus surface in its own follow-on under #659; the
+        // legacy InventoryService body retires once the last consumer
+        // migrates.
         services
             .AddSingleton<InventoryService>()
             .AddSingleton<IInventoryService>(sp => sp.GetRequiredService<InventoryService>())
             .AddHostedService(sp => sp.GetRequiredService<InventoryService>());
+
+        // World-simulator inventory split (#602 — Phase 2): the new
+        // architectural surface lives alongside InventoryService.
+        //   - PlayerInventoryStateService is an IFolder<PlayerInventoryFrame>
+        //     registered with IPlayerWorld; the sibling producer reads the L1
+        //     LocalPlayer pipe and emits inventory frames.
+        //   - ChatInventoryStateService is an IFolder<ChatInventoryObservationFrame>
+        //     registered with IChatWorld; the sibling producer reads the chat
+        //     replay source and emits chat-observation frames.
+        //   - InventoryView is the cross-world view layer: subscribes to both
+        //     worlds' typed change-event channels via their buses, exposes the
+        //     three-channel typed view surface (InventoryItemAdded /
+        //     InventoryItemRemoved / InventoryStackChanged) on its own Bus,
+        //     and translates each backing-service event into a typed frame so
+        //     new code can subscribe via the canonical bus surface ahead of
+        //     consumer migrations under #659.
+        // Folder + producer registration happens in PlayerInventoryWorldRegistration
+        // / ChatInventoryWorldRegistration hosted services (ordering preserved by
+        // ShellComposition's AddPlayerWorld / AddChatWorld → AddMithrilGameState
+        // sequence).
+        services
+            .AddSingleton<PlayerInventoryStateService>()
+            .AddSingleton<IPlayerInventoryState>(sp => sp.GetRequiredService<PlayerInventoryStateService>())
+            .AddSingleton<IFolder<PlayerInventoryFrame>>(sp => sp.GetRequiredService<PlayerInventoryStateService>())
+            .AddSingleton<PlayerInventoryFrameProducer>()
+            .AddHostedService<PlayerInventoryWorldRegistration>();
+
+        services
+            .AddSingleton<ChatInventoryStateService>()
+            .AddSingleton<IChatInventoryState>(sp => sp.GetRequiredService<ChatInventoryStateService>())
+            .AddSingleton<IFolder<ChatInventoryObservationFrame>>(sp => sp.GetRequiredService<ChatInventoryStateService>())
+            .AddSingleton<ChatInventoryFrameProducer>()
+            .AddHostedService<ChatInventoryWorldRegistration>();
+
+        services
+            .AddSingleton<InventoryView>()
+            .AddSingleton<IInventoryView>(sp => sp.GetRequiredService<InventoryView>());
 
         // Shared live player-effects set from Player.log (ProcessAddEffects /
         // ProcessRemoveEffects / ProcessUpdateEffectName). Foundation for the
@@ -233,6 +278,84 @@ public static class GameStateServiceCollectionExtensions
             IPlayerWorld world,
             IFolder<SkillFrame> folder,
             SkillFrameProducer producer)
+        {
+            _world = world;
+            _folder = folder;
+            _producer = producer;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _world.RegisterProducer(_producer);
+            _world.RegisterFolder(_folder);
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Hosted service that wires <see cref="PlayerInventoryStateService"/>
+    /// (folder) + <see cref="PlayerInventoryFrameProducer"/> (producer) into
+    /// the <see cref="IPlayerWorld"/> singleton at host start, before
+    /// <c>PlayerWorld.StartAsync</c> fires. Mirrors
+    /// <see cref="PlayerSkillStateWorldRegistration"/>'s shape (#618 — the
+    /// canonical Phase 1 template). Additionally calls
+    /// <see cref="InventoryView.Bus"/>'s lazy bridge initializer if needed —
+    /// the view's bus surface is the new architectural canon for #602.
+    /// </summary>
+    private sealed class PlayerInventoryWorldRegistration : IHostedService
+    {
+        private readonly IPlayerWorld _world;
+        private readonly IFolder<PlayerInventoryFrame> _folder;
+        private readonly PlayerInventoryFrameProducer _producer;
+        private readonly InventoryView _view;
+
+        public PlayerInventoryWorldRegistration(
+            IPlayerWorld world,
+            IFolder<PlayerInventoryFrame> folder,
+            PlayerInventoryFrameProducer producer,
+            InventoryView view)
+        {
+            _world = world;
+            _folder = folder;
+            _producer = producer;
+            _view = view;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _world.RegisterProducer(_producer);
+            _world.RegisterFolder(_folder);
+            // Force-construction of the view singleton ensures its
+            // backing-service subscription is in place by the time any
+            // module bus consumer attaches.
+            _ = _view.Bus;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Hosted service that wires <see cref="ChatInventoryStateService"/>
+    /// (folder) + <see cref="ChatInventoryFrameProducer"/> (producer) into
+    /// the <see cref="IChatWorld"/> singleton at host start, before
+    /// <c>ChatWorld.StartAsync</c> fires. Ordering mirrors the player-side
+    /// equivalent: <c>AddChatWorld</c> registers the world singleton; this
+    /// hosted service runs before the world's own hosted service via
+    /// registration-order semantics in <c>ShellComposition</c>.
+    /// </summary>
+    private sealed class ChatInventoryWorldRegistration : IHostedService
+    {
+        private readonly IChatWorld _world;
+        private readonly IFolder<ChatInventoryObservationFrame> _folder;
+        private readonly ChatInventoryFrameProducer _producer;
+
+        public ChatInventoryWorldRegistration(
+            IChatWorld world,
+            IFolder<ChatInventoryObservationFrame> folder,
+            ChatInventoryFrameProducer producer)
         {
             _world = world;
             _folder = folder;

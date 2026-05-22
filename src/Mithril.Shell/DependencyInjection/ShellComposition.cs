@@ -10,6 +10,7 @@ using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.DependencyInjection;
+using Mithril.WorldSim.Chat.DependencyInjection;
 using Mithril.WorldSim.Player.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -69,6 +70,10 @@ public static class ShellComposition
             // hosted service inside AddMithrilGameState therefore runs
             // strictly before PlayerWorldHostedService.
             .AddPlayerWorld()
+            // ChatWorld is registered BEFORE AddMithrilGameState for the same
+            // ordering reason — #602's chat-inventory folder + producer
+            // registration hosted service runs before ChatWorldHostedService.
+            .AddChatWorld()
             .AddMithrilGameState()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)
