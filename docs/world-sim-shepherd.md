@@ -1,16 +1,22 @@
 # World-sim shepherd — design notebook
 
-A per-issue delivery agent that owns one world-sim migration issue end-to-end: spawns the initial-implementation worker, opens the PR, runs the review-fix loop, and merges. The orchestrator dispatches exactly one shepherd per ready issue and walks away; the shepherd reports a structured terminal verdict via JSON when it returns.
+A single agent at /loop depth that drives the world-sim migration umbrella (#601) end-to-end. Per tick: pick the next ready issue from the dep graph, dispatch a worker + reviewers as named teammates via Teams + SendMessage, iterate the review-fix loop, merge the PR itself, file follow-ons, and schedule the next tick. Returns a structured verdict via JSON each tick (delivery outcome or `idle` / `no-action` / `circuit-breaker`).
 
 **Pairs with:**
 - [`world-simulator.md`](world-simulator.md) — the migration whose issues this delivers
 - [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md) — phase preconditions, dep graph, global rules
-- [`world-sim-orchestrator.md`](world-sim-orchestrator.md) — the orchestrator that dispatches shepherds
 - [`world-sim-migration-audit.md`](world-sim-migration-audit.md) — ground truth the specialist reviewer cross-checks
 
-**Status:** design notebook + rationale, not implementation spec. The operational spec is the agent file [`../.claude/agents/world-sim-shepherd.md`](../.claude/agents/world-sim-shepherd.md). The v2 redesign rationale is in GitHub issue #646.
+**Status:** design notebook + rationale, not implementation spec. The operational spec is the agent file [`../.claude/agents/world-sim-shepherd.md`](../.claude/agents/world-sim-shepherd.md).
 
-**Version:** v2.1. The v1 shepherd was a per-PR babysitter dispatched after a PR existed; v2 (#646 / PR #647) expanded it to own from issue pickup through merge. v2 shipped with a `SendMessage(to: <agentId>)` continuity mechanism that didn't actually work — `SendMessage` requires the recipient to be a named teammate in a Team scope, not a raw agent ID. v2.1 (#652) corrects this by using the actual Teams primitive: `TeamCreate` at intake → `Agent({team_name, name})` to spawn teammates → `SendMessage({to: "<name>"})` to address them → `TeamDelete` on teardown. The lifecycle phases below are unchanged; only the spawn/communication API differs. The pseudocode in §The shepherd lifecycle reflects v2.1.
+**Version:** v3.
+
+- **v1** (PR #627): per-PR babysitter dispatched after a PR existed. Tight scope; no autonomous queue management.
+- **v2** (#646 / PR #647): expanded the shepherd to own from issue pickup through merge. Two layers: orchestrator at /loop depth dispatching shepherd at depth 2. Used `SendMessage(to: <agentId>)` for continuity — but that API doesn't work; `SendMessage` requires a named teammate in a Team scope.
+- **v2.1** (#652 / PR #653): fixed the API to use Teams primitives correctly. Two layers preserved.
+- **v3** (#656 / this file): collapsed orchestrator + shepherd into one agent at /loop depth. The v2.1 architecture needed `Agent` at depth 2 (shepherd dispatches worker), but the harness only reliably exposes `Agent` at depth 1 (/loop's dispatched agent). With orchestrator's small per-tick logic folded into shepherd's intake, the merged "driver" runs at depth 1 where `Agent` is available. The slash command name (`world-sim-orchestrate-tick`) is preserved for /loop continuity.
+
+The notebook uses "shepherd" and "driver" interchangeably for the v3 merged agent — "shepherd" is the agent file name (kept for less churn); "driver" is what it does (drives the whole migration).
 
 ---
 
@@ -18,19 +24,41 @@ A per-issue delivery agent that owns one world-sim migration issue end-to-end: s
 
 The world-sim migration umbrella (#601) has 15+ tasks across 5 phases. Each task → an issue → an implementation PR → a review → maybe more reviews → a merge. Doing this serially with a human in the loop is slow; doing it without per-PR judgment is reckless.
 
-The shepherd is the per-issue agent that brings judgment to the loop without requiring a human at every step. It can:
+The driver brings judgment to the loop without requiring a human at every step. Per tick it can:
 
+- Pick the next ready issue from the dep graph (YAML phase tasks + dynamically-filed follow-ons)
 - Read the issue body and decide whether implementation, decomposition, "nothing to do," or "I need clarification" is the right move
-- Dispatch a worker to implement, hold the worker alive across review iterations via `SendMessage` (the worker accumulates context — it remembers why it made each prior decision)
-- Run specialist + generic reviewers; iterate review-fix cycles up to a ceiling
+- Dispatch a worker as a named teammate to implement, hold the worker alive across review iterations via `SendMessage` (the worker accumulates context — it remembers why it made each prior decision)
+- Run specialist + generic reviewers as teammates; iterate review-fix cycles up to a ceiling
 - Merge the PR itself when convergence is reached
-- Escalate honestly when convergence isn't possible
+- File any out-of-scope findings as follow-on issues
+- Escalate honestly via `spawn_task` chips when convergence isn't possible
+- Schedule the next tick via `ScheduleWakeup`
 
-The orchestrator above the shepherd is a thin queue manager: pick the next ready issue, dispatch the shepherd, file the follow-ons the shepherd surfaces. The orchestrator never touches code, never calls `gh pr merge`, never spawns a general-purpose worker directly.
+v3 collapses what v2/v2.1 split across two layers (orchestrator + shepherd) into one layer at /loop depth. The collapse is what makes the architecture actually run in this harness — see the v3 entry in the version notes above.
 
 ---
 
-## v2 vs v1 — what changed
+## v3 vs v2.1 — what changed
+
+| Concern | v2.1 | v3 |
+|---|---|---|
+| Layers | Two: orchestrator at /loop depth, shepherd at depth 2 | One: driver at /loop depth |
+| Agent location | Shepherd needed `Agent` at depth 2 to spawn worker | All `Agent` calls happen at /loop depth (depth 1) |
+| Orchestrator agent file | `world-sim-orchestrator.md` (separate) | Deleted; logic folded into shepherd's tick |
+| Orchestrator notebook | `docs/world-sim-orchestrator.md` (separate) | Deleted; notes folded into this file |
+| Slash command body | Dispatched `world-sim-orchestrator` | Dispatches `world-sim-shepherd` (the merged driver) |
+| Slash command name | `world-sim-orchestrate-tick` | `world-sim-orchestrate-tick` (unchanged — preserved for /loop continuity) |
+| Per-tick logic | Split across orchestrator (steps 0-3) and shepherd (lifecycle phases 1-4) | Unified 5-step decision logic in one agent file |
+| Failure mode at depth 2 | Shepherd had Teams + SendMessage but no Agent → clean escalation, no delivery | Doesn't apply — there's no depth 2 |
+
+The v3 collapse is mechanical, not architectural. Everything the orchestrator did (circuit breaker, idle probe, cross-tick recovery, dep-graph + ready-set, escalation chip routing, follow-on filing) is small enough to live as steps 1-5 of the shepherd's tick. The delivery sub-phases (intake / initial implementation / review-fix / merge / terminal teardown) are unchanged from v2.1.
+
+The single load-bearing constraint that forced v2/v2.1's shape — per https://code.claude.com/docs/en/sub-agents, "Subagents work within a single session," so `SendMessage` requires a long-lived parent — is also what makes v3 work. The driver's tick IS the long-lived parent for one delivery; it lives for as long as that delivery takes (potentially hours).
+
+---
+
+## v2 vs v1 (historical)
 
 | Concern | v1 shepherd | v2 shepherd |
 |---|---|---|
@@ -40,26 +68,27 @@ The orchestrator above the shepherd is a thin queue manager: pick the next ready
 | Reviewer lifecycle | Fresh `Agent` per iteration | One `Agent` per reviewer, then `SendMessage` (reviewers remember prior findings naturally) |
 | Merge | Shepherd signals `ready-to-merge`; orchestrator runs `gh pr merge` | Shepherd runs `gh pr merge` itself; reports `verdict: merged` |
 | Verdict enum | `ready-to-merge` / `needs-human` / `conflict` | `merged` / `needs-human` / `conflict` / `nothing-to-do` / `decomposed` |
-| Follow-on transport | Parsed from PR comment by orchestrator | Carried in shepherd's return JSON (PR comment is for humans only) |
-| Context loading cost | Each spawned subagent reads CLAUDE.md + required docs + issue body cold per iteration | Shepherd builds context pack once at intake, passes inline to first worker dispatch; subsequent `SendMessage`s send only the delta |
+| Follow-on transport | Parsed from PR comment by orchestrator | Carried in shepherd's return JSON |
 
-The single load-bearing constraint that forced v2's shape: per https://code.claude.com/docs/en/sub-agents, "Subagents work within a single session." `SendMessage` only works while the original parent is alive. A short-lived per-tick shepherd cannot carry subagents across orchestrator ticks. The only path to subagent context continuity is a long-lived per-issue shepherd. Cost of "long-lived": the shepherd's parent context sits idle during subagent runs — but idle wait costs zero tokens (billing is per inference, not wall-clock). So a multi-hour shepherd is cheap.
+v2 → v2.1 was an API fix (SendMessage-by-id → Teams); v2.1 → v3 is a layer collapse.
 
 ---
 
 ## Core shape
 
-Three subagents:
+Two subagents:
 
-**`world-sim-shepherd`** — the per-issue delivery agent. Tools: `Read`, `Grep`, `Glob`, `Bash` (constrained to `gh`), `Agent`, `SendMessage`, `TeamCreate`, `TeamDelete`, `ToolSearch`. No `Edit`/`Write` — the shepherd never touches code; it dispatches teammates to do so.
+**`world-sim-shepherd`** — the driver. Runs at /loop depth. Tools: `Read`, `Grep`, `Glob`, `Bash` (constrained to `gh`), `Agent`, `SendMessage`, `TeamCreate`, `TeamDelete`, `mcp__ccd_session__spawn_task`, `ScheduleWakeup`, `ToolSearch`. No `Edit`/`Write` — the driver never touches code; it dispatches teammates to do so.
 
-**`world-sim-reviewer`** — the world-sim specialist reviewer the shepherd dispatches once per PR via `Agent` and then resumes via `SendMessage` on every subsequent review iteration. Four checks: principle adherence (1-13), phase-aware migration preconditions, replay-determinism inspection, audit cross-reference.
+**`world-sim-reviewer`** — the world-sim specialist reviewer the driver dispatches once per PR via `Agent` (as a teammate) and resumes via `SendMessage` on subsequent review iterations. Four checks: principle adherence (1-13), phase-aware migration preconditions, replay-determinism inspection, audit cross-reference.
 
-**Generic reviewer (inlined)** — the shepherd dispatches a `general-purpose` subagent with an inlined code-review prompt (canonical version in the shepherd agent file, §Generic code review prompt). Same lifecycle: one `Agent` per PR, then `SendMessage`.
+**Generic reviewer (inlined)** — the driver dispatches a `general-purpose` subagent with an inlined code-review prompt (canonical version in the agent file, §Generic code review prompt). Same lifecycle: one `Agent` per PR (as teammate), then `SendMessage`.
 
 ---
 
-## The shepherd lifecycle
+## The driver lifecycle (delivery sub-phases)
+
+The pseudocode below is **step 4's delivery work** in the v3 5-step tick. The outer tick is documented in the agent file (`§The 5-step decision logic`); the delivery sub-phases below (intake / initial implementation / review-fix loop / merge / terminal teardown) are what happens once a ready issue has been picked. The structure is unchanged from v2.1; only the surrounding orchestration moved from a separate orchestrator agent into the driver's own tick.
 
 ```
 phase 1: intake
@@ -170,7 +199,16 @@ Plus human-readable prose after the JSON block (which the orchestrator surfaces 
 
 ## Invocation surface
 
-The orchestrator dispatches the shepherd via the `Agent` tool with:
+The slash command `/world-sim-orchestrate-tick` dispatches the driver via the `Agent` tool with:
+
+```
+subagent_type: world-sim-shepherd
+prompt: |
+  Run one tick of the world-sim migration driver.
+  (No issue specified — the driver picks the next ready one from the dep graph.)
+```
+
+For manual debugging, pass an explicit issue + phase:
 
 ```
 subagent_type: world-sim-shepherd
@@ -180,45 +218,48 @@ prompt: |
   max_iterations: 3
 ```
 
-Minimal prompt. The shepherd builds its own context pack from the issue body + CLAUDE.md + the orchestration plan slice. The v1 design pre-assembled a `worker_template` for the orchestrator to hand in — v2 drops that, since the shepherd owns the worker lifecycle now.
+The driver builds its own context pack from the issue body + CLAUDE.md + the orchestration plan slice. No `worker_template` is needed from the caller — the driver owns the worker lifecycle.
 
 ---
 
-## Files this design produced (v2)
+## Files this design produced (v3)
 
-1. `.claude/agents/world-sim-shepherd.md` — rewritten for v2 (intake, initial impl, SendMessage continuity, agent-merges)
-2. `.claude/agents/world-sim-orchestrator.md` — collapsed from 5 steps to 3 (circuit breaker, cross-tick recovery, dispatch shepherd)
-3. `.claude/agents/world-sim-reviewer.md` — small edit documenting SendMessage continuation behavior
-4. `docs/world-sim-shepherd.md` — this file (v2 rewrite)
-5. `docs/world-sim-orchestrator.md` — v2 status banner + scoped updates
+1. `.claude/agents/world-sim-shepherd.md` — rewritten for v3 (5-step tick: circuit breaker / idle / cross-tick recovery / pick + deliver / idle wakeup; delivery sub-phases unchanged from v2.1).
+2. `.claude/agents/world-sim-orchestrator.md` — DELETED. Folded into shepherd.
+3. `.claude/agents/world-sim-reviewer.md` — unchanged from v2.1.
+4. `.claude/commands/world-sim-orchestrate-tick.md` — slash command body updated to dispatch the new merged shepherd (name preserved for /loop continuity).
+5. `docs/world-sim-shepherd.md` — this file (v3 rewrite).
+6. `docs/world-sim-orchestrator.md` — DELETED. Notes folded here.
 
-Filed via: GitHub issue #646.
+Filed via: GitHub issue #656.
 
 ---
 
 ## Open considerations
 
-1. **Concurrent shepherds on overlapping PRs.** If the orchestrator dispatches two shepherds for issues whose implementations touch the same file, the second worker's commit could clobber the first. v2's serialization (one shepherd per orchestrator tick, /loop ticks are serialized) makes this hard to hit in practice, but if /loop ever supports concurrent ticks, the orchestrator needs a mutex (see §Concurrency in the agent file).
-2. **Agent ID format stability.** v2 captures worker/reviewer IDs by regex-matching `agentId:\s*([a-f0-9]+)` against the `Agent` return text. If the harness ever changes that format, the shepherd breaks. Worth a periodic spot-check.
-3. **Worker checkout drift across SendMessage gaps.** The worker may be idle for hours between SendMessages (during reviewer runs). Other actors (humans, other workers in other branches) could mutate the worktree state. The fix-message template tells the worker to `git pull` before editing — but this is a convention, not a guarantee. Workers that ignore the convention can push stale commits.
-4. **SendMessage cost vs Agent cost.** SendMessage continuations re-page-in the subagent's full prior context on each call. The marginal cost is small relative to a fresh Agent call (which would re-read CLAUDE.md + docs), but it isn't zero. Worth measuring over a real session to confirm the v2 economics hold up.
+1. **Concurrent driver ticks on overlapping PRs.** If /loop ever supports concurrent ticks, two drivers running simultaneously could double-dispatch the same ready issue. The `orchestrator-dispatch:<N>` label is idempotent, but Agent calls aren't. No mutex today; protection lives at the /loop layer.
+2. **Worker checkout drift across SendMessage gaps.** The worker may be idle for hours between SendMessages (during reviewer runs). Other actors could mutate the worktree state. The fix-message template tells the worker to `git pull` before editing — convention, not a guarantee.
+3. **SendMessage cost vs Agent cost.** SendMessage continuations re-page-in the subagent's full prior context on each call. Marginal cost is small relative to a fresh Agent call (which would re-read CLAUDE.md + docs), but isn't zero. Worth measuring over a real session.
+4. **Long-tick wall-clock.** A delivery in step 4 can run 1-4 hours. The driver's parent context sits idle during subagent runs — idle wait is zero-token, but /loop ticks become long-tail. If /loop has a timeout, drivers may be killed mid-delivery; need to confirm /loop's tick timeout policy.
 
 ---
 
 ## What this design does NOT cover
 
-- **Multi-PR shepherding by a single agent instance.** Each shepherd dispatch owns exactly one issue → one PR. Cross-PR coordination is the orchestrator's job.
-- **User-action recording for shepherd replay.** Reviewers' outputs aren't deterministic. Shepherd runs aren't replayable.
-- **PR-level CI integration.** If lightweight CI ever runs on every PR push (separate from release-cut CI), the shepherd's loop will need a CI-wait check. Not designing for it now.
-- **Cross-session agent persistence.** Once the shepherd returns, all subagents it spawned die. If a future Claude Code release adds cross-session agent IDs (see the "Agent Teams" docs reference), the orchestrator could in principle keep workers alive across tick boundaries. Not designing for it now.
+- **Multi-issue delivery in one tick.** Each tick delivers exactly one issue. The dep-graph filter ensures the next tick picks the next ready issue (which may be a follow-on the just-merged delivery filed).
+- **User-action recording for driver replay.** Reviewers' outputs aren't deterministic. Driver runs aren't replayable.
+- **PR-level CI integration.** If lightweight CI ever runs on every PR push, the review loop needs a CI-wait check. Not designing for it now.
+- **Cross-tick teammate persistence.** When the driver's tick returns, all teammates die (per Claude Code's "subagents work within a single session"). Each tick is self-contained.
 
 ---
 
 ## References
 
 - World-sim architecture umbrella: [#601](https://github.com/moumantai-gg/mithril/issues/601)
-- v2 redesign issue: [#646](https://github.com/moumantai-gg/mithril/issues/646)
-- v1 contract-bug fix: PR #645 / commit a830456
+- v3 collapse issue: [#656](https://github.com/moumantai-gg/mithril/issues/656)
+- v2.1 robustness pass: [#652](https://github.com/moumantai-gg/mithril/issues/652) / PR [#653](https://github.com/moumantai-gg/mithril/pull/653)
+- v2 redesign issue: [#646](https://github.com/moumantai-gg/mithril/issues/646) / PR [#647](https://github.com/moumantai-gg/mithril/pull/647)
+- v1 contract-bug fix: PR [#645](https://github.com/moumantai-gg/mithril/pull/645) / commit a830456
 - Foundation umbrella: [#614](https://github.com/moumantai-gg/mithril/issues/614)
 - Orchestration plan: [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md)
 - Component audit: [`world-sim-migration-audit.md`](world-sim-migration-audit.md)
