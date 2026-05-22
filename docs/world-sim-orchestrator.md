@@ -1,14 +1,42 @@
 # World-sim orchestrator — design notebook
 
-An autonomous orchestrator subagent that drives the world-sim migration umbrella (#601) end-to-end: dispatches workers for ready tasks, hands open PRs to shepherds, merges ready-to-merge PRs, and escalates blocked ones via spawn-task chips. Runs as a tick-based /loop; each tick takes one action then exits.
+An autonomous orchestrator subagent that drives the world-sim migration umbrella (#601) end-to-end. Runs as a tick-based /loop; each tick takes one action then exits.
 
 **Pairs with:**
 - [`world-simulator.md`](world-simulator.md) — the architecture the migration is delivering
 - [`world-simulator-orchestration-plan.md`](world-simulator-orchestration-plan.md) — the dispatch flow this orchestrator automates
-- [`world-sim-shepherd.md`](world-sim-shepherd.md) — the per-PR reviewer this orchestrator dispatches
+- [`world-sim-shepherd.md`](world-sim-shepherd.md) — the per-issue delivery agent this orchestrator dispatches
 - [`world-sim-migration-audit.md`](world-sim-migration-audit.md) — ground truth the shepherd's specialist reviewer cross-checks
 
-**Status:** design notebook, not implementation spec. The finalized implementation plan lives in the GitHub issue filed against the world-sim umbrella (#601).
+**Status:** design notebook + rationale, not implementation spec. The operational spec is the agent file [`../.claude/agents/world-sim-orchestrator.md`](../.claude/agents/world-sim-orchestrator.md).
+
+---
+
+## v2 status (current)
+
+The orchestrator collapsed from 5 steps to 3 in v2 (issue #646). The per-issue shepherd now owns the full delivery lifecycle (initial implementation → PR → review-fix → merge), so the orchestrator no longer needs to dispatch general-purpose workers directly, hand existing PRs to shepherds mid-flight, or call `gh pr merge` itself.
+
+**The v2 tick shape:**
+
+| Step | What it does | When it fires |
+|------|--------------|---------------|
+| 0. Circuit breaker | Honor `pause` label or umbrella-closed state | Always check first |
+| 1. Cross-tick recovery | Process a shepherd's `needs-human` marker comment left on a PR after a prior tick crashed mid-handler | Rare — only when a prior tick didn't complete inline handling |
+| 2. Dispatch shepherd | Pick a ready issue from the dep graph, dispatch the shepherd via `Agent`, handle the terminal verdict (`merged` / `needs-human` / `conflict` / `nothing-to-do` / `decomposed`) inline in the same tick | The primary work step |
+| 3. Idle | 30-minute sleep | When 0-2 found nothing actionable |
+
+**What was removed in v2:**
+
+- v1 Step 1 (MERGE READY) — shepherd merges itself now
+- v1 Step 3 (SHEPHERD A PR existing) — shepherd owns its PR from open through merge
+- v1 §Worker dispatch contract — shepherd assembles the worker prompt from the issue body + context pack
+- v1 follow-on parsing from PR comment — orchestrator parses `follow_ons` from the shepherd's return JSON now
+
+**Why the change:** see issue #646 and [`world-sim-shepherd.md`](world-sim-shepherd.md) §"v2 vs v1 — what changed". Short version: `SendMessage` only works while the parent subagent is alive (per Claude Code docs), so the only way to keep worker/reviewer context across iterations is a long-lived per-issue shepherd. That collapsed the orchestrator's role from "dispatch worker, then wait, then dispatch shepherd, then wait, then merge" into "dispatch shepherd, wait, process return."
+
+**What remains relevant from the v1 narrative below.** The dep-graph derivation, follow-on filing schema, error-breadcrumb pattern, and concurrency assumption are all unchanged. The Per-tick decision logic section that follows describes the v1 5-step flow — useful for context on why v2 collapsed the way it did, but consult the agent file for current behavior.
+
+---
 
 ---
 
