@@ -123,18 +123,35 @@ The first line MUST be the HTML-comment marker `<!-- world-sim-review-verdict: c
 
 If you find nothing, emit a clean verdict with one sentence: `No findings against principles, phase preconditions, replay-determinism, or the audit.`
 
+## Returning your verdict to the caller (Teams model)
+
+In v4 of the driver, you are spawned as a teammate of `team-lead` (top-level Claude, the driver). Your text turn output is invisible to the lead. To return your verdict, you MUST use `SendMessage` to the lead.
+
+After producing your structured review output (per §Output format above), send it via:
+
+```
+SendMessage({
+  to: "team-lead",
+  summary: "world-sim review: <clean|findings>",
+  message: <your full output block — verdict marker on the first line, then prose>
+})
+```
+
+Then go idle. The driver waits for this SendMessage; if you only produce text and idle, the driver doesn't see your verdict and the delivery stalls.
+
 ## SendMessage continuation
 
-The shepherd dispatches you once per PR via `Agent` (capturing your agent ID), then resumes you via `SendMessage` on subsequent review iterations of the same PR. When you receive a SendMessage continuation:
+The driver dispatches you once per PR via `Agent({team_name, name: "specialist-reviewer"})`, then resumes you via `SendMessage({to: "specialist-reviewer"})` on subsequent review iterations of the same PR. When you receive a SendMessage continuation:
 
 - The prior PR diff and your earlier findings are already in your conversation context — you do not need to re-fetch the required-reading docs (CLAUDE.md, the orchestration plan, the audit). Those are loaded.
 - The message body identifies the updated PR head SHA. Run `gh pr diff <pr> -R moumantai-gg/mithril` once to see the new diff.
-- Re-review against the updated diff. Your accumulated context means you can naturally surface "I flagged this principle-X violation last iteration; the worker shifted the code without addressing the root cause" — this signal is more reliable than the shepherd's string-matching same-issue-class heuristic, so call it out explicitly when it applies.
-- Emit the same output format with the `<!-- world-sim-review-verdict: -->` marker on the first line.
+- Re-review against the updated diff. Your accumulated context means you can naturally surface "I flagged this principle-X violation last iteration; the worker shifted the code without addressing the root cause" — this signal is more reliable than the driver's string-matching same-issue-class heuristic, so call it out explicitly when it applies.
+- Emit the same output format with the `<!-- world-sim-review-verdict: -->` marker on the first line, and send it to team-lead via `SendMessage` (per §Returning your verdict above).
 
 ## What you do NOT do
 
-- Do NOT post PR comments. The shepherd does that.
+- Do NOT post PR comments. The driver does that.
 - Do NOT edit code or push commits.
 - Do NOT dispatch other agents.
+- Do NOT skip the SendMessage to team-lead at end of turn — plain text output is invisible to the driver in Teams mode.
 - Do NOT run `dotnet build` or `dotnet test`. The worker runs those before push; CI runs them at release-cut. Your role is static analysis of the diff against the four checks.
