@@ -45,6 +45,7 @@ For each open PR linked to a world-sim task issue (via `Closes #N` in PR body):
   - Run `gh pr merge <PR> --squash --delete-branch`
   - Verify the linked issue auto-closed (it should, via `Closes #N`); if not, `gh issue close <N>`
   - Remove the `orchestrator-dispatch:<issue#>` label from the closed issue (cleanup)
+  - Parse the latest shepherd comment for a `## Follow-ons` section. If present, file one GitHub issue per entry — see §Follow-on filing below
   - Call `ScheduleWakeup` in 60s
   - Exit
 
@@ -102,16 +103,16 @@ For each open PR linked to a world-sim task issue, in order of oldest-PR-first:
 ### 4. DISPATCH WORKER
 
 If no PRs need attention (no merges, no escalations, no shepherding):
-- Read the orchestration plan's §Dependency graph YAML
-- For each task in the YAML (nodes), check its issue state:
+- Build the dep graph as the UNION of YAML + GitHub — see §Dep graph derivation below
+- Filter nodes to the ready set:
   - Skip if the issue is closed (already done)
   - Skip if the issue has `orchestrator-dispatch:<issue#>` label (already dispatched)
   - Skip if the issue has `orchestrator-blocked` label (escalated)
-  - Skip if any of its `depends_on` issues (from edges) is still open
-- Among remaining candidates (the "ready set"):
-  - Sort by phase order: `0a` → `0b` → `1` → `2` → `3` → `4` → `parallel`
-  - Within a phase, sort by issue number ascending
-  - Pick the first
+  - Skip if any of its incoming "depends-on" edges point to an open issue
+- Sort the ready set in two tiers:
+  - **Tier 1 — planned migration tasks** (in the YAML): by phase order `0a` → `0b` → `1` → `2` → `3` → `4` → `parallel`, then by issue number ascending
+  - **Tier 2 — follow-on issues** (have `orchestrator-followup` label, not in YAML): by issue number ascending
+  - Pick the first eligible entry from tier 1; only fall through to tier 2 when tier 1 is empty
 - If a winner exists:
   - Check the limit: if more than 3 task issues have `orchestrator-blocked`, SKIP dispatch (the human needs to catch up). Call `ScheduleWakeup` in 1800s and exit.
   - Add `orchestrator-dispatch:<issue#>` label to the chosen issue
@@ -233,6 +234,69 @@ You do NOT have `Edit` or `Write`. You do NOT touch local files or code.
 - Do NOT dispatch two shepherds in one tick. Tick-based serialization is the concurrency guarantee.
 - Do NOT skip the `pause` and "umbrella closed" checks in step 0. They're the human's only kill switch.
 - Do NOT loop within a single tick. One action per tick; let /loop drive the cadence.
+
+## Follow-on filing
+
+When step 1 succeeds (PR merged), parse the LATEST shepherd comment on the just-merged PR for a `## Follow-ons` section. Entries use this shape:
+
+```
+## Follow-ons (out-of-scope findings — orchestrator will file as issues on merge)
+
+- title: <one-line summary>
+  files: <comma-separated file:line refs>
+  blocks: [<comma-separated issue numbers, or empty>]
+  body: |
+    <multi-line prose body>
+
+- title: ...
+  ...
+```
+
+Parsing convention: entries are delimited by lines starting with `- title:`. Everything between two markers belongs to the prior entry. `body:` uses YAML block-scalar (`|`) — preserve newlines verbatim.
+
+For each entry:
+
+```
+gh issue create
+  --title "<entry.title>"
+  --label "module:world-sim,orchestrator-followup"
+  --body  "<entry.body>
+
+---
+Surfaced by PR #<merged-PR>.
+Files affected: <entry.files>
+<if entry.blocks non-empty>Blocks: #N, #M, ...</if>"
+```
+
+After filing, post a single roll-up comment on the merged PR: `"Filed N follow-on issue(s): #X, #Y, #Z."`. If `gh issue create` fails for one entry, continue with the next; log the failure in the roll-up comment ("Skipped 1 unparseable follow-on entry" or similar). Never block the merge.
+
+Skip the entire filing step (no roll-up comment either) if the shepherd's comment has no `## Follow-ons` section.
+
+## Dep graph derivation
+
+Step 4 needs to know about follow-on issues not in the orchestration plan YAML. Compute the dep graph as a UNION each tick:
+
+```
+nodes = (open issues with module:world-sim label)
+      ∪ (YAML nodes from orchestration plan)
+
+edges = (YAML edges)
+      ∪ {parse issue body for "Blocks: #N" → edge from N to this issue
+                              "Depends on: #N" → edge from this issue to N}
+
+ready set = {n ∈ nodes : open
+                       ∧ no orchestrator-dispatch:<n> label
+                       ∧ no orchestrator-blocked label
+                       ∧ all incoming "depends-on" edges point to closed issues}
+```
+
+The orchestration plan YAML stays canonical for the planned migration chain (phase order, named tasks). Follow-on issues arrive dynamically and become first-class graph nodes via their GitHub presence — no YAML edit needed.
+
+Edge-parsing patterns (line-anchored, case-sensitive):
+- `Blocks: #N` or `Blocks: #N, #M`
+- `Depends on: #N` or `Depends on: #N, #M`
+
+Older issues lacking these markers have only YAML-declared edges.
 
 ## On errors
 
