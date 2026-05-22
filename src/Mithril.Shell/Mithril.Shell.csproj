@@ -32,6 +32,14 @@
       <_Parameter1>MithrilUpdateChannel</_Parameter1>
       <_Parameter2>$(MithrilUpdateChannel)</_Parameter2>
     </AssemblyAttribute>
+    <!--
+      Friend assembly: #696 Call 2 merger-lifecycle tests call the internal
+      AddWorldMergerStart() extension to compose partial stacks with a live
+      merger. Picked over a parallel AddWorldMergerStartForTesting() extension
+      so production and test composition share the same code path and can't
+      drift silently. Issue #696 ratification (docs/world-simulator.md §Call 2).
+    -->
+    <InternalsVisibleTo Include="Mithril.Shell.Tests" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />

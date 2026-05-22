@@ -68,7 +68,7 @@ public sealed class SkillFolderEndToEndTests
         });
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var run = world.StartAsync(cts.Token);
+        var run = world.StartMerger(cts.Token);
 
         // Drive the L1 pump to drain its backlog into the producer's channel.
         await driver.DrainLocalPlayerAsync(TimeSpan.FromSeconds(5));
@@ -140,7 +140,7 @@ public sealed class SkillFolderEndToEndTests
         using var _modeSub = world.Bus.Subscribe<ModeChanged>(modeChanges.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var run = world.StartAsync(cts.Token);
+        var run = world.StartMerger(cts.Token);
 
         // Drain the replay phase first; the producer signals ReachedLive
         // immediately on the first non-replay envelope it sees, so we push the
@@ -207,7 +207,7 @@ public sealed class SkillFolderEndToEndTests
         using var _legacy = ((IPlayerSkillState)folder).SubscribeChanges(legacyChanges.Add);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var run = world.StartAsync(cts.Token);
+        var run = world.StartMerger(cts.Token);
 
         await driver.DrainLocalPlayerAsync(TimeSpan.FromSeconds(5));
         await allDelivered.Task.WaitAsync(TimeSpan.FromSeconds(5));

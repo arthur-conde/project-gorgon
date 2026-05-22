@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Mithril.WorldSim.Chat.Internal;
 using Mithril.WorldSim.Chat.Producers;
 
@@ -8,11 +7,18 @@ namespace Mithril.WorldSim.Chat.DependencyInjection;
 /// <summary>
 /// DI registration for the Phase 0 ChatWorld shell (issue #617, sibling of
 /// <c>AddPlayerWorld</c> from #616). Registers the world singleton, the
-/// chat-replay source + producer, the session service, and a
-/// <see cref="BackgroundService"/> shim that calls <see cref="IWorld.StartAsync"/>
-/// once the host boots. Per-folder migrations (#602 chat-inventory, #603
-/// chat-WoP) wire their folder / composer registrations against the same
-/// world singleton.
+/// chat-replay source + producer, and the session service. Per-folder
+/// migrations (#602 chat-inventory, #603 chat-WoP) wire their folder /
+/// composer registrations against the same world singleton.
+///
+/// <para><b>Merger start is OUT of this extension</b> (#696 Call 2). The
+/// merger drain is started trailing the entire shell composition by
+/// <c>Mithril.Shell.DependencyInjection.WorldMergerStartHostedService</c>,
+/// appended LAST by <c>ShellComposition.AddMithrilApp</c>. That hosted
+/// service resolves <see cref="IEnumerable{IWorld}"/> and calls
+/// <see cref="IWorld.StartMerger"/> on each registered world, which is why
+/// this extension registers the concrete world AS <see cref="IWorld"/> as
+/// well as <see cref="IChatWorld"/>.</para>
 /// </summary>
 public static class ChatWorldServiceCollectionExtensions
 {
@@ -42,18 +48,11 @@ public static class ChatWorldServiceCollectionExtensions
                 return world;
             })
             .AddSingleton<IChatWorld>(sp => sp.GetRequiredService<ChatWorld>())
-            .AddHostedService<ChatWorldHostedService>();
+            // Also register as IWorld so the trailing
+            // WorldMergerStartHostedService (#696 Call 2) can resolve every
+            // registered world via IEnumerable<IWorld>.
+            .AddSingleton<IWorld>(sp => sp.GetRequiredService<ChatWorld>());
 
         return services;
-    }
-
-    private sealed class ChatWorldHostedService : BackgroundService
-    {
-        private readonly ChatWorld _world;
-
-        public ChatWorldHostedService(ChatWorld world) => _world = world;
-
-        protected override Task ExecuteAsync(CancellationToken stoppingToken)
-            => _world.StartAsync(stoppingToken);
     }
 }

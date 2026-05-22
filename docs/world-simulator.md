@@ -318,7 +318,7 @@ public interface IWorld
 
     /// <summary>
     /// Register a producer (log tail, wake-at-T scheduler, filesystem reconcile, …).
-    /// Must be called before <see cref="StartAsync"/>.
+    /// Must be called before <see cref="StartMerger"/>.
     /// </summary>
     void RegisterProducer<T>(IFrameProducer<T> producer);
 
@@ -337,11 +337,15 @@ public interface IWorld
     void RegisterComposer(IComposer composer);
 
     /// <summary>
-    /// Begin frame application. Closes the registration set; from here forward
-    /// the world drains producers in timestamp order, dispatches to folders,
-    /// resolves composers, publishes domain frames to <see cref="Bus"/>.
+    /// Close the registration set and begin merger drain. Returns a long-running
+    /// task that completes when every producer is drained or <paramref name="ct"/>
+    /// is cancelled. Two-phase contract: registration acceptance (closes on entry)
+    /// and merger running (the returned task). Called by the trailing
+    /// <c>WorldMergerStartHostedService</c> registered LAST in the composition
+    /// (#696 Call 2) so the merger drain starts only after every other hosted
+    /// service's <c>StartAsync</c> has completed.
     /// </summary>
-    Task StartAsync(CancellationToken ct);
+    Task StartMerger(CancellationToken ct);
 }
 
 /// <summary>

@@ -149,11 +149,14 @@ public static class GameStateServiceCollectionExtensions
         // an IFolder<SkillFrame> registered with IPlayerWorld; a sibling
         // SkillFrameProducer owns the L1 subscription and feeds skill frames
         // into the world's merger. The PlayerSkillStateWorldRegistration
-        // hosted service wires both into the world before the world's own
-        // hosted service drains (hosted services run in registration order,
-        // and AddPlayerWorld is called BEFORE AddMithrilGameState in
-        // ShellComposition, so the world singleton is already constructed by
-        // the time this runs but its StartAsync hasn't fired yet).
+        // hosted service wires both into the world during the chain's
+        // IHostedService.StartAsync phase, before the trailing
+        // WorldMergerStartHostedService (appended by AddMithrilApp — #696
+        // Call 2) calls IWorld.StartMerger and the merger drain begins.
+        // AddPlayerWorld is called BEFORE AddMithrilGameState in
+        // ShellComposition because the registration hosted service resolves
+        // IPlayerWorld at construction; DI resolution is order-independent
+        // but registration order matters for hosted-service start order.
         services.AddSingleton<SkillLogParser>();
         services
             .AddSingleton<PlayerSkillStateService>()
@@ -306,14 +309,13 @@ public static class GameStateServiceCollectionExtensions
     /// <summary>
     /// Hosted service that wires <see cref="PlayerSkillStateService"/> (as a
     /// folder) and <see cref="SkillFrameProducer"/> (as a producer) into the
-    /// <see cref="IPlayerWorld"/> singleton at host start, before
-    /// <c>PlayerWorld.StartAsync</c> fires. Ordering relies on
-    /// <c>ShellComposition</c> calling <c>AddPlayerWorld</c> before
-    /// <c>AddMithrilGameState</c>: registration order = hosted-service start
-    /// order, so this registration runs first; the world's own hosted service
-    /// (which calls <c>world.StartAsync</c>) runs second and observes the
-    /// folder + producer already attached. Registrations must close before
-    /// <c>StartAsync</c>; the world enforces that explicitly.
+    /// <see cref="IPlayerWorld"/> singleton at host start. Runs during the
+    /// chain's <c>IHostedService.StartAsync</c> phase, before the trailing
+    /// <c>WorldMergerStartHostedService</c> (appended by
+    /// <c>ShellComposition.AddMithrilApp</c> — #696 Call 2) calls
+    /// <see cref="IWorld.StartMerger"/> on each registered world and the
+    /// merger drain begins. Registrations must close before
+    /// <c>StartMerger</c>; the world enforces that explicitly.
     /// </summary>
     private sealed class PlayerSkillStateWorldRegistration : IHostedService
     {
@@ -344,13 +346,13 @@ public static class GameStateServiceCollectionExtensions
     /// <summary>
     /// Hosted service that wires <see cref="PlayerInventoryStateService"/>
     /// (folder) + <see cref="PlayerInventoryFrameProducer"/> (producer) into
-    /// the <see cref="IPlayerWorld"/> singleton at host start, before
-    /// <c>PlayerWorld.StartAsync</c> fires. Mirrors
+    /// the <see cref="IPlayerWorld"/> singleton at host start. Mirrors
     /// <see cref="PlayerSkillStateWorldRegistration"/>'s shape (#618 — the
     /// canonical Phase 1 template). Additionally calls
     /// <see cref="InventoryView.Start"/> so the view's PlayerWorld + ChatWorld
-    /// bus subscriptions are in place before either world's <c>StartAsync</c>
-    /// fires and frames begin flowing.
+    /// bus subscriptions are in place before the trailing
+    /// <c>WorldMergerStartHostedService</c> (#696 Call 2) calls
+    /// <see cref="IWorld.StartMerger"/> on either world and frames begin flowing.
     /// </summary>
     private sealed class PlayerInventoryWorldRegistration : IHostedService
     {
@@ -379,9 +381,10 @@ public static class GameStateServiceCollectionExtensions
             // Idempotent — InventoryView.Start() short-circuits on its own
             // `_started` flag, so the parallel call in
             // ChatInventoryWorldRegistration is a no-op. We attach on both
-            // paths so the view's bus subscriptions are in place before
-            // either world's StartAsync runs the merger, regardless of which
-            // registration hosted service fires first.
+            // paths so the view's bus subscriptions are in place before the
+            // trailing WorldMergerStartHostedService calls StartMerger on
+            // either world (#696 Call 2), regardless of which registration
+            // hosted service fires first.
             _view.Start();
             return Task.CompletedTask;
         }
@@ -392,16 +395,16 @@ public static class GameStateServiceCollectionExtensions
     /// <summary>
     /// Hosted service that wires <see cref="ChatInventoryStateService"/>
     /// (folder) + <see cref="ChatInventoryFrameProducer"/> (producer) into
-    /// the <see cref="IChatWorld"/> singleton at host start, before
-    /// <c>ChatWorld.StartAsync</c> fires. Ordering mirrors the player-side
-    /// equivalent: <c>AddChatWorld</c> registers the world singleton; this
-    /// hosted service runs before the world's own hosted service via
-    /// registration-order semantics in <c>ShellComposition</c>.
-    /// Additionally calls <see cref="InventoryView.Start"/> in parallel with
-    /// <see cref="PlayerInventoryWorldRegistration"/> so the view's
-    /// ChatWorld bus subscription is in place before either world's
-    /// <c>StartAsync</c> fires; whichever registration runs first wires the
-    /// subscriptions, the other is a no-op via <c>InventoryView._started</c>.
+    /// the <see cref="IChatWorld"/> singleton at host start. Mirrors the
+    /// player-side equivalent: registers folder + producer during the chain's
+    /// <c>StartAsync</c> phase, before the trailing
+    /// <c>WorldMergerStartHostedService</c> (#696 Call 2) calls
+    /// <see cref="IWorld.StartMerger"/>. Additionally calls
+    /// <see cref="InventoryView.Start"/> in parallel with
+    /// <see cref="PlayerInventoryWorldRegistration"/> so the view's ChatWorld
+    /// bus subscription is in place before frames begin flowing; whichever
+    /// registration runs first wires the subscriptions, the other is a no-op
+    /// via <c>InventoryView._started</c>.
     /// </summary>
     private sealed class ChatInventoryWorldRegistration : IHostedService
     {
@@ -504,8 +507,9 @@ public static class GameStateServiceCollectionExtensions
     /// <summary>
     /// Hosted service that calls <see cref="WordOfPowerView.Start"/> at host
     /// start so the view's PlayerWorld + ChatWorld bus subscriptions are in
-    /// place before either world's <c>StartAsync</c> fires and frames begin
-    /// flowing (#603). Mirrors the analogous wiring for
+    /// place before the trailing <c>WorldMergerStartHostedService</c> (#696
+    /// Call 2) calls <see cref="IWorld.StartMerger"/> on either world and
+    /// frames begin flowing (#603). Mirrors the analogous wiring for
     /// <see cref="InventoryView.Start"/> in
     /// <see cref="PlayerInventoryWorldRegistration"/>.
     /// </summary>

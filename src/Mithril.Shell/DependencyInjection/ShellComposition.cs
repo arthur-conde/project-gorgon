@@ -40,9 +40,26 @@ public sealed record ShellCompositionOptions(
 public static class ShellComposition
 {
     /// <summary>
+    /// Top-level composition entry point. Wires the full shell service graph
+    /// AND appends the trailing <see cref="WorldMergerStartHostedService"/>
+    /// (#696 Call 2) so each world's merger drain starts strictly after every
+    /// other hosted service has finished its registration work. The "registered
+    /// LAST" invariant is enforced structurally — call sites use this method
+    /// rather than <see cref="AddMithrilShell"/> so they cannot forget the
+    /// trailing merger start, and a future contributor adding another shell
+    /// registration edits <see cref="AddMithrilShell"/> while the trailing
+    /// invariant is preserved automatically here.
+    /// </summary>
+    public static IServiceCollection AddMithrilApp(
+        this IServiceCollection services, ShellCompositionOptions o) =>
+        services
+            .AddMithrilShell(o)
+            .AddWorldMergerStart();
+
+    /// <summary>
     /// The complete shell service registration, in order. This is the single source
     /// of truth for the runtime DI graph; <c>Program</c> and the self-check both call
-    /// it so the guard validates exactly what ships.
+    /// it via <see cref="AddMithrilApp"/> so the guard validates exactly what ships.
     /// </summary>
     public static IServiceCollection AddMithrilShell(
         this IServiceCollection services, ShellCompositionOptions o) =>
@@ -62,17 +79,15 @@ public static class ShellComposition
             // the typed pipes + the unified pipe — #556) and
             // AddMithrilGameState (whose producers depend on ILogStreamDriver).
             .AddMithrilLogStreamDriver()
-            // PlayerWorld is registered BEFORE AddMithrilGameState so the
-            // skill-folder + producer registration (#618 — Phase 1 of the
-            // world-sim migration) can wire into the world via its own
-            // IHostedService at startup, before PlayerWorld.StartAsync fires.
-            // Hosted services run in registration order; the registration
-            // hosted service inside AddMithrilGameState therefore runs
-            // strictly before PlayerWorldHostedService.
+            // PlayerWorld + ChatWorld register the world singletons and the
+            // L1 / chat-tail producers. Under #696 (Call 2) neither extension
+            // registers a hosted service — the merger drain starts trailing,
+            // from the WorldMergerStartHostedService appended by AddMithrilApp.
+            // Registration order between AddPlayerWorld / AddChatWorld and
+            // AddMithrilGameState is therefore irrelevant for hosted-service
+            // ordering; resolution-order is what matters, and DI resolution is
+            // order-independent.
             .AddPlayerWorld()
-            // ChatWorld is registered BEFORE AddMithrilGameState for the same
-            // ordering reason — #602's chat-inventory folder + producer
-            // registration hosted service runs before ChatWorldHostedService.
             .AddChatWorld()
             .AddMithrilGameState()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)

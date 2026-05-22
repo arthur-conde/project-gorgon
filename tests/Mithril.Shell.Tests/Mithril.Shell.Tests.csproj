@@ -11,15 +11,19 @@
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>
   <!--
-    Build-order/deploy only (ReferenceOutputAssembly=false): we never reference
-    shell/module APIs from the test — we launch the built Mithril.exe out of
-    process and assert its exit code. Referencing Mithril.Shell builds the
-    apphost; referencing every *.Module triggers Directory.Build.targets to
-    deploy all 12 module DLLs into the shell's bin/<cfg>/modules/, so the
-    self-check sees the real full-install graph (#365 Layer 2 guard).
+    Mithril.Shell is referenced for code access (ReferenceOutputAssembly=true)
+    so the #696 Call 2 merger-lifecycle tests can call AddWorldMergerStart()
+    via [InternalsVisibleTo]. Mithril.WorldSim.Player + .Core give those tests
+    the world primitives they need to build a minimal composition.
+    All *.Module references stay build-order/deploy-only — they trigger
+    Directory.Build.targets to deploy 12 module DLLs into the shell's
+    bin/<cfg>/modules/ so the self-check sees the real full-install graph
+    (#365 Layer 2 guard).
   -->
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Mithril.Shell\Mithril.Shell.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\Mithril.Shell\Mithril.Shell.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.WorldSim.Player\Mithril.WorldSim.Player.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.WorldSim.Core\Mithril.WorldSim.Core.csproj" />
     <ProjectReference Include="..\..\src\Arwen.Module\Arwen.Module.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Bilbo.Module\Bilbo.Module.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Celebrimbor.Module\Celebrimbor.Module.csproj" ReferenceOutputAssembly="false" />

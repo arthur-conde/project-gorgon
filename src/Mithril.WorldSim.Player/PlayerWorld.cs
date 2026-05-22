@@ -85,7 +85,7 @@ public sealed class PlayerWorld : IPlayerWorld, IAsyncDisposable
         }
     }
 
-    public async Task StartAsync(CancellationToken ct)
+    public async Task StartMerger(CancellationToken ct)
     {
         EnsureNotStarted();
         _started = true;
@@ -234,7 +234,7 @@ public sealed class PlayerWorld : IPlayerWorld, IAsyncDisposable
         // there is no transition to report. Consumers read Clock.Mode for
         // initial state and subscribe to ModeChanged only for actual
         // transitions — symmetric with the no-mode-aware-producers branch in
-        // StartAsync which sets Live up front without emitting.
+        // StartMerger which sets Live up front without emitting.
         if (_clock.Frame > 0)
         {
             _bus.Publish(new Frame<ModeChanged>(
@@ -289,7 +289,7 @@ public sealed class PlayerWorld : IPlayerWorld, IAsyncDisposable
             }
 
             // Snapshot — composer.Observe must not mutate the dispatch graph
-            // (registrations close at StartAsync), so a direct iteration is
+            // (registrations close at StartMerger), so a direct iteration is
             // safe; the snapshot guards against accidental future changes
             // to that invariant.
             var snapshot = composers.ToArray();
@@ -311,8 +311,8 @@ public sealed class PlayerWorld : IPlayerWorld, IAsyncDisposable
         if (_started)
         {
             throw new InvalidOperationException(
-                "Cannot register producers/folders/composers after StartAsync — " +
-                "the registration set closes at start (IWorld.StartAsync doc).");
+                "Cannot register producers/folders/composers after StartMerger — " +
+                "the registration set seals on entry (IWorld.StartMerger doc).");
         }
     }
 

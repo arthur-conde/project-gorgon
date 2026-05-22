@@ -57,7 +57,7 @@ public sealed class PlayerInventoryFolderEndToEndTests
         });
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var run = world.StartAsync(cts.Token);
+        var run = world.StartMerger(cts.Token);
 
         await driver.DrainLocalPlayerAsync(TimeSpan.FromSeconds(5));
         await allReceived.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -127,7 +127,7 @@ public sealed class PlayerInventoryFolderEndToEndTests
             });
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var run = world.StartAsync(cts.Token);
+            var run = world.StartMerger(cts.Token);
             await driver.DrainLocalPlayerAsync(TimeSpan.FromSeconds(5));
             await done.Task.WaitAsync(TimeSpan.FromSeconds(5));
             cts.Cancel();
