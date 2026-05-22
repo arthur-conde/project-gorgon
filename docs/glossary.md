@@ -182,10 +182,14 @@ Canonical source: [`docs/world-simulator.md` principle 12](world-simulator.md).
 
 ### Mode == Live gate
 
-The condition under which side-effect-emitting consumers (audio alarms, window flash, OS notifications) may fire. State derivation is mode-agnostic; only user-facing side effects gate on `Mode == Live`. Avoids blasting the user with replays of yesterday's alarms on Mithril restart.
+The condition under which side-effect-emitting consumers (audio alarms, window flash, OS notifications) may fire — `if (_worldClock?.Mode == WorldMode.Replaying) return;` immediately before the side-effect. State derivation upstream of the sink is mode-agnostic; only the projection outwards gates.
 
-See also: [Live (WorldMode)](#live-worldmode), [WorldMode](#worldmode).
-Canonical source: [`docs/world-simulator.md` principle 12](world-simulator.md).
+Mithril takes world-derived state and projects it outwards into real-world effects that touch the user's attention; that projection is honest only when the world's state matches present reality. During `Replaying` the world is reconstructing past state, and projecting it outward would surface events the user already lived through (or already missed) in real time — blasting the user with replays of yesterday's alarms on Mithril restart. During `Live`, model-time matches real-time and the lift into the user's world is appropriate.
+
+Applies as a sustained contract to every sink reached via a world-event subscription — not a one-time audit; new sinks are gated by construction as they migrate onto world events. Consumers that are wall-clock-driven (e.g., a `DispatcherTimer` on real time) sit structurally outside the contract; migrating one onto world events implies adding the guard at the same time.
+
+See also: [Live (WorldMode)](#live-worldmode), [WorldMode](#worldmode), [Replaying](#replaying-worldmode).
+Canonical source: [`docs/world-simulator.md` principle 12 and "Decisions ratified post-#642" Call 3](world-simulator.md).
 
 ### Now (simulated)
 
