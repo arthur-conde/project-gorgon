@@ -204,6 +204,90 @@ public sealed class ChatLogReplaySourceTests : IDisposable
         replayLines[4].Should().Contain("a-at-5");
     }
 
+    // ── #639: session-shared clock offset across files ────────────────
+
+    [Fact]
+    public async Task Session_banner_offset_applies_to_files_without_a_banner_of_their_own()
+    {
+        // Cross-machine replay: chat written on UTC-7 (alt machine), replayed
+        // on a UTC+1 host. The banner is in file A; file B is a channel that
+        // only carries post-banner content (no banner of its own). Without
+        // a shared session-canonical offset (#639), file B's clock would
+        // fall through to the host's fallback TZ (UTC+1 here) and mis-stamp
+        // every B-line by 8 hours. Test asserts B's lines fold via the
+        // banner's UTC-7 offset, not the UTC+1 fallback.
+        Write("chat-A.log",
+            "26-05-19 09:36:04\t**** Logged In As Praxi. Server Laeth. Timezone Offset -07:00:00.\n" +
+            "26-05-19 09:36:05\t[Status] a-after-banner\n");
+        Write("chat-B.log",
+            "26-05-19 09:36:06\t[General] b-after-banner\n" +
+            "26-05-19 09:36:07\t[General] b-also-after-banner\n");
+
+        var replayHostTz = FixedOffsetZone(TimeSpan.FromHours(1));
+        var source = new ChatLogReplaySource(Config(), fallbackTz: replayHostTz);
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(750));
+
+        var envelopes = await CollectAsync(source, cts.Token);
+        var replayLines = envelopes.Where(e => e.IsReplay).ToList();
+
+        // All replayed lines (from both files) must carry the banner's
+        // UTC-7 offset — the canonical session offset.
+        replayLines.Should().NotBeEmpty();
+        replayLines.Should().AllSatisfy(e =>
+            e.Payload.Timestamp.Offset.Should().Be(TimeSpan.FromHours(-7),
+                $"every chat line in the session folds via the banner offset, not the host fallback TZ; got {e.Payload.Line}"));
+
+        // The B-file lines are 09:36:06 local; folded via UTC-7 ⇒ 16:36:06 UTC.
+        // (Mis-folding via the UTC+1 host TZ would give 08:36:06 UTC — 8h off.)
+        var bLine = replayLines.Single(e => e.Payload.Line.Contains("b-after-banner"));
+        bLine.Payload.Timestamp.UtcDateTime
+            .Should().Be(new DateTime(2026, 5, 19, 16, 36, 6, DateTimeKind.Utc));
+    }
+
+    [Fact]
+    public async Task Replay_envelopes_are_deterministic_across_runs_for_identical_input()
+    {
+        // Principle 9: identical input directories produce identical event
+        // streams. Pre-#639, a chat file without a banner stamped via the
+        // host TZ — replay determinism was conditional on the host. With
+        // the session-shared offset, the input directory fully determines
+        // the output timestamps.
+        Write("chat-A.log",
+            "26-05-19 09:36:04\t**** Logged In As Praxi. Server Laeth. Timezone Offset -07:00:00.\n" +
+            "26-05-19 09:36:05\t[Status] a-line\n");
+        Write("chat-B.log",
+            "26-05-19 09:36:06\t[General] b-line\n");
+
+        var hostTz = FixedOffsetZone(TimeSpan.FromHours(1));
+
+        var run1 = await RunReplay(hostTz);
+        var run2 = await RunReplay(hostTz);
+
+        var seq1 = run1.Where(e => e.IsReplay)
+            .Select(e => (e.Payload.Line, e.Payload.Timestamp.UtcDateTime, e.Payload.Timestamp.Offset))
+            .ToList();
+        var seq2 = run2.Where(e => e.IsReplay)
+            .Select(e => (e.Payload.Line, e.Payload.Timestamp.UtcDateTime, e.Payload.Timestamp.Offset))
+            .ToList();
+
+        seq2.Should().BeEquivalentTo(seq1, opts => opts.WithStrictOrdering());
+
+        async Task<List<LogEnvelope<RawLogLine>>> RunReplay(TimeZoneInfo tz)
+        {
+            var src = new ChatLogReplaySource(Config(), fallbackTz: tz);
+            using var c = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            return await CollectAsync(src, c.Token);
+        }
+    }
+
+    private static TimeZoneInfo FixedOffsetZone(TimeSpan offset)
+    {
+        // CreateCustomTimeZone returns a fresh instance per call, so the id
+        // only needs to be human-readable, not globally unique.
+        var id = $"FixedOffsetTestZone_{offset.Ticks}";
+        return TimeZoneInfo.CreateCustomTimeZone(id, offset, id, id);
+    }
+
     private static async Task<List<LogEnvelope<RawLogLine>>> CollectAsync(
         IChatLogReplaySource source, CancellationToken ct)
     {
