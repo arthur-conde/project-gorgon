@@ -45,14 +45,14 @@ public sealed class FavorLogParserTests
     }
 
     [Fact]
-    public void ParsesDeleteItem()
+    public void ReturnsNull_ForDeleteItem_PostMigration()
     {
+        // Post-#608 the parser no longer consumes ProcessDeleteItem — the
+        // gift-detection FSM receives Removes via the PlayerWorld bus
+        // (PlayerInventoryRemoved). The parser must skip these lines without
+        // emitting any event.
         var line = "[18:17:59] LocalPlayer: ProcessDeleteItem(98931165)";
-        var evt = _parser.TryParse(line, DateTime.UtcNow);
-
-        evt.Should().BeOfType<ItemDeleted>();
-        var deleted = (ItemDeleted)evt!;
-        deleted.InstanceId.Should().Be(98931165);
+        _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
     }
 
     [Fact]

@@ -4,6 +4,7 @@ using Arwen.Domain;
 using Arwen.Parsing;
 using Arwen.State;
 using FluentAssertions;
+using Mithril.GameState.Inventory;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Logging;
@@ -11,6 +12,8 @@ using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.GameReports;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 using Xunit;
 
 namespace Arwen.Tests;
@@ -55,10 +58,14 @@ public sealed class FavorIngestionServiceTests : IDisposable
     {
         // ── Scenario: an in-session gift to Sanja. The log produces three
         //    events in a fixed order:
-        //      StartInteraction(NPC_Sanja) — sets active NPC + absolute favor
-        //      DeleteItem(7001)            — instanceId resolves to "Moonstone"
-        //      DeltaFavor(NPC_Sanja, +30)  — correlated → calibration observation
+        //      StartInteraction(NPC_Sanja)              — L1 sets active NPC + absolute favor
+        //      ProcessDeleteItem(7001) → bus removed    — instance carries InternalName "Moonstone"
+        //      DeltaFavor(NPC_Sanja, +30)               — L1 correlates → calibration observation
         // We assert the gift lands as a confirmed observation in both runs.
+        //
+        // Post-#608 the delete signal arrives on the PlayerWorld bus
+        // (PlayerInventoryRemoved), not on L1. The fixture surfaces a
+        // PublishRemoved helper that publishes the bus event directly.
 
         var giftedAt = new DateTimeOffset(2026, 5, 19, 10, 30, 00, TimeSpan.Zero);
 
@@ -69,27 +76,27 @@ public sealed class FavorIngestionServiceTests : IDisposable
             await passLive.StartAsync();
             passLive.Driver.PushLive(MakeLine(
                 $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
-            passLive.Driver.PushLive(MakeLine(
-                $"ProcessDeleteItem(7001)", giftedAt));
+            await passLive.Driver.DrainLocalPlayerAsync();
+            passLive.PublishRemoved(7001, "Moonstone", giftedAt);
             passLive.Driver.PushLive(MakeLine(
                 $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
             await passLive.WaitForDrainAsync();
             await passLive.StopAsync();
         }
 
-        // ── Pass 2: split — first two events arrive as replay, last as live.
-        //    This exercises the production FromSessionStart path: the L1
-        //    driver yields backlog with IsReplay=true, then live tail with
-        //    IsReplay=false. The handler must not gate on IsReplay (Arwen
-        //    needs the whole backlog so calibration sees in-session pairs).
+        // ── Pass 2: split — StartInteraction arrives as L1 replay, the
+        //    inventory remove arrives on the bus (mirrors the world's
+        //    archetype-A producer draining its backlog through the dispatch
+        //    graph), the DeltaFavor arrives as L1 live. This exercises the
+        //    interleaving the production FromSessionStart path produces.
         FavorIngestionFixture passSplit;
         using (passSplit = NewFixture("Pass2"))
         {
             passSplit.Driver.PushReplay(MakeLine(
                 $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
-            passSplit.Driver.PushReplay(MakeLine(
-                $"ProcessDeleteItem(7001)", giftedAt));
             await passSplit.StartAsync();
+            await passSplit.Driver.DrainLocalPlayerAsync();
+            passSplit.PublishRemoved(7001, "Moonstone", giftedAt);
             passSplit.Driver.PushLive(MakeLine(
                 $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
             await passSplit.WaitForDrainAsync();
@@ -137,7 +144,8 @@ public sealed class FavorIngestionServiceTests : IDisposable
         // First pass — observation lands.
         fixture.Driver.PushLive(MakeLine(
             $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
-        fixture.Driver.PushLive(MakeLine($"ProcessDeleteItem(7001)", giftedAt));
+        await fixture.Driver.DrainLocalPlayerAsync();
+        fixture.PublishRemoved(7001, "Moonstone", giftedAt);
         fixture.Driver.PushLive(MakeLine(
             $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
         await fixture.WaitForDrainAsync();
@@ -150,7 +158,8 @@ public sealed class FavorIngestionServiceTests : IDisposable
         // values stay identical.
         fixture.Driver.PushLive(MakeLine(
             $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
-        fixture.Driver.PushLive(MakeLine($"ProcessDeleteItem(7001)", giftedAt));
+        await fixture.Driver.DrainLocalPlayerAsync();
+        fixture.PublishRemoved(7001, "Moonstone", giftedAt);
         fixture.Driver.PushLive(MakeLine(
             $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
         await fixture.WaitForDrainAsync();
@@ -164,6 +173,62 @@ public sealed class FavorIngestionServiceTests : IDisposable
         afterSecond.Quantity.Should().Be(afterFirst.Quantity);
         afterSecond.InstanceId.Should().Be(afterFirst.InstanceId);
         afterSecond.Timestamp.Should().Be(afterFirst.Timestamp);
+
+        await fixture.StopAsync();
+    }
+
+    [Fact]
+    public async Task Replay_observes_gift_without_inventory_pre_seed()
+    {
+        // ── The #608 race scenario, stated as a contract: under
+        //    replay-from-session-start where the ProcessAddItem for the
+        //    gifted instance and the ProcessDeleteItem for the same instance
+        //    both land before the FSM gets to attribute the gift, the gift
+        //    must still land — because the delete signal arrives via the
+        //    PlayerWorld bus (PlayerInventoryRemoved) and carries the
+        //    resolved InternalName from the inventory folder's upstream
+        //    application of the same source line.
+        //
+        //    Pre-#608: the FSM consumed ProcessDeleteItem directly from L1
+        //    and called _inventory.TryResolve(instanceId). With the
+        //    inventory folder still draining its replay through the world's
+        //    merger, TryResolve returned (false, "") and the gift dropped.
+        //
+        //    This fixture uses an EMPTY FakeInventory (no Add() pre-seed),
+        //    so a TryResolve call would now return false. The gift still
+        //    lands because the bus event carries the name — proving the
+        //    new code path does NOT consult IInventoryService.TryResolve.
+
+        var giftedAt = new DateTimeOffset(2026, 5, 19, 10, 30, 00, TimeSpan.Zero);
+
+        using var fixture = NewFixture("Race");
+
+        // L1 replay arms the gift window with StartInteraction (PushReplay
+        // must happen before StartAsync — the snapshot is taken on first
+        // subscribe). No ProcessDeleteItem is pushed on L1 — the post-#608
+        // parser doesn't consume it (the delete arrives on the PlayerWorld
+        // bus).
+        fixture.Driver.PushReplay(MakeLine(
+            $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
+        await fixture.StartAsync();
+        await fixture.Driver.DrainLocalPlayerAsync();
+
+        // Now the FSM's _activeNpcKey is armed. Publish the inventory
+        // remove on the bus (mimicking the world's folder emit-after-apply
+        // order) — then drive the delta as live so the FSM correlates and
+        // records the observation.
+        fixture.PublishRemoved(7001, "Moonstone", giftedAt);
+        fixture.Driver.PushLive(MakeLine(
+            $"ProcessDeltaFavor(0, \"NPC_Sanja\", 30.0, True)", giftedAt));
+        await fixture.WaitForDrainAsync();
+
+        fixture.Calibration.Data.Observations.Should().HaveCount(1,
+            "the delete signal carries InternalName on the bus event — no TryResolve race");
+        var observation = fixture.Calibration.Data.Observations[0];
+        observation.NpcKey.Should().Be("NPC_Sanja");
+        observation.ItemInternalName.Should().Be("Moonstone");
+        observation.FavorDelta.Should().Be(30.0);
+        observation.InstanceId.Should().Be(7001);
 
         await fixture.StopAsync();
     }
@@ -193,6 +258,7 @@ public sealed class FavorIngestionServiceTests : IDisposable
         private readonly PerCharacterView<ArwenFavorState> _view;
         private readonly SettingsAutoSaver<ArwenSettings> _saver;
         private readonly ArwenSettings _settings;
+        private readonly FakePlayerWorld _world;
 
         public FavorIngestionFixture(string charactersRoot, string arwenDir, string passName)
         {
@@ -200,7 +266,10 @@ public sealed class FavorIngestionServiceTests : IDisposable
             var index = new GiftIndex();
             index.Build(refData.Items, refData.Npcs);
             var inv = new FakeInventory();
-            inv.Add(7001, "Moonstone");
+            // No pre-seed of inv — post-#608 the delete event carries the
+            // InternalName directly. The fixture's PublishRemoved helper
+            // mimics what the PlayerWorld inventory folder emits at the
+            // moment ProcessDeleteItem applies.
             var dataDir = Path.Combine(arwenDir, passName);
             Directory.CreateDirectory(dataDir);
             Calibration = new CalibrationService(refData, index, inv, dataDir);
@@ -233,6 +302,7 @@ public sealed class FavorIngestionServiceTests : IDisposable
             Gates = new ModuleGates();
 
             Driver = new TestLogStreamDriver();
+            _world = new FakePlayerWorld();
             Service = new FavorIngestionService(
                 Driver,
                 new FavorLogParser(),
@@ -241,7 +311,21 @@ public sealed class FavorIngestionServiceTests : IDisposable
                 _view,
                 active,
                 _saver,
-                Gates);
+                Gates,
+                _world);
+        }
+
+        /// <summary>
+        /// Publishes a <see cref="PlayerInventoryRemoved"/> change event on
+        /// the stub PlayerWorld bus, mimicking what
+        /// <c>PlayerInventoryStateService</c> emits when it applies a
+        /// <c>ProcessDeleteItem</c> frame. Production code uses the same bus
+        /// subscription path.
+        /// </summary>
+        public void PublishRemoved(long instanceId, string internalName, DateTimeOffset ts)
+        {
+            var payload = new PlayerInventoryRemoved(instanceId, internalName, ts.UtcDateTime);
+            _world.TestBus.Publish(new Frame<PlayerInventoryRemoved>(ts, payload));
         }
 
         public async Task StartAsync()
@@ -289,6 +373,63 @@ public sealed class FavorIngestionServiceTests : IDisposable
                     ["Friends"], []),
             };
             return new FakeRefData(items, npcs);
+        }
+
+        /// <summary>
+        /// Stub <see cref="IPlayerWorld"/> for tests: bypasses the world's
+        /// merger / folder / composer machinery and exposes
+        /// <see cref="TestBus.Publish{T}(Frame{T})"/> so test code can fire
+        /// change events directly. Mirrors <c>InventoryViewTests.FakeWorld</c>
+        /// from <c>Mithril.GameState.Tests</c>; kept local here to avoid
+        /// growing a test-support package for a single consumer.
+        /// </summary>
+        private sealed class FakePlayerWorld : IPlayerWorld
+        {
+            public TestBus TestBus { get; } = new();
+            public IWorldEventBus Bus => TestBus;
+            public IWorldClock Clock => throw new NotSupportedException();
+            public void RegisterProducer<T>(IFrameProducer<T> producer) { }
+            public void RegisterFolder<T>(IFolder<T> folder) { }
+            public void RegisterComposer(IComposer composer) { }
+            public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+        }
+
+        internal sealed class TestBus : IWorldEventBus
+        {
+            private readonly object _lock = new();
+            private readonly Dictionary<Type, List<Action<IFrame>>> _handlers = new();
+
+            public IDisposable Subscribe<T>(Action<Frame<T>> handler)
+            {
+                ArgumentNullException.ThrowIfNull(handler);
+                lock (_lock)
+                {
+                    if (!_handlers.TryGetValue(typeof(T), out var list))
+                        _handlers[typeof(T)] = list = new List<Action<IFrame>>();
+                    Action<IFrame> wrapper = f => handler((Frame<T>)f);
+                    list.Add(wrapper);
+                    return new Sub(this, typeof(T), wrapper);
+                }
+            }
+
+            public void Publish<T>(Frame<T> frame)
+            {
+                List<Action<IFrame>>? snap;
+                lock (_lock)
+                {
+                    if (!_handlers.TryGetValue(typeof(T), out var list)) return;
+                    snap = list.ToList();
+                }
+                foreach (var h in snap) h(frame);
+            }
+
+            private sealed class Sub(TestBus o, Type t, Action<IFrame> h) : IDisposable
+            {
+                public void Dispose()
+                {
+                    lock (o._lock) { if (o._handlers.TryGetValue(t, out var list)) list.Remove(h); }
+                }
+            }
         }
 
         private sealed class InMemorySettingsStore : ISettingsStore<ArwenSettings>

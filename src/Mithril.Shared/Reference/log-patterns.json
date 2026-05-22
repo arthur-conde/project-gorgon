@@ -101,12 +101,13 @@
         { "name": "delta", "group": 2, "type": "double" }
       ]
     },
-    "arwen.FavorLogParser.DeleteItemRx": {
+    "inventory.PlayerInventoryFrameProducer.DeleteItemRx": {
       "pattern": "ProcessDeleteItem\\((\\d+)\\)",
       "source": "player",
-      "module": "arwen",
-      "csharp": { "type": "Arwen.Parsing.FavorLogParser", "method": "DeleteItemRx" },
-      "eventType": "arwen.ItemDeleted",
+      "module": "gamestate",
+      "csharp": { "type": "Mithril.GameState.Inventory.Producers.PlayerInventoryFrameProducer", "method": "DeleteItemRx" },
+      "eventType": "gamestate.PlayerInventoryRemoveFrame",
+      "notes": "Moved from arwen.FavorLogParser to the GameState inventory folder's producer in #608. Arwen now consumes PlayerInventoryRemoved on the PlayerWorld bus instead of parsing this verb directly.",
       "fields": [
         { "name": "instanceId", "group": 1, "type": "long" }
       ]
