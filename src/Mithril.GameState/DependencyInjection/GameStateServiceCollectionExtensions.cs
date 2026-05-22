@@ -376,11 +376,12 @@ public static class GameStateServiceCollectionExtensions
             _world.RegisterProducer(_producer);
             _world.RegisterFolder(_folder);
             // View subscribes to both world buses + seeds export reconcile.
-            // Idempotent — the ChatInventoryWorldRegistration calls Start()
-            // too, and only the first call actually wires; the second is a
-            // no-op. We attach here (on the Player-side path) so the bus
-            // subscription is in place before PlayerWorld.StartAsync runs
-            // the merger.
+            // Idempotent — InventoryView.Start() short-circuits on its own
+            // `_started` flag, so the parallel call in
+            // ChatInventoryWorldRegistration is a no-op. We attach on both
+            // paths so the view's bus subscriptions are in place before
+            // either world's StartAsync runs the merger, regardless of which
+            // registration hosted service fires first.
             _view.Start();
             return Task.CompletedTask;
         }
@@ -396,27 +397,41 @@ public static class GameStateServiceCollectionExtensions
     /// equivalent: <c>AddChatWorld</c> registers the world singleton; this
     /// hosted service runs before the world's own hosted service via
     /// registration-order semantics in <c>ShellComposition</c>.
+    /// Additionally calls <see cref="InventoryView.Start"/> in parallel with
+    /// <see cref="PlayerInventoryWorldRegistration"/> so the view's
+    /// ChatWorld bus subscription is in place before either world's
+    /// <c>StartAsync</c> fires; whichever registration runs first wires the
+    /// subscriptions, the other is a no-op via <c>InventoryView._started</c>.
     /// </summary>
     private sealed class ChatInventoryWorldRegistration : IHostedService
     {
         private readonly IChatWorld _world;
         private readonly IFolder<ChatInventoryObservationFrame> _folder;
         private readonly ChatInventoryFrameProducer _producer;
+        private readonly InventoryView _view;
 
         public ChatInventoryWorldRegistration(
             IChatWorld world,
             IFolder<ChatInventoryObservationFrame> folder,
-            ChatInventoryFrameProducer producer)
+            ChatInventoryFrameProducer producer,
+            InventoryView view)
         {
             _world = world;
             _folder = folder;
             _producer = producer;
+            _view = view;
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
             _world.RegisterProducer(_producer);
             _world.RegisterFolder(_folder);
+            // Paired with the Player-side registration via
+            // InventoryView._started; whichever runs first wires the
+            // subscriptions, the second is a no-op. Attaching on both paths
+            // keeps the view's bus subscriptions resilient to
+            // registration-order reorders.
+            _view.Start();
             return Task.CompletedTask;
         }
 
