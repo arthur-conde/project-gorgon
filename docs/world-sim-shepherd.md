@@ -9,12 +9,13 @@ A single agent at /loop depth that drives the world-sim migration umbrella (#601
 
 **Status:** design notebook + rationale, not implementation spec. The operational spec is the agent file [`../.claude/agents/world-sim-shepherd.md`](../.claude/agents/world-sim-shepherd.md).
 
-**Version:** v3.
+**Version:** v3.1.
 
 - **v1** (PR #627): per-PR babysitter dispatched after a PR existed. Tight scope; no autonomous queue management.
 - **v2** (#646 / PR #647): expanded the shepherd to own from issue pickup through merge. Two layers: orchestrator at /loop depth dispatching shepherd at depth 2. Used `SendMessage(to: <agentId>)` for continuity — but that API doesn't work; `SendMessage` requires a named teammate in a Team scope.
 - **v2.1** (#652 / PR #653): fixed the API to use Teams primitives correctly. Two layers preserved.
-- **v3** (#656 / this file): collapsed orchestrator + shepherd into one agent at /loop depth. The v2.1 architecture needed `Agent` at depth 2 (shepherd dispatches worker), but the harness only reliably exposes `Agent` at depth 1 (/loop's dispatched agent). With orchestrator's small per-tick logic folded into shepherd's intake, the merged "driver" runs at depth 1 where `Agent` is available. The slash command name (`world-sim-orchestrate-tick`) is preserved for /loop continuity.
+- **v3** (#656 / PR #658): collapsed orchestrator + shepherd into one agent at /loop depth. The v2.1 architecture needed `Agent` at depth 2 (shepherd dispatches worker), but the harness only reliably exposes `Agent` at depth 1 (/loop's dispatched agent). With orchestrator's small per-tick logic folded into shepherd's intake, the merged "driver" runs at depth 1 where `Agent` is available. The slash command name (`world-sim-orchestrate-tick`) is preserved for /loop continuity.
+- **v3.1** (#660 / this file): added two resume modes — manual issue dispatch (now first-class instead of "for debugging only") and adopt-PR (take over an existing PR mid-flight, skipping Phase 2). Same delivery machinery shared across all three modes; mode is determined by inputs at intake. Subsumes v1 shepherd's per-PR-review use case as the adopt-PR mode.
 
 The notebook uses "shepherd" and "driver" interchangeably for the v3 merged agent — "shepherd" is the agent file name (kept for less churn); "driver" is what it does (drives the whole migration).
 
@@ -197,9 +198,11 @@ Plus human-readable prose after the JSON block (which the orchestrator surfaces 
 
 ---
 
-## Invocation surface
+## Invocation surface — three modes (v3.1)
 
-The slash command `/world-sim-orchestrate-tick` dispatches the driver via the `Agent` tool with:
+The driver supports three entry modes, all dispatched via the `Agent` tool with `subagent_type: world-sim-shepherd`. The mode is determined by which inputs are supplied.
+
+### Autonomous tick (the /loop path)
 
 ```
 subagent_type: world-sim-shepherd
@@ -208,7 +211,9 @@ prompt: |
   (No issue specified — the driver picks the next ready one from the dep graph.)
 ```
 
-For manual debugging, pass an explicit issue + phase:
+Used by `/loop /world-sim-orchestrate-tick`. Cheap probe → cross-tick recovery → dep-graph pick → full lifecycle (Phases 1-4).
+
+### Manual issue dispatch
 
 ```
 subagent_type: world-sim-shepherd
@@ -217,6 +222,24 @@ prompt: |
   phase: <phase from orchestration plan>
   max_iterations: 3
 ```
+
+Skip the dep-graph picking; deliver this specific issue. Full Phases 1-4. Useful when a human wants to force the driver to work on something out of normal phase order.
+
+### Adopt-PR (v3.1)
+
+```
+subagent_type: world-sim-shepherd
+prompt: |
+  pr: <pr#>
+```
+
+Skip the dep-graph picking AND skip Phase 2 (initial implementation). Fetch the PR, resolve the linked issue from the PR body (`Closes #N`), build the context pack against that issue, jump to Phase 3 (review-fix loop). Phase 4 (merge) runs as normal.
+
+The worker teammate is **lazily spawned** at the first fix iteration — if the first review is clean, no worker is needed and the driver goes straight to merge. The lazy worker's dispatch prompt includes both the standard context pack AND an "adopt PR" framing telling them to `gh pr view` / `gh pr diff` / `git checkout <branch>` to familiarize themselves before applying fixes.
+
+If the PR's body has no `Closes #N` reference, the driver escalates with `escalation_reason: pr_has_no_linked_issue`. If the PR is already MERGED or CLOSED, behavior matches the corresponding tick-mode terminals.
+
+`pr` and `issue` are mutually exclusive. If both supplied, the driver asks for clarification.
 
 The driver builds its own context pack from the issue body + CLAUDE.md + the orchestration plan slice. No `worker_template` is needed from the caller — the driver owns the worker lifecycle.
 

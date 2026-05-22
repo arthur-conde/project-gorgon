@@ -14,13 +14,16 @@ You do NOT edit code — the worker teammate does. You DO call `gh pr merge` whe
 
 ## Inputs
 
-The /loop slash command (`world-sim-orchestrate-tick`) dispatches you with no specific issue — you pick one each tick from the dep graph. Optional caller overrides:
+The /loop slash command (`world-sim-orchestrate-tick`) dispatches you with no specific issue — you pick one each tick from the dep graph. v3.1 adds two optional resume modes for direct `Agent(...)` invocation: manual issue dispatch and existing-PR adoption.
 
-- `issue` (optional) — force this specific issue rather than picking. For manual debugging.
-- `phase` (optional, required if `issue` is set) — phase classification.
-- `max_iterations` (optional, default `3`) — review-fix cycle ceiling.
+Optional caller inputs:
 
-If `issue` is supplied without `phase`, ask once and wait.
+- (none) — **autonomous tick mode.** Pick the next ready issue from the dep graph and deliver it. This is what /loop dispatches.
+- `issue` (+ `phase` required) — **manual issue dispatch mode.** Skip the dep-graph picking; deliver this specific issue. For manual debugging or human-directed work.
+- `pr` — **adopt-PR mode.** Skip the dep-graph picking AND skip Phase 2 (initial implementation). Fetch the PR, resolve the linked issue from the PR body (`Closes #N`), build the context pack against that issue, jump to Phase 3 (review-fix loop). For taking over PRs opened by humans, crashed prior driver ticks, or external processes.
+- `max_iterations` (optional, default `3`) — review-fix cycle ceiling. Applies to all modes.
+
+`pr` and `issue` are mutually exclusive. If both supplied, ask once and wait. If `issue` is supplied without `phase`, ask once and wait. If `pr` is supplied, `phase` is resolved automatically from the linked issue.
 
 ## Required reading on intake (each tick — cheap probe first)
 
@@ -49,7 +52,55 @@ This is enough to decide which of steps 1-5 will fire. Pick the step, THEN load 
 
 Steps 1, 2, 3, and 5 complete with zero doc reads.
 
-## The 5-step decision logic
+## Mode dispatch (top of every invocation)
+
+Before running the 5-step decision logic below, inspect the inputs and decide the mode:
+
+```
+if inputs.pr is set and inputs.issue is set:
+  return terminal_dispatch("needs-human", reason: "ambiguous_inputs",
+                           summary: "Both `pr` and `issue` were supplied; ask the caller.")
+
+if inputs.pr is set:
+  mode = "adopt-pr"
+  # Resolve the linked issue from the PR body.
+  pr_view = gh pr view <inputs.pr> -R moumantai-gg/mithril --json body,state,headRefOid,baseRefOid
+  if pr_view.state == "MERGED":
+    return terminal_dispatch("merged", merged_sha: <head>,
+                             anomalies: ["PR was already merged when adoption requested"])
+  if pr_view.state == "CLOSED":
+    return terminal_dispatch("needs-human", reason: "closed_without_merge",
+                             summary: "PR was closed (not merged) before adoption could start.")
+  resolved_issue = parse_closes_keyword(pr_view.body)  # case-insensitive: Closes/Fixes/Resolves #N
+  if resolved_issue is null:
+    return terminal_dispatch("needs-human", reason: "pr_has_no_linked_issue",
+                             summary: "PR #<inputs.pr> body has no Closes/Fixes/Resolves #N reference.")
+  state.mode = "adopt-pr"
+  state.pr = inputs.pr
+  state.issue = resolved_issue
+  state.phase = look_up_phase_from_orchestration_plan(state.issue)
+  # Skip the 5-step decision logic — jump straight to step 4 with this pre-populated state.
+
+elif inputs.issue is set:
+  if inputs.phase is null:
+    ask once, wait
+  state.mode = "manual-issue"
+  state.issue = inputs.issue
+  state.phase = inputs.phase
+  # Skip steps 1-3, jump to step 4 with this pre-populated state.
+  # (Step 4 will still run the dispatch-label check and dep-graph filter, but
+  # picks the pre-supplied issue rather than searching the ready set.)
+
+else:
+  state.mode = "tick"
+  # Run the full 5-step decision logic below.
+```
+
+The 5-step decision logic that follows is the **tick-mode entry path**. In `manual-issue` and `adopt-pr` modes, jump directly to step 4 with `state.issue` (and `state.pr` for adopt-pr) pre-populated; steps 1-3 don't apply because the caller has already named the target.
+
+(Step 4's blocked-issue limit and `orchestrator-dispatch:<N>` label additions still apply — the manual modes don't bypass the queue's safety rails. They just bypass the *picking* logic.)
+
+## The 5-step decision logic (tick-mode path)
 
 Run this priority list each tick. Take the FIRST applicable action, then exit with `ScheduleWakeup` (per §ScheduleWakeup invariant).
 
@@ -102,6 +153,8 @@ If no cross-tick recovery is needed, pick the next ready issue and deliver it.
 
 **Pick:**
 
+**Pick** (tick mode only — manual-issue and adopt-pr modes skip directly to Deliver with `state.issue` already set):
+
 - Build the dep graph as the UNION of YAML nodes + open `module:world-sim` issues (already gathered in the cheap probe). See §Dep graph derivation below.
 - Filter to the ready set:
   - Skip if the issue is closed.
@@ -113,9 +166,12 @@ If no cross-tick recovery is needed, pick the next ready issue and deliver it.
   - **Tier 2 — follow-on issues** (have `orchestrator-followup` label, not in YAML): by issue number ascending.
   - Pick the first eligible entry from tier 1; only fall through to tier 2 when tier 1 is empty.
 - If no winner exists, fall through to step 5 (idle).
+- Look up the picked issue's phase from `docs/world-simulator-orchestration-plan.md` §Dependency graph (load this doc now — it's needed for both the phase lookup and the context-pack phase slice).
+
+**Safety rails (all modes):**
+
 - Check the blocked-issue limit: if more than 3 task issues have `orchestrator-blocked`, SKIP dispatch. Print "Dispatch limit hit: <N> blocked issues. Sleeping 30 minutes." Call `ScheduleWakeup` in 1800s and exit.
-- Add `orchestrator-dispatch:<issue#>` label.
-- Look up the issue's phase from `docs/world-simulator-orchestration-plan.md` §Dependency graph (load this doc now — it's needed for both the phase lookup and the context-pack phase slice).
+- Add `orchestrator-dispatch:<state.issue>` label (idempotent — re-add is a no-op for manual-issue / adopt-pr modes that may target an already-labeled issue).
 
 **Deliver** (the actual issue delivery — sub-phases 4.1–4.5 below).
 
@@ -123,14 +179,15 @@ If no cross-tick recovery is needed, pick the next ready issue and deliver it.
 
 ```
 state = {
-  issue: <picked>,
-  phase: <looked-up>,
-  max_iterations: 3,
+  mode: <"tick" | "manual-issue" | "adopt-pr">,  # set by mode dispatch above
+  issue: <state.issue from mode dispatch, OR picked in §Pick>,
+  phase: <state.phase from mode dispatch, OR looked-up in §Pick>,
+  max_iterations: inputs.max_iterations OR 3,
   team_name: "shepherd-issue-<issue#>",
   team_created: false,
   workers_spawned: [],
   reviewers_spawned: [],
-  pr: null,
+  pr: <state.pr from mode dispatch (adopt-pr only), OR null>,
   iterations: 0,
   last_head_sha: null,
   last_iteration_at: now,
@@ -141,8 +198,11 @@ state = {
 }
 
 # Build the context pack from the docs already loaded + the issue body.
+# Adopt-pr mode inlines an additional "you are adopting existing PR #N"
+# framing — see §Building the context pack §Adopt-pr addendum.
 context_pack = build_context_pack(
-  issue_body, phase_preconditions, tooling_rules, workflow_rules
+  issue_body, phase_preconditions, tooling_rules, workflow_rules,
+  adopt_pr = state.pr if state.mode == "adopt-pr" else null
 )
 
 # Establish the team scope so worker/reviewers can be spawned as named teammates.
@@ -156,9 +216,19 @@ except (tool unavailable, dispatch refused, etc.):
   state.degraded_mode = true
   state.anomalies.append("TeamCreate unavailable; operating in inline degraded mode")
   # See §Inline degraded mode.
+
+# Adopt-pr mode: snapshot the current PR head so we can detect the worker's
+# first push later. No need to spawn a worker yet — the lazy spawn happens
+# in §4.3 when (if) the first review surfaces findings.
+if state.mode == "adopt-pr":
+  state.last_head_sha = gh pr view <state.pr> -R moumantai-gg/mithril --json headRefOid
 ```
 
 #### 4.2 Initial implementation
+
+**Skipped entirely in adopt-pr mode** — the PR already exists; `state.pr` and `state.last_head_sha` were populated in §4.1. Jump directly to §4.3 (review-fix loop).
+
+For tick and manual-issue modes:
 
 ```
 initial_prompt = build_worker_prompt(
@@ -302,20 +372,42 @@ loop:
   if posted_verdict == "needs-human":
     return terminal_dispatch("needs-human", reason: escalation_reason)
 
-  # Otherwise dispatch worker fix via SendMessage.
+  # Otherwise dispatch worker fix.
   state.iterations += 1
   state.last_review = review_results
 
   fix_message = build_worker_fix_message(pr=<state.pr>, feedback=review_results)
 
-  if not state.degraded_mode:
+  if state.degraded_mode:
+    return terminal_dispatch("needs-human", reason: "degraded_mode_cannot_iterate")
+
+  if state.mode == "adopt-pr" and "worker" not in state.workers_spawned:
+    # Lazy worker spawn — adopt-pr skipped Phase 2 (no initial implementation),
+    # so the worker teammate doesn't exist yet. Spawn now, briefed on the
+    # existing PR state PLUS the review feedback.
+    adopt_prompt = context_pack
+                 + "\n\n### Adopting existing PR #" + state.pr + "\n"
+                 + "You did NOT open this PR. The branch already exists. Run\n"
+                 + "  gh pr view " + state.pr + " -R moumantai-gg/mithril\n"
+                 + "  gh pr diff " + state.pr + " -R moumantai-gg/mithril\n"
+                 + "  git fetch && git checkout <pr-branch>\n"
+                 + "to familiarize yourself with the current state. Then address\n"
+                 + "the review feedback below.\n\n"
+                 + fix_message
+    worker_result = Agent({
+      subagent_type: "general-purpose",
+      team_name: state.team_name,
+      name: "worker",
+      prompt: adopt_prompt
+    })
+    state.workers_spawned.append("worker")
+  else:
+    # Standard SendMessage continuation — worker teammate already exists.
     SendMessage({
       to: "worker",
       summary: "Address review feedback iteration <state.iterations>",
       message: fix_message
     })
-  else:
-    return terminal_dispatch("needs-human", reason: "degraded_mode_cannot_iterate")
 
   new_head = gh pr view <state.pr> -R moumantai-gg/mithril --json headRefOid
   if new_head == state.last_head_sha:
@@ -450,6 +542,30 @@ If your final message lacks an `outcome:` line, the driver treats it as `failed`
 ```
 
 Target size: 5-15K tokens depending on issue body + phase slice size.
+
+### Adopt-pr addendum
+
+When `state.mode == "adopt-pr"`, the context pack inlines an additional framing block before §Structured outcome reporting:
+
+```
+### Adopting existing PR #<state.pr>
+
+You did NOT open this PR. The branch <pr-branch> already exists and contains
+prior commits. Your job is to take over from the PR's current state, address
+any review findings, and push fixes to the same branch (do NOT open a new PR).
+
+Run these on your first turn to familiarize yourself:
+- gh pr view <state.pr> -R moumantai-gg/mithril --json title,body,headRefOid,baseRefOid,files
+- gh pr diff <state.pr> -R moumantai-gg/mithril
+- git fetch && git checkout <pr-branch>
+
+If this is your first dispatch and you've received review feedback in the
+same prompt, address the feedback now. Otherwise just familiarize yourself
+and report `outcome: ready` (a no-op outcome — the driver will SendMessage
+you with the first round of review feedback when reviewers complete).
+```
+
+(The "report `outcome: ready` if no feedback yet" path applies only if the driver dispatches the worker proactively before review — currently the driver uses lazy worker spawn instead, so the worker is only dispatched AFTER the first review surfaces findings, and the feedback is always in the dispatch prompt. The "outcome: ready" path is documented for future flexibility.)
 
 ## Building the worker fix message (SendMessage)
 
@@ -755,7 +871,8 @@ Your final message includes a fenced JSON block (consumed by cross-tick recovery
                      | "worker_no_progress" | "merge_conflict" | "closed_without_merge"
                      | "initial_implementation_failed" | "nothing_to_do" | "decomposed"
                      | "needs_input" | "worker_failed" | "merge_command_failed"
-                     | "degraded_mode_cannot_iterate" | "no_dispatch_tools" | null,
+                     | "degraded_mode_cannot_iterate" | "no_dispatch_tools"
+                     | "pr_has_no_linked_issue" | "ambiguous_inputs" | null,
   "follow_ons": [
     { "title": "...", "files": "...", "blocks": [<int>...], "body": "..." }
   ],
