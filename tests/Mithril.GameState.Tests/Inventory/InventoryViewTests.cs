@@ -1,144 +1,391 @@
 using FluentAssertions;
 using Mithril.GameState.Inventory;
-using Mithril.Shared.Logging;
+using Mithril.GameState.Sessions;
+using Mithril.GameState.Servers;
+using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
+using Mithril.Shared.Reference;
 using Mithril.WorldSim;
+using Mithril.WorldSim.Chat;
+using Mithril.WorldSim.Player;
 using Xunit;
 
 namespace Mithril.GameState.Tests.Inventory;
 
 /// <summary>
 /// Tests for the world-sim inventory split (#602) — the view layer's
-/// typed-frame bus surface + the legacy <c>InventoryEvent</c> shim
-/// translation. The view bridges the back-compat
-/// <c>Subscribe(Action&lt;InventoryEvent&gt;)</c> consumer surface (six
-/// pre-#602 consumers) into the canonical typed-frame surface
-/// (<see cref="IInventoryView.Bus"/>) — each kind translates 1:1 into its
-/// corresponding view-emitted typed event.
+/// cross-source composer. Drives the two world buses directly (PlayerWorld +
+/// ChatWorld) and asserts the view composes them into the typed three-channel
+/// surface (<see cref="InventoryItemAdded"/> / <see cref="InventoryItemRemoved"/>
+/// / <see cref="InventoryStackChanged"/>) and into the legacy union-shaped
+/// shim. Pins:
+/// <list type="bullet">
+///   <item>Correlator pairing in both arrival orders.</item>
+///   <item>Scope check on <c>(Server, Character)</c> mismatch.</item>
+///   <item>Non-stackable confirmation via reference data.</item>
+///   <item>Shim translation typed-frames → legacy <c>InventoryEvent</c>.</item>
+///   <item>Late-subscribe atomic replay of the shim event log (#585 contract).</item>
+/// </list>
 /// </summary>
 public sealed class InventoryViewTests
 {
     private static DateTime Ts(int s) => new(2026, 5, 22, 8, 0, s, DateTimeKind.Utc);
 
-    /// <summary>
-    /// Lightweight backing-service fake. Drives <see cref="InventoryEvent"/>
-    /// emissions directly; the view's shim subscription replays + relays each
-    /// onto the view's typed bus. Mirrors the real
-    /// <c>InventoryService.Subscribe</c> shape: the handler attached during
-    /// <see cref="Subscribe"/> sees every later <see cref="Raise"/>.
-    /// </summary>
-    private sealed class FakeBackingService : IInventoryService
+    private sealed class FakeWorld : IPlayerWorld, IChatWorld
     {
-        private readonly List<Action<InventoryEvent>> _handlers = new();
-        public bool TryResolve(long instanceId, out string internalName) { internalName = ""; return false; }
-        public bool TryGetStackSize(long instanceId, out int stackSize) { stackSize = 0; return false; }
-        public IDisposable Subscribe(Action<InventoryEvent> handler, ReplayMode replay = ReplayMode.FromSessionStart)
+        public IWorldClock Clock => throw new NotSupportedException();
+        public TestBus TestBus { get; } = new();
+        public IWorldEventBus Bus => TestBus;
+        public void RegisterProducer<T>(IFrameProducer<T> producer) { }
+        public void RegisterFolder<T>(IFolder<T> folder) { }
+        public void RegisterComposer(IComposer composer) { }
+        public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+    }
+
+    private sealed class TestBus : IWorldEventBus
+    {
+        private readonly object _lock = new();
+        private readonly Dictionary<Type, List<Action<IFrame>>> _handlers = new();
+
+        public IDisposable Subscribe<T>(Action<Frame<T>> handler)
         {
-            _handlers.Add(handler);
-            return new Unsub(this, handler);
+            ArgumentNullException.ThrowIfNull(handler);
+            lock (_lock)
+            {
+                if (!_handlers.TryGetValue(typeof(T), out var list))
+                    _handlers[typeof(T)] = list = new List<Action<IFrame>>();
+                Action<IFrame> wrapper = f => handler((Frame<T>)f);
+                list.Add(wrapper);
+                return new Sub(this, typeof(T), wrapper);
+            }
         }
-        public void Raise(InventoryEvent evt)
+
+        public void Publish<T>(Frame<T> frame)
         {
-            foreach (var h in _handlers.ToArray()) h(evt);
+            List<Action<IFrame>>? snap;
+            lock (_lock)
+            {
+                if (!_handlers.TryGetValue(typeof(T), out var list)) return;
+                snap = list.ToList();
+            }
+            foreach (var h in snap) h(frame);
         }
-        private sealed class Unsub(FakeBackingService o, Action<InventoryEvent> h) : IDisposable
+
+        private sealed class Sub(TestBus o, Type t, Action<IFrame> h) : IDisposable
         {
-            public void Dispose() => o._handlers.Remove(h);
+            public void Dispose()
+            {
+                lock (o._lock) { if (o._handlers.TryGetValue(t, out var list)) list.Remove(h); }
+            }
         }
     }
 
-    [Fact]
-    public void Added_event_translates_to_InventoryItemAdded_on_view_bus()
+    private sealed class FakePlayerInventoryState : IPlayerInventoryState
     {
-        var fake = new FakeBackingService();
-        using var view = new InventoryView(fake);
-        var observed = new List<Frame<InventoryItemAdded>>();
-        using var _ = view.Bus.Subscribe<InventoryItemAdded>(observed.Add);
+        private readonly Dictionary<long, string> _map = new();
+        public void Add(long id, string name) => _map[id] = name;
+        public bool TryResolve(long instanceId, out string internalName)
+        {
+            if (_map.TryGetValue(instanceId, out var n)) { internalName = n; return true; }
+            internalName = ""; return false;
+        }
+    }
 
-        fake.Raise(new InventoryEvent(InventoryEventKind.Added, 42, "Moonstone", Ts(1), 3, SizeConfirmed: true));
+    private sealed class FakeGameSessionService : IGameSessionService
+    {
+        public FakeGameSessionService(string character, string server)
+        {
+            Current = new GameSession(
+                SessionId: "s1",
+                CharacterName: character,
+                LoggedInUtc: new DateTime(2026, 5, 22, 0, 0, 0, DateTimeKind.Utc),
+                TimezoneOffset: TimeSpan.Zero,
+                Server: new ServerEntry(Id: "s", Name: server, Url: "host", Port: 0, Description: ""));
+        }
+        public GameSession? Current { get; }
+        public event EventHandler<GameSession>? SessionStarted { add { } remove { } }
+        public IDisposable Subscribe(Action<GameSession> handler) { if (Current is not null) handler(Current); return new NoOp(); }
+        private sealed class NoOp : IDisposable { public void Dispose() { } }
+    }
 
-        observed.Should().ContainSingle();
-        var p = observed[0].Payload;
-        p.InstanceId.Should().Be(42L);
-        p.InternalName.Should().Be("Moonstone");
-        p.StackSize.Should().Be(3);
-        p.SizeConfirmed.Should().BeTrue();
-        p.Timestamp.Should().Be(Ts(1));
+    private sealed class FakeChatSessionService : IChatSessionService
+    {
+        public FakeChatSessionService(string character, string server)
+        {
+            Current = new ChatSession(
+                Server: server, Character: character,
+                At: new DateTimeOffset(2026, 5, 22, 0, 0, 0, TimeSpan.Zero),
+                Offset: TimeSpan.Zero);
+        }
+        public ChatSession? Current { get; }
+        public IDisposable Subscribe(Action<ChatSession> handler) { if (Current is not null) handler(Current); return new NoOp(); }
+        private sealed class NoOp : IDisposable { public void Dispose() { } }
+    }
+
+    private sealed class TwoItemRefData : IReferenceDataService
+    {
+        private static readonly Item _moonstone = new()
+        {
+            Id = 1, Name = "Moonstone", InternalName = "Moonstone",
+            MaxStackSize = 100, IconId = 0, Keywords = [],
+        };
+        private static readonly Item _ringNonStack = new()
+        {
+            Id = 2, Name = "RingOfPower", InternalName = "RingOfPower",
+            MaxStackSize = 1, IconId = 0, Keywords = [],
+        };
+        public IReadOnlyList<string> Keys { get; } = ["items"];
+        public IReadOnlyDictionary<long, Item> Items { get; } = new Dictionary<long, Item> { [1L] = _moonstone, [2L] = _ringNonStack };
+        public IReadOnlyDictionary<string, Item> ItemsByInternalName { get; } = new Dictionary<string, Item>(StringComparer.Ordinal)
+        {
+            ["Moonstone"] = _moonstone,
+            ["RingOfPower"] = _ringNonStack,
+        };
+        public ItemKeywordIndex KeywordIndex => new(Items);
+        public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
+        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
+        public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
+        public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);
+        public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();
+        public IReadOnlyDictionary<string, AttributeEntry> Attributes { get; } = new Dictionary<string, AttributeEntry>();
+        public IReadOnlyDictionary<string, PowerEntry> Powers { get; } = new Dictionary<string, PowerEntry>();
+        public IReadOnlyDictionary<string, IReadOnlyList<string>> Profiles { get; } = new Dictionary<string, IReadOnlyList<string>>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> Quests { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
+        public IReadOnlyDictionary<string, Mithril.Reference.Models.Quests.Quest> QuestsByInternalName { get; } = new Dictionary<string, Mithril.Reference.Models.Quests.Quest>();
+        public IReadOnlyDictionary<string, string> Strings { get; } = new Dictionary<string, string>(StringComparer.Ordinal);
+        public ReferenceFileSnapshot GetSnapshot(string key) => new(key, ReferenceFileSource.Bundled, "test", null, 1);
+        public Task RefreshAsync(string key, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RefreshAllAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public void BeginBackgroundRefresh() { }
+        public event EventHandler<string>? FileUpdated { add { } remove { } }
+    }
+
+    private static (InventoryView view, FakeWorld playerWorld, FakeWorld chatWorld, FakePlayerInventoryState pstate)
+        Build(IGameSessionService? playerSession = null, IChatSessionService? chatSession = null, IReferenceDataService? refData = null)
+    {
+        var playerWorld = new FakeWorld();
+        var chatWorld = new FakeWorld();
+        var pstate = new FakePlayerInventoryState();
+        var view = new InventoryView(
+            playerWorld, chatWorld, pstate,
+            refData: refData ?? new TwoItemRefData(),
+            playerSession: playerSession,
+            chatSession: chatSession);
+        view.Start();
+        return (view, playerWorld, chatWorld, pstate);
+    }
+
+    private static void PlayerAdd(FakeWorld world, long id, string name, DateTime ts) =>
+        world.TestBus.Publish(new Frame<PlayerInventoryAdded>(new(ts, TimeSpan.Zero),
+            new PlayerInventoryAdded(id, name, ts)));
+
+    private static void PlayerRemove(FakeWorld world, long id, string name, DateTime ts) =>
+        world.TestBus.Publish(new Frame<PlayerInventoryRemoved>(new(ts, TimeSpan.Zero),
+            new PlayerInventoryRemoved(id, name, ts)));
+
+    private static void PlayerStackUpdate(FakeWorld world, long id, string name, int size, DateTime ts) =>
+        world.TestBus.Publish(new Frame<PlayerInventoryStackUpdated>(new(ts, TimeSpan.Zero),
+            new PlayerInventoryStackUpdated(id, name, size, ts)));
+
+    private static void ChatObserved(FakeWorld world, string displayName, int count, DateTime ts) =>
+        world.TestBus.Publish(new Frame<ChatInventoryObserved>(new(ts, TimeSpan.Zero),
+            new ChatInventoryObserved(displayName, count, ts)));
+
+    // ── Correlator pairing tests ────────────────────────────────────────
+
+    [Fact]
+    public void Player_Added_then_Chat_Observed_pairs_within_TTL_and_fires_StackChanged()
+    {
+        var (view, pw, cw, _) = Build();
+        var added = new List<Frame<InventoryItemAdded>>();
+        var changed = new List<Frame<InventoryStackChanged>>();
+        view.Bus.Subscribe<InventoryItemAdded>(added.Add);
+        view.Bus.Subscribe<InventoryStackChanged>(changed.Add);
+
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        ChatObserved(cw, "Moonstone", 7, Ts(2));
+
+        added.Should().ContainSingle();
+        added[0].Payload.SizeConfirmed.Should().BeFalse("Add arrived before chat — unconfirmed default-1");
+        added[0].Payload.StackSize.Should().Be(1);
+
+        changed.Should().ContainSingle();
+        changed[0].Payload.InstanceId.Should().Be(42L);
+        changed[0].Payload.StackSize.Should().Be(7);
+        changed[0].Payload.SizeConfirmed.Should().BeTrue();
+
+        view.TryGetStackSize(42, out var s).Should().BeTrue();
+        s.Should().Be(7);
     }
 
     [Fact]
-    public void Deleted_event_translates_to_InventoryItemRemoved_on_view_bus()
+    public void Chat_Observed_then_Player_Added_pairs_within_TTL_with_confirmed_Add()
     {
-        var fake = new FakeBackingService();
-        using var view = new InventoryView(fake);
-        var observed = new List<Frame<InventoryItemRemoved>>();
-        using var _ = view.Bus.Subscribe<InventoryItemRemoved>(observed.Add);
+        var (view, pw, cw, _) = Build();
+        var added = new List<Frame<InventoryItemAdded>>();
+        view.Bus.Subscribe<InventoryItemAdded>(added.Add);
 
-        fake.Raise(new InventoryEvent(InventoryEventKind.Deleted, 42, "Moonstone", Ts(2), 3, SizeConfirmed: true));
+        ChatObserved(cw, "Moonstone", 5, Ts(1));
+        PlayerAdd(pw, 42, "Moonstone", Ts(2));
 
-        observed.Should().ContainSingle();
-        observed[0].Payload.InstanceId.Should().Be(42L);
-        observed[0].Payload.InternalName.Should().Be("Moonstone");
+        added.Should().ContainSingle();
+        added[0].Payload.StackSize.Should().Be(5);
+        added[0].Payload.SizeConfirmed.Should().BeTrue("the chat slot was consumed at Add time");
+
+        view.TryGetStackSize(42, out var s).Should().BeTrue();
+        s.Should().Be(5);
     }
 
     [Fact]
-    public void StackChanged_event_translates_to_InventoryStackChanged_on_view_bus()
+    public void Non_stackable_item_confirms_size_1_without_chat()
     {
-        var fake = new FakeBackingService();
-        using var view = new InventoryView(fake);
-        var observed = new List<Frame<InventoryStackChanged>>();
-        using var _ = view.Bus.Subscribe<InventoryStackChanged>(observed.Add);
+        var (view, pw, _, _) = Build();
+        var added = new List<Frame<InventoryItemAdded>>();
+        view.Bus.Subscribe<InventoryItemAdded>(added.Add);
 
-        fake.Raise(new InventoryEvent(InventoryEventKind.StackChanged, 42, "Moonstone", Ts(3), 7, SizeConfirmed: true));
+        PlayerAdd(pw, 99, "RingOfPower", Ts(1));
 
-        observed.Should().ContainSingle();
-        observed[0].Payload.StackSize.Should().Be(7);
+        added.Should().ContainSingle();
+        added[0].Payload.SizeConfirmed.Should().BeTrue("MaxStackSize == 1 — no chat needed");
+        added[0].Payload.StackSize.Should().Be(1);
     }
 
     [Fact]
-    public void Shim_Subscribe_delegates_to_backing_service()
+    public void Player_StackUpdated_fires_StackChanged_and_promotes_confirmation()
     {
-        // The legacy union-shaped Subscribe contract must round-trip through
-        // the view to the backing service — the six pre-#602 consumers depend
-        // on this for back-compat. The view's job is to *also* expose the
-        // typed bus surface; not to break the shim.
-        var fake = new FakeBackingService();
-        using var view = new InventoryView(fake);
-        var observed = new List<InventoryEvent>();
-        using var _ = view.Subscribe(observed.Add);
+        var (view, pw, _, _) = Build();
+        var changed = new List<Frame<InventoryStackChanged>>();
+        view.Bus.Subscribe<InventoryStackChanged>(changed.Add);
 
-        fake.Raise(new InventoryEvent(InventoryEventKind.Added, 42, "Moonstone", Ts(1), 1, SizeConfirmed: false));
-        fake.Raise(new InventoryEvent(InventoryEventKind.Deleted, 42, "Moonstone", Ts(2), 1, SizeConfirmed: false));
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        PlayerStackUpdate(pw, 42, "Moonstone", 13, Ts(2));
 
-        observed.Should().HaveCount(2);
-        observed[0].Kind.Should().Be(InventoryEventKind.Added);
-        observed[1].Kind.Should().Be(InventoryEventKind.Deleted);
+        changed.Should().ContainSingle();
+        changed[0].Payload.StackSize.Should().Be(13);
+        changed[0].Payload.SizeConfirmed.Should().BeTrue();
+
+        view.TryGetStackSize(42, out var s).Should().BeTrue();
+        s.Should().Be(13);
     }
 
     [Fact]
-    public void TryResolve_and_TryGetStackSize_delegate_to_backing()
+    public void Player_Removed_marks_entry_deleted_but_TryResolve_still_returns_name()
     {
-        // The view is a thin facade over the backing service for the query
-        // channel — exercising delegation rules out a missed wire-up that
-        // would surface as a "data is in the service but not the view" bug.
-        var fake = new FakeBackingService();
-        using var view = new InventoryView(fake);
-        view.TryResolve(123, out _).Should().BeFalse();
-        view.TryGetStackSize(123, out _).Should().BeFalse();
+        var (view, pw, _, _) = Build();
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        PlayerRemove(pw, 42, "Moonstone", Ts(2));
+
+        // Retained-on-delete contract — Arwen's gift-attribution path needs it.
+        view.TryResolve(42, out var n).Should().BeTrue();
+        n.Should().Be("Moonstone");
+    }
+
+    // ── (Server, Character) scope check ─────────────────────────────────
+
+    [Fact]
+    public void Chat_observation_with_mismatched_scope_drops_pair_candidate()
+    {
+        var (view, pw, cw, _) = Build(
+            playerSession: new FakeGameSessionService(character: "Alice", server: "Laeth"),
+            chatSession: new FakeChatSessionService(character: "Bob", server: "Laeth"));
+        var added = new List<Frame<InventoryItemAdded>>();
+        view.Bus.Subscribe<InventoryItemAdded>(added.Add);
+
+        // Chat arrives first under Bob's scope — but the player session is Alice.
+        // The view drops the pair candidate; subsequent Player.log Add lands
+        // with the unconfirmed default-1 (no chat correlation).
+        ChatObserved(cw, "Moonstone", 9, Ts(1));
+        PlayerAdd(pw, 42, "Moonstone", Ts(2));
+
+        added.Should().ContainSingle();
+        added[0].Payload.StackSize.Should().Be(1);
+        added[0].Payload.SizeConfirmed.Should().BeFalse(
+            "chat observation was off-scope (Bob); must not back-fill Alice's Add");
     }
 
     [Fact]
-    public void View_disposes_its_backing_subscription()
+    public void Chat_observation_with_matching_scope_pairs_normally()
     {
-        // The view's lifetime-owned backing subscription must release on
-        // Dispose — otherwise the view leaks past its module lifetime.
-        var fake = new FakeBackingService();
-        var view = new InventoryView(fake);
-        var observed = new List<Frame<InventoryItemAdded>>();
-        using var _ = view.Bus.Subscribe<InventoryItemAdded>(observed.Add);
+        var (view, pw, cw, _) = Build(
+            playerSession: new FakeGameSessionService(character: "Alice", server: "Laeth"),
+            chatSession: new FakeChatSessionService(character: "Alice", server: "Laeth"));
+        var added = new List<Frame<InventoryItemAdded>>();
+        view.Bus.Subscribe<InventoryItemAdded>(added.Add);
 
-        view.Dispose();
-        fake.Raise(new InventoryEvent(InventoryEventKind.Added, 42, "Moonstone", Ts(1), 1, SizeConfirmed: false));
+        ChatObserved(cw, "Moonstone", 9, Ts(1));
+        PlayerAdd(pw, 42, "Moonstone", Ts(2));
 
-        observed.Should().BeEmpty("after Dispose the view should no longer relay backing events");
+        added.Should().ContainSingle();
+        added[0].Payload.StackSize.Should().Be(9);
+        added[0].Payload.SizeConfirmed.Should().BeTrue();
+    }
+
+    // ── TTL eviction ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Chat_observation_older_than_TTL_does_not_pair()
+    {
+        var (view, pw, cw, _) = Build();
+        var added = new List<Frame<InventoryItemAdded>>();
+        view.Bus.Subscribe<InventoryItemAdded>(added.Add);
+
+        // 5s TTL — chat at T=0, player at T=10s. The view's clock advances by
+        // event timestamps (not wall-clock), so the chat slot evicts before
+        // the player Add arrives.
+        ChatObserved(cw, "Moonstone", 9, Ts(0));
+        PlayerAdd(pw, 42, "Moonstone", Ts(10));
+
+        added.Should().ContainSingle();
+        added[0].Payload.SizeConfirmed.Should().BeFalse("chat slot aged out of the correlation window");
+    }
+
+    // ── Shim translation ────────────────────────────────────────────────
+
+    [Fact]
+    public void Shim_Subscribe_delivers_InventoryEvent_kinds_for_each_typed_emission()
+    {
+        var (view, pw, cw, _) = Build();
+        var shim = new List<InventoryEvent>();
+#pragma warning disable CS0618 // shim surface under the #602 → #659 migration window
+        view.Subscribe(shim.Add);
+#pragma warning restore CS0618
+
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        ChatObserved(cw, "Moonstone", 7, Ts(2));   // → StackChanged on existing add
+        PlayerRemove(pw, 42, "Moonstone", Ts(3));
+
+        shim.Select(e => e.Kind).Should().Equal(new[]
+        {
+            InventoryEventKind.Added,
+            InventoryEventKind.StackChanged,
+            InventoryEventKind.Deleted,
+        });
+    }
+
+    [Fact]
+    public void Late_subscribe_replays_full_session_event_log()
+    {
+        var (view, pw, cw, _) = Build();
+
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        ChatObserved(cw, "Moonstone", 7, Ts(2));
+        PlayerRemove(pw, 42, "Moonstone", Ts(3));
+
+        var replayed = new List<InventoryEvent>();
+#pragma warning disable CS0618
+        view.Subscribe(replayed.Add);
+#pragma warning restore CS0618
+
+        // The shim's event log mirrors the pre-split InventoryService #585
+        // contract: a late subscriber sees the full session, including the
+        // intervening StackChanged + the eventual Deleted.
+        replayed.Select(e => e.Kind).Should().Equal(new[]
+        {
+            InventoryEventKind.Added,
+            InventoryEventKind.StackChanged,
+            InventoryEventKind.Deleted,
+        });
     }
 }

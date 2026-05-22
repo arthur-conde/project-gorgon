@@ -24,7 +24,6 @@ namespace Mithril.GameState.Inventory;
 /// <see cref="InventoryEventKind.StackChanged"/> events always carry
 /// <c>SizeConfirmed = true</c>.
 /// </summary>
-[Obsolete("Subscribe to Frame<InventoryItemAdded> et al. on IInventoryView.Bus. Cleanup tracked in #659.")]
 public readonly record struct InventoryEvent(
     InventoryEventKind Kind,
     long InstanceId,
@@ -159,6 +158,7 @@ public interface IInventoryService
     /// <see cref="ReplayMode.FromSessionStart"/> replays the full session
     /// event log atomically before going live;
     /// <see cref="ReplayMode.LiveOnly"/> skips the replay.</param>
+    [Obsolete("Subscribe to Frame<InventoryItemAdded> et al. on IInventoryView.Bus. Cleanup tracked in #659.")]
     IDisposable Subscribe(
         Action<InventoryEvent> handler,
         ReplayMode replay = ReplayMode.FromSessionStart);

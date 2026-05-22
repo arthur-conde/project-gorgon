@@ -53,32 +53,29 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<IGameSessionService>(sp => sp.GetRequiredService<GameSessionService>())
             .AddHostedService(sp => sp.GetRequiredService<GameSessionService>());
 
-        // Pre-#602 inventory implementation retained for back-compat with the
-        // six pre-existing consumers (Arwen, Samwise, Palantir, Legolas,
-        // Saruman, Motherlode). Each consumer migrates to the new typed
-        // IInventoryView.Bus surface in its own follow-on under #659; the
-        // legacy InventoryService body retires once the last consumer
-        // migrates.
-        services
-            .AddSingleton<InventoryService>()
-            .AddSingleton<IInventoryService>(sp => sp.GetRequiredService<InventoryService>())
-            .AddHostedService(sp => sp.GetRequiredService<InventoryService>());
-
-        // World-simulator inventory split (#602 — Phase 2): the new
-        // architectural surface lives alongside InventoryService.
+        // World-simulator inventory split (#602 — Phase 2).
+        //
         //   - PlayerInventoryStateService is an IFolder<PlayerInventoryFrame>
         //     registered with IPlayerWorld; the sibling producer reads the L1
         //     LocalPlayer pipe and emits inventory frames.
         //   - ChatInventoryStateService is an IFolder<ChatInventoryObservationFrame>
         //     registered with IChatWorld; the sibling producer reads the chat
         //     replay source and emits chat-observation frames.
-        //   - InventoryView is the cross-world view layer: subscribes to both
-        //     worlds' typed change-event channels via their buses, exposes the
-        //     three-channel typed view surface (InventoryItemAdded /
-        //     InventoryItemRemoved / InventoryStackChanged) on its own Bus,
-        //     and translates each backing-service event into a typed frame so
-        //     new code can subscribe via the canonical bus surface ahead of
-        //     consumer migrations under #659.
+        //   - InventoryView is the cross-world composer: subscribes to typed
+        //     change events on both world buses, runs the relocated
+        //     PendingCorrelator with (Server,Character)-scoped keys, holds the
+        //     composed instance-id ledger + the event-log shim back-compat for
+        //     the six pre-#602 consumers via IInventoryService.
+        //
+        // The legacy InventoryService class retired entirely in #602 — its
+        // L1-direct subscriptions violated world-sim principle 3. The
+        // IInventoryService DI binding still resolves (so the six pre-#602
+        // consumers continue to inject and subscribe unchanged) — it now
+        // points at the view, which holds all the prior behaviour. Each
+        // consumer migrates to the typed view bus in its own follow-on under
+        // #659; at the last migration, IInventoryService + InventoryEvent
+        // can be deleted.
+        //
         // Folder + producer registration happens in PlayerInventoryWorldRegistration
         // / ChatInventoryWorldRegistration hosted services (ordering preserved by
         // ShellComposition's AddPlayerWorld / AddChatWorld → AddMithrilGameState
@@ -99,7 +96,8 @@ public static class GameStateServiceCollectionExtensions
 
         services
             .AddSingleton<InventoryView>()
-            .AddSingleton<IInventoryView>(sp => sp.GetRequiredService<InventoryView>());
+            .AddSingleton<IInventoryView>(sp => sp.GetRequiredService<InventoryView>())
+            .AddSingleton<IInventoryService>(sp => sp.GetRequiredService<InventoryView>());
 
         // Shared live player-effects set from Player.log (ProcessAddEffects /
         // ProcessRemoveEffects / ProcessUpdateEffectName). Foundation for the
@@ -301,8 +299,9 @@ public static class GameStateServiceCollectionExtensions
     /// <c>PlayerWorld.StartAsync</c> fires. Mirrors
     /// <see cref="PlayerSkillStateWorldRegistration"/>'s shape (#618 — the
     /// canonical Phase 1 template). Additionally calls
-    /// <see cref="InventoryView.Bus"/>'s lazy bridge initializer if needed —
-    /// the view's bus surface is the new architectural canon for #602.
+    /// <see cref="InventoryView.Start"/> so the view's PlayerWorld + ChatWorld
+    /// bus subscriptions are in place before either world's <c>StartAsync</c>
+    /// fires and frames begin flowing.
     /// </summary>
     private sealed class PlayerInventoryWorldRegistration : IHostedService
     {
@@ -327,10 +326,13 @@ public static class GameStateServiceCollectionExtensions
         {
             _world.RegisterProducer(_producer);
             _world.RegisterFolder(_folder);
-            // Force-construction of the view singleton ensures its
-            // backing-service subscription is in place by the time any
-            // module bus consumer attaches.
-            _ = _view.Bus;
+            // View subscribes to both world buses + seeds export reconcile.
+            // Idempotent — the ChatInventoryWorldRegistration calls Start()
+            // too, and only the first call actually wires; the second is a
+            // no-op. We attach here (on the Player-side path) so the bus
+            // subscription is in place before PlayerWorld.StartAsync runs
+            // the merger.
+            _view.Start();
             return Task.CompletedTask;
         }
 

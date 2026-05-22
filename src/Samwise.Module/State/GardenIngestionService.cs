@@ -154,7 +154,9 @@ public sealed class GardenIngestionService : BackgroundService
         // event onto the UI dispatcher to mirror what the L1 Marshaled
         // bridge does for the Player.log path, so PlotChanged → bound
         // ObservableCollection stays single-threaded.
+#pragma warning disable CS0618 // back-compat shim use during the #602 → #659 migration window
         var subscription = _inventory.Subscribe(OnInventoryEvent);
+#pragma warning restore CS0618
 
         // Gardening XP arrival is the harvest-confirmation discriminator
         // (GardenStateMachine.HandleGardeningXp commits the staged plot
