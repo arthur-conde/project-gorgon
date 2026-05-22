@@ -1,6 +1,6 @@
 ---
 name: world-sim-shepherd
-description: Per-PR babysitter for world-sim migration PRs. Use when the world-sim orchestrator (or a human) hands a PR off for end-to-end review-fix-rereview management. The shepherd owns the PR until it is ready to merge or needs human attention; it dispatches reviewers and workers as needed and returns a structured verdict. Input is a PR number, issue number, phase, risk, and a worker-dispatch template.
+description: Per-PR babysitter for world-sim migration PRs. Use when the world-sim orchestrator (or a human) hands a PR off for end-to-end review-fix-rereview management. The shepherd owns the PR until it is ready to merge or needs human attention; it dispatches reviewers and workers as needed and returns a structured verdict. Input is a PR number, issue number, phase, and a worker-dispatch template.
 tools: Read, Grep, Glob, Bash, Agent
 ---
 
@@ -16,7 +16,6 @@ The caller provides:
 - `pr` — GitHub PR number to babysit
 - `issue` — GitHub issue number this PR addresses
 - `phase` — phase classification (e.g., `2`, `3`, `parallel`)
-- `risk` — risk classification (`low`, `medium`, `high`)
 - `worker_template` — verbatim text the orchestrator would pass to a fresh worker for this issue
 - `max_iterations` (optional, default `3`) — review-fix cycle ceiling
 
@@ -32,6 +31,14 @@ Before starting the loop:
 
 ## The loop
 
+**Design contract: compute verdict BEFORE posting.** Every comment the shepherd
+posts carries a machine-readable `<!-- shepherd-verdict: VERDICT -->` marker as
+its first line. The orchestrator parses this marker — so the verdict must be
+decided before the comment is written, not after. Escalation reasons that
+historically fired after the comment (`max_iterations`, `same_issue_class`,
+`worker_no_progress`) are now folded into the pre-post verdict computation so
+the marker accurately reflects the iteration's outcome.
+
 ```
 state = {
   iterations: 0,
@@ -43,7 +50,8 @@ state = {
 loop:
   pr_state = gh pr view <pr> --json state,headRefOid,reviews,comments,mergeable
 
-  # Terminal-state short-circuits
+  # Terminal short-circuits — JSON return only, no comment posted.
+  # The orchestrator catches these via the return JSON in its step 3.
   if pr_state.state == "MERGED":
     return verdict("ready-to-merge", reason: null)
   if pr_state.state == "CLOSED":
@@ -53,41 +61,74 @@ loop:
 
   # Human-comment guard — do not bulldoze human input.
   # Compare against state.last_iteration_at (initialized to "now" at loop entry,
-  # updated at the top of each iteration). The shepherd's own comments are bot-
-  # authored and excluded by the non-bot filter.
+  # updated at the bottom of each iteration). The shepherd's own comments are
+  # bot-authored and excluded by the non-bot filter. JSON return only — the
+  # human's comment is the artifact the orchestrator surfaces.
   if any review or comment with created_at > state.last_iteration_at by a non-bot account:
     return verdict("needs-human", reason: "human_review")
 
   # Run reviewers in parallel (single message, two Agent calls).
   # The generic reviewer is dispatched as a general-purpose subagent with an
-  # inlined prompt template (see "Generic code review prompt" section below).
+  # inlined prompt template (see §Generic code review prompt below).
   review_results = parallel(
     Agent(subagent_type: "general-purpose", prompt: <generic-review template with pr=N>),
     Agent(subagent_type: "world-sim-reviewer", prompt: <pr, issue, phase>)
   )
 
-  # Post the combined comment on the PR
-  gh pr comment <pr> --body-file <temp-file-with-combined-review>
+  # Parse the machine-readable verdict markers from each reviewer's output.
+  # Both reviewers emit their verdict as an HTML-comment marker — `<!--
+  # generic-review-verdict: clean|findings -->` and `<!-- world-sim-review-
+  # verdict: clean|findings -->`. The prose `**Verdict:**` line is for humans;
+  # the marker is the contract.
+  generic_verdict = first regex match `<!--\s*generic-review-verdict:\s*(clean|findings)\s*-->`
+                    against review_results.generic.text
+  specialist_verdict = first regex match `<!--\s*world-sim-review-verdict:\s*(clean|findings)\s*-->`
+                       against review_results.specialist.text
 
-  # If both reviewers clean → terminal success
-  if review_results.generic.verdict == "clean"
-     and review_results.specialist.verdict == "clean":
-    return verdict("ready-to-merge", reason: null)
+  # Treat unparseable reviewer output as a hard escalation — don't guess.
+  if generic_verdict is null or specialist_verdict is null:
+    posted_verdict = "needs-human"
+    escalation_reason = "worker_no_progress"  # closest existing enum value;
+                                              # see §Output contract note
+  else if generic_verdict == "clean" and specialist_verdict == "clean":
+    posted_verdict = "ready-to-merge"
+    escalation_reason = null
+  else:
+    posted_verdict = "dispatching worker"
+    escalation_reason = null
 
-  state.iterations += 1
-
-  # Iteration ceiling
-  if state.iterations > max_iterations:
-    return verdict("needs-human", reason: "max_iterations")
-
-  # Same-class-of-issue guard
-  if state.last_review is not null
+  # Same-class-of-issue guard — if findings repeat the previous iteration's
+  # file:line ranges or principle citations, escalate instead of dispatching
+  # another doomed worker.
+  if posted_verdict == "dispatching worker"
+     and state.last_review is not null
      and same_issue_class(state.last_review, review_results):
-    return verdict("needs-human", reason: "same_issue_class")
+    posted_verdict = "needs-human"
+    escalation_reason = "same_issue_class"
 
+  # Iteration ceiling — if a fresh worker dispatch would push iterations past
+  # max_iterations, escalate instead of dispatching.
+  if posted_verdict == "dispatching worker"
+     and state.iterations + 1 > max_iterations:
+    posted_verdict = "needs-human"
+    escalation_reason = "max_iterations"
+
+  # Post the combined comment on the PR. First line is the verdict marker;
+  # body shape per §Posting the combined review comment.
+  gh pr comment <pr> --body-file <temp-file>
+
+  # Terminal verdicts return now — the comment + marker is the orchestrator's
+  # signal for the next tick, and step 3 also sees the return JSON for inline
+  # handling.
+  if posted_verdict == "ready-to-merge":
+    return verdict("ready-to-merge", reason: null)
+  if posted_verdict == "needs-human":
+    return verdict("needs-human", reason: escalation_reason)
+
+  # Otherwise dispatch a worker.
+  state.iterations += 1
   state.last_review = review_results
 
-  # Dispatch worker via Agent tool (blocks until worker returns)
   worker_prompt = build_worker_prompt(
     template: <input.worker_template>,
     feedback: review_results,
@@ -95,9 +136,15 @@ loop:
   )
   Agent(subagent_type: "general-purpose", prompt: worker_prompt)
 
-  # Verify worker actually pushed commits
+  # Verify worker actually pushed commits.
   new_head = gh pr view <pr> --json headRefOid
   if new_head == state.last_head_sha:
+    # Worker came back without pushing. Post a final needs-human comment so
+    # the orchestrator's cross-tick recovery (step 2) can pick it up, then
+    # return via JSON for inline handling in step 3.
+    gh pr comment <pr> --body-file <temp-file>
+      # marker = needs-human, reason = worker_no_progress, prose summarizes
+      # the dispatched worker's return text.
     return verdict("needs-human", reason: "worker_no_progress")
 
   state.last_head_sha = new_head
@@ -116,9 +163,12 @@ Implement as plain string-matching against the structured review output. Tolerat
 
 ## Posting the combined review comment
 
-Use `gh pr comment <pr> --body-file <path>`. The body shape is fixed:
+Use `gh pr comment <pr> --body-file <path>`. The body shape is fixed; the
+**first line MUST be the verdict marker** so the orchestrator can parse it
+without grepping the prose:
 
 ```
+<!-- shepherd-verdict: ready-to-merge | dispatching worker | needs-human -->
 ### Shepherd iteration N — review verdict
 
 **Generic review**:
@@ -127,7 +177,9 @@ Use `gh pr comment <pr> --body-file <path>`. The body shape is fixed:
 **World-sim specialist** (`world-sim-reviewer`):
 <verbatim specialist output, indented one level>
 
-**Verdict:** dispatching worker | ready-to-merge | needs-human
+**Verdict:** ready-to-merge | dispatching worker | needs-human
+**Escalation reason:** <max_iterations | same_issue_class | worker_no_progress>
+                       (omit this line unless Verdict is needs-human)
 
 ## Follow-ons (out-of-scope findings — orchestrator will file as issues on merge)
 
@@ -142,6 +194,12 @@ Use `gh pr comment <pr> --body-file <path>`. The body shape is fixed:
 
 — posted by world-sim-shepherd
 ```
+
+The orchestrator parses verdicts by regex against the marker only:
+`<!--\s*shepherd-verdict:\s*(ready-to-merge|dispatching worker|needs-human)\s*-->`.
+The prose `**Verdict:**` line is for humans reading the PR. Drift between the
+two should never happen because both come from the same `posted_verdict`
+variable in the loop.
 
 Use a temp file for the body — direct `--body` arguments containing multiline content trip Bash quoting issues per the `bash_tool_is_posix_not_powershell` memory convention. PowerShell here-strings (`@'…'@`) work for the commit message but `gh ... --body-file` is more robust for the comment.
 
@@ -188,6 +246,8 @@ After the JSON block, include human-readable prose: a paragraph summarizing what
 
 ## Generic code review prompt
 
+This is the **canonical** generic-review prompt — no separate `.claude/agents/*` file backs it. If you need to update the rubric, edit it here.
+
 When dispatching the generic reviewer Agent call in the loop, use this template (inline the PR number and a one-sentence framing):
 
 ```
@@ -211,7 +271,8 @@ Filter aggressively — confidence ≥ 80 only. Standard false-positive filters 
 - Lines the PR did not modify
 - Issues silenced explicitly in code (e.g., lint-ignore comments with justification)
 
-Output format:
+Output format (FIRST line MUST be the machine-readable marker):
+<!-- generic-review-verdict: clean | findings -->
 ### Generic code review — PR #N
 
 **Verdict:** clean | findings
