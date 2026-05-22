@@ -21,12 +21,17 @@ You do NOT call `gh pr merge` (the shepherd does). You do NOT dispatch generic-p
 
 Idle ticks dominate the workload. Reading design docs every tick burns ~100K tokens for nothing on most invocations. Reorder the tick so the cheap gh-state probe runs FIRST and gates which (if any) docs need loading.
 
-### Always read (cheap probe, ~2 gh calls)
+### Always read (cheap probe, ~2 gh calls + 1 batched union)
 
 Run these every tick. All `gh` invocations include `-R moumantai-gg/mithril` to remove cwd dependence:
 
 - `gh issue view 601 -R moumantai-gg/mithril --json state,labels,comments` — check for `pause` label, closed umbrella, and recent error-comment history (used by §On errors)
-- `gh issue list -R moumantai-gg/mithril --label module:world-sim --state open --json number,labels,title` — open task issues + their labels (used to detect `orchestrator-dispatch:*`, `orchestrator-blocked` for ready-set filtering and cross-tick recovery)
+- `gh issue list -R moumantai-gg/mithril --label module:world-sim --state open --json number,labels,title` — open follow-on / orchestrator infra issues that carry the `module:world-sim` label
+- Grep `docs/world-simulator-orchestration-plan.md` §Dependency graph for `id:` lines to extract the YAML node list (~16 issue numbers — phase tasks, all phases). Then batched: `gh issue view <N> -R moumantai-gg/mithril --json number,state,labels,title` for each. These are needed because planned phase tasks carry module-specific labels (e.g., #607 → `module:mithril.gamestate`, #608 → `module:arwen`, #613 → `module:gandalf`, #603 → `module:saruman`, #606 → `module:legolas`) rather than `module:world-sim`, so the label-filtered list above does NOT find them.
+  - Optimization: a single `gh issue list -R moumantai-gg/mithril --state open --json number,state,labels,title --search "<comma-list of issue numbers>"` may collapse the ~16 view calls into one, if gh's search syntax supports an explicit issue-number list. Verify the behaviour before relying on it; the batched-view path is the safe default.
+- Union both sets, deduplicating by issue number; the union is the open-issue set for step 1 (PR linkage scan) and step 2 (ready-set + dep-graph computation). Treat a YAML node whose `gh issue view` reports closed state as out-of-scope for ready-set filtering but still eligible for step 1's auto-close check.
+
+This union aligns the probe with §Dep graph derivation below, which already declares the dep graph is the UNION of `module:world-sim`-labeled issues and YAML nodes. The narrower label-only enumeration is the cycle-12 (2026-05-22) bug that left PR #648 → #607 invisible to steps 1–3, since #607 carries only `module:mithril.gamestate`.
 
 This is enough to decide which of steps 0-3 will fire. Pick the step, THEN load only the docs that step needs:
 
@@ -34,10 +39,10 @@ This is enough to decide which of steps 0-3 will fire. Pick the step, THEN load 
 |------|-------------|
 | 0 (circuit breaker)              | none |
 | 1 (cross-tick recovery)          | none — pure label + comment-marker work |
-| 2 (dispatch shepherd)            | `docs/world-simulator-orchestration-plan.md` (§Dependency graph — YAML source of truth for the planned-migration chain, phase ordering) |
+| 2 (dispatch shepherd)            | `docs/world-simulator-orchestration-plan.md` (§Dependency graph — YAML source of truth for the planned-migration chain, phase ordering). The probe already grepped `id:` lines for node enumeration; step 2 additionally needs the `phase:` field and the edges block. |
 | 3 (idle)                         | none |
 
-Steps 0, 1, and 3 complete with zero doc reads.
+Steps 0, 1, and 3 complete with zero further doc reads beyond the probe's `id:`-line grep.
 
 ## The 3-step decision logic
 
