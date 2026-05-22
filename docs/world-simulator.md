@@ -14,8 +14,8 @@ Design rationale for the three-layer world-simulator architecture: source stream
 - **ChatWorld** — the world reconstructed from the chat log files.
 - **Folder / composer / producer** — the three state-machine kinds (principle 10). Folders apply frames; composers correlate change events; producers source external-input frames (log tails).
 - **Frame** — `(timestamp, payload)`. The unifying primitive.
-- **Change event** — what a folder emits when applying a frame. World-internal.
-- **Domain frame** — what a composer emits when its pattern is satisfied. Cross-world consumable (published to the world's bus).
+- **Change event** — what a folder emits when applying a frame. Flows to intra-world composers during a frame's resolution AND is published on the world's typed bus as a first-class single-world surface (see "Decisions ratified post-#642").
+- **Domain frame** — what a composer emits when its multi-frame pattern is satisfied. The cross-world consumption contract — views join PlayerWorld and ChatWorld on domain frames.
 - **World** vs **world runtime** — used interchangeably. "World" is short.
 - **View** — a composer operating above the worlds, subscribing to one or more world buses, exposing composed state to modules.
 - **`WorldMode`** — `Replaying` (draining recorded frames) or `Live` (caught up to source stream tail). Each world tracks independently. State derivation is mode-agnostic; side-effect-emitting consumers gate on `Mode == Live`.
@@ -46,7 +46,7 @@ The converged answer to all three: a **clocked world simulator** that owns the c
 ## Core principles
 
 1. **Frame = `(timestamp, payload)`.** The unifying primitive. Every input that mutates simulated state is a frame; every producer stamps its output with the event time the frame represents (not the wall-clock when it was synthesized). Each world is a timestamp-ordered merger over its N producers.
-2. **Two worlds with sealed output boundaries; views consume across them.** `PlayerWorld` is deterministic over `IClassifiedPlayerLogStream`. `ChatWorld` is deterministic over the chat stream. Each world has its own internal pipeline (frames → folders → change events → composers → domain frames) and its own output bus carrying its domain frames. Worlds don't query each other and don't send messages to each other — they're sealed at the bus. Cross-world consumers (views) subscribe to both world buses; nothing flows back into a world from above.
+2. **Two worlds with sealed output boundaries; views consume across them.** `PlayerWorld` is deterministic over `IClassifiedPlayerLogStream`. `ChatWorld` is deterministic over the chat stream. Each world has its own internal pipeline (frames → folders → change events → composers → domain frames) and its own typed output bus carrying both change events (single-world surface) and domain frames (cross-world surface). Worlds don't query each other and don't send messages to each other — they're sealed at the bus. Cross-world consumers (views) subscribe to both world buses (typically joining on domain frames); nothing flows back into a world from above.
 3. **If a service currently consumes both chat and Player.log, it must be split.** No cross-source services. Each service lives in exactly one world.
 4. **Cross-source composition lives in a view layer above the worlds.** Views are composers operating one layer up — they subscribe to one or more world buses, maintain composed state, expose their own bus surface (or read-only API) to modules. Cross-world consumers (modules needing data from both Player.log and chat) always go through a view. Single-world consumers (modules needing only one source's state) may subscribe directly to that world's bus — no pass-through view required, since the view layer's purpose is *composition across worlds*, not API uniformity.
 5. **Tri-property clock: simulated wall-clock + frame index + mode.** `Now : DateTimeOffset` advances by frame timestamps (the timestamp of the most recently applied frame); `Frame : long` strictly monotonic per applied frame; `Mode ∈ {Replaying, Live}` tracks whether the world is draining backlog or caught up (full detail in principle 12). `Now` answers "how much simulated time has passed?" (1-second resolution because PG's timestamps are); `Frame` answers "are we at the same point in the trajectory?"; `Mode` answers "should side-effecting consumers fire now?" The triple identifies a unique moment in a unique mode.
@@ -76,15 +76,15 @@ Source              World runtime                                    View layer 
 ─────               ───────────────────────────────────────────      ──────────────       ──────
                     ┌─────── PlayerWorld ───────────────────────┐
 Player.log        → │ Merger ──→ Folders ──→ Composers ──→ Bus  │ ──┐
-(replay from        │ ↑               (change events) (domain   │   │
- session-start)     │ │                                frames)   │   │
+(replay from        │ ↑          (change events also published   │   │
+ session-start)     │ │           on bus as single-world surface) │   │
                     │ └──── Producers (Player.log tail; future:        InventoryView    Samwise
                     │       fs reconcile via GameReports) ────┘ │   │   (cross-world      Arwen
                     └───────────────────────────────────────────┘   │   composer,        …
                                                                     ├──→ subscribes to
                     ┌─────── ChatWorld ─────────────────────────┐   │   both world buses,
-chat stream       → │ Merger ──→ Folders ──→ Composers ──→ Bus  │ ──┤   emits its own
-(replay from        │ (chat-inventory mirror,                    │   │   domain frames)
+chat stream       → │ Merger ──→ Folders ──→ Composers ──→ Bus  │ ──┤   joins on domain
+(replay from        │ (chat-inventory mirror,                    │   │   frames)
  session-start)     │  chat-WoP spent)                           │   │
                     └───────────────────────────────────────────┘   │   WordOfPowerView   Saruman
                                                                     └──→ (codebook merge:
@@ -101,7 +101,7 @@ chat stream       → │ Merger ──→ Folders ──→ Composers ──→
 - Advances its own `IWorldClock` on each applied frame
 - Dispatches frames synchronously to folders (one frame → one folder); folders emit change events
 - Resolves composers within the frame (composers subscribed to change events fire; may emit domain frames; further composers consume those; until no new events)
-- Publishes domain frames to its own output bus (sealed; no inter-world flow)
+- Publishes both change events and domain frames to its own typed output bus. Change events are the single-world surface (modules / views subscribed to one world subscribe to concrete change-event types directly); domain frames are the cross-world surface (views composing across worlds join here). The bus is sealed: nothing flows back into the world from above. See "Decisions ratified post-#642".
 - Exposes folder state via `Current`/`TryGet` for synchronous reads by composers and views
 
 **View layer** — composers operating above the worlds. Each view:
@@ -302,9 +302,15 @@ public interface IWorld
     IWorldClock Clock { get; }
 
     /// <summary>
-    /// Output bus for this world's domain frames. View-layer composers subscribe
-    /// here; consumers outside the world never see change events directly — only
-    /// the domain frames the world's composers chose to emit.
+    /// Output bus for this world's typed event surface. Carries both domain frames
+    /// (the cross-world consumption contract — view-layer composers join PlayerWorld
+    /// and ChatWorld here) AND change events (first-class output for single-world
+    /// consumers; subscribe via <c>Subscribe&lt;TConcreteChange&gt;(...)</c>).
+    /// Composers exist to recognize multi-frame patterns in change events and emit
+    /// semantically-new domain frames — not to re-label a folder's output into a
+    /// same-shape domain frame. See "Decisions ratified post-#642" for the rationale
+    /// (the original framing conflated resolution-graph topology with bus
+    /// consumability).
     /// </summary>
     IWorldEventBus Bus { get; }
 
@@ -592,6 +598,7 @@ After this design lands, the following changes are needed:
 10. **`ConnectionEventParser`** for `EVENT(Ok): connected, url=…` → augments `IGameSessionService` with the `Server` field.
 11. **Extract character report loader → `Mithril.GameReports`** (new assembly). Per-character snapshot files (`Reports/items_X.json`, plus skills / recipes / quests / vault). `FileSystemWatcher` lives here. Bilbo's storage view migrates to subscribe to this service. Elrond's character snapshot input migrates. The previously-flagged "FileSystemWatcher reconcile retires under chat replay" framing was wrong — chat replay covers pre-attach inventory adds, but vault contents and snapshot-only data require GameReports; the two concerns separate cleanly.
 12. **Gandalf scheduler collapse.** `TimerExpirationScheduler` / `ShiftAlarmService` / `TimerProgressService.CheckExpirations` retire under principle 13. Gandalf subscribes to PlayerWorld's `CalendarTimeAdvanced` + `TimeOfDayShift` domain events; compares against module-side timer ledger; fires alarms gated on `Mode == Live`. The module-side timer definitions are module-owned adjacent state (category 3); the wakeup machinery doesn't survive.
+13. **`ClassifiedPlayerLogProducer` → `WorldClockTickProducer` reshape.** Today `ClassifiedPlayerLogProducer` emits `Frame<IClassifiedPlayerLogLine>` with no folder consumer, advancing the world clock as an invisible side effect of the merger applying the frame. Reshape into an explicit `WorldClockTickProducer` whose owned folder emits `CalendarTimeAdvanced` domain frames at the cadence of the source stream — i.e., the clock-tick owner is named and the `CalendarTimeAdvanced` emission has an explicit producer→folder→bus path. Without this, simply dropping `ClassifiedPlayerLogProducer` (the naive Option 1 of #644) would silently stagnate the clock during folder-irrelevant log stretches and cause Gandalf's planned scheduler-collapse alarms (item #12 above, principle 13) to fire late. **Follow-on to the #644 ratification**; the design choice is locked, the implementation lands separately.
 
 After all migrations land:
 - No service spans both sources.
@@ -604,7 +611,7 @@ After all migrations land:
 
 ## Open questions
 
-1. ~~**View-layer subscription contract.**~~ **Resolved: per-world `IWorldEventBus` carrying typed domain frames.** Each world has one bus (`worldSim.Bus.Subscribe<TDomain>(...)`). Folders and composers are world-internal; only domain frames cross the world boundary. Views subscribe to one or more world buses, run their own composer-shaped logic, expose their own bus surface to modules. The per-component `Subscribe(Action<TEvent>)` pattern in today's services becomes `worldSim.Bus.Subscribe<TEvent>(...)` post-migration — same ergonomics, single owner.
+1. ~~**View-layer subscription contract.**~~ **Resolved: per-world `IWorldEventBus` carrying a typed event surface (both change events and domain frames).** Each world has one bus (`worldSim.Bus.Subscribe<TEvent>(...)`). Folders and composers run inside the world's per-frame dispatch; the bus surfaces their output. Change events are first-class for single-world consumers; domain frames are the cross-world composition contract for views. Views subscribe to one or more world buses (typically joining on domain frames), run their own composer-shaped logic, expose their own bus surface to modules. The per-component `Subscribe(Action<TEvent>)` pattern in today's services becomes `worldSim.Bus.Subscribe<TEvent>(...)` post-migration — same ergonomics, single owner. **Note:** the original wording said "only domain frames cross the world boundary" — that was refined post-#642; see "Decisions ratified post-#642".
 
 2. ~~**Pass-through views for single-world consumers.**~~ **Resolved: always-through-views for cross-world composition.** For single-world consumers (Samwise, Arwen, Saruman discovery-only), subscribing directly to a world's bus is fine — no view layer required for "I only need PlayerWorld events." The view layer exists specifically for cross-world composition (`InventoryView`, `WordOfPowerView`) and stays consistent shape-wise even when only one module consumes a given view today.
 
@@ -617,6 +624,28 @@ After all migrations land:
 6. ~~**User actions.**~~ **Resolved: three categories of data — world-derived state, external shared data sources, module-owned adjacent state.** See the "Three categories of data" section above. Module state is owned by its module; cross-module reads via the module's service interface. Per-session scope tier (`Server`, `Character`) for both world-character-state and module-owned state. `Mithril.GameReports` extracted as a foundation-layer assembly for PG character export snapshots (consumed by Bilbo + Elrond + future). Module state mutations are not gated by `Mode`; only side effects gate. User actions remain explicitly non-deterministic — recording them as a parallel input stream for full session replay is a future capability, not in scope for v1.
 
 7. ~~**What replaces `Mithril.Roadmap Project` as the prioritisation surface?**~~ **Resolved 2026-05-21: new org-level Mithril Roadmap Project at <https://github.com/orgs/moumantai-gg/projects/1>.** The legacy user-level board (`https://github.com/users/arthur-conde/projects/3`) didn't migrate when the `moumantai-gg` org was created, so it went stale; the new org-level board replaces it. Lean field scheme: `Status`, `Priority`, `Module` only (the prior `Effort` + `Target Version` fields were dropped to reduce maintenance friction — re-add if a real need surfaces). Migration items from this design notebook land as individual GitHub Issues with the relevant `module:*` labels and get added to the Project; this PR (#600) is the umbrella, already on the board.
+
+---
+
+## Decisions ratified post-#642 (2026-05-22)
+
+Two architectural questions surfaced from the shepherd review of PR #642 (Phase 1 of the world-sim migration umbrella, [#601](https://github.com/moumantai-gg/mithril/issues/601)). Both were decided after the original design landed and are recorded here for cold-session continuity. Doc-only ratification; no production code behaviour changed when these decisions were taken (PR #642's existing `PublishChangeEvent` calls are correct under the new framing).
+
+### #643 — change events flow on the world's typed bus
+
+**Decision:** change events are first-class output on each world's `IWorldEventBus`, alongside domain frames.
+
+**Rationale:** the original "world-internal; never cross the world boundary" framing conflated two distinct properties — the *resolution-graph topology* (folders feed composers within a frame's dispatch resolution; this remains TRUE and is unchanged) and the *consumability of the typed channel on the bus* (this was wrong — change events ARE first-class bus output for single-world consumers). Domain frames remain the cross-world consumption contract: a view joining PlayerWorld and ChatWorld joins on domain frames, not change events. Composers exist for recognition of multi-frame patterns producing semantically-new domain frames (e.g., three same-source change events → one `GiftObservation`); a composer that re-labels a folder's change event into a same-shape domain frame is a pass-through and shouldn't exist.
+
+See: [issue #643](https://github.com/moumantai-gg/mithril/issues/643).
+
+### #644 — per-folder producers + explicit clock-tick owner
+
+**Decision:** adopt the per-folder producer pattern (Option 1). Reshape `ClassifiedPlayerLogProducer` into an explicit `WorldClockTickProducer` whose owned folder emits `CalendarTimeAdvanced` domain frames at the cadence of the source stream.
+
+**Rationale:** the current `IFolder<TPayload>` contract ("exactly one folder per payload type; registering a second throws") forbids Option 2 (shared-stream routing) without relaxing the contract to multi-folder fanout. Per-folder producers preserve the contract and give each folder an independently testable owned parser. The "N L1 subscriptions, N parsers per line" cost is bounded because parsers fast-fail on line discrimination — parse work scales as O(folders + relevant-lines), not O(folders × lines). The clock-tick owner must be made explicit because today `ClassifiedPlayerLogProducer` emits frames with no folder consumer, advancing the world clock as an invisible side effect; dropping it naively would silently stagnate the clock during folder-irrelevant log stretches and cause Gandalf's planned scheduler-collapse alarms (principle 13) to fire late. The reshape is captured as migration item #13 above. **Implementation of the reshape is a follow-on issue; this section ratifies the design choice only.**
+
+See: [issue #644](https://github.com/moumantai-gg/mithril/issues/644).
 
 ---
 
