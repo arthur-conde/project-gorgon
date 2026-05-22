@@ -129,10 +129,23 @@ Use `gh pr comment <pr> --body-file <path>`. The body shape is fixed:
 
 **Verdict:** dispatching worker | ready-to-merge | needs-human
 
+## Follow-ons (out-of-scope findings — orchestrator will file as issues on merge)
+
+- title: <one-line summary, becomes the GitHub issue title>
+  files: <comma-separated file:line refs>
+  blocks: [<comma-separated issue numbers this is a prerequisite for, or empty>]
+  body: |
+    <multi-line prose body for the issue>
+
+- title: ...
+  ...
+
 — posted by world-sim-shepherd
 ```
 
 Use a temp file for the body — direct `--body` arguments containing multiline content trip Bash quoting issues per the `bash_tool_is_posix_not_powershell` memory convention. PowerShell here-strings (`@'…'@`) work for the commit message but `gh ... --body-file` is more robust for the comment.
+
+**Populating `## Follow-ons`.** During review, if you identify a bug or concern that is OUT OF SCOPE for the current PR but still worth fixing, add an entry to the `## Follow-ons` section. Each iteration's comment fully replaces the previous iteration's follow-ons — accumulate ones still unresolved, drop ones the worker fixed. Omit the section entirely if no follow-ons exist. The orchestrator parses this section at merge time (see `docs/world-sim-orchestrator.md` §Follow-on handling) and files one GitHub issue per entry with the `orchestrator-followup` label.
 
 ## Worker dispatch prompt
 
