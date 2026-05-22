@@ -179,7 +179,7 @@ public sealed class PlayerWorldTests
 
         // Two replay frames followed by one live frame. The stub signals
         // ReachedLive inline at the moment it yields the live entry —
-        // matching ClassifiedPlayerLogProducer's L1-envelope behaviour.
+        // matching WorldClockTickProducer's L1-envelope behaviour.
         producer.PostReplay(new Frame<string>(Ts(10), "r1"));
         producer.PostReplay(new Frame<string>(Ts(11), "r2"));
         producer.PostLive(new Frame<string>(Ts(12), "L1"));
