@@ -24,7 +24,7 @@ internal sealed class WorldEventBus : IWorldEventBus
     {
         ArgumentNullException.ThrowIfNull(handler);
 
-        var subscription = new Subscription(typeof(T), boxed =>
+        var subscription = new Subscription(this, typeof(T), boxed =>
         {
             // The bus stores handlers as Action<IFrame> wrappers (post-cast to
             // the concrete generic Frame<T>) so a single dictionary covers all
@@ -39,6 +39,42 @@ internal sealed class WorldEventBus : IWorldEventBus
             list.Add(subscription);
         }
         return subscription;
+    }
+
+    /// <summary>
+    /// Remove a disposed subscription from its per-type list. Tolerant of
+    /// double-dispose — calls past the first are a no-op because the entry is
+    /// already gone. Hot path is publish, not dispose, so the List.Remove cost
+    /// is acceptable.
+    /// </summary>
+    private void RemoveSubscription(Subscription subscription)
+    {
+        if (!_subscriptions.TryGetValue(subscription.PayloadType, out var list))
+        {
+            return;
+        }
+        lock (_mutationLock)
+        {
+            list.Remove(subscription);
+        }
+    }
+
+    /// <summary>
+    /// Test-only accessor for the subscriber-list count of a given payload
+    /// type. Exposed via <c>InternalsVisibleTo</c> so the dispose-leak test
+    /// can assert the list shrinks back to zero. Returns 0 when no subscriber
+    /// has ever registered for <typeparamref name="T"/>.
+    /// </summary>
+    internal int SubscriberCountForTesting<T>()
+    {
+        if (!_subscriptions.TryGetValue(typeof(T), out var list))
+        {
+            return 0;
+        }
+        lock (_mutationLock)
+        {
+            return list.Count;
+        }
     }
 
     /// <summary>
@@ -125,14 +161,17 @@ internal sealed class WorldEventBus : IWorldEventBus
 
     private sealed class Subscription : IDisposable
     {
-        private readonly Type _payloadType;
+        private readonly WorldEventBus _owner;
         private readonly Action<IFrame> _handler;
 
-        public Subscription(Type payloadType, Action<IFrame> handler)
+        public Subscription(WorldEventBus owner, Type payloadType, Action<IFrame> handler)
         {
-            _payloadType = payloadType;
+            _owner = owner;
+            PayloadType = payloadType;
             _handler = handler;
         }
+
+        public Type PayloadType { get; }
 
         public bool IsDisposed { get; private set; }
 
@@ -145,6 +184,11 @@ internal sealed class WorldEventBus : IWorldEventBus
             _handler(frame);
         }
 
-        public void Dispose() => IsDisposed = true;
+        public void Dispose()
+        {
+            if (IsDisposed) return;
+            IsDisposed = true;
+            _owner.RemoveSubscription(this);
+        }
     }
 }
