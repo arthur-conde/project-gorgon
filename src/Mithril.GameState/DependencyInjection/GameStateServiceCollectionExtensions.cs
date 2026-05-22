@@ -149,11 +149,14 @@ public static class GameStateServiceCollectionExtensions
         // an IFolder<SkillFrame> registered with IPlayerWorld; a sibling
         // SkillFrameProducer owns the L1 subscription and feeds skill frames
         // into the world's merger. The PlayerSkillStateWorldRegistration
-        // hosted service wires both into the world before the world's own
-        // hosted service drains (hosted services run in registration order,
-        // and AddPlayerWorld is called BEFORE AddMithrilGameState in
-        // ShellComposition, so the world singleton is already constructed by
-        // the time this runs but its StartAsync hasn't fired yet).
+        // hosted service wires both into the world during the chain's
+        // IHostedService.StartAsync phase, before the trailing
+        // WorldMergerStartHostedService (appended by AddMithrilApp — #696
+        // Call 2) calls IWorld.StartMerger and the merger drain begins.
+        // AddPlayerWorld is called BEFORE AddMithrilGameState in
+        // ShellComposition because the registration hosted service resolves
+        // IPlayerWorld at construction; DI resolution is order-independent
+        // but registration order matters for hosted-service start order.
         services.AddSingleton<SkillLogParser>();
         services
             .AddSingleton<PlayerSkillStateService>()
