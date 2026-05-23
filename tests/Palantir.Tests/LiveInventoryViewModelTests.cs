@@ -1,157 +1,216 @@
-using Mithril.Reference.Models.Items;
-using Mithril.Reference.Models.Recipes;
+using System.Collections;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using FluentAssertions;
 using Mithril.GameState.Inventory;
+using Mithril.Reference.Models.Items;
+using Mithril.Reference.Models.Recipes;
+using Mithril.Shared.Collections;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
+using Mithril.WorldSim;
 using Palantir.ViewModels;
 using Xunit;
 
 namespace Palantir.Tests;
 
+/// <summary>
+/// Tests for the #726 migration: Palantir's live-inventory VM now binds to
+/// <see cref="IInventoryView.Items"/> directly instead of mirroring the
+/// legacy <see cref="InventoryEvent"/> shim into a local collection. Each
+/// test seeds / mutates a <see cref="FakeInventoryView"/>'s items and asserts
+/// the VM's <c>View</c>/<c>LiveCount</c>/<c>DeletedCount</c>/<c>ShowDeleted</c>
+/// surfaces reflect the bound state. The view-internal bus → items mutation
+/// path is covered by <c>InventoryViewTests</c> in
+/// <c>Mithril.GameState.Tests</c> — these tests pin the consumer-side
+/// projection only.
+/// </summary>
 public sealed class LiveInventoryViewModelTests
 {
     [Fact]
-    public void Subscribe_ReplaysCurrentMap_AsRows()
+    public void Binding_ReflectsCurrentViewItems()
     {
-        var inv = new FakeInventoryService();
-        inv.PreloadAsCurrent(
-            new InventoryEvent(InventoryEventKind.Added, 1, "Moonstone", T(1), 1),
-            new InventoryEvent(InventoryEventKind.Added, 2, "Guava", T(2), 4));
+        var view = new FakeInventoryView();
+        view.Seed(NewItem(1, "Moonstone", stack: 1, confirmed: true));
+        view.Seed(NewItem(2, "Guava", stack: 4, confirmed: true));
 
-        using var vm = NewVm(inv);
+        using var vm = NewVm(view);
 
-        vm.Rows.Should().HaveCount(2);
+        vm.Items.Should().HaveCount(2);
         vm.LiveCount.Should().Be(2);
         vm.DeletedCount.Should().Be(0);
-        vm.Rows.Single(r => r.InstanceId == 2).StackSize.Should().Be(4);
+        VisibleRows(vm).Should().HaveCount(2);
     }
 
     [Fact]
-    public void Added_AppendsRow_WithDisplayMetadata()
+    public void Added_AfterBind_AppearsInBoundCollection()
     {
-        var refData = new FakeRefData(
-            new Item { Id = 0, Name = "Moonstone Crystal", InternalName = "Moonstone", MaxStackSize = 100, IconId = 4242, Keywords = [] });
-        var inv = new FakeInventoryService();
-        using var vm = NewVm(inv, refData);
+        var view = new FakeInventoryView();
+        using var vm = NewVm(view);
 
-        inv.Fire(new InventoryEvent(InventoryEventKind.Added, 1, "Moonstone", T(1), 1));
+        view.Seed(NewItem(1, "Moonstone", stack: 1, confirmed: true));
 
-        var row = vm.Rows.Single();
-        row.Name.Should().Be("Moonstone Crystal");
-        row.IconId.Should().Be(4242);
-        row.IsDeleted.Should().BeFalse();
+        vm.Items.Should().ContainSingle();
+        vm.Items.Single().InternalName.Should().Be("Moonstone");
         vm.LiveCount.Should().Be(1);
     }
 
     [Fact]
-    public void StackChanged_UpdatesExistingRowInPlace()
+    public void RowStackSize_PropagatesViaInpc()
     {
-        var inv = new FakeInventoryService();
-        using var vm = NewVm(inv);
+        var view = new FakeInventoryView();
+        var item = NewItem(1, "Guava", stack: 1, confirmed: false);
+        view.Seed(item);
+        using var vm = NewVm(view);
 
-        inv.Fire(new InventoryEvent(InventoryEventKind.Added, 1, "Guava", T(1), 1));
-        inv.Fire(new InventoryEvent(InventoryEventKind.StackChanged, 1, "Guava", T(2), 4));
+        item.StackSize = 4;
+        item.SizeConfirmed = true;
 
-        vm.Rows.Should().ContainSingle();
-        vm.Rows[0].StackSize.Should().Be(4);
-        vm.Rows[0].LastUpdated.Should().Be(T(2));
+        vm.Items.Single().StackSize.Should().Be(4);
+        vm.Items.Single().SizeConfirmed.Should().BeTrue();
     }
 
     [Fact]
-    public void Deleted_FlipsRowToDeleted_RetainingLastSize()
+    public void IsDeletedFlip_HidesRowFromDefaultViewAndUpdatesCounts()
     {
-        var inv = new FakeInventoryService();
-        using var vm = NewVm(inv);
+        var view = new FakeInventoryView();
+        var skull = NewItem(1, "GiantSkull", stack: 50, confirmed: true);
+        view.Seed(skull);
+        view.Seed(NewItem(2, "Guava", stack: 4, confirmed: true));
+        using var vm = NewVm(view);
 
-        inv.Fire(new InventoryEvent(InventoryEventKind.Added, 1, "GiantSkull", T(1), 1));
-        inv.Fire(new InventoryEvent(InventoryEventKind.StackChanged, 1, "GiantSkull", T(2), 50));
-        inv.Fire(new InventoryEvent(InventoryEventKind.Deleted, 1, "GiantSkull", T(3), 50));
-
-        var row = vm.Rows.Single();
-        row.IsDeleted.Should().BeTrue();
-        row.StackSize.Should().Be(50);
-        vm.LiveCount.Should().Be(0);
-        vm.DeletedCount.Should().Be(1);
-    }
-
-    [Fact]
-    public void DefaultView_HidesDeletedRows()
-    {
-        var inv = new FakeInventoryService();
-        using var vm = NewVm(inv);
-        inv.Fire(new InventoryEvent(InventoryEventKind.Added, 1, "Moonstone", T(1), 1));
-        inv.Fire(new InventoryEvent(InventoryEventKind.Added, 2, "Guava", T(2), 4));
-        inv.Fire(new InventoryEvent(InventoryEventKind.Deleted, 1, "Moonstone", T(3), 1));
+        skull.IsDeleted = true;
 
         VisibleRows(vm).Select(r => r.InstanceId).Should().BeEquivalentTo([2L]);
+        vm.LiveCount.Should().Be(1);
+        vm.DeletedCount.Should().Be(1);
+        // Soft-delete contract: the row stays in the underlying collection.
+        vm.Items.Should().HaveCount(2);
+        skull.StackSize.Should().Be(50);
     }
 
     [Fact]
     public void ShowDeletedToggle_RevealsDeletedRows()
     {
-        var inv = new FakeInventoryService();
-        using var vm = NewVm(inv);
-        inv.Fire(new InventoryEvent(InventoryEventKind.Added, 1, "Moonstone", T(1), 1));
-        inv.Fire(new InventoryEvent(InventoryEventKind.Deleted, 1, "Moonstone", T(2), 1));
+        var view = new FakeInventoryView();
+        var ms = NewItem(1, "Moonstone", stack: 1, confirmed: true);
+        view.Seed(ms);
+        using var vm = NewVm(view);
 
+        ms.IsDeleted = true;
         VisibleRows(vm).Should().BeEmpty();
+
         vm.ShowDeleted = true;
         VisibleRows(vm).Should().ContainSingle().Which.InstanceId.Should().Be(1);
     }
 
     [Fact]
-    public void Dispose_StopsObservingEvents()
+    public void DisplayMetadata_ResolvesViaReferenceData()
     {
-        var inv = new FakeInventoryService();
-        var vm = NewVm(inv);
-        inv.Fire(new InventoryEvent(InventoryEventKind.Added, 1, "Moonstone", T(1), 1));
-        vm.Rows.Should().HaveCount(1);
+        // Display projection lives in the XAML cell converter; this test pins
+        // the VM-side hook (ReferenceData accessor) the converter binds to,
+        // so the binding path is unbroken across the migration.
+        var refData = new FakeRefData(
+            new Item { Id = 0, Name = "Moonstone Crystal", InternalName = "Moonstone", MaxStackSize = 100, IconId = 4242, Keywords = [] });
+        var view = new FakeInventoryView();
+        using var vm = NewVm(view, refData);
 
-        vm.Dispose();
-        inv.Fire(new InventoryEvent(InventoryEventKind.Added, 2, "Guava", T(2), 4));
-
-        vm.Rows.Should().HaveCount(1, "the disposed VM must not append new rows");
+        vm.ReferenceData.Should().BeSameAs(refData);
+        vm.ReferenceData!.ItemsByInternalName["Moonstone"].IconId.Should().Be(4242);
     }
 
-    private static LiveInventoryViewModel NewVm(IInventoryService inv, IReferenceDataService? refData = null)
-        // Synchronous dispatcher: test thread is the WPF thread.
-        => new(inv, refData, dispatch: action => action());
+    [Fact]
+    public void Dispose_DetachesFromUnderlyingCollection()
+    {
+        var view = new FakeInventoryView();
+        var vm = NewVm(view);
+        view.Seed(NewItem(1, "Moonstone", stack: 1, confirmed: true));
+        vm.LiveCount.Should().Be(1);
 
-    private static IEnumerable<LiveInventoryRow> VisibleRows(LiveInventoryViewModel vm)
-        => vm.View.Cast<LiveInventoryRow>();
+        vm.Dispose();
+        view.Seed(NewItem(2, "Guava", stack: 4, confirmed: true));
 
-    private static DateTime T(int seconds) => new(2026, 4, 25, 14, 0, seconds, DateTimeKind.Utc);
+        vm.LiveCount.Should().Be(1, "the disposed VM must stop re-counting on collection mutations");
+    }
+
+    private static LiveInventoryViewModel NewVm(IInventoryView view, IReferenceDataService? refData = null)
+        // Synchronous dispatcher: test thread runs both VM ctor + event handlers.
+        => new(view, refData, dispatch: action => action());
+
+    private static IEnumerable<InventoryItem> VisibleRows(LiveInventoryViewModel vm)
+        => vm.View.Cast<InventoryItem>();
+
+    private static InventoryItem NewItem(long id, string internalName, int stack, bool confirmed)
+        => new(id, internalName, stack, confirmed);
 
     /// <summary>
-    /// Fake <see cref="IInventoryService"/> that records the live handler so tests
-    /// can replay events synchronously and inspect VM state.
+    /// Minimal <see cref="IInventoryView"/> stub. The legacy
+    /// <c>Subscribe(Action&lt;InventoryEvent&gt;)</c> shim is unused by the
+    /// post-#726 Palantir VM; <c>Bus</c> is unused too (the VM binds to
+    /// <see cref="IInventoryView.Items"/> directly and observes per-row INPC),
+    /// so both throw to surface accidental regressions.
     /// </summary>
-    private sealed class FakeInventoryService : IInventoryService
+    private sealed class FakeInventoryView : IInventoryView
     {
-        private readonly List<InventoryEvent> _initial = new();
-        private Action<InventoryEvent>? _handler;
+        private readonly ObservableInventoryItemsStub _items = new();
+        public IWorldEventBus Bus => throw new NotSupportedException("Palantir VM binds to Items directly, not Bus.");
+        public IReadOnlyObservableCollection<InventoryItem> Items => _items;
+        public object ItemsSyncRoot { get; } = new();
 
-        public void PreloadAsCurrent(params InventoryEvent[] events) => _initial.AddRange(events);
-        public void Fire(InventoryEvent e) => _handler?.Invoke(e);
+        public void Seed(InventoryItem item) => _items.AddItem(item);
 
         public bool TryResolve(long instanceId, out string internalName) { internalName = ""; return false; }
         public bool TryGetStackSize(long instanceId, out int stackSize) { stackSize = 0; return false; }
 
-        public IDisposable Subscribe(
-            Action<InventoryEvent> handler,
-            ReplayMode replay = ReplayMode.FromSessionStart)
+#pragma warning disable CS0618 // shim is obsolete; FakeInventoryView only implements it because IInventoryView requires it
+        public IDisposable Subscribe(Action<InventoryEvent> handler, ReplayMode replay = ReplayMode.FromSessionStart)
+            => throw new NotSupportedException("Palantir VM does not consume the legacy shim post-#726.");
+#pragma warning restore CS0618
+    }
+
+    /// <summary>
+    /// Wraps an <see cref="ObservableCollection{T}"/> as the read-only
+    /// observable + non-generic <see cref="IList"/> surface
+    /// <see cref="IInventoryView.Items"/> exposes in production (mirrors
+    /// <c>ObservableInventoryItems</c> minus the internal mutator
+    /// access-control — tests want to seed it from outside).
+    /// </summary>
+    private sealed class ObservableInventoryItemsStub : IReadOnlyObservableCollection<InventoryItem>, IList
+    {
+        private readonly ObservableCollection<InventoryItem> _inner = new();
+
+        public InventoryItem this[int index] => _inner[index];
+        public int Count => _inner.Count;
+        public IEnumerator<InventoryItem> GetEnumerator() => _inner.GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => ((IEnumerable)_inner).GetEnumerator();
+
+        public event NotifyCollectionChangedEventHandler? CollectionChanged
         {
-            if (replay == ReplayMode.FromSessionStart)
-                foreach (var e in _initial) handler(e);
-            _handler = handler;
-            return new Sub(this);
+            add => _inner.CollectionChanged += value;
+            remove => _inner.CollectionChanged -= value;
+        }
+        public event PropertyChangedEventHandler? PropertyChanged
+        {
+            add => ((INotifyPropertyChanged)_inner).PropertyChanged += value;
+            remove => ((INotifyPropertyChanged)_inner).PropertyChanged -= value;
         }
 
-        private sealed class Sub(FakeInventoryService owner) : IDisposable
-        {
-            public void Dispose() => owner._handler = null;
-        }
+        internal void AddItem(InventoryItem item) => _inner.Add(item);
+
+        object? IList.this[int index] { get => _inner[index]; set => throw new NotSupportedException(); }
+        bool IList.IsReadOnly => true;
+        bool IList.IsFixedSize => false;
+        bool ICollection.IsSynchronized => ((ICollection)_inner).IsSynchronized;
+        object ICollection.SyncRoot => ((ICollection)_inner).SyncRoot;
+        int IList.Add(object? value) => throw new NotSupportedException();
+        void IList.Clear() => throw new NotSupportedException();
+        bool IList.Contains(object? value) => ((IList)_inner).Contains(value);
+        int IList.IndexOf(object? value) => ((IList)_inner).IndexOf(value);
+        void IList.Insert(int index, object? value) => throw new NotSupportedException();
+        void IList.Remove(object? value) => throw new NotSupportedException();
+        void IList.RemoveAt(int index) => throw new NotSupportedException();
+        void ICollection.CopyTo(Array array, int index) => ((ICollection)_inner).CopyTo(array, index);
     }
 
     private sealed class FakeRefData : IReferenceDataService
