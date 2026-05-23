@@ -116,9 +116,19 @@ public sealed class ItemCollectionTracker : BackgroundService
     /// completes (#702 invariant: trailing-merger starts after every
     /// other hosted service's <c>StartAsync</c> returns).
     ///
-    /// <para><see cref="ViewEventBus.Subscribe"/> still has no
-    /// replay-on-subscribe contract; the attach-before-merger contract
-    /// from #702 is what guarantees no frames are missed.</para>
+    /// <para>The typed bus has no replay-on-subscribe contract by design.
+    /// The two-axis answer is Call 1 (every state subscriber attaches
+    /// eagerly in <c>StartAsync</c>) + Call 2 (the trailing-merger
+    /// ordering invariant guarantees the drain hasn't started yet);
+    /// together they ensure no frames are missed without any per-channel
+    /// buffering on the bus side. Consumers that need to read current
+    /// state at attach time go through the view's snapshot surface
+    /// (<see cref="IInventoryView.TryResolve"/> /
+    /// <see cref="IInventoryView.TryGetStackSize"/>), not through a
+    /// replay overload — see the "Dual-surface contract for views"
+    /// subsection in <c>docs/world-simulator.md</c>. The eager-attach
+    /// shape in this method is the canonical pattern future cross-world
+    /// view consumers should follow.</para>
     /// </summary>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
