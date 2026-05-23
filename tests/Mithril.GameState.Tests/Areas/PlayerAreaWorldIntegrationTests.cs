@@ -127,6 +127,60 @@ public sealed class PlayerAreaWorldIntegrationTests
         observed[1].Timestamp.Should().Be(ts3);
     }
 
+    [Fact]
+    public async Task Observe_then_Apply_double_feed_emits_only_zero_bus_frames_for_that_transition()
+    {
+        // Pins the bus-emission asymmetry across the double-feed window
+        // (PlayerAreaTracker XML doc — "Asymmetry: bus emission is NOT
+        // idempotent across the double-feed"). State + Subscribe callbacks
+        // are unaffected; only the bus count differs depending on which
+        // path lands first. This test exercises the Observe-first case:
+        // Observe mutates state to AreaSerbule; the producer's later
+        // AreaLoading envelope for the same area is a folder no-op (state
+        // already matches) and the bus emits ZERO frames for that
+        // transition. Captures the asymmetry so a future audit doesn't
+        // experience it as a surprise.
+        using var driver = new TestLogStreamDriver();
+        var folder = new PlayerAreaTracker(new AreaTransitionParser());
+        var producer = new AreaLoadingFrameProducer(
+            driver, new AreaTransitionParser(), config: null);
+        var world = new PlayerWorld();
+        world.RegisterProducer(producer);
+        world.RegisterFolder(folder);
+
+        // Observe lands FIRST — outside the world's merger, mutates state
+        // directly. Simulates a Legolas/Gandalf bridge call arriving before
+        // the world's drain reaches the corresponding L1 envelope.
+        var when = new DateTime(2026, 5, 23, 14, 30, 0, DateTimeKind.Utc);
+        folder.Observe("LOADING LEVEL AreaSerbule", when);
+        folder.CurrentArea.Should().Be("AreaSerbule");
+
+        // Now the producer queues the SAME transition via L1. The folder's
+        // Apply sees state already matches and returns empty — no bus frame.
+        var ts = new DateTimeOffset(when, TimeSpan.Zero);
+        driver.PushReplay(MakeAreaLoading("AreaSerbule", ts, seq: 1));
+
+        var busFrames = new List<Frame<PlayerAreaChanged>>();
+        using var _sub = world.Bus.Subscribe<PlayerAreaChanged>(busFrames.Add);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = world.StartMerger(cts.Token);
+        await driver.DrainSystemAsync(TimeSpan.FromSeconds(5));
+
+        // Brief settle window — the merger dispatches the no-op frame
+        // through the folder but the folder returns empty, so nothing
+        // surfaces on the bus.
+        await Task.Delay(TimeSpan.FromMilliseconds(150));
+
+        cts.Cancel();
+        try { await run; } catch (OperationCanceledException) { }
+
+        busFrames.Should().BeEmpty(
+            because: "Observe-first wins the state race; the subsequent " +
+            "Apply on the same area returns empty and the bus emits zero.");
+        folder.CurrentArea.Should().Be("AreaSerbule");
+    }
+
     private static SystemSignalLogLine MakeAreaLoading(string area, DateTimeOffset ts, long seq) =>
         new(Timestamp: ts, Kind: SystemSignalKind.AreaLoading,
             Data: $"LOADING LEVEL {area}", Sequence: seq, ReadMonotonicTicks: 0);

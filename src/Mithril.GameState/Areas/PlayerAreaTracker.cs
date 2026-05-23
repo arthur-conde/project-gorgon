@@ -42,11 +42,30 @@ namespace Mithril.GameState.Areas;
 /// <c>PlayerLogIngestionService</c> and Gandalf's <c>LootIngestionService</c>
 /// still feed already-classified lines inline during the migration window.
 /// The double-feed (live envelope routed through the producer + Observe
-/// push-in) is idempotent — both paths converge on the same string-equality,
-/// last-writer-wins state, and the legacy <see cref="Subscribe"/> handlers
-/// fire from either path. Retirement of <see cref="Observe"/> is owed once
-/// the two callers migrate to the bus event (separate follow-on under
-/// #774).</para>
+/// push-in) is <b>state-idempotent</b> — both paths converge on the same
+/// string-equality, last-writer-wins <see cref="CurrentArea"/>, and the
+/// legacy <see cref="Subscribe"/> handlers fire from either path. Retirement
+/// of <see cref="Observe"/> is owed once the two callers migrate to the bus
+/// event (separate follow-on under
+/// <a href="https://github.com/moumantai-gg/mithril/issues/774">#774</a>).</para>
+///
+/// <para><b>Asymmetry: bus emission is NOT idempotent across the double-feed.</b>
+/// A transition routed through the producer → merger → <see cref="Apply"/>
+/// path publishes a <see cref="PlayerAreaChanged"/> frame on
+/// <c>IPlayerWorld.Bus</c>. The same transition routed through
+/// <see cref="Observe"/> does not — <see cref="ApplyTransition"/> returns the
+/// change list, but the legacy callers discard it (there's no world to hand it
+/// to from a push-in context). So if <see cref="Observe"/> lands FIRST for a
+/// given transition, the subsequent <see cref="Apply"/> sees the state already
+/// matches and returns empty, and the bus emits ZERO frames for that
+/// transition; if <see cref="Apply"/> lands first, the bus emits one frame
+/// and <see cref="Observe"/> is the no-op. <see cref="CurrentArea"/> and the
+/// <see cref="Subscribe"/> callback path are unaffected — both fire from
+/// either path. The asymmetry only matters for bus subscribers that count
+/// emissions (e.g., a hypothetical "area-transitions-per-session" metric);
+/// consumers that read state-on-event don't notice. Resolves automatically
+/// once the two <see cref="Observe"/> callers migrate to the bus event per
+/// the #774 follow-on.</para>
 ///
 /// <para><b>Threading.</b> The world drives <see cref="Apply"/> from its
 /// merger thread; folder mutations + legacy handler dispatch run under
