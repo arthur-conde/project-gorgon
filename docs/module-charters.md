@@ -51,7 +51,10 @@ services that have emerged organically through the project's arc —
 ([#462](https://github.com/moumantai-gg/mithril/issues/462)/[#465](https://github.com/moumantai-gg/mithril/pull/465)),
 [`IPlayerPinTracker`](../src/Mithril.GameState/Pins/IPlayerPinTracker.cs)
 ([#468](https://github.com/moumantai-gg/mithril/issues/468)),
-[`IInventoryService`](../src/Mithril.GameState/Inventory/IInventoryService.cs),
+[`IInventoryView`](../src/Mithril.GameState/Inventory/IInventoryView.cs)
+([#602](https://github.com/moumantai-gg/mithril/issues/602) — composes
+[`IPlayerInventoryState`](../src/Mithril.GameState/Inventory/IPlayerInventoryState.cs) +
+[`IChatInventoryState`](../src/Mithril.GameState/Inventory/IChatInventoryState.cs)),
 [`IPlayerWeatherTracker`](../src/Mithril.GameState/Weather/IPlayerWeatherTracker.cs),
 [`IPlayerCelestialState`](../src/Mithril.GameState/Celestial/IPlayerCelestialState.cs)
 ([#490](https://github.com/moumantai-gg/mithril/pull/490)),
@@ -102,7 +105,7 @@ channel rule, and this strategic principle):
   |---|---|---|
   | Reference (CDN) data | `IReferenceDataService` (Mithril.Shared) | **Silmarillion** |
   | Static storage *export* | `IActiveCharacterService` / `StorageReport` (Mithril.Shared) | **Bilbo** (+ immediate craftability) |
-  | Live inventory simulation | `IInventoryService` (**Mithril.GameState**) — tails `IPlayerLogStream` `ProcessAddItem/…` + chat `[Status]` for stack sizes | **Palantir** (debug surface — `LiveInventoryView`) |
+  | Live inventory simulation | `IInventoryView` (**Mithril.GameState**, #602) — composes `IPlayerInventoryState` (tails `IPlayerLogStream` `ProcessAddItem/…`) with `IChatInventoryState` (tails chat `[Status]` for stack sizes) | **Palantir** (debug surface — `LiveInventoryView`) |
   | Eaten-food state | in-game report (dumped to `Player.log`) | **Pippin** (Gourmand) |
   | Progression state | character export | **Elrond** (as leveling constraints) |
   | NPC store state | **Smaug** mines it itself (no shared service) | **Smaug** — the one domain where a single module owns *both* layers |
@@ -117,7 +120,7 @@ channel rule, and this strategic principle):
 
 - **Modules `Subscribe` to the GameState service surface; they do not subscribe to
   raw logs for cross-cutting state. ✅ owner-confirmed 2026-05-21.** Each GameState
-  service ([`IInventoryService`](../src/Mithril.GameState/Inventory/IInventoryService.cs),
+  service ([`IInventoryView`](../src/Mithril.GameState/Inventory/IInventoryView.cs),
   [`IPlayerPinTracker`](../src/Mithril.GameState/Pins/IPlayerPinTracker.cs),
   [`IPlayerWeatherTracker`](../src/Mithril.GameState/Weather/IPlayerWeatherTracker.cs),
   [`IPlayerPositionTracker`](../src/Mithril.GameState/Movement/IPlayerPositionTracker.cs),
@@ -157,7 +160,9 @@ channel rule, and this strategic principle):
   lifting the gift-detection FSM into the Tier-2 `IGiftSignalService`; see
   [`world-sim-migration-audit.md`](world-sim-migration-audit.md) §Arwen)
   plus one Class C design discussion (Samwise `ProcessUpdateItemCode` needs
-  a new `InventoryEvent.CodeChanged` event kind on `IInventoryService`).
+  a new `InventoryEvent.CodeChanged` event kind on `IInventoryService`
+  — described pre-#602; the post-split equivalent would land on
+  `IPlayerInventoryState` or `IInventoryView`).
   Each filed as its own retiring-PR issue.
 
 - **GameState services translate log events into a developer-facing domain
@@ -174,7 +179,7 @@ channel rule, and this strategic principle):
   **The three channels:**
 
   - **Query** — synchronous state lookup at moment of call.
-    `IInventoryService.TryResolve(instanceId, out internalName)`,
+    `IInventoryView.TryResolve(instanceId, out internalName)`,
     `IPlayerWeatherTracker.Current`, `IPlayerPinTracker.CurrentAreaPins`,
     etc. Returns the current value; no side effects.
   - **React** — event stream, default `ReplayMode.FromSessionStart`.
@@ -197,29 +202,30 @@ channel rule, and this strategic principle):
   **Why three channels.** Each maps to a structurally different question:
   *Query* = "what's the current state?" (point-in-time); *React* =
   "what's happening?" (ordered event log); *Bind* = "how does this view
-  stay in sync?" (declarative, UI-safe). Conflating them costs
-  concretely. Today `IInventoryService.Subscribe` (retired by
-  [#659](https://github.com/moumantai-gg/mithril/issues/659)) tries to
-  serve both *current-state-replay* (synthesizes `Added` events for live
-  items) and *event-log-replay* (live events forward) through one API —
-  and silently loses pre-attach `Deleted` and `StackChanged` events.
-  Three current REACT consumers silently degrade as a result:
+  stay in sync?" (declarative, UI-safe). Conflating them cost concretely.
+  Pre-#602/#659, `IInventoryService.Subscribe` tried to serve both
+  *current-state-replay* (synthesizing `Added` events for live items) and
+  *event-log-replay* (live events forward) through one API — and silently
+  lost pre-attach `Deleted` and `StackChanged` events. Three REACT consumers
+  silently degraded as a result:
 
   - [`Samwise.GardenIngestionService.OnInventoryEvent`](../src/Samwise.Module/State/GardenIngestionService.cs)
-    loses `_itemIdToCrop` map entries for items added-then-deleted before
+    lost `_itemIdToCrop` map entries for items added-then-deleted before
     Mithril attached.
   - [Arwen's gift calibration](../src/Arwen.Module/Domain/CalibrationService.cs)
-    would lose every gift made before Mithril attached in the current PG
+    would have lost every gift made before Mithril attached in the current PG
     session — surfaced in [#582](https://github.com/moumantai-gg/mithril/issues/582)'s
     replay-contract analysis.
   - [`Legolas.MotherlodeMeasurementCoordinator`](../src/Legolas.Module/Services/MotherlodeMeasurementCoordinator.cs)
-    silently misses dig-completion signals for digs completing before
-    Mithril attached — the inline comment cites it consumes "the
-    IInventoryService Deleted event" as the authoritative completion
-    signal.
+    silently missed dig-completion signals for digs completing before
+    Mithril attached — the inline comment cited it consumes "the
+    IInventoryService Deleted event" (legacy, pre-#602) as the
+    authoritative completion signal.
 
-  Three sharp channels with distinct semantics retires the bug class
-  structurally.
+  Three sharp channels with distinct semantics retired the bug class
+  structurally (delivered via the #602 split + #659 shim retirement —
+  the post-split surfaces today are `IPlayerInventoryState`,
+  `IChatInventoryState`, and the composing `IInventoryView`).
 
   **Anti-pattern (flag immediately).** A consumer manually building
   observable state from a GameState service's event stream
@@ -385,10 +391,12 @@ channel rule, and this strategic principle):
   `IActiveCharacterService` / `StorageReport` (Mithril.Shared, single source of truth);
   Bilbo consumes it.
 - **Does NOT own:**
-  - **✅ confirmed (verified 2026-05-16)** — *Live inventory simulation.* The live
-    `instanceId→item` + stack-size model is `IInventoryService` in **Mithril.GameState**
-    (tails `ProcessAddItem/…` + chat `[Status]`); its user-facing surface is
-    **Palantir** (`LiveInventoryView`), not Bilbo. Bilbo is export-*snapshot*, not live.
+  - **✅ confirmed (verified 2026-05-16; refreshed 2026-05-23 post-#602/#753)** —
+    *Live inventory simulation.* The live `instanceId→item` + stack-size model
+    is `IInventoryView` in **Mithril.GameState** — composes `IPlayerInventoryState`
+    (tails `ProcessAddItem/…`) with `IChatInventoryState` (tails chat `[Status]`);
+    its user-facing surface is **Palantir** (`LiveInventoryView`), not Bilbo.
+    Bilbo is export-*snapshot*, not live.
   - **✅ confirmed** — *Craft planning* (shopping lists, what-to-acquire, quantity
     math) → Celebrimbor. "What can I make from what I hold *now*" is Bilbo (a state
     property); "what do I need to make N of X" is Celebrimbor (a plan). See the
@@ -485,13 +493,13 @@ channel rule, and this strategic principle):
 
 - **Owns: ✅ confirmed (owner, 2026-05-16)** — a **debug module** (not player-facing):
   the browser/inspector over **Mithril.GameState** state (incl. the live-inventory
-  view, `LiveInventoryView` over `IInventoryService`), plus dev tools — currently a
+  view, `LiveInventoryView` over `IInventoryView`), plus dev tools — currently a
   **badge tester**. A development/diagnostic surface.
 - **Does NOT own:**
   - **✅ confirmed (owner, 2026-05-16)** — *Any player-facing feature.* Debug-only by
     charter: exposes engine/GameState internals for development, never a user workflow.
     (Hard boundary, by the module's nature.)
-- **Data:** reads Mithril.GameState services (`IInventoryService`, …) as a debug
+- **Data:** reads Mithril.GameState services (`IInventoryView`, …) as a debug
   surface — owns no player data domain of its own.
 
 ## Smaug — NPC stores & sale economics
@@ -634,7 +642,8 @@ libraries; the charter follows the code:
   shipped the layered log pipeline (L0/L0.5/L1/L2): #511's mission is rebuilding the
   emulated game from logs, and the GameState services that emerged through the project's
   arc (`IPlayerPositionTracker` #454, `IPlayerSkillState` #462/#465, `IPlayerPinTracker`
-  #468, `IInventoryService`, `IPlayerWeatherTracker`, `IPlayerCelestialState` #490,
+  #468, `IInventoryService` (legacy; split into `IPlayerInventoryState` + `IChatInventoryState` + `IInventoryView` per #602),
+  `IPlayerWeatherTracker`, `IPlayerCelestialState` #490,
   `IPlayerRecipeState` #475, `IGameSessionService`, `IPlayerQuestJournalState` #607, `PlayerAreaTracker`,
   and `INpcStateTracker` #552 in flight) are the canonical model of that emulated game.
   Articulating the principle explicitly clarifies that modules are *projections* of
@@ -657,9 +666,10 @@ libraries; the charter follows the code:
   service surface (consumption-side); services translate log events into a domain model
   with three channels — Query for "what's the current state?", React for "what's
   happening?", Bind for "how does this view stay in sync?". Grounded in the inventory
-  channel-conflation bug class: `IInventoryService.Subscribe` today tries to serve both
-  current-state-replay and event-log-replay through one API, with the result that three
-  current REACT consumers silently miss pre-attach `Deleted` / `StackChanged` events —
+  channel-conflation bug class: `IInventoryService.Subscribe` (legacy, pre-#602/#659)
+  tried to serve both current-state-replay and event-log-replay through one API, with
+  the result that three REACT consumers silently missed pre-attach
+  `Deleted` / `StackChanged` events —
   Samwise's plant-resolution map, Arwen's gift calibration (surfaced in
   [#582](https://github.com/moumantai-gg/mithril/issues/582)), and Legolas's
   Motherlode dig-completion signal. Three sharp channels with distinct semantics retire
@@ -679,11 +689,13 @@ libraries; the charter follows the code:
   Grounded in real, hard-to-reproduce bugs from earlier in the project's history
   where multiple modules each rebuilt overlapping state from raw logs and produced
   symptoms that didn't replay deterministically. Lists the five HEAD-existent
-  GameState services (`IInventoryService`, `IPlayerPinTracker`,
-  `IPlayerWeatherTracker`, `IPlayerPositionTracker`, `IPlayerSkillState`) plus
-  recipes/celestial/area trackers; names a verb list that signals the anti-pattern;
-  records `LootBracketTracker.AddItemRx` as a known instance to retire by switching
-  the tracker to `IInventoryService.Subscribe`. Surfaced during the mithril#574
+  GameState services (`IInventoryService` (legacy; now `IInventoryView` post-#602),
+  `IPlayerPinTracker`, `IPlayerWeatherTracker`, `IPlayerPositionTracker`,
+  `IPlayerSkillState`) plus recipes/celestial/area trackers; names a verb list that
+  signals the anti-pattern; records `LootBracketTracker.AddItemRx` as a known
+  instance to retire by switching the tracker to `IInventoryService.Subscribe`
+  (the as-of-date migration target; the actual landing later went via the post-#602
+  PlayerWorld-direct route). Surfaced during the mithril#574
   L2 spec review chain. A full repo audit for additional anti-pattern instances is
   pending and will be filed as its own issue.
 - **2026-05-19** — **Radagast charter sketch added (⚠️ Claude draft).** A proposed
@@ -785,7 +797,8 @@ libraries; the charter follows the code:
   version.
 - **2026-05-16** — Layering corrected after code verification: split the single-owner
   rule into *data owner (shared service)* vs *surface owner (module)*. `IInventoryService`
-  is in **Mithril.GameState** (not Mithril.Shared as recalled) — live sim from
+  (legacy; split into `IPlayerInventoryState` + `IChatInventoryState` + `IInventoryView`
+  per #602) is in **Mithril.GameState** (not Mithril.Shared as recalled) — live sim from
   `ProcessAddItem/…` + chat `[Status]`; its surface is **Palantir**, not Bilbo. Bilbo
   scoped to the static-*export* surface (data = Mithril.Shared `IActiveCharacterService`/
   `StorageReport`). Dropped the stale "candidate for shared extraction" note (the
