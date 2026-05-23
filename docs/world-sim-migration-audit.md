@@ -265,9 +265,9 @@ migration after the union-shaped `Subscribe` shim was already gone in #659.
   remains, but as a same-source read against the view's composed map
   (sim-coherent under the Player.log dispatch order, with the cross-source
   composition encapsulated inside the view layer per principle 4).
-- **Cross-FSM TryResolve peek**: **eliminated in #608** via the Tier-2
-  `IGiftSignalService` lift (the architectural payoff #594 / #596 created
-  the signal service for). `FavorIngestionService` now subscribes to
+- **Cross-FSM TryResolve peek**: **eliminated via #688** (closes #608)
+  on top of the Tier-2 `IGiftSignalService` lift shipped in #598 (the
+  architectural payoff #594 / #596 created the signal service for). `FavorIngestionService` now subscribes to
   `IGiftSignalService.Subscribe` for resolved gift events;
   `GiftSignalService` owns a single L1 subscription with its own
   `ProcessAddItem`-fed `instanceId → InternalName` map, correlates the
@@ -291,9 +291,10 @@ migration after the union-shaped `Subscribe` shim was already gone in #659.
   `CalibrationService` from the legacy Query-only `IInventoryService`
   injection to `IInventoryView` directly, letting the now-redundant
   `IInventoryService` interface retire.
-- **Status**: **resolved post-#608** — cross-FSM peek replaced by
-  consumption of the Tier-2 signal service that owns the verb-triple
-  correlation on a single L1 pump.
+- **Status**: **resolved via #688** (closes #608) — cross-FSM peek
+  replaced by consumption of the Tier-2 signal service (`IGiftSignalService`,
+  shipped via #598) that owns the verb-triple correlation on a single L1
+  pump.
 
 ### Saruman (Words of Power) — **SPLIT DELIVERED ([#603](https://github.com/moumantai-gg/mithril/issues/603))**
 
@@ -514,7 +515,7 @@ character-switch is a UI binding swap not a state mutation. The log-derived
 `HandleJournalLoaded` Abandoned synthesis at `:178-209` is unrelated and
 **stays** (real inference from `ProcessLoadQuests`).
 
-### 7. Arwen's `_inventory.TryResolve` peek — **RESOLVED in #608**
+### 7. Arwen's `_inventory.TryResolve` peek — **RESOLVED via #688 (closes #608)**
 
 `TryResolve` no longer called on the gift-detection path.
 `FavorIngestionService` subscribes to `IGiftSignalService.Subscribe` for
