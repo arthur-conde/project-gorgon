@@ -864,7 +864,7 @@ Canonical source: [`docs/world-sim-shepherd.md`; `.claude/agents/world-sim-revie
 
 ### `IChatLogStream`
 
-The chat log file tail surface, consumed by `ChatLogStream` and (today, pre-migration) by `Legolas.LogIngestionService`, `IInventoryService`, `SarumanChatIngestionService`. Under world-sim, only [ChatWorld](#chatworld) consumes it; all other consumers retire (per migration plan + `module-signal-map.md` cross-cutting observations).
+The chat log file tail surface, consumed by `ChatLogStream`. Under world-sim, the [ChatWorld](#chatworld) folder is the canonical consumer. The pre-migration in-module consumers (`Legolas.LogIngestionService` per #606, the pre-#602 cross-source `IInventoryService` chat tail, and the legacy `SarumanChatIngestionService`) have all retired; their successors subscribe to ChatWorld-routed events rather than to the raw stream.
 
 See also: [ChatWorld](#chatworld), [L0 / L1 / L2](#l0--l1--l2).
 Canonical source: [`docs/module-signal-map.md`](module-signal-map.md); `src/Mithril.Shared/Logging/`.

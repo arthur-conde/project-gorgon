@@ -158,7 +158,7 @@ DI is composed via extension methods in [src/Mithril.Shared/DependencyInjection/
 
 ### Log parsing
 
-Log parsers implement `ILogParser.TryParse(string line, DateTime timestamp)` and return a `LogEvent?`. Modules compose parsers into state machines that consume events from `IPlayerLogStream` and `IChatLogStream`, both of which tail their respective files with rotation handling. `IChatLogParser` was lifted into `Mithril.Shared` so multiple modules can register their own chat-line handlers.
+Log parsers implement `ILogParser.TryParse(string line, DateTime timestamp)` and return a `LogEvent?`. Modules compose parsers into state machines that consume events from `IPlayerLogStream` and `IChatLogStream`, both of which tail their respective files with rotation handling. Under the world-sim migration ([docs/world-simulator.md](docs/world-simulator.md)), the canonical chat consumer is the `ChatWorld` folder rather than per-module chat tails.
 
 ### Patterns
 

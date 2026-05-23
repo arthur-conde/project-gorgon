@@ -58,8 +58,8 @@ text, mirrored here so the doc stands alone:
    every bucket, eager) do. A consumer that only `Add`s for some keys — and
    never `TryTake`s those keys, because the matching response never arrives
    — must call `DrainStale` periodically (e.g. piggybacked on every event
-   handler, the pattern used by `InventoryService.DrainPendingStale` and
-   `Legolas.LogIngestionService.DrainPendingStale`). Without it, the bucket
+   handler, the pattern used by `InventoryView.DrainPendingStale` — the
+   canonical post-#602 / post-#606 example). Without it, the bucket
    for that key grows unbounded for the process lifetime. PR #541 hit this
    exactly: dropping the pre-PR `PendingAddBufferCap = 32` without wiring
    `DrainStale` produced a real memory-growth defect, caught and fixed in
