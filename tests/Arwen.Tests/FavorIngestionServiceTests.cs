@@ -166,6 +166,54 @@ public sealed class FavorIngestionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Favor_snapshot_timestamp_uses_log_line_instant_not_wall_clock()
+    {
+        // Principle 13 — world-event-driven paths must not leak the host's
+        // real wall clock into derived state. Pre-#715 this handler stamped
+        // ArwenFavorState.SetExactFavor with DateTimeOffset.UtcNow, so the
+        // persisted NpcFavorSnapshot.Timestamp drifted across replay runs
+        // even when the underlying log line carried the same envelope
+        // timestamp. Post-#715 the timestamp comes from the envelope (the
+        // same `ts` already in scope for the gift-detection plumbing two
+        // lines above) — replay produces byte-identical snapshots.
+        //
+        // The test runs the same log line twice with a real-elapsed pause
+        // between the two passes and asserts the persisted timestamp is the
+        // envelope's value (well in the past), not "now-ish".
+
+        var giftedAt = new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.Zero);
+
+        using var passOne = NewFixture("PassOne");
+        await passOne.StartAsync();
+        passOne.Driver.PushLive(MakeLine(
+            "ProcessStartInteraction(42, 0, 73.5, True, \"NPC_Sanja\")", giftedAt));
+        await passOne.Driver.DrainLocalPlayerAsync();
+        await passOne.StopAsync();
+
+        // Inject a real-elapsed gap between the two passes. Under the old
+        // wall-clock stamp the two snapshot timestamps would diverge by at
+        // least this much; under the envelope-stamp fix they're identical.
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+
+        using var passTwo = NewFixture("PassTwo");
+        await passTwo.StartAsync();
+        passTwo.Driver.PushLive(MakeLine(
+            "ProcessStartInteraction(42, 0, 73.5, True, \"NPC_Sanja\")", giftedAt));
+        await passTwo.Driver.DrainLocalPlayerAsync();
+        await passTwo.StopAsync();
+
+        var snapOne = passOne.FavorState.GetExactFavor("NPC_Sanja");
+        var snapTwo = passTwo.FavorState.GetExactFavor("NPC_Sanja");
+
+        snapOne.Should().NotBeNull();
+        snapTwo.Should().NotBeNull();
+        snapOne!.Timestamp.Should().Be(giftedAt,
+            "the persisted timestamp must come from the log envelope, not the host's real wall clock");
+        snapTwo!.Timestamp.Should().Be(snapOne.Timestamp,
+            "replaying the same log line yields a byte-identical snapshot regardless of real-elapsed time");
+    }
+
+    [Fact]
     public async Task Subscription_attaches_in_StartAsync_without_opening_module_gate()
     {
         // Call 1 / principle eager-always: the L1 LocalPlayer subscription and

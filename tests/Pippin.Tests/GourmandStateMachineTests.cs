@@ -124,6 +124,85 @@ public class GourmandStateMachineTests
     }
 
     [Fact]
+    public async Task Apply_FoodsConsumedReport_stamps_LastReportTime_from_envelope_not_wall_clock()
+    {
+        // Principle 13 — world-event-driven paths must not leak the host's
+        // real wall clock into derived state. Pre-#715 HandleReport stamped
+        // _lastReportTime with DateTimeOffset.UtcNow, so replaying the same
+        // FoodsConsumedReport at a different real-elapsed time produced a
+        // different persisted timestamp. Post-#715 the stamp comes from
+        // report.Timestamp; replay is byte-identical.
+
+        var sm = new GourmandStateMachine(CreateCatalog((1, "FoodBacon", "Bacon")));
+        var reportInstant = new DateTime(2020, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        var report = new FoodsConsumedReport(
+            reportInstant,
+            [new FoodConsumedEntry("Bacon", 2, Array.Empty<string>())]);
+
+        sm.Apply(report);
+        var firstStamp = sm.LastReportTime;
+
+        // Real-elapsed delay between two applies of the same envelope —
+        // under the old wall-clock stamp the second LastReportTime would
+        // diverge by at least this much; under the envelope-stamp fix
+        // both stamps equal the envelope timestamp.
+        await Task.Delay(TimeSpan.FromMilliseconds(50));
+        sm.Apply(report);
+        var secondStamp = sm.LastReportTime;
+
+        firstStamp.Should().Be(new DateTimeOffset(reportInstant, TimeSpan.Zero),
+            "the report's envelope timestamp is the authoritative stamp source");
+        secondStamp.Should().Be(firstStamp,
+            "re-applying the same report at a different real-elapsed time must not change LastReportTime");
+    }
+
+    [Fact]
+    public void ApplyLegacyByName_does_not_stamp_LastReportTime_from_wall_clock()
+    {
+        // Principle 13 — the legacy-migration path runs once per character
+        // when the catalog becomes ready, with no envelope timestamp in
+        // scope. Pre-#715 this stamped _lastReportTime with
+        // DateTimeOffset.UtcNow as a fallback, leaking real wall clock into
+        // a persisted field consumers compare across replays. Post-#715 the
+        // fallback is removed: the migration leaves LastReportTime as
+        // Hydrate set it (null when the v1 state never carried a stamp).
+        //
+        // The next real FoodsConsumedReport stamps it from the log envelope.
+
+        var sm = new GourmandStateMachine(CreateCatalog(
+            (1, "FoodAppleJuice", "Apple Juice")));
+
+        sm.ApplyLegacyByName(new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Apple Juice"] = 8,
+        });
+
+        sm.LastReportTime.Should().BeNull(
+            "no envelope is in scope in the legacy migration path; wall-clock fallback would leak host time into derived state");
+    }
+
+    [Fact]
+    public void ApplyLegacyByName_preserves_existing_LastReportTime_from_Hydrate()
+    {
+        // The other side of the same fix: when the persisted v1 state DID
+        // carry a LastReportTime, Hydrate populates _lastReportTime before
+        // the legacy migration runs. The migration must not clobber it.
+
+        var sm = new GourmandStateMachine(CreateCatalog(
+            (1, "FoodAppleJuice", "Apple Juice")));
+        var hydratedStamp = new DateTimeOffset(2026, 5, 1, 12, 0, 0, TimeSpan.Zero);
+        sm.Hydrate(new GourmandState { LastReportTime = hydratedStamp });
+
+        sm.ApplyLegacyByName(new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Apple Juice"] = 8,
+        });
+
+        sm.LastReportTime.Should().Be(hydratedStamp,
+            "legacy migration must not clobber the timestamp Hydrate already loaded from disk");
+    }
+
+    [Fact]
     public void ReconcileUnknowns_promotes_entries_when_catalog_catches_up()
     {
         var stub = new StubReferenceDataService(new Dictionary<long, Item>

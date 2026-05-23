@@ -58,9 +58,13 @@ public enum WeatherChangeKind
 /// unknown).</param>
 /// <param name="State">The current map's weather after the change, or
 /// <c>null</c> if not yet known for this map.</param>
-/// <param name="ObservedAt">UTC instant of the source log line (or the
-/// subscribe instant for a <see cref="WeatherChangeKind.Snapshot"/> replay /
-/// the area-transition instant for <see cref="WeatherChangeKind.AreaChanged"/>).</param>
+/// <param name="ObservedAt">UTC instant of the source log line. For a
+/// <see cref="WeatherChangeKind.Snapshot"/> replay this is the most-recent
+/// envelope timestamp the tracker has applied
+/// (<see cref="DateTimeOffset.MinValue"/> if no envelope has been applied yet
+/// — in which case <c>State</c> is also <c>null</c>); for a
+/// <see cref="WeatherChangeKind.AreaChanged"/> notification this is the
+/// area-transition envelope instant.</param>
 public sealed record WeatherChanged(
     WeatherChangeKind Kind,
     string? Area,

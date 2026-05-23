@@ -105,7 +105,13 @@ public sealed class GourmandStateMachine
                 _unknownByName[name] = count;
         }
 
-        _lastReportTime ??= DateTimeOffset.UtcNow;
+        // No envelope timestamp in the legacy migration path — the v1
+        // persisted state didn't carry a per-report instant. Leave
+        // _lastReportTime as Hydrate set it (null when the v1 state had no
+        // value); the next real FoodsConsumedReport will stamp it from the
+        // log envelope. Pre-#715 this fell back to DateTimeOffset.UtcNow,
+        // leaking real wall-clock into a path consumers compare across
+        // replays.
         StateChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
@@ -123,7 +129,11 @@ public sealed class GourmandStateMachine
                 _unknownByName[food.Name] = food.Count;
         }
 
-        _lastReportTime = DateTimeOffset.UtcNow;
+        // Stamp from the report's envelope timestamp so replay produces
+        // byte-identical LastReportTime regardless of real-elapsed time
+        // (principle 13). report.Timestamp is the log-line instant in UTC.
+        _lastReportTime = new DateTimeOffset(
+            DateTime.SpecifyKind(report.Timestamp, DateTimeKind.Utc));
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 }

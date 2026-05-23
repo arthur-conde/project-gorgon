@@ -246,6 +246,110 @@ public sealed class PlayerWeatherTrackerTests
         finally { await StopAsync(svc); }
     }
 
+    [Fact]
+    public async Task Subscribe_snapshot_stamp_is_last_envelope_timestamp_not_wall_clock()
+    {
+        // Principle 13 — world-event-driven paths must not leak wall clock
+        // into derived state. Pre-#715 the synthetic Snapshot notification
+        // emitted by Subscribe stamped its ObservedAt with
+        // DateTimeOffset.UtcNow, so two subscribers attaching at different
+        // real-elapsed times observed different timestamps on the same
+        // tracker state. Post-#715 the stamp is the most-recent envelope
+        // timestamp the tracker has applied — identical across late
+        // subscribers regardless of when they attach. Mirrors the
+        // PlayerPinTracker test.
+        var areaTs = new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var weatherTs = areaTs.AddMinutes(1);
+
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(new SystemSignalLogLine(
+            Timestamp: areaTs,
+            Kind: SystemSignalKind.AreaLoading,
+            Data: "LOADING LEVEL AreaSerbule",
+            Sequence: 1,
+            ReadMonotonicTicks: 0));
+        driver.PushReplay(new LocalPlayerLogLine(
+            Timestamp: weatherTs,
+            Data: "ProcessSetWeather(\"Foggy\", True)",
+            Sequence: 2,
+            ReadMonotonicTicks: 0));
+
+        var svc = NewTracker(driver);
+        try
+        {
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+
+            var seenA = new List<WeatherChanged>();
+            using var subA = svc.Subscribe(seenA.Add);
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+
+            var seenB = new List<WeatherChanged>();
+            using var subB = svc.Subscribe(seenB.Add);
+
+            seenA.Should().ContainSingle()
+                .Which.Kind.Should().Be(WeatherChangeKind.Snapshot);
+            seenB.Should().ContainSingle()
+                .Which.Kind.Should().Be(WeatherChangeKind.Snapshot);
+
+            seenA[0].ObservedAt.Should().Be(weatherTs,
+                "the Snapshot stamp must come from the most-recent envelope the tracker applied, not wall clock");
+            seenB[0].ObservedAt.Should().Be(seenA[0].ObservedAt,
+                "late subscribers observing the same tracker state must see identical snapshot timestamps");
+        }
+        finally { await StopAsync(svc); }
+    }
+
+    [Fact]
+    public async Task Area_change_notification_uses_envelope_timestamp_not_wall_clock()
+    {
+        // The other half of the principle-13 fix for ReconcileArea — the
+        // AreaChanged notification's ObservedAt now comes from the
+        // triggering LOADING LEVEL envelope, not DateTimeOffset.UtcNow.
+        // Mirrors the PlayerPinTracker test.
+        var firstAreaTs = new DateTimeOffset(2020, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        var secondAreaTs = firstAreaTs.AddMinutes(7);
+
+        using var driver = new TestLogStreamDriver();
+        driver.PushReplay(new SystemSignalLogLine(
+            Timestamp: firstAreaTs,
+            Kind: SystemSignalKind.AreaLoading,
+            Data: "LOADING LEVEL AreaSerbule",
+            Sequence: 1,
+            ReadMonotonicTicks: 0));
+
+        var svc = NewTracker(driver);
+        try
+        {
+            var seen = new List<WeatherChanged>();
+            using var sub = svc.Subscribe(seen.Add);
+
+            await StartAsync(svc);
+            await driver.DrainClassifiedAsync();
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+
+            driver.PushLive(new SystemSignalLogLine(
+                Timestamp: secondAreaTs,
+                Kind: SystemSignalKind.AreaLoading,
+                Data: "LOADING LEVEL AreaEltibule",
+                Sequence: 2,
+                ReadMonotonicTicks: 0));
+            await driver.DrainClassifiedAsync();
+
+            var areaChanges = seen.Where(n => n.Kind == WeatherChangeKind.AreaChanged).ToList();
+            areaChanges.Should().HaveCount(2,
+                "one AreaChanged per envelope (initial replay + the live push)");
+            areaChanges[0].ObservedAt.Should().Be(firstAreaTs,
+                "ReconcileArea must stamp the AreaChanged note with the triggering envelope's timestamp, not wall clock");
+            areaChanges[1].ObservedAt.Should().Be(secondAreaTs);
+        }
+        finally { await StopAsync(svc); }
+    }
+
     private static async Task StartAsync(PlayerWeatherTracker svc)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

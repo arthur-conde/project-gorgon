@@ -63,6 +63,16 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
     private bool _areaInitialised;
     private ILogSubscription? _subscription;
 
+    // Most-recent envelope timestamp the tracker has applied (area
+    // transition or pin add/remove). Subscribe-replay stamps its synthetic
+    // Snapshot notification with this so late subscribers observe the same
+    // envelope-time view already-attached handlers were given (principle 13:
+    // never leak wall clock into world-event-driven state). Default
+    // (DateTimeOffset.MinValue) when no envelope has been applied yet —
+    // the snapshot payload is also empty in that case, so the stamp is
+    // never meaningful in isolation.
+    private DateTimeOffset _lastObservedAt;
+
     private const string DiagCategory = "GameState.Pins";
 
     /// <param name="driver">L1 driver — subscribed to via the
@@ -107,10 +117,12 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
         {
             // Replay the current set before going live so a late subscriber
             // observes the same view already-attached handlers see. Mirrors
-            // PlayerPositionTracker.Subscribe.
+            // PlayerPositionTracker.Subscribe. The stamp comes from the
+            // most-recent envelope the tracker has applied (NOT wall-clock
+            // — principle 13); see _lastObservedAt's field doc.
             Invoke(handler, new PinSetChanged(
                 PinSetChange.Snapshot, _trackedArea, null, Snapshot(),
-                DateTimeOffset.UtcNow));
+                _lastObservedAt));
             _handlers.Add(handler);
             return new Subscription(this, handler);
         }
@@ -142,7 +154,7 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
                         if (_areaParser.TryParse(s.Data, s.Timestamp.UtcDateTime)
                             is Areas.Parsing.AreaTransitionEvent areaEvt)
                         {
-                            ReconcileArea(areaEvt.AreaKey);
+                            ReconcileArea(areaEvt.AreaKey, s.Timestamp);
                         }
                         break;
 
@@ -190,7 +202,13 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
     /// the key — repopulates it. Called from the unified-pipe handler when a
     /// new <see cref="SystemSignalKind.AreaLoading"/> envelope arrives.
     /// </summary>
-    private void ReconcileArea(string? area)
+    /// <param name="area">New area key (null for the empty / ChooseCharacter
+    /// form).</param>
+    /// <param name="observedAt">Envelope timestamp of the triggering
+    /// <c>LOADING LEVEL</c> system-signal — stamped on the resulting
+    /// <see cref="PinSetChange.AreaChanged"/> notification so consumers see
+    /// log-instant time, never wall clock (principle 13).</param>
+    private void ReconcileArea(string? area, DateTimeOffset observedAt)
     {
         PinSetChanged? note = null;
         lock (_lock)
@@ -199,9 +217,10 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
             _areaInitialised = true;
             _trackedArea = area;
             _pins.Clear();
+            _lastObservedAt = observedAt;
             note = new PinSetChanged(
                 PinSetChange.AreaChanged, area, null, Snapshot(),
-                DateTimeOffset.UtcNow);
+                observedAt);
         }
         if (note is not null) Publish(note);
     }
@@ -209,15 +228,19 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
     private void Apply(MapPinLogEvent evt)
     {
         var key = PinKey.From(evt.X, evt.Z);
+        var observedAt = ToOffset(evt.Timestamp);
         PinSetChanged? note = null;
         lock (_lock)
         {
             if (evt.Change == MapPinChange.Removed)
             {
                 if (_pins.Remove(key, out var removed))
+                {
+                    _lastObservedAt = observedAt;
                     note = new PinSetChanged(
                         PinSetChange.Removed, _trackedArea, removed, Snapshot(),
-                        ToOffset(evt.Timestamp));
+                        observedAt);
+                }
             }
             else
             {
@@ -229,9 +252,10 @@ public sealed class PlayerPinTracker : BackgroundService, IPlayerPinTracker
                 if (!_pins.TryGetValue(key, out var existing) || existing != pin)
                 {
                     _pins[key] = pin;
+                    _lastObservedAt = observedAt;
                     note = new PinSetChanged(
                         PinSetChange.Added, _trackedArea, pin, Snapshot(),
-                        ToOffset(evt.Timestamp));
+                        observedAt);
                 }
             }
         }
