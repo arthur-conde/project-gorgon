@@ -2,6 +2,8 @@
 
 > **Vocabulary:** see [`docs/glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
 
+> **Status (2026-05-23):** umbrella [#601](https://github.com/moumantai-gg/mithril/issues/601) closed; the v4 driver delivered the migration to completion. This design notebook remains as the rationale for the v1→v4 evolution and the operational pattern; the driver itself (per the [playbook](world-sim-driver-playbook.md)) remains available for [#700](https://github.com/moumantai-gg/mithril/issues/700) residuals.
+
 A single agent at /loop depth that drives the world-sim migration umbrella (#601) end-to-end. Per tick: pick the next ready issue from the dep graph, dispatch a worker + reviewers as named teammates via Teams + SendMessage, iterate the review-fix loop, merge the PR itself, file follow-ons, and schedule the next tick. Returns a structured verdict via JSON each tick (delivery outcome or `idle` / `no-action` / `circuit-breaker`).
 
 **Pairs with:**

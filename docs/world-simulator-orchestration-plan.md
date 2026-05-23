@@ -6,7 +6,7 @@ Machine-actionable scheduling plan for the world-simulator migration. Pairs with
 
 **Audience:** an orchestrator (Claude Code subagent harness, or external system) scheduling worker agents to land migration items hands-free.
 
-**Status:** ready for orchestration use. Update this file when a phase completes or a task's metadata changes (estimate revisions, agent reassignment, etc.).
+**Status:** orchestrator queue drained 2026-05-23; umbrella [#601](https://github.com/moumantai-gg/mithril/issues/601) closed. This plan remains a reference for any future tick-style work — notably the Phase 5 residuals tracked under [#700](https://github.com/moumantai-gg/mithril/issues/700) (release-cycle-gated [#732](https://github.com/moumantai-gg/mithril/issues/732), opportunistic `IPlayer*` renames). The dependency graph + verification gates below stay accurate as patterns; the phase-by-phase scheduling is historical.
 
 ---
 
