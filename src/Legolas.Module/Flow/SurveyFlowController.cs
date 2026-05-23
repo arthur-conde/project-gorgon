@@ -187,12 +187,31 @@ public sealed partial class SurveyFlowController : ObservableObject
     /// (always — there is no anchor precondition any more). The next
     /// first-pin arrival re-stamps a fresh <see cref="SessionState.StartedAt"/>
     /// via <see cref="OnSurveysChanged"/>.
+    ///
+    /// <para>Fires <see cref="Transitioned"/> with trigger
+    /// <c>"Reset"</c> unconditionally — including the
+    /// <c>Listening → Listening</c> self-edge — so that session-bound
+    /// listeners (notably <c>ItemCollectionTracker._pendingAdds</c>) get a
+    /// consistent "start over" signal regardless of the prior phase. The
+    /// other listeners (<c>LegolasReportService</c>,
+    /// <c>LegolasWizardViewModel</c>) filter on <c>t.To == Done</c> so they
+    /// are unaffected by the extra self-edge frame.</para>
     /// </summary>
     public void Reset()
     {
         _session.ClearSurveys();
         if (CurrentState != SurveyFlowState.Listening)
+        {
             TransitionTo(SurveyFlowState.Listening, nameof(Reset));
+        }
+        else
+        {
+            // Idempotent self-edge: surfaces the Reset trigger for
+            // session-bound listeners (e.g. ItemCollectionTracker's pending-Add
+            // queue clear) even when the FSM was already in Listening.
+            Transitioned?.Invoke(new SurveyTransition(
+                SurveyFlowState.Listening, SurveyFlowState.Listening, nameof(Reset)));
+        }
     }
 
     private void OnAllCollected()

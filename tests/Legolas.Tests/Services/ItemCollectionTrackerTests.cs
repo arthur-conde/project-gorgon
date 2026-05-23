@@ -456,6 +456,128 @@ public sealed class ItemCollectionTrackerTests
         });
     }
 
+    /// <summary>
+    /// Iter-1 review of PR #721: pre-fix, a manual <c>Reset()</c> invoked while
+    /// <see cref="SurveyFlowController.CurrentState"/> was already
+    /// <see cref="SurveyFlowState.Listening"/> did NOT fire
+    /// <see cref="SurveyFlowController.Transitioned"/> (the controller skipped
+    /// the no-op self-edge), so this tracker's
+    /// <see cref="ItemCollectionTracker.OnFlowTransitioned"/> never ran and any
+    /// pending Adds queued during the prior <c>Listening</c> window leaked
+    /// into the next survey session. Fix: <c>Reset()</c> now fires the
+    /// self-edge transition unconditionally; this test pins that contract from
+    /// the consumer side. A pending Add enqueued during Listening must be gone
+    /// after a Reset that stays in Listening — verified by the next Collect
+    /// taking the credit-0 + warn path rather than dequeuing the stale Add.
+    /// </summary>
+    [Fact]
+    public async Task Reset_from_Listening_clears_pending_adds_via_self_edge_Transitioned()
+    {
+        var h = Build();
+        await Run(h, async () =>
+        {
+            // Stay in Listening (no pin seeded, no OptimizeRoute called).
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+            PushAdded(h, "IronOre");
+
+            // Manual Reset while already in Listening — must fire the
+            // self-edge Transitioned and clear _pendingAdds.
+            h.Flow.Reset();
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+
+            var traces = TraceEntries(h.Sink);
+            traces.Should().ContainSingle(
+                "Reset from Listening still surfaces the unmatched pending Add via the self-edge Transitioned");
+            traces.Single().Message.Should().Contain("Reset").And.Contain("Iron Ore");
+
+            // The next Collect must take the credit-0 path — the stale
+            // Iron Ore Add must have been cleared by the Reset, not carried
+            // over into a stealth credit.
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitUntil(() => WarnEntries(h.Sink).Count > 0, cts.Token);
+
+            h.Session.CollectedItems.Should().NotContainKey("Iron Ore",
+                "the stale pre-Reset Add must NOT carry into the next session's credit");
+            WarnEntries(h.Sink).Single().Message
+                .Should().Contain("Iron Ore").And.Contain("crediting 0");
+        });
+    }
+
+    // ── Cross-context same-name attribution (#699 documented residual) ─
+
+    /// <summary>
+    /// Iter-1 review of PR #721 (issue #699 Acceptance §): pins the
+    /// documented FIFO behaviour under same-name cross-context noise (a
+    /// crafting / skinning / vendor-purchase Iron Ore Add interleaved with
+    /// a survey Iron Ore Add). The post-#699 design retired the 5 s TTL but
+    /// kept survey-session-bounded FIFO ordering — so any same-name Add
+    /// observed between OptimizeRoute and the Collect drains the head of
+    /// the queue, and downstream same-name Adds remain queued for a
+    /// later Collect (or surface in the Trace on session end).
+    ///
+    /// <para>Documented residual: the tracker has no way to distinguish
+    /// "Iron Ore I just mined from a survey node" from "Iron Ore I just
+    /// crafted" at the Add layer — both arrive as
+    /// <see cref="PlayerInventoryAdded"/> with no provenance. The class-level
+    /// remark on <see cref="ItemCollectionTracker"/> accepts this as the
+    /// cost of the principle 4 single-world exit; this test pins the FIFO
+    /// behaviour so a future agent can't silently regress on it.</para>
+    /// </summary>
+    [Fact]
+    public async Task Survey_Add_then_same_name_noise_Add_then_Collect_credits_one_and_leaves_noise_queued()
+    {
+        var h = Build();
+        // Seed TWO surveys — the second is a placeholder that keeps the FSM
+        // from auto-firing AllCollected after the first row flips. Without
+        // it, the Done transition would clear _pendingAdds before the test
+        // can pair the noise-Add with the follow-up Collect.
+        var survey = SeedSurvey(h.Session, "Iron Ore");
+        SeedSurvey(h.Session, "Copper Ore");
+        await Run(h, async () =>
+        {
+            // Enter Gathering — mirrors the lifecycle window during which
+            // crafting/skinning noise can interleave with survey Adds.
+            h.Flow.OptimizeRoute();
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
+
+            // (1) Survey-Add: the "real" Iron Ore from the survey node.
+            PushAdded(h, "IronOre", instanceId: 100);
+            // (2) Noise-Add: simulates a crafting / skinning / vendor-buy
+            // Iron Ore landing in inventory between OptimizeRoute and the
+            // survey banner — same display name, different instance id.
+            PushAdded(h, "IronOre", instanceId: 200);
+
+            // (3) Survey banner Collect — the documented FIFO pairs with
+            // the head of the queue (instance 100), leaving the noise
+            // entry (instance 200) queued for a future Collect.
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
+
+            h.Session.CollectedItems["Iron Ore"].Should().Be(1,
+                "+1 per matched (Add, Collect) pair; the first Add (FIFO) drained");
+            survey.Collected.Should().BeTrue("the survey row name-matched the collect");
+            WarnEntries(h.Sink).Should().BeEmpty(
+                "the first Add satisfied the Collect — no credit-0 path");
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Gathering,
+                "the second survey is still uncollected — AllCollected hasn't fired");
+
+            // (4) Prove the noise Add stayed queued: a second Collect for
+            // the same name must drain it (and NOT take the credit-0 path).
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            await WaitUntil(() => h.Session.CollectedItems["Iron Ore"] == 2, cts.Token);
+
+            h.Session.CollectedItems["Iron Ore"].Should().Be(2,
+                "the queued noise-Add is the documented residual — a follow-up Collect drains it");
+            WarnEntries(h.Sink).Should().BeEmpty(
+                "the noise-Add was still queued; the second Collect paired with it");
+        });
+    }
+
     // ── Replay determinism (#699 new property) ──────────────────────────
 
     /// <summary>
