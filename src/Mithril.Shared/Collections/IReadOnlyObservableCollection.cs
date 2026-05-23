@@ -31,6 +31,19 @@ namespace Mithril.Shared.Collections;
 /// <c>BindingOperations.EnableCollectionSynchronization</c> with the same
 /// lock the implementer mutates under.</para>
 /// </summary>
+/// <remarks>
+/// Implementers SHOULD also implement non-generic
+/// <see cref="System.Collections.IList"/> (with mutators throwing
+/// <see cref="NotSupportedException"/> via explicit-interface
+/// implementations) if they expect downstream consumers to wrap the surface
+/// in WPF's <c>CollectionViewSource</c> for sort, filter, or group support.
+/// WPF reflects on the runtime type when resolving the default view; without
+/// <c>IList</c>, <c>CollectionViewSource.GetDefaultView</c> falls back to
+/// <c>EnumerableCollectionView</c>, which does not support sort, filter, or
+/// group. See <c>System.Collections.ObjectModel.ReadOnlyObservableCollection&lt;T&gt;</c>
+/// for the canonical BCL pattern (read-only <see cref="System.Collections.IList"/>
+/// over an <see cref="System.Collections.ObjectModel.ObservableCollection{T}"/>).
+/// </remarks>
 public interface IReadOnlyObservableCollection<out T>
     : IReadOnlyList<T>, INotifyCollectionChanged, INotifyPropertyChanged
 {

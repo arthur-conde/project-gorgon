@@ -18,8 +18,18 @@ namespace Mithril.GameState.Inventory;
 /// every mutation, and WPF consumers binding from a non-dispatcher thread
 /// call <c>BindingOperations.EnableCollectionSynchronization</c> with the
 /// same lock (exposed via <see cref="IInventoryView.ItemsSyncRoot"/>).</para>
+///
+/// <para><b>Non-generic <see cref="IList"/> surface (#741).</b> Implemented
+/// via explicit-interface methods so the public API typed as
+/// <see cref="IReadOnlyObservableCollection{T}"/> is unchanged — mutators are
+/// only reachable through an explicit cast to <see cref="IList"/> and throw
+/// <see cref="NotSupportedException"/>. WPF's <c>CollectionViewSource</c>
+/// reflects on the runtime type; the presence of <see cref="IList"/> is what
+/// lets <c>GetDefaultView</c> return a <c>ListCollectionView</c> (supporting
+/// sort, filter, group) rather than falling back to
+/// <c>EnumerableCollectionView</c>.</para>
 /// </summary>
-internal sealed class ObservableInventoryItems : IReadOnlyObservableCollection<InventoryItem>
+internal sealed class ObservableInventoryItems : IReadOnlyObservableCollection<InventoryItem>, IList
 {
     private readonly ObservableCollection<InventoryItem> _inner = new();
 
@@ -46,4 +56,46 @@ internal sealed class ObservableInventoryItems : IReadOnlyObservableCollection<I
     internal void AddItem(InventoryItem item) => _inner.Add(item);
 
     internal bool RemoveItem(InventoryItem item) => _inner.Remove(item);
+
+    // ── IList / ICollection (non-generic) ──────────────────────────────
+    //
+    // Read-only members delegate to the inner ObservableCollection<T>
+    // (which already implements IList via its Collection<T> base). Mutators
+    // throw — the privileged entry points are AddItem/RemoveItem above.
+    // Explicit-interface implementations so the public surface typed as
+    // IReadOnlyObservableCollection<InventoryItem> is unaffected; see #741.
+
+    private const string ReadOnlyMessage =
+        "ObservableInventoryItems is a read-only view; mutations occur via the internal correlator paths in InventoryView.";
+
+    object? IList.this[int index]
+    {
+        get => _inner[index];
+        set => throw new NotSupportedException(ReadOnlyMessage);
+    }
+
+    bool IList.IsReadOnly => true;
+
+    // Size changes via the privileged AddItem/RemoveItem paths — not fixed.
+    bool IList.IsFixedSize => false;
+
+    bool ICollection.IsSynchronized => ((ICollection)_inner).IsSynchronized;
+
+    object ICollection.SyncRoot => ((ICollection)_inner).SyncRoot;
+
+    int IList.Add(object? value) => throw new NotSupportedException(ReadOnlyMessage);
+
+    void IList.Clear() => throw new NotSupportedException(ReadOnlyMessage);
+
+    bool IList.Contains(object? value) => ((IList)_inner).Contains(value);
+
+    int IList.IndexOf(object? value) => ((IList)_inner).IndexOf(value);
+
+    void IList.Insert(int index, object? value) => throw new NotSupportedException(ReadOnlyMessage);
+
+    void IList.Remove(object? value) => throw new NotSupportedException(ReadOnlyMessage);
+
+    void IList.RemoveAt(int index) => throw new NotSupportedException(ReadOnlyMessage);
+
+    void ICollection.CopyTo(Array array, int index) => ((ICollection)_inner).CopyTo(array, index);
 }

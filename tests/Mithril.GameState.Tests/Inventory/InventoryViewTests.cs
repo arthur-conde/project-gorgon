@@ -1,4 +1,7 @@
+using System.Collections;
 using System.Collections.Specialized;
+using System.ComponentModel;
+using System.Windows.Data;
 using FluentAssertions;
 using Mithril.GameReports;
 using Mithril.GameState.Inventory;
@@ -876,4 +879,128 @@ public sealed class InventoryViewTests
         view.ItemsSyncRoot.Should().NotBeNull();
         view.ItemsSyncRoot.Should().BeSameAs(view.ItemsSyncRoot);
     }
+
+    // ── CollectionViewSource compatibility (issue #741) ─────────────────
+    //
+    // Items must implement non-generic IList so WPF's CollectionViewSource
+    // resolves a ListCollectionView (supporting sort, filter, group) instead
+    // of falling back to EnumerableCollectionView. The CollectionViewSource
+    // APIs require an STA thread; tests run on a dedicated STA worker to
+    // satisfy that without spinning up a full Application.
+
+    private static void RunOnSta(Action action)
+    {
+        Exception? captured = null;
+        var thread = new Thread(() =>
+        {
+            try { action(); }
+            catch (Exception ex) { captured = ex; }
+            finally { System.Windows.Threading.Dispatcher.CurrentDispatcher.InvokeShutdown(); }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.IsBackground = true;
+        thread.Start();
+        thread.Join();
+        if (captured is not null) throw captured;
+    }
+
+    [Fact]
+    public void Items_implements_non_generic_IList_for_CollectionViewSource()
+    {
+        // Direct runtime-type pin: CollectionViewSource reflects on IList to
+        // pick a ListCollectionView. The reflection itself happens later; this
+        // test catches a regression that drops the interface without needing STA.
+        var (view, _, _, _) = Build();
+        view.Items.Should().BeAssignableTo<IList>();
+    }
+
+    [Fact]
+    public void CollectionViewSource_GetDefaultView_returns_ListCollectionView_supporting_sort_filter_group()
+    {
+        RunOnSta(() =>
+        {
+            var (view, pw, _, _) = Build();
+            PlayerAdd(pw, 42, "Moonstone", Ts(1));
+            PlayerAdd(pw, 99, "RingOfPower", Ts(2));
+            PlayerAdd(pw, 7, "Moonstone", Ts(3));
+
+            var defaultView = CollectionViewSource.GetDefaultView(view.Items);
+
+            // The flagship #741 acceptance: without IList on ObservableInventoryItems
+            // this returns an EnumerableCollectionView that does not support
+            // sort/filter/group operations.
+            defaultView.Should().BeOfType<ListCollectionView>(
+                "ObservableInventoryItems implements IList, so GetDefaultView must " +
+                "pick ListCollectionView rather than EnumerableCollectionView");
+            defaultView.CanSort.Should().BeTrue();
+            defaultView.CanFilter.Should().BeTrue();
+            defaultView.CanGroup.Should().BeTrue();
+
+            // Sort by InternalName ascending.
+            defaultView.SortDescriptions.Add(new SortDescription(nameof(InventoryItem.InternalName), ListSortDirection.Ascending));
+            defaultView.Refresh();
+            defaultView.Cast<InventoryItem>().Select(i => i.InternalName)
+                .Should().Equal("Moonstone", "Moonstone", "RingOfPower");
+
+            // Filter to RingOfPower only.
+            defaultView.Filter = o => o is InventoryItem i && i.InternalName == "RingOfPower";
+            defaultView.Refresh();
+            defaultView.Cast<InventoryItem>().Select(i => i.InstanceId).Should().Equal(99L);
+
+            // Clear filter, group by InternalName.
+            defaultView.Filter = null;
+            defaultView.GroupDescriptions.Add(new PropertyGroupDescription(nameof(InventoryItem.InternalName)));
+            defaultView.Refresh();
+            defaultView.Groups!.Should().HaveCount(2);
+            defaultView.Groups!
+                .Cast<System.Windows.Data.CollectionViewGroup>()
+                .Select(g => (string)g.Name)
+                .Should().BeEquivalentTo(new[] { "Moonstone", "RingOfPower" });
+        });
+    }
+
+    [Fact]
+    public void Items_IList_read_members_delegate_to_inner_collection()
+    {
+        var (view, pw, _, _) = Build();
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        PlayerAdd(pw, 99, "RingOfPower", Ts(2));
+
+        var list = (IList)view.Items;
+
+        list.Count.Should().Be(2);
+        list.IsReadOnly.Should().BeTrue();
+        list.IsFixedSize.Should().BeFalse("size changes via the privileged internal correlator paths");
+
+        var row0 = list[0];
+        row0.Should().BeAssignableTo<InventoryItem>();
+        ((InventoryItem)row0!).InstanceId.Should().Be(42L);
+
+        list.Contains(row0).Should().BeTrue();
+        list.IndexOf(row0).Should().Be(0);
+
+        var buffer = new InventoryItem[2];
+        list.CopyTo(buffer, 0);
+        buffer.Select(i => i.InstanceId).Should().Equal(42L, 99L);
+    }
+
+    [Fact]
+    public void Items_IList_mutators_throw_NotSupportedException()
+    {
+        // Add one row so list[0] / RemoveAt(0) reach into real entries — the
+        // mutator pin is that ObservableInventoryItems refuses the call before
+        // ever delegating to the inner collection, regardless of index validity.
+        var (view, pw, _, _) = Build();
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        var list = (IList)view.Items;
+        var existing = list[0];
+
+        ((Action)(() => list.Add(existing))).Should().Throw<NotSupportedException>();
+        ((Action)(() => list.Insert(0, existing))).Should().Throw<NotSupportedException>();
+        ((Action)(() => list.Remove(existing))).Should().Throw<NotSupportedException>();
+        ((Action)(() => list.RemoveAt(0))).Should().Throw<NotSupportedException>();
+        ((Action)(() => list.Clear())).Should().Throw<NotSupportedException>();
+        ((Action)(() => list[0] = existing)).Should().Throw<NotSupportedException>();
+    }
 }
+
