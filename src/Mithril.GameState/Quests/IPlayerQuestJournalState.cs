@@ -95,6 +95,26 @@ public interface IPlayerQuestJournalState
     /// (Gandalf's <c>QuestCompletionImportService</c> does this for the
     /// pre-#718 persistence shape).</para>
     ///
+    /// <para><b>Idempotency contract for <see cref="PlayerQuestCompleted"/>
+    /// subscribers.</b> Same-session intra-Mithril duplicates are suppressed by
+    /// the implementation's in-memory <c>_completedThisSession</c> map
+    /// (replayed lines with a matching <c>(InternalName, Timestamp)</c> pair do
+    /// not re-fire). However that map resets on every Mithril restart, so a
+    /// <see cref="PlayerQuestCompleted"/> for the same
+    /// <c>(InternalName, Timestamp)</c> pair MAY fire more than once across a
+    /// Mithril restart that lands within a single PG session — each fresh
+    /// attach replays the current PG session's <c>ProcessCompleteQuest</c>
+    /// lines from scratch. Subscribers MUST therefore be past-anchored /
+    /// idempotent on <see cref="PlayerQuestEvent.Timestamp"/>; a fresh
+    /// observation cannot be inferred from "I got this event". Today
+    /// <c>QuestSource.AnchorCompletionCooldown</c> meets this contract by
+    /// stamping <c>DerivedTimerProgress.StartedAt</c> on the carried log
+    /// timestamp — an overwrite-with-same-value is a no-op. Side-effect-emitting
+    /// subscribers (toasts, audio alarms, "you just completed quest X" UI)
+    /// should additionally gate on <c>Mode == Live</c> once worlds land per
+    /// <c>docs/world-simulator.md</c>, and may want a per-session dedupe on the
+    /// receiving side. See #718, #736.</para>
+    ///
     /// <para>The handler is invoked synchronously under an internal lock both
     /// during replay (on the subscribing thread) and during live dispatch (on
     /// the ingestion-loop thread). Subscribers that do non-trivial work should
