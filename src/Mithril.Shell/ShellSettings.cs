@@ -52,7 +52,8 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     /// default — no per-line string allocation. Use when diagnosing an
     /// L2 / L3 parse or interpretation failure where the original line is
     /// useful at the failing datum. Flip takes effect forward (no restart).
-    /// Infra-level diagnostic; sibling to <see cref="VerboseFrameEvents"/>.</summary>
+    /// Infra-level diagnostic; sibling to <see cref="VerboseFrameEvents"/>
+    /// and <see cref="MirrorRawLogLinesToDiagnostics"/>.</summary>
     private bool _captureRawPlayerLogLines;
     public bool CaptureRawPlayerLogLines { get => _captureRawPlayerLogLines; set => Set(ref _captureRawPlayerLogLines, value); }
 
