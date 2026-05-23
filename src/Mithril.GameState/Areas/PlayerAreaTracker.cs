@@ -64,8 +64,15 @@ namespace Mithril.GameState.Areas;
 /// either path. The asymmetry only matters for bus subscribers that count
 /// emissions (e.g., a hypothetical "area-transitions-per-session" metric);
 /// consumers that read state-on-event don't notice. Resolves automatically
-/// once the two <see cref="Observe"/> callers migrate to the bus event per
-/// the #774 follow-on.</para>
+/// once the two <see cref="Observe"/> callers (Legolas + Gandalf bridges)
+/// retire under
+/// <a href="https://github.com/moumantai-gg/mithril/issues/769">#769 Phase C</a>
+/// — at which point the
+/// <c>PlayerAreaWorldRegistration</c> eager pre-warm also retires (the
+/// producer's seed becomes the merger's first emission and the bus emits
+/// <c>PlayerAreaChanged(null → seed-area)</c> normally; consumers see it via
+/// Call 1 eager bus subscriptions per <c>docs/world-simulator.md</c>
+/// "Decisions ratified post-#642" Call 1).</para>
 ///
 /// <para><b>Threading.</b> The world drives <see cref="Apply"/> from its
 /// merger thread; folder mutations + legacy handler dispatch run under
