@@ -1,10 +1,7 @@
 using System.IO;
 using FluentAssertions;
 using Gandalf.Domain;
-using Gandalf.Parsing;
 using Gandalf.Services;
-using Mithril.GameState.Areas;
-using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -34,7 +31,7 @@ public class LootSourceTests : IDisposable
     }
 
     private (LootSource src, DerivedTimerProgressService derived, FakeActiveCharacterService active, ManualTime time)
-        Build(PlayerAreaTracker? areaTracker = null, IReferenceDataService? refData = null)
+        Build(IReferenceDataService? refData = null)
     {
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
@@ -49,7 +46,7 @@ public class LootSourceTests : IDisposable
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache = cacheStore.Load();
         var src = new LootSource(derived, cacheStore, cache,
-            areaTracker: areaTracker, refData: refData, time: time);
+            refData: refData, time: time);
 
         return (src, derived, active, time);
     }
@@ -686,12 +683,13 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_stamps_current_area_on_LearnedChest()
     {
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-
-        var (src, derived, _, time) = Build(areaTracker);
+        // Post-#789: area is forwarded from LootIngestionService's
+        // IPlayerAreaState subscription via UpdateCurrentArea; unit-fixture
+        // tests drive it directly.
+        var (src, derived, _, time) = Build();
         try
         {
+            src.UpdateCurrentArea("AreaSerbule");
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
 
             var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
@@ -705,7 +703,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_with_unknown_area_persists_null()
     {
-        // No area tracker injected → CurrentArea is null path.
+        // No UpdateCurrentArea call → _cachedArea stays null path.
         var (src, derived, _, time) = Build();
         try
         {
@@ -721,17 +719,16 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_area_is_sticky_once_known()
     {
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        var (src, derived, _, time) = Build(areaTracker);
+        var (src, derived, _, time) = Build();
         try
         {
             // First commit while in AreaSerbule.
-            areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
+            src.UpdateCurrentArea("AreaSerbule");
             src.OnChestInteraction("LootChest1", time.GetUtcNow().UtcDateTime);
 
             // Player ports to AreaTomb1, then loots a same-named chest. Sticky:
             // first commit's area wins so the cache doesn't ping-pong.
-            areaTracker.Observe("LOADING LEVEL AreaTomb1", DateTime.UtcNow);
+            src.UpdateCurrentArea("AreaTomb1");
             time.Advance(TimeSpan.FromMinutes(5));
             src.OnChestInteraction("LootChest1", time.GetUtcNow().UtcDateTime);
 
@@ -745,16 +742,15 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_stamps_area_late_when_first_commit_was_unknown()
     {
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        var (src, derived, _, time) = Build(areaTracker);
+        var (src, derived, _, time) = Build();
         try
         {
-            // First commit happens before any LOADING LEVEL → Area is null.
+            // First commit happens before any UpdateCurrentArea → Area is null.
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
 
             // Player transitions, then re-loots the same chest. Sticky-once-known
             // means we DON'T overwrite known Area, but we DO populate from null.
-            areaTracker.Observe("LOADING LEVEL AreaEltibule", DateTime.UtcNow);
+            src.UpdateCurrentArea("AreaEltibule");
             time.Advance(TimeSpan.FromHours(4));
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
 
@@ -772,12 +768,10 @@ public class LootSourceTests : IDisposable
         refData.StringsRaw["npc_AreaSerbule/Cow_Moolanda_Name"] = "Wanda";
         refData.StringsRaw["npc_AreaSerbule/Cow_Bessie_Name"] = "Bessie";
 
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-
-        var (src, derived, _, time) = Build(areaTracker, refData);
+        var (src, derived, _, time) = Build(refData);
         try
         {
+            src.UpdateCurrentArea("AreaSerbule");
             src.OnChestInteraction("Cow_Moolanda", time.GetUtcNow().UtcDateTime);
             src.OnChestInteraction("Cow_Bessie", time.GetUtcNow().UtcDateTime);
 
@@ -797,12 +791,10 @@ public class LootSourceTests : IDisposable
         refData.StringsRaw["npc_LootBackpack1_Name"] = "Adventurer's Pack";
         // No npc_AreaSerbule/LootBackpack1_Name entry — global prefab.
 
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-
-        var (src, derived, _, time) = Build(areaTracker, refData);
+        var (src, derived, _, time) = Build(refData);
         try
         {
+            src.UpdateCurrentArea("AreaSerbule");
             src.OnChestInteraction("LootBackpack1", time.GetUtcNow().UtcDateTime);
             var entry = src.Catalog.Single(c => c.Key == LootSource.ChestKey("LootBackpack1"));
             entry.DisplayName.Should().Be("Adventurer's Pack");
@@ -830,12 +822,10 @@ public class LootSourceTests : IDisposable
         var refData = new Mithril.TestSupport.FakeReferenceData();
         refData.AreasRaw["AreaSerbule"] = new AreaEntry("AreaSerbule", "Serbule", "Serbule");
 
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-
-        var (src, derived, _, time) = Build(areaTracker, refData);
+        var (src, derived, _, time) = Build(refData);
         try
         {
+            src.UpdateCurrentArea("AreaSerbule");
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
             var entry = src.Catalog.Single(c => c.Key == LootSource.ChestKey("EltibuleSecretChest"));
             entry.Region.Should().Be("Serbule");

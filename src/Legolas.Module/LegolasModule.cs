@@ -135,8 +135,8 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetService<ICharacterPinAnchor>(),
                 // Shared GameState current-area: a confirmed area change
                 // invalidates the area-local-frame measurement (maps are
-                // area-specific). Same tracker Gandalf consumes.
-                sp.GetService<PlayerAreaTracker>(),
+                // area-specific). Same source Gandalf consumes (#789).
+                sp.GetService<IPlayerAreaState>(),
                 sp.GetService<IDiagnosticsSink>()));
 
         // End-of-run report (text + PNG + JSON + share link). Singleton so the

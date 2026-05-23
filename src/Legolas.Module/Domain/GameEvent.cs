@@ -93,7 +93,7 @@ public sealed record MotherlodeUseDetected(
     string? MapName = null) : GameEvent(Timestamp);
 
 // The chat-log area banner ("******* Entering Area: <FriendlyName>") was
-// retired in #605. PlayerAreaTracker (Mithril.GameState.Areas) is the
+// retired in #605. IPlayerAreaState (Mithril.GameState.Areas) is the
 // authoritative area-key source, fed by Player.log's LOADING LEVEL line, and
-// PlayerLogIngestionService.ApplyAreaIfChanged drives the calibration service
+// PlayerLogIngestionService.OnAreaChanged drives the calibration service
 // directly. See #531 for the redundancy analysis.

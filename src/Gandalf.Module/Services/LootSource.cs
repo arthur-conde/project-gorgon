@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using Gandalf.Domain;
-using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -50,7 +49,6 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly DerivedTimerProgressService _derived;
     private readonly ISettingsStore<LootCatalogCache> _cacheStore;
     private readonly LootCatalogCache _cache;
-    private readonly PlayerAreaTracker? _areaTracker;
     private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _time;
     private readonly IWorldClock? _worldClock;
@@ -62,11 +60,19 @@ public sealed class LootSource : ITimerSource, IDisposable
     private IReadOnlyDictionary<string, TimerCatalogEntry> _lastCatalogByKey;
     private IReadOnlyDictionary<string, TimerProgressEntry> _lastProgressByKey;
 
+    // Cache the player's current area, updated via UpdateCurrentArea from
+    // LootIngestionService's IPlayerAreaState subscription (#789). Read
+    // lock-free on the chest-commit hot path (OnChestInteraction +
+    // OnChestCooldownObserved) — reference-sized writes are atomic in
+    // .NET and the IPlayerAreaState dispatch lock already serialises
+    // writes against the area folder's mutations, so the consumer side
+    // doesn't need its own lock for the simple read-latest semantic.
+    private string? _cachedArea;
+
     public LootSource(
         DerivedTimerProgressService derived,
         ISettingsStore<LootCatalogCache> cacheStore,
         LootCatalogCache cache,
-        PlayerAreaTracker? areaTracker = null,
         IReferenceDataService? refData = null,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null,
@@ -75,7 +81,6 @@ public sealed class LootSource : ITimerSource, IDisposable
         _derived = derived;
         _cacheStore = cacheStore;
         _cache = cache;
-        _areaTracker = areaTracker;
         _refData = refData;
         _time = time ?? TimeProvider.System;
         _worldClock = playerWorld?.Clock;
@@ -86,6 +91,16 @@ public sealed class LootSource : ITimerSource, IDisposable
 
         _derived.ProgressChanged += OnDerivedProgressChanged;
     }
+
+    /// <summary>
+    /// Forward the player's current area into <see cref="_cachedArea"/> so
+    /// chest commits stamp <c>LearnedChest.Area</c> with the right zone
+    /// (#178). Called by <see cref="LootIngestionService"/> for both the
+    /// initial Snapshot replay (seed) and live transitions; a <c>null</c>
+    /// argument clears the cache (character-select / disconnect) and
+    /// subsequent commits stamp <c>Area = null</c> until the next portal.
+    /// </summary>
+    public void UpdateCurrentArea(string? area) => _cachedArea = area;
 
     public string SourceId => Id;
     public IReadOnlyList<TimerCatalogEntry> Catalog => _catalog;
@@ -125,7 +140,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         // defeat-cooldown auto-learn path). Area is stamped sticky-once-known
         // (#178) — first commit wins so the same internal name in two zones
         // doesn't ping-pong its area attribution.
-        var currentArea = _areaTracker?.CurrentArea;
+        var currentArea = _cachedArea;
         var learnedChanged = false;
         lock (_catalogLock)
         {
@@ -238,7 +253,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         {
             if (prior is null)
             {
-                var currentArea = _areaTracker?.CurrentArea;
+                var currentArea = _cachedArea;
                 lock (_catalogLock)
                 {
                     if (!_cache.LearnedChests.TryGetValue(chestInternalName, out var entry))

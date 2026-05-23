@@ -19,15 +19,20 @@ namespace Gandalf.Services;
 /// anchor (the <see cref="DefeatCooldownParser"/> rejection text remains as
 /// a diagnostic-only "cooldown still active" observation).
 ///
-/// Also feeds <see cref="PlayerAreaTracker"/> so chest commits stamp the
-/// player's current area on <c>LearnedChest.Area</c> (#178). The tracker
-/// self-seeds via <see cref="PlayerAreaTracker.CurrentArea"/>'s lazy
-/// pre-login-preamble scan (#514); the bare <c>LocalPlayerLogLine.Data</c>
-/// we hand it here is a no-op for non-area lines (no <c>LOADING LEVEL</c>
-/// lives on the LocalPlayer pipe — that's a SystemSignal kind). The
-/// canonical live-area updates flow through <c>PlayerPositionTracker</c> /
-/// <c>PlayerWeatherTracker</c> / <c>PlayerPinTracker</c>, which still consume
-/// <see cref="IPlayerLogStream"/> directly and feed the same shared tracker.
+/// <para><b>Area→chest-stamp bridge (#789).</b> Subscribes to
+/// <see cref="IPlayerAreaState"/> on <c>StartAsync</c> and forwards every
+/// notification to <see cref="LootSource.UpdateCurrentArea"/> so a chest
+/// commit (<see cref="LootBracketTracker"/> → <see cref="LootSource.OnChestInteraction"/>)
+/// stamps <c>LearnedChest.Area</c> with the area the player was in at
+/// commit time (#178). The Snapshot replay synthesised by
+/// <see cref="IPlayerAreaState.Subscribe"/> on attach delivers the seed
+/// area before any chest interaction can reach the bracket tracker — so
+/// session-start commits stamp the correct area without a separate eager
+/// read of <see cref="IPlayerAreaState.CurrentArea"/>. Subscribing here
+/// (NOT via <c>IPlayerWorld.Bus</c>) is load-bearing while the eager
+/// pre-warm in <c>PlayerAreaWorldRegistration</c> is still active — its
+/// retirement is the follow-on PR once both consumer migrations land
+/// (#769).</para>
 ///
 /// <para><b>L1 migration disposition (#549 Gandalf row, #550 PR 3 archetype-B).</b>
 /// <list type="bullet">
@@ -71,10 +76,11 @@ public sealed class LootIngestionService : BackgroundService
     private readonly LootBracketTracker _bracket;
     private readonly BossKillCreditParser _bossKill;
     private readonly DefeatCooldownParser _defeatCooldown;
-    private readonly PlayerAreaTracker _areaTracker;
+    private readonly IPlayerAreaState _areaState;
     private readonly LootSource _source;
     private readonly IDiagnosticsSink? _diag;
     private ILogSubscription? _subscription;
+    private IDisposable? _areaSub;
     private bool _firstObservationLogged;
 
     public LootIngestionService(
@@ -82,7 +88,7 @@ public sealed class LootIngestionService : BackgroundService
         LootBracketTracker bracket,
         BossKillCreditParser bossKill,
         DefeatCooldownParser defeatCooldown,
-        PlayerAreaTracker areaTracker,
+        IPlayerAreaState areaState,
         LootSource source,
         IDiagnosticsSink? diag = null)
     {
@@ -90,9 +96,29 @@ public sealed class LootIngestionService : BackgroundService
         _bracket = bracket;
         _bossKill = bossKill;
         _defeatCooldown = defeatCooldown;
-        _areaTracker = areaTracker;
+        _areaState = areaState ?? throw new ArgumentNullException(nameof(areaState));
         _source = source;
         _diag = diag;
+    }
+
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        // Area bridge first — Subscribe fires a synthetic Snapshot inside
+        // the call carrying the seed area, so LootSource sees the correct
+        // area before any chest commit can reach it from the L1 subscription
+        // below. Subscribing here (NOT via IPlayerWorld.Bus) is load-bearing
+        // while the eager pre-warm in PlayerAreaWorldRegistration is still
+        // active — bus subscribers never see the seed because that
+        // transition is applied directly to the folder and bypasses the bus.
+        _areaSub = _areaState.Subscribe(OnAreaChanged);
+        return base.StartAsync(cancellationToken);
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _areaSub?.Dispose();
+        _areaSub = null;
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -127,8 +153,20 @@ public sealed class LootIngestionService : BackgroundService
     {
         _subscription?.Dispose();
         _subscription = null;
+        _areaSub?.Dispose();
+        _areaSub = null;
         base.Dispose();
     }
+
+    /// <summary>
+    /// Forward area notifications to <see cref="LootSource"/>. Both
+    /// <see cref="PlayerAreaChangeKind.Snapshot"/> (seed on attach) and
+    /// <see cref="PlayerAreaChangeKind.Changed"/> (live transition) carry
+    /// only the latest <see cref="PlayerAreaChanged.Current"/> we care
+    /// about for stamping chest commits.
+    /// </summary>
+    private void OnAreaChanged(PlayerAreaChanged evt) =>
+        _source.UpdateCurrentArea(evt.Current);
 
     private void Dispatch(LocalPlayerLogLine payload)
     {
@@ -139,16 +177,6 @@ public sealed class LootIngestionService : BackgroundService
         var line = payload.Data;
         var ts = payload.Timestamp.UtcDateTime;
 
-        // Area transitions update the tracker BEFORE the bracket sees the
-        // line, so any subsequent chest interaction in the same dispatch
-        // batch reads the correct CurrentArea. The LocalPlayer pipe never
-        // carries LOADING LEVEL (that's a SystemSignal), so this call is a
-        // no-op for the area-source case — PlayerAreaTracker.CurrentArea
-        // self-seeds via #514 and the canonical live-area updates flow
-        // through GameState trackers that still consume IPlayerLogStream
-        // directly. Calling Observe here is defence-in-depth (the parser's
-        // substring guard makes the no-op cheap).
-        _areaTracker.Observe(line, ts);
         _bracket.Observe(line, ts);
 
         if (_bossKill.TryParse(line, ts) is BossKillCreditEvent kill)

@@ -20,8 +20,8 @@ namespace Legolas.Services;
 ///
 /// <para><b>Responsibilities.</b>
 /// <list type="bullet">
-///   <item><b>Area→calibration bridge.</b> Feeds the shared
-///   <see cref="PlayerAreaTracker"/> and, whenever the player's area changes,
+///   <item><b>Area→calibration bridge.</b> Subscribes to the shared
+///   <see cref="IPlayerAreaState"/> and, whenever the player's area changes,
 ///   applies that area's persisted <see cref="Domain.AreaCalibration"/> via
 ///   <see cref="IAreaCalibrationService.SelectArea"/>.</item>
 ///   <item><b><c>ProcessMapFx</c> placement (#454).</b> Absolute
@@ -50,16 +50,21 @@ namespace Legolas.Services;
 /// envelopes whose <c>Sequence</c> we've already processed in a prior
 /// session — closing the resurrection-on-restart edge the in-memory cutoff
 /// never covered. The area bridge survives the <c>LiveOnly</c> tightening
-/// because <see cref="PlayerAreaTracker"/> self-seeds (#514) from the most
-/// recent <c>LOADING LEVEL</c> line in the log before this subscription
-/// reads its first live envelope.</para>
+/// because <see cref="IPlayerAreaState.Subscribe"/>'s late-subscriber
+/// Snapshot replay synthesizes the current area on attach (the production
+/// seed is delivered by <c>PlayerAreaWorldRegistration</c>'s eager
+/// pre-warm; retirement of that pre-warm is the follow-on after this
+/// migration and Gandalf's sibling consumer migrate — see #769 / Call 1 in
+/// <c>docs/world-simulator.md</c>).</para>
 ///
-/// <para><b>Mixed-handler subscription (#549 Divergence 2 option a).</b>
-/// One subscription handles both the area bridge (formerly accepted replay
-/// to apply pre-live area state, now satisfied by #514) and the live-only
-/// survey/motherlode dispatch. Per #549's recommendation this stays a single
-/// subscription — <c>LiveOnly</c> serves both purposes once the tracker
-/// self-seeds.</para>
+/// <para><b>Area subscription decoupled from the log pipe (#789).</b> Area
+/// state arrives via <see cref="IPlayerAreaState.Subscribe"/> on a separate
+/// attach during <c>StartAsync</c> — the per-line handler no longer feeds
+/// already-classified <c>LOADING LEVEL</c> lines into a concrete tracker.
+/// The producer-side <see cref="Producers.AreaLoadingFrameProducer"/>
+/// already owns the L1 subscription that turns those envelopes into
+/// <c>AreaLoadingFrame</c> emissions; the bridge here just consumes the
+/// resulting state notifications.</para>
 ///
 /// <para>Subscribes eagerly during <c>StartAsync</c> (#695 Call 1). The
 /// <c>"legolas"</c> module gate no longer gates state subscription; UI
@@ -81,13 +86,19 @@ namespace Legolas.Services;
 /// by calibration VMs. The L1
 /// <see cref="DeliveryContext.Marshaled"/> option marshals every envelope
 /// onto the WPF dispatcher before handler invocation, replacing the
-/// hand-rolled <c>PostToUi</c> helper (#550 capability E).</para>
+/// hand-rolled <c>PostToUi</c> helper (#550 capability E). Area-change
+/// notifications fire on the world's merger thread (or the producing
+/// thread on the synthetic <see cref="PlayerAreaChangeKind.Snapshot"/>
+/// replay-on-attach inside <see cref="IPlayerAreaState.Subscribe"/>);
+/// <see cref="IAreaCalibrationService.SelectArea"/> itself does not
+/// marshal, but the VMs it raises Changed for already dispatch their own
+/// UI work.</para>
 /// </summary>
 public sealed class PlayerLogIngestionService : BackgroundService
 {
     private readonly ILogStreamDriver _driver;
     private readonly PlayerLogParser _parser;
-    private readonly PlayerAreaTracker _areaTracker;
+    private readonly IPlayerAreaState _areaState;
     private readonly IAreaCalibrationService _areaCalibration;
     private readonly SurveyFlowController _flow;
     private readonly SessionState _session;
@@ -97,7 +108,8 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly PerCharacterStore<LegolasIngestionState>? _ingestionStore;
     private readonly IDiagnosticsSink? _diag;
 
-    private string? _lastAppliedArea;
+    private string? _cachedArea;
+    private IDisposable? _areaSub;
     private ILogSubscription? _subscription;
 
     // High-water bookkeeping. Updated per envelope under no lock — the L1
@@ -115,7 +127,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
     public PlayerLogIngestionService(
         ILogStreamDriver driver,
         PlayerLogParser parser,
-        PlayerAreaTracker areaTracker,
+        IPlayerAreaState areaState,
         IAreaCalibrationService areaCalibration,
         SurveyFlowController flow,
         SessionState session,
@@ -127,7 +139,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
     {
         _driver = driver;
         _parser = parser;
-        _areaTracker = areaTracker;
+        _areaState = areaState ?? throw new ArgumentNullException(nameof(areaState));
         _areaCalibration = areaCalibration;
         _flow = flow;
         _session = session;
@@ -163,12 +175,18 @@ public sealed class PlayerLogIngestionService : BackgroundService
         // active at attach time. See "Character-switch caveat" below.
         var initialHighWater = ResolveInitialHighWater();
 
-        // Area is seeded by the shared PlayerAreaTracker itself (one-shot,
-        // owned — mithril#514); this consumer only reads it. ApplyAreaIfChanged
-        // reads CurrentArea, which triggers PlayerAreaTracker.EnsureSeeded
-        // on first call — so even though LiveOnly drops the replay drain
-        // we still pick up the current area before any live envelope arrives.
-        ApplyAreaIfChanged();
+        // Area bridge: IPlayerAreaState.Subscribe fires a synthetic Snapshot
+        // notification synchronously inside the call so a late subscriber
+        // observes the same view already-attached handlers see — that's how
+        // the production seed (PlayerAreaWorldRegistration's eager pre-warm
+        // applies the producer's reverse-scan seed before our StartAsync
+        // runs) reaches OnAreaChanged before any live LOADING LEVEL envelope.
+        // Subscribing here (NOT via IPlayerWorld.Bus) is load-bearing while
+        // the pre-warm is still active — bus subscribers never see the seed
+        // because that transition is applied directly to the folder and
+        // bypasses the bus. Retiring the pre-warm is the follow-on after
+        // both this consumer and Gandalf's sibling migrate (#769).
+        _areaSub = _areaState.Subscribe(OnAreaChanged);
 
         var dispatcher = Application.Current?.Dispatcher;
         // archetype-B per #549 Legolas/PlayerLog disposition:
@@ -191,12 +209,14 @@ public sealed class PlayerLogIngestionService : BackgroundService
                 var ts = payload.Timestamp.UtcDateTime;
                 var line = payload.Data;
 
-                // Area first — a target line in the same batch must read the
-                // correct current-area calibration. PlayerAreaTracker takes
-                // the bare envelope-stripped payload (L0.5 owns the actor
-                // envelope; downstream never re-matches it).
-                _areaTracker.Observe(line, ts);
-                ApplyAreaIfChanged();
+                // Area state is no longer fed from this per-line handler
+                // (#789): the producer's L1 subscription owns the
+                // LOADING-LEVEL envelope path, and IPlayerAreaState.Subscribe
+                // delivers the change notifications above. The trailing
+                // map-fx / motherlode handlers below read the cached current
+                // area implicitly via IAreaCalibrationService when they need
+                // it (SelectArea already ran from OnAreaChanged for the
+                // current area before any live envelope reaches here).
 
                 // Map pins (ProcessMapPin{Add,Remove}) are owned by the
                 // GameState-tier PlayerPinTracker (#468); this service handles
@@ -278,6 +298,8 @@ public sealed class PlayerLogIngestionService : BackgroundService
         {
             _subscription?.Dispose();
             _subscription = null;
+            _areaSub?.Dispose();
+            _areaSub = null;
             // Final synchronous flush so an in-flight debounce doesn't lose
             // the last few Sequence advances on a clean shutdown.
             _highWaterFlush.Stop();
@@ -289,6 +311,8 @@ public sealed class PlayerLogIngestionService : BackgroundService
     {
         _subscription?.Dispose();
         _subscription = null;
+        _areaSub?.Dispose();
+        _areaSub = null;
         _highWaterFlush.Stop();
         _highWaterFlush.Dispose();
         base.Dispose();
@@ -408,25 +432,28 @@ public sealed class PlayerLogIngestionService : BackgroundService
 
     /// <summary>
     /// Apply the current area's persisted calibration when (and only when) the
-    /// tracker's area actually changes. A null area (character-select /
-    /// disconnect) resets the latch so re-entering the same area later
-    /// re-applies — defensive against any intervening projector reset.
+    /// area actually changes. A null area (character-select / disconnect)
+    /// resets the latch so re-entering the same area later re-applies —
+    /// defensive against any intervening projector reset.
+    ///
+    /// <para>Fires for both the synthetic
+    /// <see cref="PlayerAreaChangeKind.Snapshot"/> replay on subscribe (which
+    /// delivers the seed area) and live
+    /// <see cref="PlayerAreaChangeKind.Changed"/> transitions; the
+    /// previous-equals-current short-circuit means a Snapshot whose
+    /// <c>Current</c> matches an already-applied area is silently dropped,
+    /// matching the pre-#789 idempotent <c>ApplyAreaIfChanged</c> behaviour.</para>
     /// </summary>
-    private void ApplyAreaIfChanged()
+    private void OnAreaChanged(PlayerAreaChanged evt)
     {
-        // First read triggers PlayerAreaTracker.EnsureSeeded (#514) — the
-        // tracker self-scans the log for the most recent LOADING LEVEL and
-        // resolves the current area before returning. So even though we
-        // subscribe LiveOnly (no replay drain), the area we read here is
-        // the *real* current area, not null.
-        var area = _areaTracker.CurrentArea;
+        var area = evt.Current;
         if (area is null)
         {
-            _lastAppliedArea = null;
+            _cachedArea = null;
             return;
         }
-        if (area == _lastAppliedArea) return;
-        _lastAppliedArea = area;
+        if (area == _cachedArea) return;
+        _cachedArea = area;
         _areaCalibration.SelectArea(area);
     }
 

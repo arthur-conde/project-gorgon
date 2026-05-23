@@ -121,7 +121,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     private readonly IMultilaterationSolver _solver;
     private readonly MotherlodeFlowController _flow;
     private readonly ICharacterPinAnchor? _characterPin;
-    private readonly PlayerAreaTracker? _areaTracker;
+    private readonly IPlayerAreaState? _areaState;
     private readonly IDiagnosticsSink? _diag;
     private readonly IReferenceDataService? _refData;
     private readonly LegolasSettings? _settings;
@@ -180,13 +180,13 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         IReferenceDataService? refData = null,
         LegolasSettings? settings = null,
         ICharacterPinAnchor? characterPin = null,
-        PlayerAreaTracker? areaTracker = null,
+        IPlayerAreaState? areaState = null,
         IDiagnosticsSink? diag = null)
     {
         _solver = solver;
         _flow = flow;
         _characterPin = characterPin;
-        _areaTracker = areaTracker;
+        _areaState = areaState;
         _refData = refData;
         _settings = settings;
         _diag = diag;
@@ -332,7 +332,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             // fix/slot — clear the measurement (keep the session dug count).
             // Null = area unknown (char-select / pre-transition) → don't reset;
             // self-heals on the next confirmed area.
-            var cur = _areaTracker?.CurrentArea;
+            var cur = _areaState?.CurrentArea;
             if (cur is not null)
             {
                 if (_sessionArea is not null && cur != _sessionArea)
