@@ -72,12 +72,19 @@ public sealed partial class GandalfSettingsViewModel : ObservableObject
         Settings = settings;
         _defs = defs;
         _progress = progress;
+        ShiftSettings = shiftSettings;
         ShiftRows = shiftCatalog.Shifts
             .Select(s => new ShiftAlarmRow(s, shiftSettings.GetOrCreate(s.Slug), preferences))
             .ToArray();
     }
 
     public GandalfSettings Settings { get; }
+
+    /// <summary>
+    /// Cross-shift settings (currently just <see cref="GandalfShiftSettings.RingOnCurrentShiftAtStartup"/>).
+    /// Exposed so the settings view can two-way-bind the cold-start opt-in checkbox.
+    /// </summary>
+    public GandalfShiftSettings ShiftSettings { get; }
 
     /// <summary>One row per published in-game-time-of-day shift, in time order.</summary>
     public IReadOnlyList<ShiftAlarmRow> ShiftRows { get; }
