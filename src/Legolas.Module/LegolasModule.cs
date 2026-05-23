@@ -5,7 +5,6 @@ using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
 using Mithril.GameState.Areas;
-using Mithril.GameState.Inventory;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
 using Mithril.Shared.Logging;
@@ -25,6 +24,7 @@ using Legolas.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Mithril.WorldSim.Player;
 
 namespace Legolas;
 
@@ -122,10 +122,13 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetRequiredService<MotherlodeFlowController>(),
                 sp.GetRequiredService<IPlayerPositionTracker>(),
                 sp.GetRequiredService<IPlayerPinTracker>(),
-                // #488 inventory-instance identity + exact completion;
+                // #488 dig-signal via Player.log ProcessDeleteItem only — no
+                // chat fusion — so we subscribe to PlayerInventoryRemoved on
+                // the PlayerWorld bus directly (principle 4 single-world-direct,
+                // sibling to ItemCollectionTracker's PlayerInventoryAdded path).
                 // IReferenceDataService resolves the motherlode-map predicate;
                 // LegolasSettings carries the Multi-map mode toggle (read live).
-                sp.GetService<IInventoryService>(),
+                sp.GetService<IPlayerWorld>(),
                 sp.GetService<IReferenceDataService>(),
                 sp.GetRequiredService<LegolasSettings>(),
                 // #497 @me/character-named pin = high-confidence self position.

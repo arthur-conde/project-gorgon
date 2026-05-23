@@ -229,11 +229,11 @@ public class MotherlodeMeasurementCoordinatorTests
         ("RawGem_Diamond", "Diamond"));
 
     private static (MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
-        FakeInventoryService inv) BuildInv(bool multiMap)
+        FakeMotherlodePlayerWorld inv) BuildInv(bool multiMap)
     {
         var pos = new FakePlayerPositionTracker();
         var pins = new FakePlayerPinTracker();
-        var inv = new FakeInventoryService();
+        var inv = new FakeMotherlodePlayerWorld();
         var flow = new MotherlodeFlowController(new SessionState());
         var settings = new LegolasSettings { MotherlodeMultiMapMode = multiMap };
         var coord = new MotherlodeMeasurementCoordinator(
@@ -532,11 +532,11 @@ public class MotherlodeMeasurementCoordinatorTests
     // ---- area scoping (GameState PlayerAreaTracker) ----------------------
 
     private static (MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
-        FakeInventoryService inv, PlayerAreaTracker area) BuildAreaInv()
+        FakeMotherlodePlayerWorld inv, PlayerAreaTracker area) BuildAreaInv()
     {
         var pos = new FakePlayerPositionTracker();
         var pins = new FakePlayerPinTracker();
-        var inv = new FakeInventoryService();
+        var inv = new FakeMotherlodePlayerWorld();
         var area = new PlayerAreaTracker(new AreaTransitionParser());
         var flow = new MotherlodeFlowController(new SessionState());
         var coord = new MotherlodeMeasurementCoordinator(
