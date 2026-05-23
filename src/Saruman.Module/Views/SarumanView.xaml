@@ -30,6 +30,27 @@
     </UserControl.Resources>
 
     <DockPanel Margin="16">
+        <!-- Post-#603 migration banner (#686): one-time notice that the
+             schema 1→2 upgrade dropped pre-existing spent-flag state. Dismiss
+             persists per-character via SarumanState.ShowPreSplitMigrationHint;
+             fresh installs and already-dismissed characters never see it. -->
+        <Border DockPanel.Dock="Top"
+                Visibility="{Binding ShowMigrationHint, Converter={StaticResource BoolToVis}}"
+                Margin="0,0,0,12" Padding="12,8"
+                Background="#221E3A5F" BorderBrush="{StaticResource SetRefBorderBrush}" BorderThickness="1"
+                CornerRadius="3">
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right" Content="Got it" Padding="10,4" Margin="12,0,0,0"
+                        VerticalAlignment="Top"
+                        Command="{Binding DismissMigrationHintCommand}"
+                        ToolTip="Dismiss this notice for the active character. It won't appear again."/>
+                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextPrimaryBrush}"
+                           FontSize="{DynamicResource AppFontSize}"
+                           Text="Your previously-marked-spent Words of Power were reset by the Words of Power split. Chat replay covers codes spoken since the latest in-game chat banner — for older offline burns, right-click a code and pick 'Mark as spent (offline burn)'."/>
+            </DockPanel>
+        </Border>
+
         <!-- Header -->
         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,12">
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">

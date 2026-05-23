@@ -35,6 +35,12 @@ public sealed class SarumanLegacyMigration : ILegacyMigration<SarumanState>
             using var stream = File.OpenRead(_legacyPath);
             var loaded = JsonSerializer.Deserialize(stream, _typeInfo);
             if (loaded is null) return false;
+            // The legacy flat file is by definition pre-#603 and carried the old
+            // Codebook field that STJ silently drops during deserialization here
+            // (the field no longer exists on the type). Surface the same one-time
+            // hint as the schema 1→2 in-place migration so the user knows their
+            // previously-marked-spent codes are gone and how to recover them.
+            loaded.ShowPreSplitMigrationHint = true;
             migrated = loaded;
             return true;
         }

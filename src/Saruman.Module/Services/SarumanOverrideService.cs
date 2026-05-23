@@ -84,6 +84,46 @@ public sealed class SarumanOverrideService
         return removed;
     }
 
+    /// <summary>
+    /// Whether the one-time post-#603 migration banner should be shown for the
+    /// active character. <c>false</c> when no character is active or when the
+    /// hint has already been dismissed (or never set).
+    /// </summary>
+    public bool ShowMigrationHint
+    {
+        get
+        {
+            var state = _view.Current;
+            if (state is null) return false;
+            lock (_lock) return state.ShowPreSplitMigrationHint;
+        }
+    }
+
+    /// <summary>
+    /// Clear the post-#603 migration hint flag. Returns <c>true</c> when the
+    /// dismiss had an effect (the flag was set), <c>false</c> when it was
+    /// already cleared or no character is active. Piggybacks on
+    /// <see cref="OverridesChanged"/> so the VM rebinds <see cref="ShowMigrationHint"/>
+    /// on the next refresh without a dedicated event.
+    /// </summary>
+    public bool DismissMigrationHint()
+    {
+        var state = _view.Current;
+        if (state is null) return false;
+        bool wasShowing;
+        lock (_lock)
+        {
+            wasShowing = state.ShowPreSplitMigrationHint;
+            if (wasShowing)
+            {
+                state.ShowPreSplitMigrationHint = false;
+                Persist();
+            }
+        }
+        if (wasShowing) OverridesChanged?.Invoke(this, EventArgs.Empty);
+        return wasShowing;
+    }
+
     private void Persist()
     {
         try { _view.Save(); }
