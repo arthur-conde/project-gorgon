@@ -4,7 +4,7 @@ namespace Mithril.GameState.Sessions;
 /// Live PG session identity. Tails <see cref="Mithril.Shared.Logging.IPlayerLogStream"/>
 /// for the <c>Logged in as character X. Time UTC=… Timezone Offset …</c> banner,
 /// publishes the current <see cref="GameSession"/>, and re-anchors on every
-/// fresh login. Sibling of <see cref="Mithril.GameState.Inventory.IInventoryService"/>
+/// fresh login. Sibling of <see cref="Mithril.GameState.Inventory.IInventoryView"/>
 /// and <see cref="Mithril.GameState.Quests.IPlayerQuestJournalState"/>: same
 /// atomic-replay Subscribe pattern so late joiners observe the current session
 /// synchronously.

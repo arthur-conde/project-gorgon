@@ -28,15 +28,15 @@ namespace Mithril.GameState.Gifting;
 ///   <see cref="ReplayMode.FromSessionStart"/> atomically replays every
 ///   resolved gift event from session start (in original order) before
 ///   delivering live events; <see cref="ReplayMode.LiveOnly"/> skips the
-///   replay. Same shape <c>IInventoryService.Subscribe</c> adopted under
-///   #585.</item>
+///   replay. Same shape the legacy <c>IInventoryView.Subscribe</c> shim
+///   adopted under #585 (the shim itself retired in #659).</item>
 ///   <item><b>Query</b> — none today. No identified v1 consumer needs a
 ///   point-in-time snapshot ("what gifts have landed?"); the React channel
 ///   covers the use case. Can be added later if a consumer surfaces.</item>
 ///   <item><b>Bind</b> — none today. Same reasoning as Query. Consumers
 ///   wanting an observable collection can wrap <see cref="Subscribe"/> at the
-///   call site (the same pattern Palantir's <c>LiveInventoryViewModel</c>
-///   uses over <c>IInventoryService</c>).</item>
+///   call site (Palantir's <c>LiveInventoryViewModel</c> binds directly to
+///   <see cref="Mithril.GameState.Inventory.IInventoryView.Items"/> instead).</item>
 /// </list>
 ///
 /// <para><b>Frame-determinism (per <a href="https://github.com/moumantai-gg/mithril/issues/594">#594</a>).</b>
@@ -47,9 +47,9 @@ namespace Mithril.GameState.Gifting;
 /// <c>instanceId → InternalName</c> map (populated from
 /// <c>ProcessAddItem</c> on the same subscription) and resolves
 /// <see cref="GiftAccepted.ItemInternalName"/> from that map — never via
-/// <c>IInventoryService.TryResolve</c>. This is load-bearing: routing the
-/// DeleteItem half through <c>IInventoryService</c> would re-introduce the
-/// cross-pump race documented in
+/// <see cref="Mithril.GameState.Inventory.IInventoryView.TryResolve"/>. This is
+/// load-bearing: routing the DeleteItem half through <c>IInventoryView</c>
+/// would re-introduce the cross-pump race documented in
 /// <a href="https://github.com/moumantai-gg/mithril/issues/582">#582</a>'s
 /// <i>Replay correctness</i> section, making the lift worse than the status
 /// quo.</para>
@@ -57,9 +57,9 @@ namespace Mithril.GameState.Gifting;
 /// <para><b>Out-of-scope, intentionally.</b></para>
 /// <list type="bullet">
 ///   <item><b>Stack size on the event.</b> The consumer (Arwen) resolves
-///   stack size via <c>IInventoryService.TryGetStackSize(ItemInstanceId)</c>
-///   at observation-record time — the inventory service retains last-known
-///   sizes for deleted entries specifically for this lookup path. See
+///   stack size via <see cref="Mithril.GameState.Inventory.IInventoryView.TryGetStackSize"/>
+///   at observation-record time — the view retains last-known sizes for
+///   deleted entries specifically for this lookup path. See
 ///   <see cref="GiftAccepted"/> remarks.</item>
 ///   <item><b>Persistence.</b> Session-fresh — the React channel replays from
 ///   session start on every Mithril attach. Consumers (Arwen's
@@ -96,8 +96,8 @@ public interface IGiftSignalService
     /// <see cref="ReplayMode.LiveOnly"/> skips the replay. Only events fired
     /// after the subscription is established are delivered.
     /// <see cref="ReplayMode.SinceSubscribe"/> is treated like
-    /// <see cref="ReplayMode.LiveOnly"/> — same shape
-    /// <c>InventoryService.Subscribe</c> uses.</para>
+    /// <see cref="ReplayMode.LiveOnly"/> — same shape the legacy
+    /// <c>InventoryView.Subscribe</c> shim used before #659 retired it.</para>
     ///
     /// <para><b>Threading.</b> The handler is invoked synchronously under
     /// the internal lock both during replay (on the subscribing thread) and

@@ -71,7 +71,7 @@ public sealed class ArwenModule : IMithrilModule
             return new CalibrationService(
                 sp.GetRequiredService<IReferenceDataService>(),
                 sp.GetRequiredService<GiftIndex>(),
-                sp.GetRequiredService<IInventoryService>(),
+                sp.GetRequiredService<IInventoryView>(),
                 Path.Combine(localApp, "Mithril", "Arwen"),
                 sp.GetService<ICommunityCalibrationService>(),
                 settings.Calibration,

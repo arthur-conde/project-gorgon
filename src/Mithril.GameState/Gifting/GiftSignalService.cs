@@ -113,12 +113,12 @@ public sealed partial class GiftSignalService : BackgroundService, IGiftSignalSe
 
     // Service-owned instanceId → InternalName map. Populated from
     // ProcessAddItem on the SAME L1 subscription as the rest of the SM —
-    // explicitly NOT consulted from IInventoryService.TryResolve. This is
+    // explicitly NOT consulted from IInventoryView.TryResolve. This is
     // the load-bearing Tier-2 commitment per #596's "Own ProcessAddItem too"
-    // section: routing the DeleteItem half through IInventoryService would
+    // section: routing the DeleteItem half through IInventoryView would
     // re-introduce the cross-pump race documented in #582. Map is
     // append-only (never evict) so a DeleteItem whose AddItem fired earlier
-    // in the same session resolves cleanly, mirroring InventoryService's
+    // in the same session resolves cleanly, mirroring the view's
     // retention-on-delete pattern.
     private readonly Dictionary<long, string> _instanceMap = new();
 

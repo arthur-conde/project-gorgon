@@ -124,10 +124,9 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 
 Pre-#602: `InventoryService.cs` — a single service spanning Player.log AND chat
 with in-service `PendingCorrelator` + `FileSystemWatcher` reconcile (violating
-world-sim principle 3). Post-#602: two folders + a view, with the legacy
-`IInventoryService` interface retained only as an `[Obsolete]` shim that
-resolves to the view (for the six pre-existing consumers; cleanup tracked in
-[#659](https://github.com/moumantai-gg/mithril/issues/659)).
+world-sim principle 3). Post-#602: two folders + a view; the legacy
+`IInventoryService` interface itself retired alongside the Arwen consumer
+migration after the union-shaped `Subscribe` shim was already gone in #659.
 
 - **Player.log half** → `IPlayerInventoryState`
   (`src/Mithril.GameState/Inventory/PlayerInventoryStateService.cs`), fed by
@@ -175,21 +174,20 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
   `Subscribe(Action<InventoryEvent>)` plus the `InventoryEvent` /
   `InventoryEventKind` types retired in
   [#659](https://github.com/moumantai-gg/mithril/issues/659) once all six
-  pre-#602 consumers reached their post-shim destinations. The remaining
-  `IInventoryService` interface stays alive for the Query-channel consumer
-  (Arwen's `CalibrationService` reads `TryResolve` /
-  `TryGetStackSize` through it); the concrete `InventoryView` still
-  implements both `IInventoryView` and `IInventoryService`.
-- **Status**: **split delivered + shim retired**. The keystone Phase 2 work
-  landed in [#679](https://github.com/moumantai-gg/mithril/pull/679); the
-  shim and its dependent types deleted alongside the audit row updates
-  ([#659](https://github.com/moumantai-gg/mithril/issues/659) +
+  pre-#602 consumers reached their post-shim destinations. The Query-only
+  `IInventoryService` interface that lingered for Arwen's `CalibrationService`
+  retired alongside the Arwen consumer migration — `CalibrationService` now
+  injects `IInventoryView` directly for `TryResolve` / `TryGetStackSize`, and
+  the concrete `InventoryView` implements only `IInventoryView`.
+- **Status**: **split delivered + shim retired + IInventoryService removed**.
+  The keystone Phase 2 work landed in
+  [#679](https://github.com/moumantai-gg/mithril/pull/679); the
+  `Subscribe` shim and its dependent types deleted alongside the audit row
+  updates ([#659](https://github.com/moumantai-gg/mithril/issues/659) +
   [#687](https://github.com/moumantai-gg/mithril/issues/687) +
   [#746](https://github.com/moumantai-gg/mithril/issues/746)). The
-  `IInventoryService` interface itself survives as a Query-only surface
-  for Arwen — a possible future cleanup (migrate Arwen to inject
-  `IInventoryView` and delete `IInventoryService`) is mechanical but
-  outside the #659 scope.
+  `IInventoryService` interface itself deleted in the Arwen consumer-migration
+  follow-on. No further cleanup obligation on the inventory split.
 
 ### `IQuestService` ⚠️ **SYNTHESIS + WALL-CLOCK STAMP**
 
@@ -261,7 +259,7 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
 `src/Arwen.Module/Domain/CalibrationService.cs` + `src/Arwen.Module/State/FavorIngestionService.cs`.
 
 - **Source spanning**: single (LocalPlayer) at the log level. The
-  `IInventoryService.TryGetStackSize` read inside `RecordObservation`
+  `IInventoryView.TryGetStackSize` read inside `RecordObservation`
   remains, but as a same-source read against the view's composed map
   (sim-coherent under the Player.log dispatch order, with the cross-source
   composition encapsulated inside the view layer per principle 4).
@@ -284,11 +282,13 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
   overloads** for callers that don't plumb a real timestamp. Production
   calls go through `OnGiftAccepted` (uses the signal service's resolved
   timestamps) and the timestamp-aware L1 overloads. Not gating.
-- **Migration**: Arwen does not consume the
-  `Subscribe(Action<InventoryEvent>)` shim — it uses `TryGetStackSize`
-  (not on the `[Obsolete]` surface) and the Tier-2
-  `IGiftSignalService.Subscribe` channel, so it has no #659 cleanup
-  obligation.
+- **Migration**: Arwen never consumed the
+  `Subscribe(Action<InventoryEvent>)` shim — it uses `TryGetStackSize` /
+  `TryResolve` and the Tier-2 `IGiftSignalService.Subscribe` channel. The
+  consumer-migration follow-on (post-#751) swapped Arwen's
+  `CalibrationService` from the legacy Query-only `IInventoryService`
+  injection to `IInventoryView` directly, letting the now-redundant
+  `IInventoryService` interface retire.
 - **Status**: **resolved post-#608** — cross-FSM peek replaced by
   consumption of the Tier-2 signal service that owns the verb-triple
   correlation on a single L1 pump.
@@ -440,7 +440,7 @@ post-#642).
 
 ## Migration-plan spot-checks
 
-### 1. `IInventoryService` split — **DELIVERED + SHIM RETIRED (#602 via [#679](https://github.com/moumantai-gg/mithril/pull/679); shim removed in #659)**
+### 1. `IInventoryService` split — **DELIVERED + SHIM RETIRED + INTERFACE REMOVED (#602 via [#679](https://github.com/moumantai-gg/mithril/pull/679); shim removed in #659; interface removed in the Arwen consumer-migration follow-on)**
 
 Pre-#602 the cross-source span was confirmed at `InventoryService.cs:250`
 (Player.log L1) + `:261` (chat L1) — a five-input service (Player.log, chat,
@@ -455,8 +455,9 @@ union-shaped `Subscribe(Action<InventoryEvent>)` shim retired in
 pre-#602 consumers reached their post-shim destinations (PlayerWorld-direct
 for Samwise/Legolas/Motherlode, the Bind channel for Palantir, the Tier-2
 `IGiftSignalService` for Arwen, blueprint-only for Saruman). The
-`IInventoryService` interface itself stays alive in a Query-only shape for
-Arwen's `CalibrationService.TryResolve` / `TryGetStackSize` reads.
+`IInventoryService` interface itself retired alongside the Arwen consumer
+migration — `CalibrationService` now injects `IInventoryView` directly for
+`TryResolve` / `TryGetStackSize`.
 
 ### 2. `SarumanCodebookService` split — **DELIVERED ([#603](https://github.com/moumantai-gg/mithril/issues/603))**
 

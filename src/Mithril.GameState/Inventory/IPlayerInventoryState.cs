@@ -13,8 +13,8 @@ namespace Mithril.GameState.Inventory;
 ///
 /// <para>Deleted entries are retained so late lookups (e.g. Arwen's
 /// gift-attribution path) still resolve the <c>InternalName</c> of an
-/// already-deleted instance — mirrors the legacy
-/// <c>IInventoryService.TryResolve</c> contract.</para>
+/// already-deleted instance — mirrors the legacy pre-split inventory
+/// service's <c>TryResolve</c> contract.</para>
 ///
 /// <para><b>Naming.</b> Follows #657 — folder interfaces take the form
 /// <c>I&lt;World&gt;&lt;Domain&gt;State</c>.</para>

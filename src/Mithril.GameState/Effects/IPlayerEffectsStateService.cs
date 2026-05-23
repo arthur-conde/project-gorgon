@@ -50,7 +50,7 @@ public interface IPlayerEffectsStateService
     /// Resolve a catalog id to its current <see cref="EffectState"/>, if and
     /// only if the effect is currently active on the local player. Returns
     /// <c>false</c> for effects that have been removed (entries are not
-    /// retained post-removal — unlike <see cref="Mithril.GameState.Inventory.IInventoryService.TryResolve"/>,
+    /// retained post-removal — unlike <see cref="Mithril.GameState.Inventory.IInventoryView.TryResolve"/>,
     /// no late-lookup path needs the pre-removal state).
     /// </summary>
     bool TryGet(int catalogId, out EffectState state);

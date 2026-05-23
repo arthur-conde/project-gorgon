@@ -23,7 +23,7 @@ namespace Mithril.GameState.Inventory;
 /// 1 when not yet paired.</param>
 /// <param name="SizeConfirmed">Whether <see cref="StackSize"/> came from an
 /// authoritative source (chat correlation, non-stackable reference data,
-/// export seed). The legacy <c>IInventoryService.TryGetStackSize</c> contract
+/// export seed). The <see cref="IInventoryView.TryGetStackSize"/> contract
 /// keys on this bit.</param>
 /// <param name="Timestamp">UTC timestamp of the originating Player.log
 /// <c>ProcessAddItem</c> line.</param>

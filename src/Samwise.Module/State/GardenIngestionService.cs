@@ -183,7 +183,7 @@ public sealed class GardenIngestionService : BackgroundService
         // (principle 4 single-world-direct exit; see class-level remarks for
         // the audit and the #699 → #721 Legolas precedent that landed at the
         // same destination). Two typed subscriptions replace the legacy
-        // union-shaped IInventoryService.Subscribe shim.
+        // union-shaped IInventoryView.Subscribe shim (retired in #659).
         //
         // No replay-on-subscribe primitive on the typed bus — the Call 1 +
         // Call 2 ordering invariant (#695 / #696) guarantees both
