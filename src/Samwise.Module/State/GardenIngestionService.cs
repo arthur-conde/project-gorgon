@@ -66,8 +66,8 @@ namespace Samwise.State;
 /// (#695 / PR #705) Samwise's subscriptions attach inside <see cref="StartAsync"/>
 /// before the trailing <c>WorldMergerStartHostedService</c> from Call 2
 /// (#696 / PR #702) begins draining frames, so no frames can have been
-/// dispatched by the time the bus subscription is live. The dual-surface
-/// view contract (<c>docs/world-simulator.md</c> §"Dual-surface contract for
+/// dispatched by the time the bus subscription is live. The three-surface
+/// view contract (<c>docs/world-simulator.md</c> §"Three-surface contract for
 /// views") explicitly omits a replay-on-subscribe primitive for the same
 /// reason. The legacy <c>SubscribeAfterSeedAdd_StillResolvesPlant</c>
 /// regression's race is by-construction eliminated here.</para>
