@@ -53,7 +53,7 @@ public sealed class TimerAlarmServiceTests : IDisposable
     public void OnTimerReady_Replaying_DoesNotPlayAudio()
     {
         var sink = new RecordingAudioSink();
-        var world = new FakePlayerWorld(WorldMode.Replaying);
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Replaying } };
         var (service, _, _, _) = BuildService(sink, world);
 
         service.OnTimerReady(this, MakeReadyArgs("key1"));
@@ -67,7 +67,7 @@ public sealed class TimerAlarmServiceTests : IDisposable
     public void OnTimerReady_Live_PlaysAudio()
     {
         var sink = new RecordingAudioSink();
-        var world = new FakePlayerWorld(WorldMode.Live);
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live } };
         var (service, _, _, _) = BuildService(sink, world);
 
         service.OnTimerReady(this, MakeReadyArgs("key1"));
@@ -102,11 +102,10 @@ public sealed class TimerAlarmServiceTests : IDisposable
         // here the Live emission lands well past the 30s window so it
         // fires cleanly.
         var sink = new RecordingAudioSink();
-        var world = new FakePlayerWorld(WorldMode.Replaying);
-        // Seed the world clock to a stable instant so the SUT's `Now`
-        // reads (which prefer _worldClock?.Now over the time provider)
-        // see a non-MinValue value across both calls.
-        world.WorldClock.Now = new DateTimeOffset(2026, 5, 23, 10, 0, 0, TimeSpan.Zero);
+        var world = new TestPlayerWorld
+        {
+            Clock = { Mode = WorldMode.Replaying, Now = new DateTimeOffset(2026, 5, 23, 10, 0, 0, TimeSpan.Zero) },
+        };
         var (service, _, _, _) = BuildService(sink, world);
 
         // Replaying — suppressed.
@@ -116,8 +115,8 @@ public sealed class TimerAlarmServiceTests : IDisposable
         // Flip to Live and advance the world clock past the 30s
         // refire-suppression window (the SUT reads _worldClock?.Now over
         // the TimeProvider fallback).
-        world.WorldClock.Mode = WorldMode.Live;
-        world.WorldClock.Now += TimeSpan.FromSeconds(45);
+        world.Clock.Mode = WorldMode.Live;
+        world.Clock.Now += TimeSpan.FromSeconds(45);
         service.OnTimerReady(this, MakeReadyArgs("key1"));
 
         sink.Plays.Should().HaveCount(1, "Live-mode emission past the suppression window must fire");
@@ -128,7 +127,7 @@ public sealed class TimerAlarmServiceTests : IDisposable
     private (TimerAlarmService Service, UserTimerSource Source, TimerDefinitionsService Defs, TimerProgressService Progress)
         BuildService(
             IAudioPlaybackSink sink,
-            FakePlayerWorld? playerWorld,
+            IPlayerWorld? playerWorld,
             TimeProvider? time = null)
     {
         var defStore = new JsonSettingsStore<GandalfDefinitions>(_defsPath,
@@ -171,79 +170,4 @@ public sealed class TimerAlarmServiceTests : IDisposable
             SourceMetadata = null,
         };
 
-    /// <summary>
-    /// Recording <see cref="IAudioPlaybackSink"/> for Mode-gating verification.
-    /// Local to this fixture because Gandalf.Tests doesn't share Samwise's
-    /// <c>FakeAudioPlaybackSink</c>.
-    /// </summary>
-    private sealed class RecordingAudioSink : IAudioPlaybackSink
-    {
-        public sealed record PlayCall(string? Path, float Volume, string? CallerId, bool Loop);
-
-        public List<PlayCall> Plays { get; } = new();
-        public int GlobalStopCount { get; private set; }
-        public List<string> CallerStops { get; } = new();
-
-        public IPlaybackHandle Play(string? path, float volume = 1.0f, string? callerId = null, bool loop = false)
-        {
-            Plays.Add(new PlayCall(path, volume, callerId, loop));
-            return EmptyHandle.Instance;
-        }
-
-        public void Stop() => GlobalStopCount++;
-        public void Stop(string callerId) => CallerStops.Add(callerId);
-
-        private sealed class EmptyHandle : IPlaybackHandle
-        {
-            public static readonly EmptyHandle Instance = new();
-            public bool IsPlaying => false;
-            public void Stop() { }
-            public void Dispose() { }
-        }
-    }
-
-    /// <summary>
-    /// Minimal mutable <see cref="TimeProvider"/> for boundary-transition
-    /// tests. The production refire-suppression check uses the world clock
-    /// when one is injected and this fallback when not; here both reads
-    /// happen against the world clock since we inject one, but the SUT
-    /// still asks the provider for absolute Now in places, so we hand it
-    /// a controllable provider.
-    /// </summary>
-    private sealed class RewindableTimeProvider : TimeProvider
-    {
-        public DateTimeOffset Now { get; private set; }
-        public RewindableTimeProvider(DateTime utc) => Now = new DateTimeOffset(utc, TimeSpan.Zero);
-        public override DateTimeOffset GetUtcNow() => Now;
-        public void Advance(TimeSpan ts) => Now += ts;
-    }
-
-    /// <summary>
-    /// Local <see cref="IPlayerWorld"/> stub — Gandalf.Tests doesn't share
-    /// Samwise's <c>FakePlayerWorld</c>. Only <see cref="IWorldClock.Mode"/>
-    /// is read by the SUT; the bus/folder surfaces throw to flag accidental
-    /// use.
-    /// </summary>
-    private sealed class FakePlayerWorld : IPlayerWorld
-    {
-        public FakePlayerWorld(WorldMode mode) => WorldClock = new() { Mode = mode };
-        public FakeWorldClock WorldClock { get; }
-        public IWorldClock Clock => WorldClock;
-        public IWorldEventBus Bus => throw new NotSupportedException(
-            "FakePlayerWorld exposes only Clock; bus/folder/composer surfaces aren't needed for Mode-gating tests.");
-        public void RegisterProducer<T>(IFrameProducer<T> producer) =>
-            throw new NotSupportedException("FakePlayerWorld is read-only.");
-        public void RegisterFolder<T>(IFolder<T> folder) =>
-            throw new NotSupportedException("FakePlayerWorld is read-only.");
-        public void RegisterComposer(IComposer composer) =>
-            throw new NotSupportedException("FakePlayerWorld is read-only.");
-        public Task StartMerger(CancellationToken ct) => Task.CompletedTask;
-    }
-
-    private sealed class FakeWorldClock : IWorldClock
-    {
-        public DateTimeOffset Now { get; set; } = DateTimeOffset.MinValue;
-        public long Frame { get; set; }
-        public WorldMode Mode { get; set; } = WorldMode.Live;
-    }
 }

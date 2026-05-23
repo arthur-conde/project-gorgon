@@ -1,10 +1,13 @@
-using System.ComponentModel;
 using System.Windows;
 using System.Windows.Threading;
 using Gandalf.Domain;
+using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Audio;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 using Mithril.Shared.Wpf;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
@@ -13,59 +16,86 @@ namespace Gandalf.Services;
 /// transitions (Midnight / Dawn / Morning / Afternoon / Dusk / Night;
 /// see <see cref="IShiftCatalog"/>). Distinct from the user-curated timer
 /// pipeline (<see cref="TimerAlarmService"/>) — shifts are global,
-/// character-agnostic, and have no Start/Done lifecycle, so an
-/// <see cref="Domain.ITimerSource"/>-style projection is over-scope. Owns
-/// one <see cref="DispatcherTimer"/> scheduled at the next transition;
-/// reschedules on tick + on settings changes.
+/// character-agnostic, and have no Start/Done lifecycle.
+///
+/// <para><b>Event-driven (scheduler-collapse, #613).</b> Subscribes to
+/// PlayerWorld's <see cref="TimeOfDayShift"/> domain events on
+/// <see cref="StartAsync"/>; the world clock drives the transition cadence,
+/// retiring the legacy <see cref="DispatcherTimer"/> wake injection (design
+/// notebook §Migration item #12, principle 13). The composer
+/// (<c>TimeOfDayShiftComposer</c> in <c>Mithril.WorldSim.Player</c>)
+/// dedups within a bucket, so this service sees at most one event per real
+/// transition.</para>
+///
+/// <para><b>Mode-gate at the side-effect boundary.</b> Per principle 12 +
+/// PR #705 / #708, the audio playback + window flash branch gates on
+/// <see cref="IWorldClock.Mode"/> == <see cref="WorldMode.Replaying"/> and
+/// returns immediately — drain-time replay updates the per-shift
+/// last-fired ledger but does not ring. State derivation upstream of the
+/// gate stays mode-agnostic so the next Live tick reuses a coherent
+/// suppression contract.</para>
 /// </summary>
-public sealed class ShiftAlarmService : IDisposable
+public sealed class ShiftAlarmService : BackgroundService
 {
-    private readonly IGameClock _gameClock;
     private readonly IShiftCatalog _catalog;
     private readonly GandalfSettings _globalSettings;
     private readonly GandalfShiftSettings _shiftSettings;
-    private readonly TimeProvider _time;
-    private readonly Dispatcher _dispatcher;
-    private readonly DispatcherTimer _timer;
+    private readonly IAudioPlaybackSink _audio;
+    private readonly IPlayerWorld _world;
+    private readonly IDiagnosticsSink? _diag;
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
-    private ShiftDefinition? _scheduledFor;
+    private IDisposable? _subscription;
+    private string? _lastFiredSlug;
     private bool _disposed;
 
     public ShiftAlarmService(
-        IGameClock gameClock,
         IShiftCatalog catalog,
         GandalfSettings globalSettings,
         GandalfShiftSettings shiftSettings,
-        TimeProvider? time = null,
-        Dispatcher? dispatcher = null)
+        IAudioPlaybackSink audio,
+        IPlayerWorld world,
+        IDiagnosticsSink? diag = null)
     {
-        _gameClock = gameClock;
         _catalog = catalog;
         _globalSettings = globalSettings;
         _shiftSettings = shiftSettings;
-        _time = time ?? TimeProvider.System;
-        _dispatcher = dispatcher ?? Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
-
-        _timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher);
-        _timer.Tick += (_, _) => OnTick();
-
-        // Toggling a shift's Enabled or sound never changes *which* transition
-        // is next (that's a function of the in-game clock alone), but it can
-        // change whether the next tick should actually play. We don't need
-        // to reschedule on settings change — OnTick re-reads config at fire
-        // time. Subscriptions kept minimal.
-        Reschedule();
+        _audio = audio;
+        _world = world;
+        _diag = diag;
     }
 
-    /// <summary>Test hook — drive one tick without waiting on the dispatcher pump.</summary>
-    internal void TickForTests() => OnTick();
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        // Subscribe synchronously before base.StartAsync — same shape as the
+        // six PR #705 ingestion services. The trailing-registered merger
+        // (#702 / Call 2) starts only after every hosted-service StartAsync
+        // completes, so no TimeOfDayShift event slips past during cold-start.
+        _subscription = _world.Bus.Subscribe<TimeOfDayShift>(frame => OnShiftTransition(frame.Payload));
+        _diag?.Info("Gandalf.ShiftAlarm",
+            "Subscribed to PlayerWorld TimeOfDayShift (scheduler-collapse, #613)");
+        return base.StartAsync(cancellationToken);
+    }
 
-    /// <summary>The shift the dispatcher timer will fire on next, or <c>null</c> when disposed.</summary>
-    public ShiftDefinition? NextScheduledShift => _scheduledFor;
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { /* expected on host stop */ }
+        finally
+        {
+            _subscription?.Dispose();
+            _subscription = null;
+        }
+    }
 
-    /// <summary>Wall-clock instant of the next scheduled transition, or <c>null</c> when disposed.</summary>
-    public DateTimeOffset? NextScheduledAt =>
-        _disposed ? null : _timer.IsEnabled ? _time.GetUtcNow() + _timer.Interval : null;
+    /// <summary>
+    /// The slug of the most recent shift the service applied — surfaced for
+    /// diagnostics + tests. Production code reads
+    /// <see cref="GandalfShiftSettings"/> directly.
+    /// </summary>
+    public string? LastObservedShift => _lastFiredSlug;
 
     /// <summary>
     /// Stop any in-flight alarm playback for this shift (and any others) and
@@ -80,7 +110,7 @@ public sealed class ShiftAlarmService : IDisposable
     /// <summary>
     /// Decision logic for "should this shift transition fire an alarm right
     /// now?" — extracted as a static so unit tests can exercise it without
-    /// driving the dispatcher pump or hitting <c>AudioPlayer.Play</c>.
+    /// driving the dispatcher pump or invoking <c>AudioPlayer.Play</c>.
     /// </summary>
     internal static bool ShouldAlarm(ShiftAlarmConfig config, GandalfSettings global) =>
         global.AlarmEnabled && config.Enabled;
@@ -94,62 +124,76 @@ public sealed class ShiftAlarmService : IDisposable
     internal static string? ResolveSoundPath(ShiftAlarmConfig config, GandalfSettings global) =>
         config.SoundFilePath ?? global.SoundFilePath;
 
-    private void OnTick()
+    /// <summary>
+    /// Test hook — feed a synthetic <see cref="TimeOfDayShift"/> through the
+    /// transition handler without driving the world's bus.
+    /// </summary>
+    internal void OnShiftTransitionForTests(TimeOfDayShift shift) => OnShiftTransition(shift);
+
+    private void OnShiftTransition(TimeOfDayShift shift)
     {
         if (_disposed) return;
 
-        var fired = _scheduledFor;
-        if (fired is not null)
+        var slug = shift.To;
+        // Bucket-level dedup. The composer already dedups within a bucket,
+        // but a Replaying-mode tick on cold-start can emit a first
+        // transition that the service has already observed on a prior run
+        // (the persisted GandalfShiftSettings has no per-slug last-fired
+        // mark); the slug ledger absorbs that without ringing again.
+        if (string.Equals(_lastFiredSlug, slug, StringComparison.Ordinal)) return;
+
+        ShiftDefinition? def = null;
+        foreach (var s in _catalog.Shifts)
         {
-            var config = _shiftSettings.GetOrCreate(fired.Slug);
-            if (ShouldAlarm(config, _globalSettings))
-            {
-                var path = ResolveSoundPath(config, _globalSettings);
-                Dispatch(() =>
-                {
-                    if (_playback.Remove(fired.Slug, out var prior)) prior.Stop();
-                    _playback[fired.Slug] = AudioPlayer.Play(
-                        path, (float)_globalSettings.AlarmVolume, "gandalf");
-                    if (_globalSettings.FlashWindow)
-                    {
-                        var win = Application.Current?.MainWindow;
-                        if (win is not null) WindowFlasher.Flash(win);
-                    }
-                });
-            }
+            if (string.Equals(s.Slug, slug, StringComparison.Ordinal)) { def = s; break; }
+        }
+        if (def is null)
+        {
+            _diag?.Warn("Gandalf.ShiftAlarm",
+                $"Received TimeOfDayShift slug='{slug}' not in catalog; ignoring");
+            return;
         }
 
-        Reschedule();
+        var config = _shiftSettings.GetOrCreate(def.Slug);
+        _lastFiredSlug = slug;
+
+        if (!ShouldAlarm(config, _globalSettings)) return;
+
+        // Call 3 / principle 12 + #708 constraint — mode-gate the user-
+        // facing projection (audio playback + window flash). State
+        // derivation upstream (the _lastFiredSlug write above) stays mode-
+        // agnostic so the next Live tick reuses a coherent suppression
+        // contract. Reference impls: Samwise.AlarmService.Fire and
+        // Gandalf.TimerAlarmService.OnTimerReady (both PR #705).
+        if (_world.Clock.Mode == WorldMode.Replaying) return;
+
+        var path = ResolveSoundPath(config, _globalSettings);
+        Dispatch(() =>
+        {
+            if (_playback.Remove(def.Slug, out var prior)) prior.Stop();
+            _playback[def.Slug] = _audio.Play(
+                path, (float)_globalSettings.AlarmVolume, "gandalf");
+            if (_globalSettings.FlashWindow)
+            {
+                var win = Application.Current?.MainWindow;
+                if (win is not null) WindowFlasher.Flash(win);
+            }
+        });
     }
 
-    private void Reschedule()
+    private static void Dispatch(Action action)
     {
-        if (_disposed) return;
-
-        var floor = _time.GetUtcNow();
-        var (at, shift) = _catalog.NextTransition(_gameClock, floor);
-        _scheduledFor = shift;
-
-        var delay = at - floor;
-        // Same epsilon rationale as TimerExpirationScheduler.cs:103 — below
-        // human perception, above the dispatcher's resolution noise floor.
-        if (delay < TimeSpan.FromMilliseconds(50)) delay = TimeSpan.FromMilliseconds(50);
-
-        _timer.Interval = delay;
-        if (!_timer.IsEnabled) _timer.Start();
+        var d = Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) action();
+        else d.BeginInvoke(action);
     }
 
-    private void Dispatch(Action action)
-    {
-        if (_dispatcher.CheckAccess()) action();
-        else _dispatcher.BeginInvoke(action);
-    }
-
-    public void Dispose()
+    public override void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        _timer.Stop();
+        _subscription?.Dispose();
         DismissAll();
+        base.Dispose();
     }
 }

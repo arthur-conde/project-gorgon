@@ -1,5 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
+using Mithril.WorldSim.Player.Composers;
 using Mithril.WorldSim.Player.Internal;
 using Mithril.WorldSim.Player.Producers;
 
@@ -40,6 +43,12 @@ public static class PlayerWorldServiceCollectionExtensions
                 var world = new PlayerWorld();
                 world.RegisterProducer(sp.GetRequiredService<WorldClockTickProducer>());
                 world.RegisterFolder(new WorldClockTickFolder());
+                // Composer: project CalendarTimeAdvanced ticks onto PG's shift
+                // catalog and emit TimeOfDayShift on bucket transitions
+                // (#613, scheduler-collapse migration item #12). Gandalf's
+                // ShiftAlarmService subscribes to TimeOfDayShift directly.
+                world.RegisterComposer(new TimeOfDayShiftComposer(
+                    sp.GetRequiredService<IShiftCatalog>()));
                 return world;
             })
             .AddSingleton<IPlayerWorld>(sp => sp.GetRequiredService<PlayerWorld>())
@@ -48,6 +57,25 @@ public static class PlayerWorldServiceCollectionExtensions
             // registered world via IEnumerable<IWorld> without binding
             // explicitly to IPlayerWorld / IChatWorld.
             .AddSingleton<IWorld>(sp => sp.GetRequiredService<PlayerWorld>());
+
+        // Replace the default IGameClock registration (TimeProvider.System-
+        // backed, set up by AddMithrilGameServices for headless / pre-world
+        // configurations) with one that reads from PlayerWorld's IWorldClock —
+        // scheduler-collapse migration item #12, #613. The in-game clock is
+        // now replay-deterministic: a Replaying-mode tick at world-clock T
+        // yields the same in-game time as a Live-mode tick at the same T.
+        // The shell's countdown chip + Gandalf's GameTimeOfDay-kind alarms
+        // both route through this; both stop leaking real wall-clock into
+        // the state-decision path (docs/world-simulator.md §Eliminations #8).
+        //
+        // Replace (Add + Remove) rather than the safer
+        // Add-Last-Wins-in-Resolution: the latter only works for IEnumerable<T>
+        // resolves, and IGameClock is a single-instance resolve.
+        services.Replace(ServiceDescriptor.Singleton<IGameClock>(sp =>
+        {
+            var world = sp.GetRequiredService<IPlayerWorld>();
+            return new GameClock(() => world.Clock.Now);
+        }));
 
         return services;
     }

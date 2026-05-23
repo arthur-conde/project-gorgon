@@ -65,21 +65,49 @@ public sealed class GameClock : IGameClock
     private const int Ratio = 12;
     private const int SecondsPerGameDay = 86400;
 
-    private readonly TimeProvider _time;
+    private readonly Func<DateTimeOffset> _nowSource;
 
-    public GameClock(TimeProvider? time = null)
+    /// <summary>
+    /// Construct with an explicit "now" source. Production wiring (the world-
+    /// sim migration item #12, issue #613) injects a delegate that reads
+    /// <c>IPlayerWorld.Clock.Now</c> so the in-game clock is replay-
+    /// deterministic; tests pass a manual <see cref="TimeProvider"/>'s
+    /// <see cref="TimeProvider.GetUtcNow"/> for the same reason.
+    /// </summary>
+    public GameClock(Func<DateTimeOffset> nowSource)
     {
-        _time = time ?? TimeProvider.System;
+        _nowSource = nowSource ?? throw new ArgumentNullException(nameof(nowSource));
     }
 
-    public GameTimeOfDay GetCurrent()
+    /// <summary>
+    /// Legacy convenience constructor for tests that already construct a
+    /// <see cref="TimeProvider"/> and don't have a world to wire through.
+    /// Equivalent to <c>new GameClock(time.GetUtcNow)</c>. Defaults to
+    /// <see cref="TimeProvider.System"/> when <paramref name="time"/> is null.
+    /// </summary>
+    public GameClock(TimeProvider? time = null)
+        : this((time ?? TimeProvider.System).GetUtcNow)
     {
-        var elapsedReal = (_time.GetUtcNow().UtcDateTime - AnchorUtc).TotalSeconds;
+    }
+
+    /// <summary>
+    /// Project an arbitrary wall-clock instant into the corresponding PG in-game
+    /// time of day. Pure (no allocation, no field reads — only the file-static
+    /// anchor constants), so callers that already hold a clock instant — the
+    /// <c>TimeOfDayShiftComposer</c> reading <see cref="CalendarTimeAdvanced.Now"/>
+    /// is the load-bearing example — can project directly without resolving
+    /// <see cref="IGameClock"/> through DI.
+    /// </summary>
+    public static GameTimeOfDay Project(DateTimeOffset at)
+    {
+        var elapsedReal = (at.UtcDateTime - AnchorUtc).TotalSeconds;
         var gameSecs = (AnchorGameSeconds + elapsedReal * Ratio) % SecondsPerGameDay;
         if (gameSecs < 0) gameSecs += SecondsPerGameDay;
         var total = (int)gameSecs;
         return new GameTimeOfDay(total / 3600, total % 3600 / 60);
     }
+
+    public GameTimeOfDay GetCurrent() => Project(_nowSource());
 
     public DateTimeOffset NextOccurrence(GameTimeOfDay target, DateTimeOffset floor)
     {
