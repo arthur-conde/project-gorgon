@@ -25,6 +25,12 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 > spot-check #1 were rewritten after the #602 split shipped in
 > [#679](https://github.com/moumantai-gg/mithril/pull/679). The rest of the
 > doc remains the 2026-05-21 snapshot — read other rows in pre-Phase-2 tense.
+>
+> **Updates 2026-05-23 post-shim-retirement.** The Inventory + Samwise +
+> Palantir rows and spot-check #1 were re-tightened after the #659 shim
+> retirement landed (Palantir's Bind-channel migration was the last
+> precondition, via #726 / #745). The Saruman row was rewritten for the
+> post-#603 split architecture (#687).
 
 ## Executive summary
 
@@ -39,12 +45,12 @@ Audited against: [`docs/world-simulator.md`](world-simulator.md) and
      (Player.log, chat, FileSystemWatcher, reference data, `_seededStackSizes`
      reconcile); every other migration sat downstream of it.
      **Delivered ([#602](https://github.com/moumantai-gg/mithril/issues/602) via
-     [#679](https://github.com/moumantai-gg/mithril/pull/679)).** Remaining work
-     is the per-consumer migration off the `[Obsolete]` shim, tracked in
-     [#659](https://github.com/moumantai-gg/mithril/issues/659).
+     [#679](https://github.com/moumantai-gg/mithril/pull/679)); the shim
+     retired in [#659](https://github.com/moumantai-gg/mithril/issues/659)
+     once all six pre-#602 consumers reached their post-shim destinations.**
   2. **`SarumanCodebookService` split + view** — different shape than Inventory
      (no temporal pairing, key-join only) so the view-layer abstraction needs
-     to admit two distinct view patterns.
+     to admit two distinct view patterns. **Delivered ([#603](https://github.com/moumantai-gg/mithril/issues/603)).**
   3. **`Legolas.LogIngestionService` full retirement (per #531)** —
      **Delivered ([#606](https://github.com/moumantai-gg/mithril/issues/606)).**
      Last direct `IChatLogStream` module consumer retired; all five chat verbs
@@ -165,20 +171,25 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
   `InventoryView.LoadExportSeeds` / `OnGameReportsStorageChanged`. Export
   read goes through `IGameReportsService.GetStorageContents` — `InventoryView`
   no longer touches the filesystem directly.
-- **Legacy shim**: `IInventoryService.Subscribe(Action<InventoryEvent>)` and
-  the union-shaped `InventoryEvent` type survive only as `[Obsolete]` surfaces
-  on `InventoryView` so the six pre-#602 consumers (Arwen, Samwise, Palantir,
-  Legolas, Saruman, `MotherlodeMeasurementCoordinator`) keep working unchanged.
-  Per-consumer migration to the typed bus is the cleanup obligation tracked
-  in [#659](https://github.com/moumantai-gg/mithril/issues/659); follow-on
-  consumer PRs are filed against that issue as each consumer's
-  `[Obsolete]` warnings get addressed.
-- **Status**: **split delivered**. The keystone Phase 2 work landed in
-  [#679](https://github.com/moumantai-gg/mithril/pull/679). Remaining
-  obligations: (1) the six consumer migrations under
-  [#659](https://github.com/moumantai-gg/mithril/issues/659); (2) eventual
-  deletion of `IInventoryService` / `InventoryEvent` / the `[Obsolete]`
-  annotations once those six consumers are off the shim.
+- **Legacy shim (retired)**: the union-shaped
+  `Subscribe(Action<InventoryEvent>)` plus the `InventoryEvent` /
+  `InventoryEventKind` types retired in
+  [#659](https://github.com/moumantai-gg/mithril/issues/659) once all six
+  pre-#602 consumers reached their post-shim destinations. The remaining
+  `IInventoryService` interface stays alive for the Query-channel consumer
+  (Arwen's `CalibrationService` reads `TryResolve` /
+  `TryGetStackSize` through it); the concrete `InventoryView` still
+  implements both `IInventoryView` and `IInventoryService`.
+- **Status**: **split delivered + shim retired**. The keystone Phase 2 work
+  landed in [#679](https://github.com/moumantai-gg/mithril/pull/679); the
+  shim and its dependent types deleted alongside the audit row updates
+  ([#659](https://github.com/moumantai-gg/mithril/issues/659) +
+  [#687](https://github.com/moumantai-gg/mithril/issues/687) +
+  [#746](https://github.com/moumantai-gg/mithril/issues/746)). The
+  `IInventoryService` interface itself survives as a Query-only surface
+  for Arwen — a possible future cleanup (migrate Arwen to inject
+  `IInventoryView` and delete `IInventoryService`) is mechanical but
+  outside the #659 scope.
 
 ### `IQuestService` ⚠️ **SYNTHESIS + WALL-CLOCK STAMP**
 
@@ -213,13 +224,17 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
 `src/Samwise.Module/State/GardenStateMachine.cs`,
 `src/Samwise.Module/Alarms/AlarmService.cs`.
 
-- **Source spanning**: single (LocalPlayer via `GardenIngestionService`) + reads
-  the `IInventoryService.Subscribe` `[Obsolete]` shim on `InventoryView` for
-  `Added`/`Deleted` reshape. Post-#679 the underlying surface is split
-  (`IPlayerInventoryState` / `IChatInventoryState` / `IInventoryView`); Samwise
-  still consumes the shim until its per-consumer migration to
-  `IInventoryView.Bus.Subscribe<InventoryItemAdded>(…)` lands. Tracked in
-  [#659](https://github.com/moumantai-gg/mithril/issues/659).
+- **Source spanning**: single (LocalPlayer via `GardenIngestionService`). The
+  inventory dependency is now PlayerWorld-direct: `GardenIngestionService`
+  subscribes to `IPlayerWorld.Bus.Subscribe<PlayerInventoryAdded>(…)` and
+  `<PlayerInventoryRemoved>(…)` in its `StartAsync`, replacing the pre-#725
+  union-shaped `IInventoryService.Subscribe` shim. Migration tracked in
+  [#725](https://github.com/moumantai-gg/mithril/issues/725); the
+  destination follows the principle-4 single-world-direct exit Legolas
+  landed on first (per #699 → #721). Reads only `InstanceId` + `InternalName`
+  — Samwise never composes Player.log adds with chat `[Status]`
+  observations, so the cross-source view layer offers nothing the
+  PlayerWorld bus doesn't already give.
 - **Wall-clock transition gates**:
   - `GardenStateMachine.PruneWithered` at `:541-557`: `_time.GetUtcNow() - p.UpdatedAt > ttl`.
   - `GardenStateMachine.IsLikelyGarbageCollected` at `:596-600`.
@@ -229,7 +244,8 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
 - **Migration**: every `_time.GetUtcNow()` / `DateTimeOffset.UtcNow` in the
   transition paths becomes `_worldClock.Now`. Mechanical. Mutation surface is
   small: `GardenStateMachine` already takes `TimeProvider` ctor arg.
-- **Status**: **migration owed** — mechanical.
+- **Status**: inventory subscription migrated to PlayerWorld-direct
+  (#725); wall-clock swap **still owed** — mechanical.
 
 ### Pippin (food)
 
@@ -277,29 +293,46 @@ resolves to the view (for the six pre-existing consumers; cleanup tracked in
   consumption of the Tier-2 signal service that owns the verb-triple
   correlation on a single L1 pump.
 
-### Saruman (Words of Power) ⚠️ **CROSS-SOURCE**
+### Saruman (Words of Power) — **SPLIT DELIVERED ([#603](https://github.com/moumantai-gg/mithril/issues/603))**
 
-`src/Saruman.Module/Services/SarumanCodebookService.cs:14-175`,
-`SarumanChatIngestionService.cs:42-101`, `SarumanDiscoveryIngestionService.cs:53-`.
+Pre-#603: `SarumanCodebookService` consumed Player.log (discovery via
+`SarumanDiscoveryIngestionService` → `RecordDiscovery`) AND chat (spent
+via `SarumanChatIngestionService` → `MarkSpent`) in a single module-resident
+service — same principle 3 violation as the pre-#602 `InventoryService`.
+Post-#603 the cross-source service split into two folders + a view:
 
-- **Source spanning**: **YES.** `SarumanCodebookService` is mutated by two
-  ingestion services with separate L1 subscriptions:
-  - Discovery (Player.log): `Subscribe<LocalPlayerLogLine>` →
-    `RecordDiscovery(...)`.
-  - Spent (chat): `Subscribe<RawLogLine>` → `MarkSpent(code, …)`.
-- **Structural difference from Inventory**: no temporal pairing — join is by
-  word code only, no TTL, no correlator. Discovery and Spent can be hours/days
-  apart on the same record.
+- **Player.log half** → `IPlayerWordOfPowerDiscoveryState`
+  (`src/Mithril.GameState/WordsOfPower/PlayerWordOfPowerDiscoveryStateService.cs`),
+  fed by `Producers/PlayerWordOfPowerDiscoveryFrameProducer.cs`. Persists per
+  character to `wop-discovery.json`; emits `PlayerWordOfPowerDiscovered`
+  on the `IPlayerWorld.Bus`.
+- **Chat half** → `IPlayerChatLineLog`
+  (`src/Mithril.GameState/Chat/PlayerChatLineLogService.cs`), fed by
+  `Producers/PlayerChatLineProducer.cs` and `ChatChannelClassifier`. A
+  passthrough folder: it doesn't own a Word-of-Power-aware filter, it routes
+  every chat line into per-channel `PlayerChatLineFrame`s on the
+  `IChatWorld.Bus`; the view applies the uppercase-token regex on top.
+- **View** → `IWordOfPowerView` backed by `WordOfPowerView`
+  (`src/Mithril.GameState/WordsOfPower/WordOfPowerView.cs`). Subscribes to
+  both world buses; composes "code is known + code is spent" as a plain
+  per-character dictionary merge — **no temporal pairing, no TTL, no
+  correlator**. Discovery and Spent can be hours/days apart on the same
+  record, so the join is on code identity alone. This is structurally
+  different from `IInventoryView`'s Tier-1 cross-source pairing and is the
+  worked second-pattern that validates the view-layer abstraction's ability
+  to host both compositions.
+- **Module surface** → `SarumanOverrideService` (module-internal). Stores
+  user-driven sticky-spent overrides on top of `IWordOfPowerView.IsSpent(code)`;
+  no log subscription of its own.
 - **Wall-clock**: `DateTime.UtcNow` in `SarumanViewModel.cs:119` — for the
   user-driven "mark spent" UI action, not log ingestion. Outside sim scope
   (user input).
-- **Migration**: matches design notebook's worked example 2. Split:
-  - Player.log half → `IPlayerWordOfPowerDiscoveryState` (`Code → discovery
-    record`).
-  - Chat half → `IChatWordOfPowerStateMachine` (`Code → spent timestamp`).
-  - View → `IWordOfPowerView` plain dictionary merge.
-- **Status**: **migration owed**. Second-priority after Inventory; structurally
-  different so the view-layer abstraction needs to admit both patterns.
+- **Status**: **split delivered**. Remaining follow-on:
+  [#686](https://github.com/moumantai-gg/mithril/issues/686) (the
+  Saruman state-store schema-1→2 upgrade hint UX). No #659-equivalent shim
+  obligation — the cross-source migration here was a full rewrite at the
+  consumer side, with no union-shaped event surface preserved for
+  intermediate consumers.
 - **Charter note**: per module-signal-map.md `:377`, Saruman is NOT in
   CLAUDE.md's module table. Pre-existing oversight.
 
@@ -383,20 +416,31 @@ QuestSource.cs}`.
 - **Wall-clock**: none in mutation path.
 - **Status**: green. Mechanical handler migration.
 
-### Palantir (dev/debug shell)
+### Palantir (dev/debug shell) — **MIGRATED ([#726](https://github.com/moumantai-gg/mithril/issues/726) via [#745](https://github.com/moumantai-gg/mithril/pull/745))**
 
-Read-only consumer of `IInventoryService` (`LiveInventoryViewModel.cs:19-42`).
-No FSM, no log subscription. Reactor only — subscribes via
-`_inventory.Subscribe(OnEvent)` at `:55`, which post-#679 lands on the
-`[Obsolete]` shim that `InventoryView` implements. Typed-bus migration to
-`view.Bus.Subscribe<InventoryItemAdded>(…)` is one of the six follow-ons
-tracked in [#659](https://github.com/moumantai-gg/mithril/issues/659).
+Read-only consumer of `IInventoryView.Items` (`LiveInventoryViewModel.cs:43-150`).
+No FSM, no log subscription. Binds directly to the Bind channel — the
+post-#729 `IReadOnlyObservableCollection<InventoryItem>` exposed by
+`IInventoryView` — and observes per-row state via the rows' own
+`INotifyPropertyChanged`. No event subscription. Soft-deleted rows stay in
+the collection with `IsDeleted = true`; the VM's default `CollectionView`
+hides them unless `ShowDeleted` is set.
+
+Palantir is the only one of the six pre-#602 consumers whose post-shim
+destination was the Bind channel rather than a typed-event subscription —
+the others (Samwise, Legolas, Motherlode) went PlayerWorld-direct via
+`IPlayerWorld.Bus.Subscribe<PlayerInventoryAdded/Removed>(…)`, Arwen
+landed on the Tier-2 `IGiftSignalService` lift, and Saruman was
+blueprint-only (it never actually consumed the shim). The Bind-channel
+destination is documented in the dual-surface view contract
+(`docs/world-simulator.md` §Worked example 1 and §Decisions ratified
+post-#642).
 
 ---
 
 ## Migration-plan spot-checks
 
-### 1. `IInventoryService` split — **DELIVERED (#602 via [#679](https://github.com/moumantai-gg/mithril/pull/679))**
+### 1. `IInventoryService` split — **DELIVERED + SHIM RETIRED (#602 via [#679](https://github.com/moumantai-gg/mithril/pull/679); shim removed in #659)**
 
 Pre-#602 the cross-source span was confirmed at `InventoryService.cs:250`
 (Player.log L1) + `:261` (chat L1) — a five-input service (Player.log, chat,
@@ -405,18 +449,28 @@ retired the pre-split file entirely and shipped the worked-example-1 shape:
 `IPlayerInventoryState` folder (`PlayerInventoryStateService.cs` + producer),
 `IChatInventoryState` folder (`ChatInventoryStateService.cs` + producer), and
 `IInventoryView` (`InventoryView.cs`) as the cross-source composer. See the
-rewritten Inventory row above for the post-#679 file/line cites. Remaining
-work is the per-consumer migration off the `[Obsolete]`
-`Subscribe(Action<InventoryEvent>)` shim, tracked in
-[#659](https://github.com/moumantai-gg/mithril/issues/659).
+rewritten Inventory row above for the post-#679 file/line cites. The
+union-shaped `Subscribe(Action<InventoryEvent>)` shim retired in
+[#659](https://github.com/moumantai-gg/mithril/issues/659) once all six
+pre-#602 consumers reached their post-shim destinations (PlayerWorld-direct
+for Samwise/Legolas/Motherlode, the Bind channel for Palantir, the Tier-2
+`IGiftSignalService` for Arwen, blueprint-only for Saruman). The
+`IInventoryService` interface itself stays alive in a Query-only shape for
+Arwen's `CalibrationService.TryResolve` / `TryGetStackSize` reads.
 
-### 2. `SarumanCodebookService` split — **CONFIRMED**
+### 2. `SarumanCodebookService` split — **DELIVERED ([#603](https://github.com/moumantai-gg/mithril/issues/603))**
 
-Cross-source via two ingestion services:
-`SarumanDiscoveryIngestionService.cs:62-74` + `SarumanChatIngestionService.cs:42-101`.
-Both mutate `SarumanCodebookService` (`:64 RecordDiscovery`, `:120 MarkSpent`).
-Different shape than Inventory: key-only join, no TTL. View needs different
-abstraction.
+Pre-#603 the cross-source span lived in `SarumanCodebookService` via two
+ingestion services (`SarumanDiscoveryIngestionService.cs:62-74` Player.log +
+`SarumanChatIngestionService.cs:42-101` chat). Post-#603 the split runs:
+`IPlayerWordOfPowerDiscoveryState` (PlayerWorld folder) +
+`IPlayerChatLineLog` (ChatWorld passthrough folder) + `IWordOfPowerView`
+(cross-world composer). Different shape than Inventory — key-only join, no
+TTL, no correlator — so the view abstraction now has two worked patterns
+(Tier-1 temporal pairing for Inventory, plain dictionary merge for
+Words-of-Power). See the rewritten Saruman row above for the post-#603
+file/line cites; remaining follow-on is the schema-upgrade hint UX in
+[#686](https://github.com/moumantai-gg/mithril/issues/686).
 
 ### 3. `MotherlodeMeasurementCoordinator` migration — **DONE (#604)**
 

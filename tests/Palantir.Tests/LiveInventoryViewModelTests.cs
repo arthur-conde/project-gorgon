@@ -7,7 +7,6 @@ using Mithril.GameState.Inventory;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Collections;
-using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Mithril.WorldSim;
 using Palantir.ViewModels;
@@ -16,15 +15,17 @@ using Xunit;
 namespace Palantir.Tests;
 
 /// <summary>
-/// Tests for the #726 migration: Palantir's live-inventory VM now binds to
-/// <see cref="IInventoryView.Items"/> directly instead of mirroring the
-/// legacy <see cref="InventoryEvent"/> shim into a local collection. Each
-/// test seeds / mutates a <see cref="FakeInventoryView"/>'s items and asserts
-/// the VM's <c>View</c>/<c>LiveCount</c>/<c>DeletedCount</c>/<c>ShowDeleted</c>
+/// Tests for the #726 migration: Palantir's live-inventory VM binds to
+/// <see cref="IInventoryView.Items"/> directly instead of mirroring an
+/// event stream into a local collection. Each test seeds / mutates a
+/// <see cref="FakeInventoryView"/>'s items and asserts the VM's
+/// <c>View</c>/<c>LiveCount</c>/<c>DeletedCount</c>/<c>ShowDeleted</c>
 /// surfaces reflect the bound state. The view-internal bus → items mutation
 /// path is covered by <c>InventoryViewTests</c> in
 /// <c>Mithril.GameState.Tests</c> — these tests pin the consumer-side
-/// projection only.
+/// projection only. (The legacy union-shaped event shim Palantir used
+/// pre-#726 retired in #659; this VM's pre-#726 re-mirror path is gone
+/// regardless.)
 /// </summary>
 public sealed class LiveInventoryViewModelTests
 {
@@ -145,11 +146,9 @@ public sealed class LiveInventoryViewModelTests
         => new(id, internalName, stack, confirmed);
 
     /// <summary>
-    /// Minimal <see cref="IInventoryView"/> stub. The legacy
-    /// <c>Subscribe(Action&lt;InventoryEvent&gt;)</c> shim is unused by the
-    /// post-#726 Palantir VM; <c>Bus</c> is unused too (the VM binds to
-    /// <see cref="IInventoryView.Items"/> directly and observes per-row INPC),
-    /// so both throw to surface accidental regressions.
+    /// Minimal <see cref="IInventoryView"/> stub. <c>Bus</c> is unused (the
+    /// VM binds to <see cref="IInventoryView.Items"/> directly and observes
+    /// per-row INPC), so it throws to surface accidental regressions.
     /// </summary>
     private sealed class FakeInventoryView : IInventoryView
     {
@@ -162,11 +161,6 @@ public sealed class LiveInventoryViewModelTests
 
         public bool TryResolve(long instanceId, out string internalName) { internalName = ""; return false; }
         public bool TryGetStackSize(long instanceId, out int stackSize) { stackSize = 0; return false; }
-
-#pragma warning disable CS0618 // shim is obsolete; FakeInventoryView only implements it because IInventoryView requires it
-        public IDisposable Subscribe(Action<InventoryEvent> handler, ReplayMode replay = ReplayMode.FromSessionStart)
-            => throw new NotSupportedException("Palantir VM does not consume the legacy shim post-#726.");
-#pragma warning restore CS0618
     }
 
     /// <summary>

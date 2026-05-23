@@ -419,8 +419,6 @@ public interface IInventoryView
     /// stackable; null if stackable + no chat observation paired.
     /// </summary>
     bool TryGetStackSize(long instanceId, out int stackSize);
-
-    IDisposable Subscribe(Action<InventoryEvent> handler);
 }
 
 /// <summary>
@@ -755,7 +753,7 @@ The typed bus is intentionally fire-and-forget — no `SinceSubscribe` / replay-
 
 **Corollary for lazy WPF VMs.** A VM that re-applies bus frames to a locally cached copy of the view's state — reproducing the view's `_map` inside the VM and mutating it on every change event — is an antipattern, not a deferred sharp edge. The view's `_map` is the canonical state; a local mirror invites divergence with no recoverable upside, because any inconsistency becomes a bug whose root cause is split across two places. VMs that need point-in-time reads call `view.TryGet*` / `view.Current` per render or on demand; VMs that need a live-bound collection bind directly to the view's `IReadOnlyObservableCollection<T>` Bind surface; React bus events are change-notification only, never ledger inputs.
 
-**`_eventLog` is shim-era infrastructure.** `InventoryView._eventLog` (and its `EventLogSoftCap` / `EventLogTrimChunk` / `AppendToEventLog` / `s_sinceSubscribeDiagFired` machinery) exists solely to preserve the pre-#602 union-shaped `Subscribe(Action<InventoryEvent>, ReplayMode)` surface for the six legacy consumers tracked under #659. It is not a typed-bus feature and is not a template for future views. When the last shim consumer migrates and #659 lands, the event log retires with it; no future view ships its own event log and no future bus ships a `SinceSubscribe` overload.
+**`_eventLog` was shim-era infrastructure (retired in #751 / closed [#659](https://github.com/moumantai-gg/mithril/issues/659)).** `InventoryView._eventLog` and its `EventLogSoftCap` / `EventLogTrimChunk` / `AppendToEventLog` / `s_sinceSubscribeDiagFired` machinery existed solely to preserve the pre-#602 union-shaped `Subscribe(Action<InventoryEvent>, ReplayMode)` surface for the six legacy consumers tracked under [#659](https://github.com/moumantai-gg/mithril/issues/659). It was never a typed-bus feature and never a template for future views. With every consumer migrated to its post-shim destination and #659 closed, the event log retired with the shim; no future view ships its own event log and no future bus ships a `SinceSubscribe` overload.
 
 See: [issue #707](https://github.com/moumantai-gg/mithril/issues/707) (closed wontfix — this section is the design-rationale residual of [#695](https://github.com/moumantai-gg/mithril/issues/695) point 3); [issue #740](https://github.com/moumantai-gg/mithril/issues/740) (Bind-surface harmonization with `module-charters.md`'s three-channel pattern).
 

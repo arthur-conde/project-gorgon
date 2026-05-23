@@ -81,18 +81,20 @@ public static class GameStateServiceCollectionExtensions
         //     replay source and emits chat-observation frames.
         //   - InventoryView is the cross-world composer: subscribes to typed
         //     change events on both world buses, runs the relocated
-        //     PendingCorrelator with (Server,Character)-scoped keys, holds the
-        //     composed instance-id ledger + the event-log shim back-compat for
-        //     the six pre-#602 consumers via IInventoryService.
+        //     PendingCorrelator with (Server,Character)-scoped keys, and holds
+        //     the composed instance-id ledger + the bindable Items collection
+        //     (#729) + the typed change-event bus.
         //
         // The legacy InventoryService class retired entirely in #602 — its
         // L1-direct subscriptions violated world-sim principle 3. The
-        // IInventoryService DI binding still resolves (so the six pre-#602
-        // consumers continue to inject and subscribe unchanged) — it now
-        // points at the view, which holds all the prior behaviour. Each
-        // consumer migrates to the typed view bus in its own follow-on under
-        // #659; at the last migration, IInventoryService + InventoryEvent
-        // can be deleted.
+        // IInventoryService DI binding still resolves (Arwen's CalibrationService
+        // consumes TryResolve / TryGetStackSize through it) and points at the
+        // view, which implements both surfaces. The union-shaped
+        // Subscribe(Action<InventoryEvent>) shim retired in #659 once all six
+        // pre-#602 consumers reached their post-shim destinations
+        // (PlayerWorld-direct for Samwise/Legolas/Motherlode, the Bind channel
+        // for Palantir, the Tier-2 IGiftSignalService for Arwen, blueprint-only
+        // for Saruman).
         //
         // Folder + producer registration happens in PlayerInventoryWorldRegistration
         // / ChatInventoryWorldRegistration hosted services (ordering preserved by

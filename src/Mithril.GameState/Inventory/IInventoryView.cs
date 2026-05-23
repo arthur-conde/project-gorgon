@@ -10,15 +10,21 @@ namespace Mithril.GameState.Inventory;
 /// <see cref="IChatInventoryState"/>), pairing them with a TTL-windowed
 /// correlator keyed on <c>(InternalName, Server, Character)</c>.
 ///
-/// <para><b>Canonical surface = typed-frame bus.</b> Subscribe via
-/// <see cref="Bus"/> for any of the three view-emitted typed events
-/// — <see cref="InventoryItemAdded"/>, <see cref="InventoryItemRemoved"/>,
-/// <see cref="InventoryStackChanged"/>. Consumers post-migration use the bus.
-/// The legacy <see cref="Subscribe(Action{InventoryEvent}, Mithril.Shared.Logging.ReplayMode)"/>
-/// shim translates these typed frames back into the union-shaped
-/// <c>InventoryEvent</c> for the six pre-existing consumers (Arwen, Samwise,
-/// Palantir, Legolas, Saruman, Motherlode) — migrations of each are tracked
-/// in <a href="https://github.com/moumantai-gg/mithril/issues/659">#659</a>.</para>
+/// <para><b>Three consumer surfaces.</b> Per the React / Query / Bind
+/// taxonomy in <c>docs/module-charters.md</c>:
+/// <list type="bullet">
+///   <item><b>React</b> — <see cref="Bus"/> publishes typed
+///   <see cref="InventoryItemAdded"/> / <see cref="InventoryItemRemoved"/> /
+///   <see cref="InventoryStackChanged"/> frames.</item>
+///   <item><b>Query</b> — <see cref="TryResolve"/> /
+///   <see cref="TryGetStackSize"/> answer "what's in inventory now?".</item>
+///   <item><b>Bind</b> — <see cref="Items"/> is a live observable collection
+///   of <see cref="InventoryItem"/> rows for WPF binding (#729).</item>
+/// </list>
+/// The pre-#659 union-shaped <c>Subscribe(Action&lt;InventoryEvent&gt;)</c>
+/// shim retired in #659; consumers landed at PlayerWorld-direct
+/// (Samwise/Legolas/Motherlode), the Bind channel (Palantir), the Tier-2
+/// <c>IGiftSignalService</c> (Arwen), or stayed blueprint-only (Saruman).</para>
 ///
 /// <para><b>Why a view, not a service.</b> Pre-#602 <c>IInventoryService</c>
 /// consumed both Player.log AND chat directly. That violates the world-sim
@@ -83,20 +89,4 @@ public interface IInventoryView
     /// verbatim for the pre-#602 consumers.
     /// </summary>
     bool TryGetStackSize(long instanceId, out int stackSize);
-
-    /// <summary>
-    /// Legacy union-shaped event subscription. The view translates its typed
-    /// frames into <see cref="InventoryEvent"/> for backward compatibility
-    /// with the six pre-#602 consumers; new code subscribes via <see cref="Bus"/>
-    /// directly.
-    /// </summary>
-    /// <remarks>
-    /// The default <see cref="Mithril.Shared.Logging.ReplayMode.FromSessionStart"/>
-    /// replays the full in-session event log atomically before going live,
-    /// closing the late-subscribe race the pre-split service surfaced in #585.
-    /// </remarks>
-    [Obsolete("Subscribe to Frame<InventoryItemAdded> et al. on IInventoryView.Bus")]
-    IDisposable Subscribe(
-        Action<InventoryEvent> handler,
-        Mithril.Shared.Logging.ReplayMode replay = Mithril.Shared.Logging.ReplayMode.FromSessionStart);
 }

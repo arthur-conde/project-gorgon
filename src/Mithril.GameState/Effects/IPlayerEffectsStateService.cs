@@ -17,8 +17,7 @@ namespace Mithril.GameState.Effects;
 ///   <see cref="EffectEvent"/> stream. Default
 ///   <see cref="ReplayMode.FromSessionStart"/> atomically replays every
 ///   Added / Removed / DisplayNameChanged event in log order before live
-///   dispatch begins (the post-#585 <c>IInventoryService.Subscribe</c>
-///   contract; this service ships with it from day one).
+///   dispatch begins (the post-#585 late-attach atomic-replay contract).
 ///   <see cref="ReplayMode.LiveOnly"/> skips the replay.</item>
 ///   <item><b>Bind</b> — deferred. A full
 ///   <c>IReadOnlyObservableCollection&lt;EffectState&gt;</c> with
@@ -26,8 +25,8 @@ namespace Mithril.GameState.Effects;
 ///   service-side Bind-surface lift initiative (#584 follow-up). Consumers
 ///   needing observable mutation today seed off <see cref="ActiveEffects"/>
 ///   + subscribe via <see cref="Subscribe"/> and rebuild their own
-///   observable surface — same shape Palantir's
-///   <c>LiveInventoryViewModel</c> uses over <c>IInventoryService</c>.</item>
+///   observable surface — the same wrap-a-Subscribe pattern Palantir used
+///   over the inventory service pre-#726.</item>
 /// </list>
 /// </para>
 ///

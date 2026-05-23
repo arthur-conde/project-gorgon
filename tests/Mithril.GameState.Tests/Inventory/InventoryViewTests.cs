@@ -22,15 +22,18 @@ namespace Mithril.GameState.Tests.Inventory;
 /// cross-source composer. Drives the two world buses directly (PlayerWorld +
 /// ChatWorld) and asserts the view composes them into the typed three-channel
 /// surface (<see cref="InventoryItemAdded"/> / <see cref="InventoryItemRemoved"/>
-/// / <see cref="InventoryStackChanged"/>) and into the legacy union-shaped
-/// shim. Pins:
+/// / <see cref="InventoryStackChanged"/>). Pins:
 /// <list type="bullet">
 ///   <item>Correlator pairing in both arrival orders.</item>
 ///   <item>Scope check on <c>(Server, Character)</c> mismatch.</item>
 ///   <item>Non-stackable confirmation via reference data.</item>
-///   <item>Shim translation typed-frames → legacy <c>InventoryEvent</c>.</item>
-///   <item>Late-subscribe atomic replay of the shim event log (#585 contract).</item>
+///   <item>Per-row bindable <c>Items</c> surface (Add / StackUpdated /
+///   chat-correlation / soft-delete).</item>
 /// </list>
+/// The pre-#659 union-shaped <c>Subscribe(Action&lt;InventoryEvent&gt;)</c>
+/// shim retired in #659; the previous shim-translation + late-subscribe
+/// replay pins retired with it (no consumer relies on the union shape any
+/// more — see <c>docs/world-sim-migration-audit.md</c>'s Inventory row).
 /// </summary>
 public sealed class InventoryViewTests
 {
@@ -516,54 +519,6 @@ public sealed class InventoryViewTests
         // both runs simultaneously they'd still compare equal but the contract
         // wouldn't be exercised.
         run1.Should().HaveCount(5);
-    }
-
-    // ── Shim translation ────────────────────────────────────────────────
-
-    [Fact]
-    public void Shim_Subscribe_delivers_InventoryEvent_kinds_for_each_typed_emission()
-    {
-        var (view, pw, cw, _) = Build();
-        var shim = new List<InventoryEvent>();
-#pragma warning disable CS0618 // shim surface under the #602 → #659 migration window
-        view.Subscribe(shim.Add);
-#pragma warning restore CS0618
-
-        PlayerAdd(pw, 42, "Moonstone", Ts(1));
-        ChatObserved(cw, "Moonstone", 7, Ts(2));   // → StackChanged on existing add
-        PlayerRemove(pw, 42, "Moonstone", Ts(3));
-
-        shim.Select(e => e.Kind).Should().Equal(new[]
-        {
-            InventoryEventKind.Added,
-            InventoryEventKind.StackChanged,
-            InventoryEventKind.Deleted,
-        });
-    }
-
-    [Fact]
-    public void Late_subscribe_replays_full_session_event_log()
-    {
-        var (view, pw, cw, _) = Build();
-
-        PlayerAdd(pw, 42, "Moonstone", Ts(1));
-        ChatObserved(cw, "Moonstone", 7, Ts(2));
-        PlayerRemove(pw, 42, "Moonstone", Ts(3));
-
-        var replayed = new List<InventoryEvent>();
-#pragma warning disable CS0618
-        view.Subscribe(replayed.Add);
-#pragma warning restore CS0618
-
-        // The shim's event log mirrors the pre-split InventoryService #585
-        // contract: a late subscriber sees the full session, including the
-        // intervening StackChanged + the eventual Deleted.
-        replayed.Select(e => e.Kind).Should().Equal(new[]
-        {
-            InventoryEventKind.Added,
-            InventoryEventKind.StackChanged,
-            InventoryEventKind.Deleted,
-        });
     }
 
     // ── Export seed + reconcile (issue #681) ────────────────────────────
