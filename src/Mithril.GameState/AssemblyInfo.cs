@@ -7,3 +7,9 @@ using System.Runtime.CompilerServices;
 // real PlayerSkillStateService + log stream. Same trust boundary as
 // Mithril.GameState.Tests.
 [assembly: InternalsVisibleTo("Smaug.Tests")]
+// #726 — Palantir.Tests builds a FakeInventoryView whose Items collection is
+// populated with hand-minted InventoryItem rows; the internal ctor + setters
+// are the simplest way to seed + mutate per-row state from a consumer test
+// without spinning up the full PlayerWorld + ChatWorld composition. Same
+// trust boundary as the other consumer-test IVTs above.
+[assembly: InternalsVisibleTo("Palantir.Tests")]

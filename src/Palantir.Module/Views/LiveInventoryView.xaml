@@ -5,6 +5,7 @@
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:wpf="clr-namespace:Mithril.Shared.Wpf;assembly=Mithril.Shared.Wpf"
+             xmlns:local="clr-namespace:Palantir.Views"
              mc:Ignorable="d"
              Background="Transparent">
     <UserControl.Resources>
@@ -12,6 +13,8 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
+            <local:InventoryDisplayNameConverter x:Key="DisplayNameConv"/>
+            <local:InventoryIconIdConverter x:Key="IconIdConv"/>
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -54,10 +57,25 @@
                             QueryText="{Binding QueryText, Mode=TwoWay}"
                             Mode="ReadOnly">
             <wpf:MithrilDataGrid.Columns>
-                <DataGridTemplateColumn Header="Name" Width="*" MinWidth="220" SortMemberPath="Name">
+                <DataGridTemplateColumn Header="Name" Width="*" MinWidth="220" SortMemberPath="InternalName">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <wpf:IconNameCell IconId="{Binding IconId}" DisplayName="{Binding Name}"/>
+                            <wpf:IconNameCell>
+                                <wpf:IconNameCell.IconId>
+                                    <MultiBinding Converter="{StaticResource IconIdConv}">
+                                        <Binding Path="InternalName"/>
+                                        <Binding Path="DataContext.ReferenceData"
+                                                 RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                    </MultiBinding>
+                                </wpf:IconNameCell.IconId>
+                                <wpf:IconNameCell.DisplayName>
+                                    <MultiBinding Converter="{StaticResource DisplayNameConv}">
+                                        <Binding Path="InternalName"/>
+                                        <Binding Path="DataContext.ReferenceData"
+                                                 RelativeSource="{RelativeSource AncestorType=UserControl}"/>
+                                    </MultiBinding>
+                                </wpf:IconNameCell.DisplayName>
+                            </wpf:IconNameCell>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -127,14 +145,6 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Last updated" Binding="{Binding LastUpdated, StringFormat={}{0:HH:mm:ss}}" SortMemberPath="LastUpdated" Width="100">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="HorizontalAlignment" Value="Right"/>
-                            <Setter Property="FontFamily" Value="{DynamicResource AppMonoFontFamily}"/>
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
             </wpf:MithrilDataGrid.Columns>
             <wpf:MithrilDataGrid.RowStyle>
                 <Style TargetType="DataGridRow" BasedOn="{StaticResource MithrilDataGridRowStyle}">
