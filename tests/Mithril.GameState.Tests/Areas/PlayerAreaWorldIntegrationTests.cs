@@ -66,9 +66,16 @@ public sealed class PlayerAreaWorldIntegrationTests
         observed[0].Timestamp.Should().Be(ts1);
         observed[1].Timestamp.Should().Be(ts2);
         observed[2].Timestamp.Should().Be(ts3);
-        observed[0].Payload.Should().BeEquivalentTo(new PlayerAreaChanged(null, "AreaSerbule", ts1));
-        observed[1].Payload.Should().BeEquivalentTo(new PlayerAreaChanged("AreaSerbule", "AreaEltibule", ts2));
-        observed[2].Payload.Should().BeEquivalentTo(new PlayerAreaChanged("AreaEltibule", "AreaTomb1", ts3));
+        observed[0].Payload.Should().BeEquivalentTo(new PlayerAreaChanged(
+            PlayerAreaChangeKind.Changed, null, "AreaSerbule", ts1));
+        observed[1].Payload.Should().BeEquivalentTo(new PlayerAreaChanged(
+            PlayerAreaChangeKind.Changed, "AreaSerbule", "AreaEltibule", ts2));
+        observed[2].Payload.Should().BeEquivalentTo(new PlayerAreaChanged(
+            PlayerAreaChangeKind.Changed, "AreaEltibule", "AreaTomb1", ts3));
+
+        // Snapshot-kind events are synthesized inside Subscribe and never
+        // cross the world boundary — the bus carries Changed only.
+        observed.Should().OnlyContain(f => f.Payload.Kind == PlayerAreaChangeKind.Changed);
 
         // CurrentArea is preserved as the synchronous read surface for the
         // back-compat consumers (Gandalf / Palantir).

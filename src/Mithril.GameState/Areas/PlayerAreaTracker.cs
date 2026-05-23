@@ -17,41 +17,65 @@ namespace Mithril.GameState.Areas;
 /// <c>Player.log</c>. Post-migration it is an <see cref="IFolder{TPayload}"/>
 /// registered with <c>IPlayerWorld</c> for the <see cref="AreaLoadingFrame"/>
 /// payload type: a sibling <see cref="Producers.AreaLoadingFrameProducer"/>
-/// owns the L1 subscription (and the pre-drain seed emission), parses every
+/// owns the L1 subscription, parses every
 /// <see cref="Mithril.Shared.Logging.SystemSignalKind.AreaLoading"/> envelope
 /// via <see cref="AreaTransitionParser"/>, and emits one
 /// <see cref="AreaLoadingFrame"/> per transition. The world drives
 /// <see cref="Apply"/> per applied frame in source order; the folder returns
 /// <see cref="PlayerAreaChanged"/> change events which the world publishes on
 /// its bus (<c>IPlayerWorld.Bus.Subscribe&lt;PlayerAreaChanged&gt;</c>) in
-/// addition to raising the legacy <see cref="AreaChanged"/> event.</para>
+/// addition to fanning out to legacy <see cref="Subscribe"/> handlers.</para>
 ///
-/// <para><b>Dual-surface back-compat.</b> <see cref="CurrentArea"/>
-/// (synchronous read) is preserved verbatim — Gandalf's chest-commit path and
-/// Palantir's debug refresh both rely on it. <see cref="Observe"/> also stays
-/// alive: Legolas's <c>PlayerLogIngestionService</c> and Gandalf's
-/// <c>LootIngestionService</c> still feed already-classified lines inline
-/// during the migration window. The double-feed (live envelope routed through
-/// the producer + Observe push-in) is idempotent — both paths converge on the
-/// same string-equality, last-writer-wins state. Retirement of <c>Observe</c>
-/// is owed once the two callers migrate to the bus event (separate follow-on
-/// under #774); deleting it now would break the bridges the user's scope note
-/// explicitly puts out of this PR.</para>
+/// <para><b>Three consumer channels, one truth.</b>
+/// <see cref="CurrentArea"/> (synchronous read) and <see cref="Subscribe"/>
+/// (legacy callback with replay-on-attach) remain the idiomatic surfaces for
+/// snapshot / event delivery. The world's bus carries the same
+/// <see cref="PlayerAreaChanged"/> stream — restricted to
+/// <see cref="PlayerAreaChangeKind.Changed"/>-kind events (snapshot replays
+/// are synthesized inside <see cref="Subscribe"/> and never cross the world
+/// boundary) — for cross-cutting consumers that prefer the architectural
+/// <c>IPlayerWorld.Bus.Subscribe&lt;PlayerAreaChanged&gt;</c> path. Both
+/// channels fire on identical content for genuine transitions; back-compat
+/// consumers keep working; new code can choose either.</para>
+///
+/// <para><b>Legacy <see cref="Observe"/> push-in.</b> Legolas's
+/// <c>PlayerLogIngestionService</c> and Gandalf's <c>LootIngestionService</c>
+/// still feed already-classified lines inline during the migration window.
+/// The double-feed (live envelope routed through the producer + Observe
+/// push-in) is idempotent — both paths converge on the same string-equality,
+/// last-writer-wins state, and the legacy <see cref="Subscribe"/> handlers
+/// fire from either path. Retirement of <see cref="Observe"/> is owed once
+/// the two callers migrate to the bus event (separate follow-on under
+/// #774).</para>
 ///
 /// <para><b>Threading.</b> The world drives <see cref="Apply"/> from its
-/// merger thread; folder mutations + change-event dispatch run under
+/// merger thread; folder mutations + legacy handler dispatch run under
 /// <see cref="_lock"/>. <see cref="Observe"/> is called from the legacy
-/// ingestion paths (Legolas/Gandalf bridges) on their own pump threads;
-/// the same lock serialises with the world-driven path so the double-feed
-/// stays race-free. <see cref="CurrentArea"/> reads take the same short
-/// critical section.</para>
+/// ingestion paths on their own pump threads; the same lock serialises with
+/// the world-driven path so the double-feed stays race-free.
+/// <see cref="CurrentArea"/> reads take the same short critical section.
+/// <see cref="Subscribe"/> replays and attaches atomically under the lock
+/// the dispatch loop fires under, which closes the late-subscribe race.</para>
 /// </summary>
 public sealed class PlayerAreaTracker : IFolder<AreaLoadingFrame>, IPlayerAreaState
 {
     private readonly AreaTransitionParser _parser;
     private readonly IDiagnosticsSink? _diag;
     private readonly object _lock = new();
+    private readonly List<Action<PlayerAreaChanged>> _handlers = [];
     private string? _currentArea;
+
+    // Most-recent envelope timestamp the tracker has applied (area
+    // transition observed via Apply or Observe). Subscribe-replay stamps
+    // its synthetic Snapshot notification with this so late subscribers
+    // observe the same envelope-time view already-attached handlers were
+    // given (principle 13: never leak wall clock into world-event-driven
+    // state). Mirrors PlayerPinTracker._lastObservedAt /
+    // PlayerWeatherTracker._lastObservedAt. Default (DateTimeOffset.MinValue)
+    // when no envelope has been applied yet — the snapshot's
+    // Current is also null in that case, so the stamp is never meaningful
+    // in isolation.
+    private DateTimeOffset _lastObservedAt;
 
     private const string DiagCategory = "GameState.Area";
 
@@ -70,17 +94,35 @@ public sealed class PlayerAreaTracker : IFolder<AreaLoadingFrame>, IPlayerAreaSt
     }
 
     /// <inheritdoc/>
-    public event EventHandler<PlayerAreaChanged>? AreaChanged;
+    public IDisposable Subscribe(Action<PlayerAreaChanged> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        lock (_lock)
+        {
+            // Replay the current area as a Snapshot before going live so a
+            // late subscriber observes the same view already-attached
+            // handlers see. The stamp comes from the most-recent envelope
+            // the tracker has applied (NOT wall-clock — principle 13);
+            // see _lastObservedAt's field doc.
+            Invoke(handler, new PlayerAreaChanged(
+                PlayerAreaChangeKind.Snapshot,
+                Previous: null,
+                Current: _currentArea,
+                At: _lastObservedAt));
+            _handlers.Add(handler);
+            return new Subscription(this, handler);
+        }
+    }
 
     /// <summary>
     /// Apply one area-loading frame to internal state. Returns a single
-    /// <see cref="PlayerAreaChanged"/> when the frame's
-    /// <see cref="AreaLoadingFrame.AreaKey"/> differs from the prior value;
-    /// empty otherwise. Identical-area re-emits (zone replay) are no-ops, so
-    /// consumers stay quiet through the L1 backlog drain. The clock parameter
-    /// is unused — the change event carries the frame's own timestamp so the
-    /// state derivation stays replay-deterministic over the source stream
-    /// (principle 5 + principle 13).
+    /// <see cref="PlayerAreaChanged"/> (<see cref="PlayerAreaChangeKind.Changed"/>)
+    /// when the frame's <see cref="AreaLoadingFrame.AreaKey"/> differs from
+    /// the prior value; empty otherwise. Identical-area re-emits (zone
+    /// replay) are no-ops, so consumers stay quiet through the L1 backlog
+    /// drain. The clock parameter is unused — the change event carries the
+    /// frame's own timestamp so state derivation stays replay-deterministic
+    /// over the source stream (principle 5 + principle 13).
     /// </summary>
     public IReadOnlyList<IChangeEvent> Apply(Frame<AreaLoadingFrame> frame, IWorldClock clock)
     {
@@ -92,7 +134,7 @@ public sealed class PlayerAreaTracker : IFolder<AreaLoadingFrame>, IPlayerAreaSt
     /// Feed one log line through the area parser. Idempotent for unrelated
     /// lines (the parser's substring fast-path returns null without touching
     /// state). Legacy push-in for the Gandalf/Legolas bridges; new consumers
-    /// should subscribe to <see cref="AreaChanged"/> or the world bus instead.
+    /// should subscribe via <see cref="Subscribe"/> or the world bus instead.
     /// </summary>
     public void Observe(string line, DateTime timestamp)
     {
@@ -104,37 +146,55 @@ public sealed class PlayerAreaTracker : IFolder<AreaLoadingFrame>, IPlayerAreaSt
     }
 
     /// <summary>
-    /// Shared mutation path. Returns the change-event list both call sites
-    /// honour: the folder hands it to the world for bus publication; the
-    /// legacy <see cref="Observe"/> path drops it (the legacy callers
-    /// pre-date the bus and only observe state via <see cref="CurrentArea"/>).
-    /// Either way the <see cref="AreaChanged"/> event fires for any
-    /// subscriber that has attached to the dual-surface event channel.
+    /// Shared mutation path. Returns the change-event list the folder hands
+    /// to the world for bus publication; the legacy <see cref="Subscribe"/>
+    /// handlers fire from the same path under <see cref="_lock"/>.
     /// </summary>
     private IReadOnlyList<IChangeEvent> ApplyTransition(string? areaKey, DateTimeOffset at)
     {
-        PlayerAreaChanged? change = null;
+        PlayerAreaChanged change;
+        Action<PlayerAreaChanged>[] toFire;
         lock (_lock)
         {
             if (_currentArea == areaKey) return Array.Empty<IChangeEvent>();
             var previous = _currentArea;
             _currentArea = areaKey;
-            change = new PlayerAreaChanged(previous, areaKey, at);
+            _lastObservedAt = at;
+            change = new PlayerAreaChanged(
+                PlayerAreaChangeKind.Changed, previous, areaKey, at);
             _diag?.Trace(DiagCategory,
                 $"Player area transition → {areaKey ?? "(none)"} at {at:O}");
+            toFire = _handlers.ToArray();
         }
-        RaiseAreaChanged(change);
+        foreach (var h in toFire) Invoke(h, change);
         return new IChangeEvent[] { change };
     }
 
-    private void RaiseAreaChanged(PlayerAreaChanged change)
+    private void Invoke(Action<PlayerAreaChanged> handler, PlayerAreaChanged change)
     {
-        var handler = AreaChanged;
-        if (handler is null) return;
-        try { handler.Invoke(this, change); }
+        try { handler(change); }
         catch (Exception ex)
         {
-            _diag?.Warn(DiagCategory, $"AreaChanged subscriber threw: {ex.Message}");
+            _diag?.Warn(DiagCategory, $"Subscriber threw: {ex.Message}");
+        }
+    }
+
+    private sealed class Subscription : IDisposable
+    {
+        private PlayerAreaTracker? _owner;
+        private readonly Action<PlayerAreaChanged> _handler;
+
+        public Subscription(PlayerAreaTracker owner, Action<PlayerAreaChanged> handler)
+        {
+            _owner = owner;
+            _handler = handler;
+        }
+
+        public void Dispose()
+        {
+            var owner = Interlocked.Exchange(ref _owner, null);
+            if (owner is null) return;
+            lock (owner._lock) { owner._handlers.Remove(_handler); }
         }
     }
 }
