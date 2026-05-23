@@ -71,7 +71,7 @@ public static class ShellComposition
             .AddSingleton(o.GameConfig)
             .AddMithrilDiagnostics(o.LogDir)
             .AddMithrilPerfTrace(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
-            .AddMithrilGameServices()
+            .AddMithrilGameServices(sp => () => sp.GetRequiredService<ShellSettings>().MirrorRawLogLinesToDiagnostics)
             .AddMithrilLogActorPipeline(sp => () => sp.GetRequiredService<ShellSettings>().CaptureRawPlayerLogLines)
             // L1 driver — consumed by archetype-A GameState producers (#550 PR 2)
             // and the archetype-B consumer fleet (#550 PR 3..N). Registered

@@ -54,7 +54,23 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddMithrilGameServices(this IServiceCollection services) =>
+    /// <summary>
+    /// Register the core game-services graph (clocks, shift catalog, log
+    /// streams, character snapshots).
+    ///
+    /// <para><paramref name="mirrorRawLogLinesAccessor"/> is a late-bound read
+    /// of an infra diagnostic setting (typically
+    /// <c>ShellSettings.MirrorRawLogLinesToDiagnostics</c>) that gates the
+    /// per-line <c>_diag?.Trace</c> call inside
+    /// <see cref="PlayerLogStream"/> / <see cref="ChatLogStream"/>. When the
+    /// accessor is <c>null</c> or returns <c>false</c> (the default), the
+    /// DiagnosticsSink fanout + Serilog Verbose write per raw line is
+    /// skipped entirely — closing #507's hot-path cost. Flip the setting
+    /// and subsequent emissions reflect the new state (no restart).</para>
+    /// </summary>
+    public static IServiceCollection AddMithrilGameServices(
+        this IServiceCollection services,
+        Func<IServiceProvider, Func<bool>>? mirrorRawLogLinesAccessor = null) =>
         services
             .AddSingleton<IGameClock, GameClock>()
             // Shift catalog is bundled JSON with a hardcoded fallback —
@@ -70,8 +86,18 @@ public static class ServiceCollectionExtensions
             // to the anchor — see SessionAnchor.cs).
             .AddSingleton<SessionAnchor>()
             .AddSingleton<ISessionAnchor>(sp => sp.GetRequiredService<SessionAnchor>())
-            .AddSingleton<IPlayerLogStream, PlayerLogStream>()
-            .AddSingleton<IChatLogStream, ChatLogStream>()
+            .AddSingleton<IPlayerLogStream>(sp => new PlayerLogStream(
+                sp.GetRequiredService<Game.GameConfig>(),
+                sp.GetService<IDiagnosticsSink>(),
+                time: null,
+                sessionAnchor: sp.GetService<ISessionAnchor>(),
+                mirrorAccessor: mirrorRawLogLinesAccessor?.Invoke(sp)))
+            .AddSingleton<IChatLogStream>(sp => new ChatLogStream(
+                sp.GetRequiredService<Game.GameConfig>(),
+                sp.GetService<IDiagnosticsSink>(),
+                time: null,
+                sessionAnchor: sp.GetService<ISessionAnchor>(),
+                mirrorAccessor: mirrorRawLogLinesAccessor?.Invoke(sp)))
             // Foundation service (#612) — owns the FileSystemWatcher on
             // Reports/, parses storage exports + character snapshots,
             // exposes per-(server, character) scope query. ActiveCharacterService

@@ -21,6 +21,18 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
     private readonly ISessionAnchor? _sessionAnchor;
+    // Diagnostics-mirror gate. When the accessor is null OR returns false,
+    // the per-line _diag?.Trace call in Publish is skipped entirely — no
+    // DiagnosticsSink fanout, no Serilog Verbose write. Default OFF closes
+    // #507's hot-path cost; the shell wires the accessor to
+    // ShellSettings.MirrorRawLogLinesToDiagnostics so users can flip it on
+    // when actively debugging. Sampled ONCE per Publish batch (not per
+    // line) — every line in a given batch sees the same value. Flipping
+    // the setting therefore takes effect on the next batch (one poll-tick
+    // boundary, sub-second under default PollIntervalSeconds), not the
+    // next line — a deliberate choice for consistent batch semantics and
+    // to keep the hot path one branch-on-a-cached-bool per line.
+    private readonly Func<bool>? _mirrorAccessor;
     private readonly object _gate = new();
     private readonly List<Channel<RawLogLine>> _subs = new();
     // Accumulated lines from session start to "now". Null until RunAsync has
@@ -41,12 +53,14 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
         GameConfig config,
         IDiagnosticsSink? diag = null,
         TimeProvider? time = null,
-        ISessionAnchor? sessionAnchor = null)
+        ISessionAnchor? sessionAnchor = null,
+        Func<bool>? mirrorAccessor = null)
     {
         _config = config;
         _diag = diag;
         _time = time ?? TimeProvider.System;
         _sessionAnchor = sessionAnchor;
+        _mirrorAccessor = mirrorAccessor;
         _config.PropertyChanged += OnConfigChanged;
     }
 
@@ -209,9 +223,10 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
             if (_sessionReplay is not null && lines.Count > 0) _sessionReplay.AddRange(lines);
             snapshot = _subs.ToArray();
         }
+        var mirror = _mirrorAccessor?.Invoke() ?? false;
         foreach (var line in lines)
         {
-            _diag?.Trace("PlayerLog", line.Line);
+            if (mirror) _diag?.Trace("PlayerLog", line.Line);
             foreach (var ch in snapshot) ch.Writer.TryWrite(line);
         }
     }
