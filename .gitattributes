@@ -1,0 +1,23 @@
+# Default: let Git auto-detect text vs binary, normalize EOLs in the index.
+# Without this, contributors with `core.autocrlf=false` or `input` could
+# commit CRLF blobs and produce mixed-EOL drift across the repo (the class
+# of churn surfaced by PR #721 on src/Legolas.Module/Services/ItemCollectionTracker.cs).
+* text=auto
+
+# Source types — force CRLF in the working tree (cosmetic; the index is
+# always LF when `text` is set, so this is purely about local appearance
+# for a Windows-only project — `net10.0-windows`).
+*.cs     text eol=crlf
+*.csproj text eol=crlf
+*.xaml   text eol=crlf
+*.md     text eol=crlf
+*.json   text eol=crlf
+
+# Binary assets — opt out of EOL conversion entirely. `text=auto` would
+# detect these correctly from their content, but the explicit markers are
+# defence-in-depth (no risk of a future Git heuristic change corrupting
+# them, and they document the repo's binary surface).
+*.png binary
+*.jpg binary
+*.ico binary
+*.xcf binary
