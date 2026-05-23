@@ -87,10 +87,10 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
     private readonly IPlayerWorld _playerWorld;
     private readonly IChatWorld _chatWorld;
     private readonly IPlayerInventoryState _playerState;
+    private readonly IGameReportsService _gameReports;
     private readonly IReferenceDataService? _refData;
     private readonly IGameSessionService? _playerSession;
     private readonly IChatSessionService? _chatSession;
-    private readonly IGameReportsService? _gameReports;
     private readonly IDiagnosticsSink? _diag;
     private readonly ViewClock _clock;
     private readonly ViewEventBus _bus = new();
@@ -160,19 +160,19 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
         IPlayerWorld playerWorld,
         IChatWorld chatWorld,
         IPlayerInventoryState playerState,
+        IGameReportsService gameReports,
         IReferenceDataService? refData = null,
         IGameSessionService? playerSession = null,
         IChatSessionService? chatSession = null,
-        IGameReportsService? gameReports = null,
         IDiagnosticsSink? diag = null)
     {
         _playerWorld = playerWorld ?? throw new ArgumentNullException(nameof(playerWorld));
         _chatWorld = chatWorld ?? throw new ArgumentNullException(nameof(chatWorld));
         _playerState = playerState ?? throw new ArgumentNullException(nameof(playerState));
+        _gameReports = gameReports ?? throw new ArgumentNullException(nameof(gameReports));
         _refData = refData;
         _playerSession = playerSession;
         _chatSession = chatSession;
-        _gameReports = gameReports;
         _diag = diag;
         _clock = new ViewClock();
         _pendingChat = new PendingCorrelator<ScopedKey, int>(PendingChatTtl, _clock);
@@ -199,10 +199,7 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
         _started = true;
 
         LoadExportSeeds();
-        if (_gameReports is not null)
-        {
-            _gameReports.StorageReportsChanged += OnGameReportsStorageChanged;
-        }
+        _gameReports.StorageReportsChanged += OnGameReportsStorageChanged;
 
         _playerAddedSub = _playerWorld.Bus.Subscribe<PlayerInventoryAdded>(OnPlayerAdded);
         _playerRemovedSub = _playerWorld.Bus.Subscribe<PlayerInventoryRemoved>(OnPlayerRemoved);
@@ -493,7 +490,6 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
     private void LoadExportSeeds()
     {
         if (_refData is null) return;
-        if (_gameReports is null) return;
 
         var newest = _gameReports.StorageReports.FirstOrDefault();
         if (newest is null)
@@ -660,10 +656,7 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
         _playerRemovedSub?.Dispose();
         _playerStackUpdatedSub?.Dispose();
         _chatObservedSub?.Dispose();
-        if (_gameReports is not null)
-        {
-            _gameReports.StorageReportsChanged -= OnGameReportsStorageChanged;
-        }
+        _gameReports.StorageReportsChanged -= OnGameReportsStorageChanged;
     }
 
     private sealed class ShimSubscription : IDisposable
