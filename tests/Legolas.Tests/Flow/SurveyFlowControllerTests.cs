@@ -285,4 +285,24 @@ public class SurveyFlowControllerTests
         flow.CurrentState.Should().Be(SurveyFlowState.Listening);
         flow.IsSettingPosition.Should().BeFalse();
     }
+
+    [Fact]
+    public void Reset_from_Listening_fires_Transitioned_self_edge_with_Reset_trigger()
+    {
+        // Iter-1 review of PR #721 (issue #699): a manual Reset() invoked
+        // while already in Listening must still surface as a Transitioned
+        // event so session-bound listeners (ItemCollectionTracker's
+        // pending-Add queue clear) observe the "start over" signal. Without
+        // this, stale _pendingAdds from the prior cycle would leak into the
+        // next survey.
+        var (flow, _, _, transitions, _) = BuildSut();
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+
+        flow.Reset();
+
+        flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+        transitions.Should().ContainSingle();
+        transitions.Single().Should().BeEquivalentTo(new SurveyTransition(
+            SurveyFlowState.Listening, SurveyFlowState.Listening, "Reset"));
+    }
 }

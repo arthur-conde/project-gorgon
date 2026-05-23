@@ -77,10 +77,12 @@ public sealed partial class PlayerLogParser : ILogParser
     //
     // Per the live capture (wiki Player-Log-Signals §Source — Player.log is
     // canonical; chat is a redundant mirror), the primary "collected!" line
-    // carries NO count for the primary item (PG moved counts onto the
-    // "added to inventory" line, which Legolas now consumes via
-    // IInventoryView.Bus per #606). The (?:\s+x\d+)? before "collected!" is
-    // kept for legacy/edge-case parity with the retired ChatLogParser.
+    // carries NO count for the primary item (#699 then accepted this as a
+    // structural property of the post-migration single-world attribution
+    // path: ItemCollectionTracker credits one per matched (Add, Collect)
+    // pair against IPlayerWorld.Bus<PlayerInventoryAdded> — no separate
+    // stack-size composition surface). The (?:\s+x\d+)? before "collected!"
+    // is kept for legacy/edge-case parity with the retired ChatLogParser.
     [GeneratedRegex(
         """ProcessScreenText\(\s*ImportantInfo\s*,\s*"(?<name>.+?)(?:\s+x\d+)?\s+collected!(?:\s+Also found\s+(?<bonus>.+?)(?:\s+x\d+)?\s+\(speed bonus!\))?\.?"\s*\)""",
         RegexOptions.Compiled | RegexOptions.CultureInvariant)]

@@ -1,144 +1,164 @@
 using System.Windows;
-using Mithril.GameState.Inventory;
-using Mithril.Shared.Correlation;
-using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
-using Mithril.Shared.Reference;
-using Mithril.WorldSim;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
+using Mithril.GameState.Inventory;
+using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Logging;
+using Mithril.Shared.Reference;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 
 namespace Legolas.Services;
 
 /// <summary>
-/// Replacement for the retired <c>LogIngestionService</c> chat tail (#606).
-/// Owns the ADD↔COLLECT correlation that credits survey yields to
-/// <see cref="SessionState.CollectedItems"/>:
+/// Replacement for the retired <c>LogIngestionService</c> chat tail (#606) plus
+/// the post-#699 retreat from the cross-source <see cref="IInventoryView"/>
+/// surface. Legolas's state-machine attribution is structurally a single-world
+/// concern — both the Add side (Player.log <c>ProcessAddItem</c>) and the
+/// Collect side (Player.log <c>ProcessScreenText(ImportantInfo, "&lt;Mineral&gt;
+/// collected!")</c>) originate on Player.log — so the consumer takes the
+/// principle 4 single-world-direct exit (<c>docs/world-simulator.md</c>):
+///
 /// <list type="bullet">
-///   <item><b>Add channel</b> — <see cref="IInventoryView.Bus"/>
-///     <see cref="InventoryItemAdded"/> with <c>SizeConfirmed = true</c>. The
-///     view layer composes Player.log <c>ProcessAddItem</c> with the chat-side
-///     <c>ChatInventoryObserved</c> stack-size signal (#602), so this event is
-///     the post-migration equivalent of the retired chat
-///     <c>[Status] X xN added to inventory.</c> line — same display name (resolved
-///     via <see cref="IReferenceDataService.ItemsByInternalName"/>) and the same
-///     authoritative count. Unconfirmed Adds (no chat correlation yet) are
-///     skipped; the matching <see cref="InventoryStackChanged"/> back-fill that
-///     follows within the view's TTL carries the confirmed size.</item>
+///   <item><b>Add channel</b> — <see cref="IPlayerWorld.Bus"/>
+///     <see cref="PlayerInventoryAdded"/> (instance-id + InternalName, no
+///     quantities). The folder fires one event per <c>ProcessAddItem</c>
+///     observation. Resolved to a display-name via
+///     <see cref="IReferenceDataService.ItemsByInternalName"/> and enqueued
+///     under that key.</item>
 ///   <item><b>Collect channel</b> — Player.log
 ///     <c>ProcessScreenText(ImportantInfo, "&lt;Mineral&gt; collected!")</c>
-///     (parsed by <see cref="PlayerLogParser"/>, post-#606). Drains every
-///     pending ADD bucket for the same display name (FIFO) and credits the
-///     summed count. The optional <c>Also found &lt;Bonus&gt; (speed bonus!)</c>
-///     tail credits the bonus item under the same name-keyed correlator.</item>
+///     (parsed by <see cref="PlayerLogParser"/>, post-#606). Dequeues the
+///     head of the matching display-name FIFO and credits one to
+///     <see cref="SessionState.CollectedItems"/>; misses go through the
+///     credit-0-and-warn path. The optional <c>Also found &lt;Bonus&gt;
+///     (speed bonus!)</c> tail credits the bonus item under the same
+///     name-keyed FIFO.</item>
 /// </list>
 ///
-/// <para><b>Correlator policy (preserved from the retired chat path).</b>
-/// Keyed by display name with <see cref="StringComparer.OrdinalIgnoreCase"/>;
-/// 5 s TTL (matching <c>InventoryView.PendingChatTtl</c> deliberately —
-/// PG's emission ordering is ADD-then-COLLECT within ~1 s, so a tight window
-/// captures the real pair and naturally expires unrelated inventory noise
-/// like skinning/vendor/crafting adds for the same display name).
-/// Unmatched takes apply the explicit credit-0 + <c>diag.Warn</c> policy
-/// (no silent fallback); TTL-evicted noise is surfaced via the eviction
-/// <c>Trace</c> callback. See <c>docs/cross-source-correlation.md</c>
-/// §Tier 1 for the operational invariants.</para>
+/// <para><b>FIFO policy (post-#699 retirement of the cross-source
+/// <see cref="PendingCorrelator{TKey, TReq}"/>).</b> Keyed by display name
+/// with <see cref="StringComparer.OrdinalIgnoreCase"/>; survey-session-bounded
+/// (no TTL eviction). Both Add and Collect now originate on PlayerWorld, so
+/// they share a single source-stream merger and arrive in the order PG
+/// emitted them — the 5 s TTL the retired correlator used to guard
+/// cross-stream race conditions has no race left to guard against (the brief
+/// for #699 § "Design decisions ratified" enumerates the structural
+/// guarantee). The lifecycle bound is <see cref="SurveyFlowController"/>:
+/// on transition to <see cref="SurveyFlowState.Done"/> or on <c>Reset</c> the
+/// queue clears, and any pending Add that never paired with a Collect surfaces
+/// in the <c>Legolas.PendingAdds</c> Trace stream. New session, fresh queue.
+/// Unmatched Collects (no pending Add for the name) still take the explicit
+/// credit-0 + <c>diag.Warn</c> policy (no silent fallback); the warning frame
+/// shifts from "TTL evicted" to "no pending Add for collected name".</para>
 ///
-/// <para><b>Survey-row flip is independent of count.</b> The survey row's
+/// <para><b>Credit semantics shift.</b> Pre-#699, the correlator stored the
+/// stack-size paired by the view layer's cross-source join (Player.log
+/// <c>ProcessAddItem</c> ↔ chat <c>[Status] X xN added to inventory</c>), so
+/// <see cref="SessionState.CollectedItems"/>[<i>name</i>] aggregated total
+/// stack units. Post-#699 the Add channel carries no quantity (per
+/// <see cref="PlayerInventoryAdded"/>'s contract — Player.log has no
+/// stack-size for that verb), so the credit becomes "+1 per matched
+/// (Add, Collect) pair." For surveys whose individual yields are
+/// already 1 instance per pair (the common case — one node, one Collect
+/// banner) the share-card display is unchanged. Surveys whose yields stack
+/// across multiple Adds for the same name see one share-card line per
+/// banner instead of summed stack units. The brief for #699 accepts this
+/// shift as the cost of the principle 4 single-world exit; the
+/// per-stack-size aggregation path would have required either a ChatWorld
+/// subscription (rejected per the issue body's "two single-world paths"
+/// design framing) or a return to the cross-source view layer (the very
+/// coupling #699 retires).</para>
+///
+/// <para><b>Survey-row flip is independent of credit.</b> The survey row's
 /// <see cref="SurveyItemViewModel.Collected"/> flag is set via the name-match
 /// loop in <see cref="HandleItemCollected"/> regardless of whether a pending
-/// ADD was found — so "did I collect it" stays correct even when the count
+/// Add was found — so "did I collect it" stays correct even when the count
 /// credit short-circuits to credit-0.</para>
 ///
 /// <para><b>Why a separate service.</b> Sibling to
 /// <see cref="PlayerLogIngestionService"/> (which owns the
 /// area→calibration bridge + absolute <c>ProcessMapFx</c> placement +
-/// Motherlode coordinator wiring) to keep the correlator + collect-credit
+/// Motherlode coordinator wiring) to keep the attribution + collect-credit
 /// concern isolated. Both subscribe eagerly through the L1 driver during
 /// <c>StartAsync</c> (#695 Call 1); the legolas module gate no longer
 /// gates state subscription.</para>
 /// </summary>
 public sealed class ItemCollectionTracker : BackgroundService
 {
-    private static readonly TimeSpan PendingAddTtl = TimeSpan.FromSeconds(5);
-
-    private readonly IInventoryView _inventoryView;
+    private readonly IPlayerWorld _playerWorld;
     private readonly ILogStreamDriver _driver;
     private readonly PlayerLogParser _parser;
     private readonly SessionState _session;
+    private readonly SurveyFlowController _flow;
     private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
     private readonly ThrottledWarn _warn;
-    private readonly PendingCorrelator<string, int> _pendingAdds;
 
-    private IDisposable? _addedSub;
-    private IDisposable? _stackChangedSub;
+    // Survey-session-bounded FIFO. Keyed by display name (resolved at enqueue
+    // via the reference catalog so the survey-row name-match loop in
+    // HandleItemCollected stays aligned with the CollectedItems dictionary
+    // key). Value is the instance-id from PlayerInventoryAdded; the
+    // state-machine attribution path consumes the *fact* of a pending Add,
+    // not its identity — the instance-id is kept for future per-instance
+    // attribution callers (e.g. Motherlode) and for diagnostic Trace clarity.
+    private readonly Dictionary<string, Queue<long>> _pendingAdds
+        = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _pendingLock = new();
+
+    private IDisposable? _playerAddedSub;
     private ILogSubscription? _logSub;
 
     public ItemCollectionTracker(
-        IInventoryView inventoryView,
+        IPlayerWorld playerWorld,
         ILogStreamDriver driver,
         PlayerLogParser parser,
         SessionState session,
+        SurveyFlowController flow,
         IReferenceDataService? refData = null,
         IDiagnosticsSink? diag = null,
         TimeProvider? time = null)
     {
-        _inventoryView = inventoryView;
+        _playerWorld = playerWorld;
         _driver = driver;
         _parser = parser;
         _session = session;
+        _flow = flow;
         _refData = refData;
         _diag = diag;
-        var clock = time ?? TimeProvider.System;
+        // ThrottledWarn's TimeProvider migrates off TimeProvider.System onto a
+        // PlayerWorld.Clock-backed adapter (#699). The throttle gate's
+        // eviction trajectory now advances by simulated event time — same
+        // determinism property the cross-source correlator retirement
+        // delivers, applied to the warn-rate gate that shared its clock
+        // surface. A test override stays available via the `time` ctor arg
+        // (the LSP test seam pre-#699).
+        var clock = time ?? new PlayerWorldClockTimeProvider(_playerWorld.Clock);
         _warn = new ThrottledWarn(diag, "Legolas.Ingestion", time: clock);
-        _pendingAdds = new PendingCorrelator<string, int>(
-            PendingAddTtl,
-            time: clock,
-            onUnmatched: (name, count) =>
-                _diag?.Trace("Legolas.PendingAdds", $"evicted {name} x{count}"),
-            keyComparer: StringComparer.OrdinalIgnoreCase);
+
+        _flow.Transitioned += OnFlowTransitioned;
     }
 
     /// <summary>
     /// Eager subscription attach per Call 1 / principle eager-always (#695):
-    /// both the <see cref="IInventoryView.Bus"/> subscriptions AND the L1
+    /// the <see cref="IPlayerWorld.Bus"/> subscription AND the L1
     /// ProcessScreenText subscription wire up during <c>StartAsync</c>,
     /// before the trailing world-merger drain starts (#702 / Call 2). The
-    /// legolas module gate no longer gates state subscription — pre-Call-1
-    /// the L1 subscribe sat inside <see cref="ExecuteAsync"/> behind
-    /// <c>gates.For("legolas").WaitAsync</c>, which on a lazy module
-    /// delayed the collect-credit path until first-tab activation. Now the
-    /// L1 subscribe joins the bus subscribes here so a session-start replay
-    /// drain reaches HandleItemCollected from the moment the host's chain
-    /// completes (#702 invariant: trailing-merger starts after every
-    /// other hosted service's <c>StartAsync</c> returns).
-    ///
-    /// <para>The typed bus has no replay-on-subscribe contract by design.
-    /// The two-axis answer is Call 1 (every state subscriber attaches
-    /// eagerly in <c>StartAsync</c>) + Call 2 (the trailing-merger
-    /// ordering invariant guarantees the drain hasn't started yet);
-    /// together they ensure no frames are missed without any per-channel
-    /// buffering on the bus side. Consumers that need to read current
-    /// state at attach time go through the view's snapshot surface
-    /// (<see cref="IInventoryView.TryResolve"/> /
-    /// <see cref="IInventoryView.TryGetStackSize"/>), not through a
-    /// replay overload — see the "Dual-surface contract for views"
-    /// subsection in <c>docs/world-simulator.md</c>. The eager-attach
-    /// shape in this method is the canonical pattern future cross-world
-    /// view consumers should follow.</para>
+    /// legolas module gate no longer gates state subscription; #699 then
+    /// further retired the cross-source <see cref="IInventoryView"/>
+    /// dependency the Add side previously read through.
     /// </summary>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        // Inventory view — typed bus consumption per #606. Both Added (when
-        // SizeConfirmed) and StackChanged represent the post-#602 equivalents
-        // of the retired chat "[Status] X xN added to inventory." line. The
-        // view's own correlator already pairs the Player.log + chat sides; we
-        // consume the resolved view event downstream of that composition.
-        _addedSub ??= _inventoryView.Bus.Subscribe<InventoryItemAdded>(OnInventoryAdded);
-        _stackChangedSub ??= _inventoryView.Bus.Subscribe<InventoryStackChanged>(OnInventoryStackChanged);
+        // PlayerWorld bus — typed change-event consumption per #699. Same
+        // event the view layer was composing for us (then publishing as
+        // InventoryItemAdded after fusing with chat); we now consume the
+        // raw PlayerWorld-emitted change event directly, skipping the
+        // view's cross-source join because the state machine has no
+        // cross-world concern (the Collect side below is also Player.log).
+        _playerAddedSub ??= _playerWorld.Bus.Subscribe<PlayerInventoryAdded>(OnPlayerInventoryAdded);
 
         // Player.log collect channel — parses ProcessScreenText
         // (ImportantInfo, "<Mineral> collected!"). Mirrors the structural
@@ -187,65 +207,36 @@ public sealed class ItemCollectionTracker : BackgroundService
 
     public override Task StopAsync(CancellationToken cancellationToken)
     {
-        // Bus subs are owned across the StartAsync/StopAsync lifecycle (they
-        // attach before the pump and survive the pump's exit), so dispose them
-        // here rather than in ExecuteAsync's finally — symmetric with where
-        // they were attached.
-        _addedSub?.Dispose();
-        _addedSub = null;
-        _stackChangedSub?.Dispose();
-        _stackChangedSub = null;
+        // Bus sub is owned across the StartAsync/StopAsync lifecycle (attaches
+        // before the pump and survives the pump's exit), so dispose it here
+        // rather than in ExecuteAsync's finally — symmetric with where it was
+        // attached.
+        _playerAddedSub?.Dispose();
+        _playerAddedSub = null;
+        _flow.Transitioned -= OnFlowTransitioned;
         return base.StopAsync(cancellationToken);
     }
 
     public override void Dispose()
     {
-        _addedSub?.Dispose();
-        _addedSub = null;
-        _stackChangedSub?.Dispose();
-        _stackChangedSub = null;
+        _playerAddedSub?.Dispose();
+        _playerAddedSub = null;
         _logSub?.Dispose();
         _logSub = null;
+        _flow.Transitioned -= OnFlowTransitioned;
         base.Dispose();
     }
 
-    private void OnInventoryAdded(Frame<InventoryItemAdded> frame)
+    private void OnPlayerInventoryAdded(Frame<PlayerInventoryAdded> frame)
     {
-        // Only confirmed adds carry an authoritative count. Unconfirmed adds
-        // default to 1 with SizeConfirmed=false — the matching StackChanged
-        // back-fill that the view emits within its TTL window will carry the
-        // real size, which OnInventoryStackChanged below handles.
-        if (!frame.Payload.SizeConfirmed) return;
-        EnqueueAdd(frame.Payload.InternalName, frame.Payload.StackSize);
-    }
-
-    private void OnInventoryStackChanged(Frame<InventoryStackChanged> frame)
-    {
-        // StackChanged fires on:
-        //   • chat back-fill of a previously-defaulted InventoryItemAdded
-        //     (legitimate survey-credit signal — the chat "added" line is
-        //     what the legacy chat path was correlating on);
-        //   • ProcessUpdateItemCode / ProcessRemoveFromStorageVault stack
-        //     bumps on existing inventory.
-        // Both correspond to chat "[Status] X xN added to inventory." emissions
-        // pre-#606, so both legitimately credit. Drain & TTL handle the rest.
-        EnqueueAdd(frame.Payload.InternalName, frame.Payload.StackSize);
-    }
-
-    /// <summary>
-    /// Resolve <c>InternalName → DisplayName</c> via the reference catalog and
-    /// enqueue under the display-name key (correlator key shape preserved from
-    /// the retired chat path so the survey-row name-match loop in
-    /// <see cref="HandleItemCollected"/> stays aligned with the
-    /// <see cref="SessionState.CollectedItems"/> dictionary key).
-    /// </summary>
-    private void EnqueueAdd(string internalName, int stackSize)
-    {
-        if (stackSize <= 0) return;
-        var displayName = ResolveDisplayName(internalName);
+        var displayName = ResolveDisplayName(frame.Payload.InternalName);
         if (string.IsNullOrEmpty(displayName)) return;
-        DrainPendingStale();
-        _pendingAdds.Add(displayName, stackSize);
+        lock (_pendingLock)
+        {
+            if (!_pendingAdds.TryGetValue(displayName, out var q))
+                _pendingAdds[displayName] = q = new Queue<long>();
+            q.Enqueue(frame.Payload.InstanceId);
+        }
     }
 
     private string? ResolveDisplayName(string internalName)
@@ -266,12 +257,11 @@ public sealed class ItemCollectionTracker : BackgroundService
     private void HandleItemCollected(ItemCollected ic)
     {
         // Primary item + (optional) speed-bonus item are the only ones we want
-        // to credit. SumPendingFor pops every matching pending ADD (FIFO);
-        // misses go through the explicit credit-0 path below rather than the
-        // pre-#523 silent credit-1 fallback. TTL-evicted noise (unrelated
-        // skinning/vendor/crafting adds for the same name) is surfaced via the
-        // ctor's eviction Trace callback.
-        DrainPendingStale();
+        // to credit. The post-#699 FIFO pops one matching pending Add per
+        // Collect (vs the pre-#699 SumPendingFor that drained all); misses go
+        // through the explicit credit-0 path below rather than the pre-#523
+        // silent credit-1 fallback. Unmatched pending Adds that survive past
+        // survey-session-end are surfaced via OnFlowTransitioned's Trace.
         CreditCollect(ic.Name);
         if (!string.IsNullOrEmpty(ic.SpeedBonusItem))
             CreditCollect(ic.SpeedBonusItem!);
@@ -303,37 +293,35 @@ public sealed class ItemCollectionTracker : BackgroundService
     }
 
     /// <summary>
-    /// Credit a <c>collected!</c> against pending ADDs for the same display
-    /// name. If at least one pending ADD is found, accumulates the summed
-    /// count into <see cref="SessionState.CollectedItems"/>. If no pending
-    /// ADD is found, the credit-0 policy applies: warn and <em>skip the
-    /// accumulate</em> entirely — the dict stays untouched so the share card
-    /// omits a "x0" line and any prior partial credit for this name isn't
-    /// disturbed.
+    /// Credit a <c>collected!</c> against a pending Add for the same display
+    /// name. If one is found, accumulates a single instance into
+    /// <see cref="SessionState.CollectedItems"/> (see the class-level remark
+    /// on the post-#699 +1-per-pair semantic). If none is found, the credit-0
+    /// policy applies: warn and <em>skip the accumulate</em> entirely — the
+    /// dict stays untouched so the share card omits a "x0" line and any prior
+    /// partial credit for this name isn't disturbed.
     /// </summary>
     private void CreditCollect(string name)
     {
-        var (total, hadAny) = SumPendingFor(name);
+        bool hadAny;
+        lock (_pendingLock)
+        {
+            hadAny = _pendingAdds.TryGetValue(name, out var q) && q.Count > 0;
+            if (hadAny)
+            {
+                _pendingAdds[name].Dequeue();
+                if (_pendingAdds[name].Count == 0)
+                    _pendingAdds.Remove(name);
+            }
+        }
+
         if (hadAny)
         {
-            AccumulateCollected(name, total);
+            AccumulateCollected(name, 1);
             return;
         }
         _warn.Warn(
-            $"Collect for '{name}' had no pending inventory add " +
-            $"within {PendingAddTtl.TotalSeconds:0}s; crediting 0.");
-    }
-
-    private (int Total, bool HadAny) SumPendingFor(string name)
-    {
-        var total = 0;
-        var hadAny = false;
-        while (_pendingAdds.TryTake(name, out var count))
-        {
-            total += count;
-            hadAny = true;
-        }
-        return (total, hadAny);
+            $"Collect for '{name}' had no pending inventory add; crediting 0.");
     }
 
     private void AccumulateCollected(string name, int count)
@@ -342,14 +330,62 @@ public sealed class ItemCollectionTracker : BackgroundService
         _session.CollectedItems[name] = existing + count;
     }
 
+    private void OnFlowTransitioned(SurveyTransition t)
+    {
+        // Survey-session lifecycle bound (#699). The pre-#699 cross-source
+        // correlator used a 5 s TTL keyed on view-clock to guard against
+        // unrelated noise accumulating between an Add and a Collect; under
+        // the post-#699 PlayerWorld-direct subscription that TTL is gone, so
+        // the survey FSM's transitions own the lifecycle:
+        //
+        //   • Listening / Gathering / SettingPosition → Done: the survey
+        //     completed; any pending Add that never paired with a Collect
+        //     wasn't survey loot and must not carry into the next run.
+        //   • Reset trigger (from Listening/Gathering back to Listening, or
+        //     Done → Listening via auto-reset): an explicit "start over"
+        //     signal; same disposal semantic.
+        //
+        // Items still pending at clear-time surface in the
+        // Legolas.PendingAdds Trace stream (mirrors the pre-#699
+        // "evicted {name} x{count}" diagnostic, narrowed to the
+        // survey-session frame instead of a wall-clock TTL).
+        var shouldClear = t.To == SurveyFlowState.Done
+            || string.Equals(t.Trigger, nameof(SurveyFlowController.Reset), StringComparison.Ordinal);
+        if (!shouldClear) return;
+
+        Dictionary<string, int>? unmatched = null;
+        lock (_pendingLock)
+        {
+            if (_pendingAdds.Count > 0)
+            {
+                unmatched = new Dictionary<string, int>(_pendingAdds.Count, StringComparer.OrdinalIgnoreCase);
+                foreach (var (name, q) in _pendingAdds) unmatched[name] = q.Count;
+                _pendingAdds.Clear();
+            }
+        }
+        if (unmatched is { Count: > 0 })
+        {
+            var summary = string.Join(", ",
+                unmatched.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
+                    .Select(kv => $"{kv.Key} x{kv.Value}"));
+            _diag?.Trace("Legolas.PendingAdds",
+                $"survey ended ({t.Trigger}); unmatched pending Adds dropped: {summary}");
+        }
+    }
+
     /// <summary>
-    /// Piggyback eviction sweep across every pending key. Required because the
-    /// only consumer of pending ADDs is per-key (<see cref="PendingCorrelator{TKey, TReq}.TryTake"/>
-    /// lazy-evicts only the bucket it touches), so names that arrive on
-    /// inventory adds and never see a matching <c>collected!</c> — skinning,
-    /// vendor, crafting, non-survey loot — would accumulate for the process
-    /// lifetime without this call. Invoked at the top of every handler that
-    /// touches the correlator.
+    /// Thin <see cref="TimeProvider"/> shim around an <see cref="IWorldClock"/>
+    /// so primitives that accept a <c>TimeProvider</c> (the canonical
+    /// abstraction in the .NET BCL — and the contract <see cref="ThrottledWarn"/>
+    /// already accepts) read their "now" from PlayerWorld's simulated
+    /// frame-driven clock. The blast radius is private-nested: only the
+    /// throttle gate in this file consumes it; the broader codebase keeps the
+    /// existing <see cref="TimeProvider"/> seam without introducing an
+    /// <c>IWorldClock</c>-flavoured callback variant. <see cref="ViewClock"/>
+    /// uses the same shape over the view layer's derived clock.
     /// </summary>
-    private void DrainPendingStale() => _pendingAdds.DrainStale();
+    private sealed class PlayerWorldClockTimeProvider(IWorldClock clock) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => clock.Now;
+    }
 }

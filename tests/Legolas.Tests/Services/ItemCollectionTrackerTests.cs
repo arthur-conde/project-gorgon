@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Legolas.Domain;
+using Legolas.Flow;
 using Legolas.Services;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
@@ -10,19 +11,21 @@ using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.WorldSim;
-using Xunit;
+using Mithril.WorldSim.Player;
 
 namespace Legolas.Tests.Services;
 
 /// <summary>
-/// Covers the #606 migration: the chat <c>[Status] X xN added to inventory.</c>
-/// ↔ <c>[Status] X collected!</c> correlator moved off <c>IChatLogStream</c>
-/// and onto <see cref="IInventoryView.Bus"/> (typed-frame typed-bus per #602)
-/// plus the new Player.log <c>ProcessScreenText(ImportantInfo, "&lt;Mineral&gt;
-/// collected!")</c> parse. Behavioural shape preserved from the retired
-/// <c>LogIngestionService</c> — credit-0 + warn on unmatched takes, Trace on
-/// TTL eviction, FIFO summed credit across multiple pending adds, name-keyed
-/// (display-name resolved via <see cref="IReferenceDataService"/>).
+/// Covers the post-#699 migration: the chat-Add ↔ Player.log-Collect attribution
+/// retired its dependency on <see cref="IInventoryView"/>'s cross-source bus and
+/// now reads <see cref="PlayerInventoryAdded"/> off <see cref="IPlayerWorld.Bus"/>
+/// directly, with a survey-session-bounded FIFO replacing the prior
+/// <c>PendingCorrelator&lt;string,int&gt;</c> (principle 4 single-world-direct
+/// exit; the 5 s TTL retired alongside the cross-source race it guarded).
+/// Credit semantics shifted from "stack-size paired by the view layer" to
+/// "+1 per matched (Add, Collect) pair" — see the class-level remarks on
+/// <see cref="ItemCollectionTracker"/> for the rationale and #699 for the
+/// design conversation.
 /// </summary>
 public sealed class ItemCollectionTrackerTests
 {
@@ -30,9 +33,11 @@ public sealed class ItemCollectionTrackerTests
 
     private sealed record Harness(
         ItemCollectionTracker Service,
-        FakeInventoryView View,
+        FakePlayerWorld World,
         TestLogStreamDriver Driver,
         SessionState Session,
+        SurveyFlowController Flow,
+        LegolasSettings Settings,
         CapturingSink Sink,
         ManualTimeProvider Clock,
         ModuleGates Gates);
@@ -41,19 +46,28 @@ public sealed class ItemCollectionTrackerTests
 
     private static Harness Build(bool openGate)
     {
-        var view = new FakeInventoryView();
+        var world = new FakePlayerWorld();
         var driver = new TestLogStreamDriver();
         var parser = new PlayerLogParser();
         var session = new SessionState();
+        // Default AutoReset off in tests — production wiring auto-clears
+        // CollectedItems via ClearSurveys() when the share-card snapshots on
+        // the Done transition, which would race the test's CollectedItems
+        // assertion. The tests that exercise the survey-end clear path
+        // either drive Flow.Reset() explicitly or assert the transition's
+        // Trace + the post-clear empty queue instead of the
+        // pre-clear CollectedItems dict.
+        var settings = new LegolasSettings { AutoResetWhenAllCollected = false };
+        var flow = new SurveyFlowController(session, settings);
         var gates = new ModuleGates();
         if (openGate) gates.For("legolas").Open();
         var sink = new CapturingSink();
         var clock = new ManualTimeProvider(new DateTime(2026, 5, 22, 14, 0, 0, DateTimeKind.Utc));
         var refData = new FakeRefData();
         var svc = new ItemCollectionTracker(
-            view, driver, parser, session,
+            world, driver, parser, session, flow,
             refData: refData, diag: sink, time: clock);
-        return new Harness(svc, view, driver, session, sink, clock, gates);
+        return new Harness(svc, world, driver, session, flow, settings, sink, clock, gates);
     }
 
     private static SurveyItemViewModel SeedSurvey(SessionState session, string displayName)
@@ -66,9 +80,8 @@ public sealed class ItemCollectionTrackerTests
     private static async Task Run(Harness h, Func<Task> body)
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        // StartAsync returns only after the IInventoryView.Bus subscriptions
-        // are attached (the F1 fix's contract — bus subs land synchronously
-        // before the host's ExecuteAsync pump spins up). No prior WaitUntil
+        // StartAsync returns only after the IPlayerWorld.Bus subscription is
+        // attached — Call 1's eager-subscribe contract. No prior WaitUntil
         // race-guard required.
         await h.Service.StartAsync(cts.Token);
         try
@@ -83,6 +96,16 @@ public sealed class ItemCollectionTrackerTests
             h.Service.Dispose();
             h.Driver.Dispose();
         }
+    }
+
+    // Synthetic frame helper — drives the PlayerInventoryAdded channel the
+    // post-#699 ItemCollectionTracker subscribes to.
+    private static long s_nextInstanceId = 1;
+    private static void PushAdded(Harness h, string internalName, long? instanceId = null)
+    {
+        var id = instanceId ?? Interlocked.Increment(ref s_nextInstanceId);
+        var ts = new DateTimeOffset(2026, 5, 22, 14, 0, 0, TimeSpan.Zero);
+        h.World.Bus.Publish(ts, new PlayerInventoryAdded(id, internalName, ts.UtcDateTime));
     }
 
     // PG live capture mirrors — ProcessScreenText collect banners.
@@ -116,14 +139,14 @@ public sealed class ItemCollectionTrackerTests
     // ── tests ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Call 1 / principle eager-always: both the IInventoryView.Bus
-    /// subscriptions (pre-Call-1 already in StartAsync) AND the L1
-    /// LocalPlayer subscription (pre-Call-1 sat behind <c>_gates.For("legolas").WaitAsync</c>
-    /// inside ExecuteAsync) must be live after `await service.StartAsync(ct)`
-    /// — regardless of whether the Legolas tab is ever activated.
-    ///
-    /// The original sink-list source is the Call 1 ratification in
-    /// docs/world-simulator.md §Decisions ratified post-#642 (resolves #695).
+    /// Call 1 / principle eager-always (#695, #705): both the
+    /// IPlayerWorld.Bus subscription AND the L1 LocalPlayer subscription
+    /// (pre-Call-1 sat behind <c>_gates.For("legolas").WaitAsync</c> inside
+    /// ExecuteAsync) must be live after `await service.StartAsync(ct)` —
+    /// regardless of whether the Legolas tab is ever activated. The bus side
+    /// further migrated off <see cref="IInventoryView.Bus"/> onto
+    /// <see cref="IPlayerWorld.Bus"/> in #699; the eager-attach shape is
+    /// otherwise unchanged from PR #705.
     /// </summary>
     [Fact]
     public async Task Subscription_attaches_in_StartAsync_without_opening_module_gate()
@@ -132,117 +155,69 @@ public sealed class ItemCollectionTrackerTests
         SeedSurvey(h.Session, "Iron Ore");
         await Run(h, async () =>
         {
-            // IInventoryView.Bus has no replay-on-subscribe contract; the
-            // #702 trailing-merger invariant is what guarantees the view-bus
-            // subscribe completes before any frame flows in production. The
-            // Run helper above already returned from `await
-            // h.Service.StartAsync` so both the view-bus subs and the L1
-            // driver sub are live by here under Call 1's eager-attach.
-            h.View.PushAdded("IronOre", stackSize: 5, sizeConfirmed: true);
+            PushAdded(h, "IronOre");
             h.Driver.PushLive(CollectLine("Iron Ore"));
             await h.Driver.DrainLocalPlayerAsync();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
 
             h.Gates.For("legolas").IsOpen.Should().BeFalse(
                 "the gate-retirement audit — this test must not touch ModuleGate.Open to validate the eager attach (Call 1)");
-            h.Session.CollectedItems["Iron Ore"].Should().Be(5,
-                "the L1 ProcessScreenText subscription is attached by StartAsync regardless of tab activation");
+            h.Session.CollectedItems["Iron Ore"].Should().Be(1,
+                "post-#699 credit is +1 per matched (Add, Collect) pair");
         });
     }
 
     /// <summary>
-    /// Added (SizeConfirmed=true) then ProcessScreenText collected! within TTL
-    /// credits the stack size. Equivalent of the legacy chat add-then-collect
-    /// happy path.
+    /// Add then Collect credits one. Equivalent of the legacy chat-then-collect
+    /// happy path, simplified post-#699 to the +1-per-pair semantic.
     /// </summary>
     [Fact]
-    public async Task Added_then_Collect_credits_parsed_count()
+    public async Task Added_then_Collect_credits_one_per_pair()
     {
         var h = Build();
         await Run(h, async () =>
         {
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true);
+            PushAdded(h, "IronOre");
             h.Driver.PushLive(CollectLine("Iron Ore"));
             await h.Driver.DrainLocalPlayerAsync();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
 
-            h.Session.CollectedItems["Iron Ore"].Should().Be(3);
+            h.Session.CollectedItems["Iron Ore"].Should().Be(1);
             WarnEntries(h.Sink).Should().BeEmpty();
             TraceEntries(h.Sink).Should().BeEmpty();
         });
     }
 
     /// <summary>
-    /// Unconfirmed Added doesn't enqueue (the matching StackChanged back-fill
-    /// will). This is the post-#602 semantic — the view defaults to (1,
-    /// unconfirmed) when no chat correlation has paired yet.
+    /// Multiple Adds for the same name don't aggregate on a single Collect —
+    /// each Collect dequeues one pending Add. A second Collect pairs with the
+    /// next pending Add. Post-#699 the prior <c>SumPendingFor</c> drain-all
+    /// idiom retired alongside the cross-source PendingCorrelator.
     /// </summary>
     [Fact]
-    public async Task Unconfirmed_Added_does_not_enqueue_credit()
-    {
-        var h = Build();
-        var survey = SeedSurvey(h.Session, "Iron Ore");
-        await Run(h, async () =>
-        {
-            h.View.PushAdded("IronOre", stackSize: 1, sizeConfirmed: false);
-            h.Driver.PushLive(CollectLine("Iron Ore"));
-            await h.Driver.DrainLocalPlayerAsync();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitUntil(() => WarnEntries(h.Sink).Count > 0, cts.Token);
-
-            h.Session.CollectedItems.Should().NotContainKey("Iron Ore",
-                "unconfirmed Added is intentionally skipped — StackChanged back-fill carries the size");
-            survey.Collected.Should().BeTrue(
-                "survey-row flip is independent of the count credit path");
-            WarnEntries(h.Sink).Should().ContainSingle()
-                .Which.Message.Should().Contain("Iron Ore").And.Contain("crediting 0");
-        });
-    }
-
-    /// <summary>
-    /// StackChanged (back-fill or stack bump) enqueues — this is how
-    /// previously-defaulted Adds get their authoritative size credited.
-    /// </summary>
-    [Fact]
-    public async Task StackChanged_after_unconfirmed_Add_credits_via_backfill()
+    public async Task Multiple_Adds_pair_with_one_Collect_each()
     {
         var h = Build();
         await Run(h, async () =>
         {
-            h.View.PushAdded("IronOre", stackSize: 1, sizeConfirmed: false);
-            // View emits the back-fill within its own TTL window.
-            h.View.PushStackChanged("IronOre", stackSize: 5);
+            PushAdded(h, "IronOre");
+            PushAdded(h, "IronOre");
             h.Driver.PushLive(CollectLine("Iron Ore"));
             await h.Driver.DrainLocalPlayerAsync();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
+            await WaitUntil(() => h.Session.CollectedItems.GetValueOrDefault("Iron Ore", 0) == 1, cts.Token);
 
-            h.Session.CollectedItems["Iron Ore"].Should().Be(5);
-            WarnEntries(h.Sink).Should().BeEmpty();
-        });
-    }
+            h.Session.CollectedItems["Iron Ore"].Should().Be(1,
+                "first Collect dequeues one pending Add");
 
-    /// <summary>
-    /// Multiple confirmed Adds for the same item collapse into one summed
-    /// credit on collect (FIFO drain). Models a survey node that emits
-    /// several adds (split-stacked drops) before the collect line.
-    /// </summary>
-    [Fact]
-    public async Task Multiple_confirmed_Adds_same_name_collapse_into_summed_Collect()
-    {
-        var h = Build();
-        await Run(h, async () =>
-        {
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true);
-            h.View.PushAdded("IronOre", stackSize: 2, sizeConfirmed: true);
+            // Second Collect pairs with the second pending Add.
             h.Driver.PushLive(CollectLine("Iron Ore"));
             await h.Driver.DrainLocalPlayerAsync();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitUntil(() => h.Session.CollectedItems.GetValueOrDefault("Iron Ore", 0) == 5, cts.Token);
+            await WaitUntil(() => h.Session.CollectedItems["Iron Ore"] == 2, cts.Token);
 
-            h.Session.CollectedItems["Iron Ore"].Should().Be(5);
+            h.Session.CollectedItems["Iron Ore"].Should().Be(2);
             WarnEntries(h.Sink).Should().BeEmpty();
         });
     }
@@ -281,8 +256,8 @@ public sealed class ItemCollectionTrackerTests
         var h = Build();
         await Run(h, async () =>
         {
-            h.View.PushAdded("Garnet", stackSize: 1, sizeConfirmed: true);
-            // No add for Fluorite — bonus has no pending Add.
+            PushAdded(h, "Garnet");
+            // No Add for Fluorite — bonus has no pending Add.
             h.Driver.PushLive(CollectLine("Garnet", bonus: "Fluorite"));
             await h.Driver.DrainLocalPlayerAsync();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -297,33 +272,6 @@ public sealed class ItemCollectionTrackerTests
     }
 
     /// <summary>
-    /// Added past TTL falls through to credit-0; the eviction Trace fires
-    /// when the bucket is next touched.
-    /// </summary>
-    [Fact]
-    public async Task Add_past_TTL_then_Collect_credits_zero_and_emits_eviction_trace()
-    {
-        var h = Build();
-        var survey = SeedSurvey(h.Session, "Iron Ore");
-        await Run(h, async () =>
-        {
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true);
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            h.Clock.Advance(TimeSpan.FromSeconds(12)); // past 5s TTL
-            h.Driver.PushLive(CollectLine("Iron Ore"));
-            await h.Driver.DrainLocalPlayerAsync();
-            await WaitUntil(() => WarnEntries(h.Sink).Count > 0, cts.Token);
-
-            h.Session.CollectedItems.Should().NotContainKey("Iron Ore");
-            survey.Collected.Should().BeTrue();
-            WarnEntries(h.Sink).Should().ContainSingle()
-                .Which.Message.Should().Contain("Iron Ore").And.Contain("crediting 0");
-            TraceEntries(h.Sink).Should().ContainSingle()
-                .Which.Message.Should().Contain("Iron Ore").And.Contain("x3");
-        });
-    }
-
-    /// <summary>
     /// Add under one display name must NOT satisfy a Collect for a different
     /// display name. Cross-key contamination guard.
     /// </summary>
@@ -333,7 +281,7 @@ public sealed class ItemCollectionTrackerTests
         var h = Build();
         await Run(h, async () =>
         {
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true);
+            PushAdded(h, "IronOre");
             h.Driver.PushLive(CollectLine("Copper Ore"));
             await h.Driver.DrainLocalPlayerAsync();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -348,30 +296,7 @@ public sealed class ItemCollectionTrackerTests
             await h.Driver.DrainLocalPlayerAsync();
             await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
 
-            h.Session.CollectedItems["Iron Ore"].Should().Be(3);
-        });
-    }
-
-    /// <summary>
-    /// Zero-count Added is dropped at the boundary — never enqueues — so a
-    /// later Collect under the same name doesn't credit 0.
-    /// </summary>
-    [Fact]
-    public async Task Zero_stackSize_Added_is_dropped_at_boundary()
-    {
-        var h = Build();
-        var survey = SeedSurvey(h.Session, "Iron Ore");
-        await Run(h, async () =>
-        {
-            h.View.PushAdded("IronOre", stackSize: 0, sizeConfirmed: true);
-            h.Driver.PushLive(CollectLine("Iron Ore"));
-            await h.Driver.DrainLocalPlayerAsync();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitUntil(() => WarnEntries(h.Sink).Count > 0, cts.Token);
-
-            h.Session.CollectedItems.Should().NotContainKey("Iron Ore");
-            survey.Collected.Should().BeTrue();
-            WarnEntries(h.Sink).Should().ContainSingle();
+            h.Session.CollectedItems["Iron Ore"].Should().Be(1);
         });
     }
 
@@ -379,7 +304,7 @@ public sealed class ItemCollectionTrackerTests
     /// Item that lacks reference-data registration still resolves to the
     /// InternalName as a fallback display key. PG patches occasionally add
     /// items ahead of catalog refresh — the credit-0 + warn path is the
-    /// graceful degradation.
+    /// graceful degradation; happy-path stays correct.
     /// </summary>
     [Fact]
     public async Task Unknown_InternalName_falls_back_to_InternalName_as_display_key()
@@ -388,104 +313,362 @@ public sealed class ItemCollectionTrackerTests
         await Run(h, async () =>
         {
             // Not in FakeRefData — display name falls back to InternalName.
-            h.View.PushAdded("MysteryItem_v3", stackSize: 2, sizeConfirmed: true);
+            PushAdded(h, "MysteryItem_v3");
             h.Driver.PushLive(CollectLine("MysteryItem_v3"));
             await h.Driver.DrainLocalPlayerAsync();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             await WaitUntil(() => h.Session.CollectedItems.ContainsKey("MysteryItem_v3"), cts.Token);
 
-            h.Session.CollectedItems["MysteryItem_v3"].Should().Be(2);
+            h.Session.CollectedItems["MysteryItem_v3"].Should().Be(1);
         });
     }
 
-    // ── F1 regression guard (subscribe-before-publish ordering) ─────────
+    // ── Subscribe-before-publish ordering guard ─────────────────────────
 
     /// <summary>
-    /// F1 regression guard: frames published <em>between</em>
-    /// <see cref="ItemCollectionTracker.StartAsync"/> returning and the host
-    /// pump's <see cref="ItemCollectionTracker.ExecuteAsync"/> opening the
-    /// gate must still be observed. Pre-#688/#606 the bus subscriptions sat
-    /// inside <c>ExecuteAsync</c> behind the gate-wait; on a lazy module that
-    /// meant every <c>InventoryItemAdded</c> published before first-tab
-    /// activation was lost (the bus has no replay-on-subscribe).
-    ///
-    /// <para>This test exercises the contract two ways:</para>
-    /// <list type="bullet">
-    ///   <item>Push a frame BEFORE the gate ever opens, AFTER
-    ///   <c>StartAsync</c> returns — verifies the subscription is attached at
-    ///   <c>StartAsync</c> time, not at <c>ExecuteAsync</c>+gate-open.</item>
-    ///   <item>Open the gate and push a Collect — verifies the pending Add
-    ///   from the pre-gate phase still credits.</item>
-    /// </list>
+    /// F1 regression guard (carried forward from PR #705): frames published
+    /// <em>between</em> <see cref="ItemCollectionTracker.StartAsync"/>
+    /// returning and the host pump's <see cref="ItemCollectionTracker.ExecuteAsync"/>
+    /// opening the gate must still be observed. Pre-#688/#606 the bus
+    /// subscriptions sat inside <c>ExecuteAsync</c> behind the gate-wait; on
+    /// a lazy module that meant every InventoryItemAdded published before
+    /// first-tab activation was lost (no replay-on-subscribe). Post-#699 the
+    /// guard re-anchors to <see cref="IPlayerWorld.Bus"/> but the contract is
+    /// unchanged.
     /// </summary>
     [Fact]
     public async Task Bus_frames_published_before_gate_opens_still_credit()
     {
-        // Build a harness whose gate is initially CLOSED — the legolas module
-        // is lazy, so production behaviour is "gate stays closed until the
-        // tab is selected." This is the exact production scenario the F1
-        // regression report flagged.
-        var view = new FakeInventoryView();
-        var driver = new TestLogStreamDriver();
-        var parser = new PlayerLogParser();
-        var session = new SessionState();
-        var gates = new ModuleGates(); // NOT opened
-        var sink = new CapturingSink();
-        var clock = new ManualTimeProvider(new DateTime(2026, 5, 22, 14, 0, 0, DateTimeKind.Utc));
-        var refData = new FakeRefData();
-        var svc = new ItemCollectionTracker(
-            view, driver, parser, session,
-            refData: refData, diag: sink, time: clock);
-
+        // Build a harness whose gate is initially CLOSED.
+        var h = Build(openGate: false);
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        await svc.StartAsync(cts.Token);
+        await h.Service.StartAsync(cts.Token);
         try
         {
-            // Subscription must be live RIGHT NOW — before the gate ever
-            // opens. This assertion is the F1 contract in unit-test form.
-            view.AddedSubscriberCount.Should().BeGreaterThan(0,
-                "StartAsync must attach the bus subscriptions before returning, " +
+            h.World.Bus.SubscriberCountFor(typeof(PlayerInventoryAdded)).Should().BeGreaterThan(0,
+                "StartAsync must attach the PlayerWorld.Bus subscription before returning, " +
                 "regardless of the module-gate state");
 
             // Push an Add while the gate is still closed — pre-#606 this
-            // frame would have been lost (no subscription attached).
-            view.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true);
+            // frame would have been lost.
+            PushAdded(h, "IronOre");
 
             // Open the gate; ExecuteAsync's L1 subscription wakes up and
             // takes the Collect path.
-            gates.For("legolas").Open();
-            driver.PushLive(CollectLine("Iron Ore"));
-            await driver.DrainLocalPlayerAsync();
-            await WaitUntil(() => session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
+            h.Gates.For("legolas").Open();
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
 
-            session.CollectedItems["Iron Ore"].Should().Be(3,
+            h.Session.CollectedItems["Iron Ore"].Should().Be(1,
                 "the pre-gate Add must remain pending until the post-gate Collect drains it");
-            WarnEntries(sink).Should().BeEmpty();
+            WarnEntries(h.Sink).Should().BeEmpty();
         }
         finally
         {
             await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); }
+            try { await h.Service.StopAsync(CancellationToken.None); }
             catch (OperationCanceledException) { }
-            svc.Dispose();
-            driver.Dispose();
+            h.Service.Dispose();
+            h.Driver.Dispose();
         }
     }
 
-    // ── F2 ports from the retired LogIngestionServiceTests ──────────────
+    // ── Survey-session lifecycle (#699 new behaviour) ──────────────────
 
     /// <summary>
-    /// F2 item 1 (#523 verification-owed pin, "most load-bearing"). Inverted
-    /// order — Collect arrives before any Add — must fail cleanly (credit-0
-    /// + warn), NOT silently. The late Add enqueues but is never
-    /// retroactively credited; a second unmatched Collect after TTL expiry
-    /// surfaces the eviction Trace for the orphan Add. Equivalent of the
-    /// retired
-    /// <c>LogIngestionServiceTests.Order_inverted_Collect_then_Add_credits_zero_and_warns</c>
-    /// rewritten against the post-#606 bus-driven harness.
+    /// Post-#699 the cross-source PendingCorrelator's 5 s TTL retired; the
+    /// new lifecycle bound is the survey FSM's session. Transitioning to
+    /// <see cref="SurveyFlowState.Done"/> clears the pending-Add queue and
+    /// surfaces any unmatched names in the Legolas.PendingAdds Trace stream.
     /// </summary>
     [Fact]
-    public async Task Order_inverted_Collect_then_Add_credits_zero_and_warns()
+    public async Task SurveyFlow_transition_to_Done_clears_pending_and_traces_unmatched()
+    {
+        var h = Build();
+        await Run(h, async () =>
+        {
+            PushAdded(h, "IronOre");
+            PushAdded(h, "Garnet");
+            TraceEntries(h.Sink).Should().BeEmpty(
+                "no transition has fired yet");
+
+            // Need a pin first so OnAllCollected gates open; simulate the
+            // FSM reaching Done by walking through the public transitions.
+            // (The most direct path: seed a single survey pin then mark it
+            // collected so OnAllCollected fires.)
+            var survey = SeedSurvey(h.Session, "Iron Ore");
+            // Walk Listening → Gathering (need pins; SeedSurvey added one).
+            h.Flow.OptimizeRoute();
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
+            // Flip the survey row to trigger AllCollected → Done.
+            survey.UpdateModel(survey.Model with { Collected = true });
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitUntil(() =>
+                h.Flow.CurrentState == SurveyFlowState.Listening
+                || h.Flow.CurrentState == SurveyFlowState.Done, cts.Token);
+
+            var traces = TraceEntries(h.Sink);
+            traces.Should().ContainSingle(
+                "the survey-end transition emits a single Trace listing unmatched pending Adds");
+            traces.Single().Message.Should().Contain("Iron Ore").And.Contain("Garnet");
+
+            // The pending queue is empty — a fresh Collect after the
+            // transition lands in the credit-0 path.
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            await WaitUntil(() => WarnEntries(h.Sink).Count > 0, cts.Token);
+            WarnEntries(h.Sink).Should().ContainSingle()
+                .Which.Message.Should().Contain("Iron Ore").And.Contain("crediting 0");
+        });
+    }
+
+    /// <summary>
+    /// Manual <see cref="SurveyFlowController.Reset"/> from an active phase
+    /// is the second survey-session-end signal (auto-reset takes the same
+    /// path post-Done). Either trigger clears the pending-Add queue.
+    /// </summary>
+    [Fact]
+    public async Task SurveyFlow_Reset_clears_pending_and_traces_unmatched()
+    {
+        var h = Build();
+        await Run(h, async () =>
+        {
+            // Seed a pin so Reset has something to clear (and so the
+            // transition fires — Listening → Listening is a no-op).
+            SeedSurvey(h.Session, "Iron Ore");
+            h.Flow.OptimizeRoute();
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
+            PushAdded(h, "IronOre");
+
+            h.Flow.Reset();
+
+            var traces = TraceEntries(h.Sink);
+            traces.Should().ContainSingle();
+            traces.Single().Message.Should().Contain("Reset").And.Contain("Iron Ore");
+
+            // Pending queue empty post-reset.
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitUntil(() => WarnEntries(h.Sink).Count > 0, cts.Token);
+            WarnEntries(h.Sink).Single().Message.Should().Contain("crediting 0");
+        });
+    }
+
+    /// <summary>
+    /// Iter-1 review of PR #721: pre-fix, a manual <c>Reset()</c> invoked while
+    /// <see cref="SurveyFlowController.CurrentState"/> was already
+    /// <see cref="SurveyFlowState.Listening"/> did NOT fire
+    /// <see cref="SurveyFlowController.Transitioned"/> (the controller skipped
+    /// the no-op self-edge), so this tracker's
+    /// <see cref="ItemCollectionTracker.OnFlowTransitioned"/> never ran and any
+    /// pending Adds queued during the prior <c>Listening</c> window leaked
+    /// into the next survey session. Fix: <c>Reset()</c> now fires the
+    /// self-edge transition unconditionally; this test pins that contract from
+    /// the consumer side. A pending Add enqueued during Listening must be gone
+    /// after a Reset that stays in Listening — verified by the next Collect
+    /// taking the credit-0 + warn path rather than dequeuing the stale Add.
+    /// </summary>
+    [Fact]
+    public async Task Reset_from_Listening_clears_pending_adds_via_self_edge_Transitioned()
+    {
+        var h = Build();
+        await Run(h, async () =>
+        {
+            // Stay in Listening (no pin seeded, no OptimizeRoute called).
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+            PushAdded(h, "IronOre");
+
+            // Manual Reset while already in Listening — must fire the
+            // self-edge Transitioned and clear _pendingAdds.
+            h.Flow.Reset();
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Listening);
+
+            var traces = TraceEntries(h.Sink);
+            traces.Should().ContainSingle(
+                "Reset from Listening still surfaces the unmatched pending Add via the self-edge Transitioned");
+            traces.Single().Message.Should().Contain("Reset").And.Contain("Iron Ore");
+
+            // The next Collect must take the credit-0 path — the stale
+            // Iron Ore Add must have been cleared by the Reset, not carried
+            // over into a stealth credit.
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitUntil(() => WarnEntries(h.Sink).Count > 0, cts.Token);
+
+            h.Session.CollectedItems.Should().NotContainKey("Iron Ore",
+                "the stale pre-Reset Add must NOT carry into the next session's credit");
+            WarnEntries(h.Sink).Single().Message
+                .Should().Contain("Iron Ore").And.Contain("crediting 0");
+        });
+    }
+
+    // ── Cross-context same-name attribution (#699 documented residual) ─
+
+    /// <summary>
+    /// Iter-1 review of PR #721 (issue #699 Acceptance §): pins the
+    /// documented FIFO behaviour under same-name cross-context noise (a
+    /// crafting / skinning / vendor-purchase Iron Ore Add interleaved with
+    /// a survey Iron Ore Add). The post-#699 design retired the 5 s TTL but
+    /// kept survey-session-bounded FIFO ordering — so any same-name Add
+    /// observed between OptimizeRoute and the Collect drains the head of
+    /// the queue, and downstream same-name Adds remain queued for a
+    /// later Collect (or surface in the Trace on session end).
+    ///
+    /// <para>Documented residual: the tracker has no way to distinguish
+    /// "Iron Ore I just mined from a survey node" from "Iron Ore I just
+    /// crafted" at the Add layer — both arrive as
+    /// <see cref="PlayerInventoryAdded"/> with no provenance. The class-level
+    /// remark on <see cref="ItemCollectionTracker"/> accepts this as the
+    /// cost of the principle 4 single-world exit; this test pins the FIFO
+    /// behaviour so a future agent can't silently regress on it.</para>
+    /// </summary>
+    [Fact]
+    public async Task Survey_Add_then_same_name_noise_Add_then_Collect_credits_one_and_leaves_noise_queued()
+    {
+        var h = Build();
+        // Seed TWO surveys — the second is a placeholder that keeps the FSM
+        // from auto-firing AllCollected after the first row flips. Without
+        // it, the Done transition would clear _pendingAdds before the test
+        // can pair the noise-Add with the follow-up Collect.
+        var survey = SeedSurvey(h.Session, "Iron Ore");
+        SeedSurvey(h.Session, "Copper Ore");
+        await Run(h, async () =>
+        {
+            // Enter Gathering — mirrors the lifecycle window during which
+            // crafting/skinning noise can interleave with survey Adds.
+            h.Flow.OptimizeRoute();
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Gathering);
+
+            // (1) Survey-Add: the "real" Iron Ore from the survey node.
+            PushAdded(h, "IronOre", instanceId: 100);
+            // (2) Noise-Add: simulates a crafting / skinning / vendor-buy
+            // Iron Ore landing in inventory between OptimizeRoute and the
+            // survey banner — same display name, different instance id.
+            PushAdded(h, "IronOre", instanceId: 200);
+
+            // (3) Survey banner Collect — the documented FIFO pairs with
+            // the head of the queue (instance 100), leaving the noise
+            // entry (instance 200) queued for a future Collect.
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
+
+            h.Session.CollectedItems["Iron Ore"].Should().Be(1,
+                "+1 per matched (Add, Collect) pair; the first Add (FIFO) drained");
+            survey.Collected.Should().BeTrue("the survey row name-matched the collect");
+            WarnEntries(h.Sink).Should().BeEmpty(
+                "the first Add satisfied the Collect — no credit-0 path");
+            h.Flow.CurrentState.Should().Be(SurveyFlowState.Gathering,
+                "the second survey is still uncollected — AllCollected hasn't fired");
+
+            // (4) Prove the noise Add stayed queued: a second Collect for
+            // the same name must drain it (and NOT take the credit-0 path).
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            await WaitUntil(() => h.Session.CollectedItems["Iron Ore"] == 2, cts.Token);
+
+            h.Session.CollectedItems["Iron Ore"].Should().Be(2,
+                "the queued noise-Add is the documented residual — a follow-up Collect drains it");
+            WarnEntries(h.Sink).Should().BeEmpty(
+                "the noise-Add was still queued; the second Collect paired with it");
+        });
+    }
+
+    // ── Replay determinism (#699 new property) ──────────────────────────
+
+    /// <summary>
+    /// Pre-#699, the correlator's <see cref="TimeProvider.System"/>-backed
+    /// 5 s TTL caused the same source corpus to produce different eviction
+    /// trajectories under different wall-clock attach times — a determinism
+    /// violation. Post-#699 the TTL retires entirely; pairing depends only
+    /// on FIFO order within the survey session, which is itself driven by
+    /// PlayerWorld's source-stream merger. Drive the same synthetic Add /
+    /// Collect interleavings with different "elapsed-time gaps" (real
+    /// elapsed via the injected ManualTimeProvider) and assert that the
+    /// resulting attribution is identical.
+    /// </summary>
+    [Fact]
+    public async Task Identical_PlayerInventoryAdded_and_Collect_sequences_credit_identically_regardless_of_real_elapsed_gaps()
+    {
+        Dictionary<string, int> RunOnce(TimeSpan[] gaps)
+        {
+            var h = Build();
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                h.Service.StartAsync(cts.Token).GetAwaiter().GetResult();
+
+                // Same ordering, different real-elapsed gaps. Drive the
+                // injected clock forward between events to simulate
+                // wildly-different attach scenarios.
+                PushAdded(h, "IronOre");
+                h.Clock.Advance(gaps[0]);
+                PushAdded(h, "IronOre");
+                h.Clock.Advance(gaps[1]);
+                PushAdded(h, "Garnet");
+                h.Clock.Advance(gaps[2]);
+
+                h.Driver.PushLive(CollectLine("Iron Ore"));
+                h.Driver.DrainLocalPlayerAsync().GetAwaiter().GetResult();
+                h.Clock.Advance(gaps[3]);
+                h.Driver.PushLive(CollectLine("Iron Ore"));
+                h.Driver.DrainLocalPlayerAsync().GetAwaiter().GetResult();
+                h.Clock.Advance(gaps[4]);
+                h.Driver.PushLive(CollectLine("Garnet"));
+                h.Driver.DrainLocalPlayerAsync().GetAwaiter().GetResult();
+
+                WaitUntil(() => h.Session.CollectedItems.ContainsKey("Garnet"), cts.Token)
+                    .GetAwaiter().GetResult();
+
+                return new Dictionary<string, int>(h.Session.CollectedItems);
+            }
+            finally
+            {
+                h.Service.Dispose();
+                h.Driver.Dispose();
+            }
+        }
+
+        // Three scenarios — same Add/Collect sequence, different "real elapsed"
+        // gaps between events. Pre-#699 the 5 s TTL would have evicted some
+        // pending Adds under the long-gap scenario; post-#699 nothing depends
+        // on real elapsed time, so all three runs must produce the same dict.
+        var tightGaps = new[] { TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50),
+                                TimeSpan.FromMilliseconds(50), TimeSpan.FromMilliseconds(50),
+                                TimeSpan.FromMilliseconds(50) };
+        var wideGaps = new[]  { TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2),
+                                TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(45),
+                                TimeSpan.FromMinutes(1) };
+        var mixedGaps = new[] { TimeSpan.FromMilliseconds(10), TimeSpan.FromMinutes(10),
+                                TimeSpan.FromMilliseconds(10), TimeSpan.FromSeconds(8),
+                                TimeSpan.FromMilliseconds(10) };
+
+        var tight = await Task.Run(() => RunOnce(tightGaps));
+        var wide = await Task.Run(() => RunOnce(wideGaps));
+        var mixed = await Task.Run(() => RunOnce(mixedGaps));
+
+        tight.Should().BeEquivalentTo(wide,
+            "the same Add/Collect sequence must produce identical credits regardless of elapsed-time gaps");
+        wide.Should().BeEquivalentTo(mixed,
+            "no surface in the post-#699 design depends on real elapsed time");
+        tight["Iron Ore"].Should().Be(2);
+        tight["Garnet"].Should().Be(1);
+    }
+
+    // ── F2 regression guards (carried forward, semantics-shifted) ──────
+
+    /// <summary>
+    /// F2 item 1 (#523 verification-owed pin). Inverted order — Collect
+    /// arrives before any Add — must fail cleanly (credit-0 + warn), NOT
+    /// silently. The late Add enqueues but is never retroactively credited;
+    /// it surfaces in the Trace when the survey ends.
+    /// </summary>
+    [Fact]
+    public async Task Order_inverted_Collect_then_Add_credits_zero_and_warns_and_surfaces_on_session_end()
     {
         var h = Build();
         await Run(h, async () =>
@@ -500,97 +683,30 @@ public sealed class ItemCollectionTrackerTests
             WarnEntries(h.Sink).Should().ContainSingle()
                 .Which.Message.Should().Contain("Iron Ore").And.Contain("crediting 0");
 
-            // The late Add enqueues but is NOT retroactively credited. Advance
-            // past TTL and fire a second unmatched Collect to trigger lazy
-            // eviction; the orphan Add must surface in the eviction Trace.
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true);
-            h.Clock.Advance(TimeSpan.FromSeconds(12));
-            h.Driver.PushLive(CollectLine("Iron Ore"));
-            await h.Driver.DrainLocalPlayerAsync();
-            await WaitUntil(() => TraceEntries(h.Sink).Count >= 1, cts.Token);
-
+            // Late Add enqueues but is NOT retroactively credited.
+            PushAdded(h, "IronOre");
             h.Session.CollectedItems.Should().NotContainKey("Iron Ore",
                 "the late Add must NOT have been retroactively credited to the earlier Collect");
+
+            // Survey-session end surfaces the orphan Add as Trace.
+            SeedSurvey(h.Session, "Iron Ore");
+            h.Flow.OptimizeRoute();
+            h.Flow.Reset();
+
             TraceEntries(h.Sink).Should().ContainSingle()
-                .Which.Message.Should().Contain("Iron Ore").And.Contain("x3");
+                .Which.Message.Should().Contain("Iron Ore");
         });
     }
 
     /// <summary>
-    /// F2 item 2 — within-TTL boundary check. An Add aged 4 s (under the 5 s
-    /// TTL) is still credited when a Collect arrives. Equivalent of the
-    /// retired
-    /// <c>LogIngestionServiceTests.Add_then_advance_within_TTL_then_Collect_credits</c>
-    /// rewritten against the bus-driven harness.
-    /// </summary>
-    [Fact]
-    public async Task Add_then_advance_within_TTL_then_Collect_credits()
-    {
-        var h = Build();
-        await Run(h, async () =>
-        {
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true);
-            h.Clock.Advance(TimeSpan.FromSeconds(4)); // within 5 s TTL
-            h.Driver.PushLive(CollectLine("Iron Ore"));
-            await h.Driver.DrainLocalPlayerAsync();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
-
-            h.Session.CollectedItems["Iron Ore"].Should().Be(3);
-            WarnEntries(h.Sink).Should().BeEmpty();
-        });
-    }
-
-    /// <summary>
-    /// F2 item 3 (#523 "load-bearing"). Regression-guard for the
-    /// <c>DrainPendingStale()</c> piggyback-sweep invariant — names that
-    /// arrive on inventory Adds and never see a matching Collect (skinning,
-    /// vendor, crafting noise) must NOT accumulate for the process lifetime.
-    /// On the next handler invocation that crosses the TTL boundary, the
-    /// stale entries surface in the eviction Trace stream. Equivalent of the
-    /// retired
-    /// <c>LogIngestionServiceTests.Pending_Adds_for_uncollected_names_are_evicted_on_next_handler_invocation</c>
-    /// against the bus-driven harness.
-    /// </summary>
-    [Fact]
-    public async Task Pending_Adds_for_uncollected_names_are_evicted_on_next_handler_invocation()
-    {
-        var h = Build();
-        await Run(h, async () =>
-        {
-            // Two Adds for names that will never get a Collect — vendor /
-            // skinning noise. Use FakeRefData entries so display-name
-            // resolution doesn't fall through to the InternalName fallback.
-            h.View.PushAdded("CopperOre", stackSize: 1, sizeConfirmed: true);
-            h.View.PushAdded("Garnet", stackSize: 1, sizeConfirmed: true);
-            TraceEntries(h.Sink).Should().BeEmpty("nothing has aged past TTL yet");
-
-            // Advance past the 5 s TTL and push any unrelated handler-
-            // invoking Add. The next OnInventoryAdded call runs
-            // DrainPendingStale at the top, evicting both stale entries even
-            // though neither key was ever TryTake'd.
-            h.Clock.Advance(TimeSpan.FromSeconds(6));
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true);
-
-            var traces = TraceEntries(h.Sink);
-            traces.Should().HaveCount(2, "both noise Adds should evict via the piggyback sweep");
-            traces.Select(e => e.Message).Should().Contain(m => m.Contains("Copper Ore"));
-            traces.Select(e => e.Message).Should().Contain(m => m.Contains("Garnet"));
-        });
-    }
-
-    /// <summary>
-    /// F2 item 4 (load-bearing — pins the ctor's
+    /// F2 item 4 — pins the ctor's
     /// <c>_warn = new ThrottledWarn(diag, "Legolas.Ingestion", time: clock)</c>
-    /// wiring at <see cref="ItemCollectionTracker"/>). Without the
-    /// injected <see cref="TimeProvider"/>, <see cref="ThrottledWarn"/>
-    /// would consult wall-clock and a test that emits multiple unmatched
-    /// Collects close together would see only one warn regardless of fake-
-    /// clock advance. Three unmatched Collects spaced past the default
-    /// 5-second throttle window must produce three distinct warns.
-    /// Equivalent of the retired
-    /// <c>LogIngestionServiceTests.ThrottledWarn_uses_injected_TimeProvider_so_advancing_past_window_emits_independently</c>
-    /// against the bus-driven harness.
+    /// wiring. Without the injected <see cref="TimeProvider"/>,
+    /// <see cref="ThrottledWarn"/> would consult the PlayerWorld.Clock-derived
+    /// shim (post-#699; pre-#699 it was wall-clock) and a test that emits
+    /// multiple unmatched Collects close together would see only one warn
+    /// regardless of fake-clock advance. Three unmatched Collects spaced past
+    /// the default 5-second throttle window must produce three distinct warns.
     /// </summary>
     [Fact]
     public async Task ThrottledWarn_uses_injected_TimeProvider_so_advancing_past_window_emits_independently()
@@ -619,100 +735,44 @@ public sealed class ItemCollectionTrackerTests
         });
     }
 
-    /// <summary>
-    /// F2 item 5a — documented residual same-name-noise-within-TTL risk. An
-    /// unrelated inventory Add (skinning / vendor / crafting) for the same
-    /// display name that lands within the TTL window before a real survey
-    /// Collect will be miscredited. This is the cost of dropping the
-    /// pre-#523 <c>Clear()</c>-on-Collect punctuation; mitigated by the 5-
-    /// second TTL matching <c>InventoryView.PendingChatTtl</c> deliberately.
-    /// Pinning ensures the residual stays documented rather than silently
-    /// fixed or worsened. Equivalent of the retired
-    /// <c>LogIngestionServiceTests.Inter_event_same_name_noise_within_TTL_silently_miscredits_documented_residual</c>.
-    /// </summary>
-    [Fact]
-    public async Task Inter_event_same_name_noise_within_TTL_silently_miscredits_documented_residual()
-    {
-        var h = Build();
-        await Run(h, async () =>
-        {
-            h.View.PushAdded("IronOre", stackSize: 1, sizeConfirmed: true); // pretend skinning
-            h.Clock.Advance(TimeSpan.FromSeconds(2));
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true); // real survey
-            h.Driver.PushLive(CollectLine("Iron Ore"));
-            await h.Driver.DrainLocalPlayerAsync();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitUntil(
-                () => h.Session.CollectedItems.GetValueOrDefault("Iron Ore", 0) == 4,
-                cts.Token);
-
-            h.Session.CollectedItems["Iron Ore"].Should().Be(4, "noise + real fell within TTL");
-            WarnEntries(h.Sink).Should().BeEmpty("no take-side miss");
-        });
-    }
-
-    /// <summary>
-    /// F2 item 5b — TTL mitigation in action. Noise older than the TTL is
-    /// evicted before Collect, so only the fresh Add counts. Eviction Trace
-    /// surfaces the dropped noise so post-hoc "why was my credit short?"
-    /// debugging has a trail. Equivalent of the retired
-    /// <c>LogIngestionServiceTests.Inter_event_same_name_noise_beyond_TTL_is_evicted_and_only_fresh_Add_credits</c>.
-    /// </summary>
-    [Fact]
-    public async Task Inter_event_same_name_noise_beyond_TTL_is_evicted_and_only_fresh_Add_credits()
-    {
-        var h = Build();
-        await Run(h, async () =>
-        {
-            h.View.PushAdded("IronOre", stackSize: 1, sizeConfirmed: true); // stale noise
-            h.Clock.Advance(TimeSpan.FromSeconds(6)); // past 5 s TTL
-            h.View.PushAdded("IronOre", stackSize: 3, sizeConfirmed: true); // fresh real
-            h.Driver.PushLive(CollectLine("Iron Ore"));
-            await h.Driver.DrainLocalPlayerAsync();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            await WaitUntil(
-                () => h.Session.CollectedItems.GetValueOrDefault("Iron Ore", 0) == 3,
-                cts.Token);
-
-            h.Session.CollectedItems["Iron Ore"].Should().Be(3, "stale Add was TTL-evicted before take");
-            WarnEntries(h.Sink).Should().BeEmpty("the fresh Add satisfied the Collect");
-            TraceEntries(h.Sink).Should().ContainSingle()
-                .Which.Message.Should().Contain("Iron Ore").And.Contain("x1");
-        });
-    }
-
     // ── fakes ───────────────────────────────────────────────────────────
 
-    private sealed class FakeInventoryView : IInventoryView
+    /// <summary>
+    /// Minimal <see cref="IPlayerWorld"/> stub for ItemCollectionTracker
+    /// tests. Mirrors the Gandalf.Tests <c>TestPlayerWorld</c> shape: exposes
+    /// a synthetic-publish <see cref="TestEventBus"/> for the bus surface and
+    /// a mutable clock for the optional Mode/Now manipulation; the producer /
+    /// folder / composer registration surfaces throw to flag accidental use
+    /// (those code paths live in <c>Mithril.WorldSim.Player.Tests</c>).
+    /// </summary>
+    private sealed class FakePlayerWorld : IPlayerWorld
     {
-        private readonly TestBus _bus = new();
-        public IWorldEventBus Bus => _bus;
-        public bool TryResolve(long instanceId, out string internalName) { internalName = ""; return false; }
-        public bool TryGetStackSize(long instanceId, out int stackSize) { stackSize = 0; return false; }
-        public IDisposable Subscribe(Action<InventoryEvent> handler, ReplayMode replay = ReplayMode.FromSessionStart)
-            => throw new NotSupportedException("Legacy shim not used in #606 tests");
+        public MutableWorldClock Clock { get; } = new();
+        public TestEventBus Bus { get; } = new();
 
-        public int AddedSubscriberCount => _bus.SubscriberCountFor(typeof(InventoryItemAdded));
+        IWorldClock IWorld.Clock => Clock;
+        IWorldEventBus IWorld.Bus => Bus;
 
-        public void PushAdded(string internalName, int stackSize, bool sizeConfirmed)
-        {
-            var ts = new DateTimeOffset(2026, 5, 22, 14, 0, 0, TimeSpan.Zero);
-            _bus.Publish(new Frame<InventoryItemAdded>(ts,
-                new InventoryItemAdded(InstanceId: 1, internalName, stackSize, sizeConfirmed, ts.UtcDateTime)));
-        }
-
-        public void PushStackChanged(string internalName, int stackSize)
-        {
-            var ts = new DateTimeOffset(2026, 5, 22, 14, 0, 1, TimeSpan.Zero);
-            _bus.Publish(new Frame<InventoryStackChanged>(ts,
-                new InventoryStackChanged(InstanceId: 1, internalName, stackSize, SizeConfirmed: true, ts.UtcDateTime)));
-        }
+        public void RegisterProducer<T>(IFrameProducer<T> producer) =>
+            throw new NotSupportedException("FakePlayerWorld: register on a real world.");
+        public void RegisterFolder<T>(IFolder<T> folder) =>
+            throw new NotSupportedException("FakePlayerWorld: register on a real world.");
+        public void RegisterComposer(IComposer composer) =>
+            throw new NotSupportedException("FakePlayerWorld: register on a real world.");
+        public Task StartMerger(CancellationToken ct) => Task.CompletedTask;
     }
 
-    private sealed class TestBus : IWorldEventBus
+    private sealed class MutableWorldClock : IWorldClock
+    {
+        public DateTimeOffset Now { get; set; } = DateTimeOffset.MinValue;
+        public long Frame { get; set; }
+        public WorldMode Mode { get; set; } = WorldMode.Live;
+    }
+
+    private sealed class TestEventBus : IWorldEventBus
     {
         private readonly object _lock = new();
-        private readonly Dictionary<Type, List<Action<IFrame>>> _handlers = new();
+        private readonly Dictionary<Type, List<Delegate>> _handlers = new();
 
         public IDisposable Subscribe<T>(Action<Frame<T>> handler)
         {
@@ -720,11 +780,22 @@ public sealed class ItemCollectionTrackerTests
             lock (_lock)
             {
                 if (!_handlers.TryGetValue(typeof(T), out var list))
-                    _handlers[typeof(T)] = list = new List<Action<IFrame>>();
-                Action<IFrame> wrapper = f => handler((Frame<T>)f);
-                list.Add(wrapper);
-                return new Sub(this, typeof(T), wrapper);
+                    _handlers[typeof(T)] = list = new List<Delegate>();
+                list.Add(handler);
+                return new Sub(this, typeof(T), handler);
             }
+        }
+
+        public void Publish<T>(DateTimeOffset timestamp, T payload)
+        {
+            List<Delegate>? snap;
+            lock (_lock)
+            {
+                if (!_handlers.TryGetValue(typeof(T), out var list)) return;
+                snap = list.ToList();
+            }
+            var frame = new Frame<T>(timestamp, payload);
+            foreach (var h in snap) ((Action<Frame<T>>)h)(frame);
         }
 
         public int SubscriberCountFor(Type t)
@@ -732,18 +803,7 @@ public sealed class ItemCollectionTrackerTests
             lock (_lock) return _handlers.TryGetValue(t, out var list) ? list.Count : 0;
         }
 
-        public void Publish<T>(Frame<T> frame)
-        {
-            List<Action<IFrame>>? snap;
-            lock (_lock)
-            {
-                if (!_handlers.TryGetValue(typeof(T), out var list)) return;
-                snap = list.ToList();
-            }
-            foreach (var h in snap) h(frame);
-        }
-
-        private sealed class Sub(TestBus o, Type t, Action<IFrame> h) : IDisposable
+        private sealed class Sub(TestEventBus o, Type t, Delegate h) : IDisposable
         {
             public void Dispose()
             {
@@ -763,9 +823,7 @@ public sealed class ItemCollectionTrackerTests
 
     /// <summary>
     /// Minimal IReferenceDataService for the InternalName→DisplayName
-    /// resolution path. Only <see cref="ItemsByInternalName"/> matters here
-    /// — the rest of the catalog is satisfied by the interface's default
-    /// member accessors.
+    /// resolution path.
     /// </summary>
     private sealed class FakeRefData : IReferenceDataService
     {
