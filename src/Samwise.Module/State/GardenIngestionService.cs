@@ -3,7 +3,6 @@ using Mithril.Shared.Diagnostics;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Skills;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 using Samwise.Alarms;
@@ -296,7 +295,7 @@ public sealed class GardenIngestionService : BackgroundService
     /// on <c>SubscribeChanges</c> (sister to <see href="https://github.com/moumantai-gg/mithril/issues/585">#585</see>).</para>
     /// </summary>
     // internal for tests (Samwise.Tests has InternalsVisibleTo); production
-    // callers go through SubscribeChanges in ExecuteAsync above.
+    // callers go through SubscribeChanges in StartAsync above.
     internal void OnSkillChange(SkillChange change)
     {
         var ge = TryProjectGardeningXp(change);

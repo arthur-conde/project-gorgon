@@ -3,7 +3,6 @@ using Mithril.GameState.Skills;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 using Smaug.Domain;
 using Smaug.Parsing;
@@ -12,8 +11,10 @@ namespace Smaug.State;
 
 /// <summary>
 /// Subscribes (via the L1 <see cref="ILogStreamDriver"/>) to the LocalPlayer
-/// pipe once the Smaug module gate opens, parses vendor-related lines, and
-/// feeds recorded sells into <see cref="PriceCalibrationService"/>.
+/// pipe eagerly during <c>StartAsync</c> (#695 Call 1), parses vendor-related
+/// lines, and feeds recorded sells into <see cref="PriceCalibrationService"/>.
+/// The Smaug module gate no longer gates state subscription; UI hydration
+/// (the calibration tab) stays lazy.
 ///
 /// <para><b>L1 migration shape (#550 PR 3, archetype-B).</b> Subscribes to
 /// <see cref="LocalPlayerLogLine"/> with
@@ -74,7 +75,6 @@ public sealed class VendorIngestionService : BackgroundService
     private readonly IDiagnosticsSink? _diag;
     private ILogSubscription? _subscription;
     private IDisposable? _skillSubscription;
-    private CancellationTokenRegistration _stopRegistration;
 
     public VendorIngestionService(
         ILogStreamDriver driver,
@@ -179,15 +179,6 @@ public sealed class VendorIngestionService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        // Detach active-character handlers on host stop. Pre-Call-1 this hooked
-        // via `stoppingToken.Register` AFTER the gate opened; under eager
-        // attach the registration lives across the host lifetime.
-        _stopRegistration = stoppingToken.Register(() =>
-        {
-            _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
-            _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
-        });
-
         try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
         catch (OperationCanceledException) { /* expected on host stop */ }
         finally
@@ -196,12 +187,23 @@ public sealed class VendorIngestionService : BackgroundService
             _subscription = null;
             _skillSubscription?.Dispose();
             _skillSubscription = null;
-            _stopRegistration.Dispose();
         }
+    }
+
+    public override Task StopAsync(CancellationToken cancellationToken)
+    {
+        // Symmetric with the StartAsync subscribe so a bootstrap failure
+        // that disposes the service without ExecuteAsync ever running
+        // doesn't leak the active-character handlers.
+        _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
+        _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
+        return base.StopAsync(cancellationToken);
     }
 
     public override void Dispose()
     {
+        _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
+        _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
         _subscription?.Dispose();
         _subscription = null;
         _skillSubscription?.Dispose();

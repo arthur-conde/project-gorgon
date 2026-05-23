@@ -6,7 +6,6 @@ using Mithril.GameState.Gifting;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 

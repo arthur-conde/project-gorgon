@@ -6,7 +6,6 @@ using Mithril.GameState.Areas;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 
 namespace Legolas.Services;
@@ -62,8 +61,11 @@ namespace Legolas.Services;
 /// subscription — <c>LiveOnly</c> serves both purposes once the tracker
 /// self-seeds.</para>
 ///
-/// <para>Gated on the <c>"legolas"</c> module gate — Legolas is a lazy
-/// module, so log work starts on first tab activation.</para>
+/// <para>Subscribes eagerly during <c>StartAsync</c> (#695 Call 1). The
+/// <c>"legolas"</c> module gate no longer gates state subscription; UI
+/// hydration (overlay windows, hotkeys) stays lazy under the three
+/// surviving UI-hydration gates (<c>AutoOverlayCoordinator</c>,
+/// <c>ForegroundFocusGate</c>, <c>OverlayController</c>).</para>
 ///
 /// <para><b>Containment.</b> The L1 driver wraps each handler invocation in
 /// try/catch + rate-limited Warn, retiring the per-service <c>_diag?.Warn</c>

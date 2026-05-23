@@ -56,8 +56,9 @@ namespace Legolas.Services;
 /// <see cref="PlayerLogIngestionService"/> (which owns the
 /// area→calibration bridge + absolute <c>ProcessMapFx</c> placement +
 /// Motherlode coordinator wiring) to keep the correlator + collect-credit
-/// concern isolated. Both subscribe through the L1 driver and gate on the
-/// <c>"legolas"</c> module gate.</para>
+/// concern isolated. Both subscribe eagerly through the L1 driver during
+/// <c>StartAsync</c> (#695 Call 1); the legolas module gate no longer
+/// gates state subscription.</para>
 /// </summary>
 public sealed class ItemCollectionTracker : BackgroundService
 {
@@ -66,7 +67,6 @@ public sealed class ItemCollectionTracker : BackgroundService
     private readonly IInventoryView _inventoryView;
     private readonly ILogStreamDriver _driver;
     private readonly PlayerLogParser _parser;
-    private readonly ModuleGates _gates;
     private readonly SessionState _session;
     private readonly IReferenceDataService? _refData;
     private readonly IDiagnosticsSink? _diag;
@@ -81,7 +81,6 @@ public sealed class ItemCollectionTracker : BackgroundService
         IInventoryView inventoryView,
         ILogStreamDriver driver,
         PlayerLogParser parser,
-        ModuleGates gates,
         SessionState session,
         IReferenceDataService? refData = null,
         IDiagnosticsSink? diag = null,
@@ -90,7 +89,6 @@ public sealed class ItemCollectionTracker : BackgroundService
         _inventoryView = inventoryView;
         _driver = driver;
         _parser = parser;
-        _gates = gates;
         _session = session;
         _refData = refData;
         _diag = diag;

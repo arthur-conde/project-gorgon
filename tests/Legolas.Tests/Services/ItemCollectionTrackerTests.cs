@@ -51,7 +51,7 @@ public sealed class ItemCollectionTrackerTests
         var clock = new ManualTimeProvider(new DateTime(2026, 5, 22, 14, 0, 0, DateTimeKind.Utc));
         var refData = new FakeRefData();
         var svc = new ItemCollectionTracker(
-            view, driver, parser, gates, session,
+            view, driver, parser, session,
             refData: refData, diag: sink, time: clock);
         return new Harness(svc, view, driver, session, sink, clock, gates);
     }
@@ -434,7 +434,7 @@ public sealed class ItemCollectionTrackerTests
         var clock = new ManualTimeProvider(new DateTime(2026, 5, 22, 14, 0, 0, DateTimeKind.Utc));
         var refData = new FakeRefData();
         var svc = new ItemCollectionTracker(
-            view, driver, parser, gates, session,
+            view, driver, parser, session,
             refData: refData, diag: sink, time: clock);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));

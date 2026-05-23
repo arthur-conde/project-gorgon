@@ -371,11 +371,14 @@ public sealed class FavorIngestionServiceTests : IDisposable
 
         public async Task StartAsync()
         {
+            // Post-Call-1 (#695): the L1 subscription attaches inside
+            // FavorIngestionService.StartAsync — Subscribe completes before
+            // this await returns, so the WaitForSubscriptionAsync poll
+            // below is a defence-in-depth sync rather than a wait-for-gate.
+            // The Gates field stays on the fixture only so the
+            // "Subscription_attaches_in_StartAsync_without_opening_module_gate"
+            // test can assert IsOpen.Should().BeFalse() against it.
             await Service.StartAsync(CancellationToken.None);
-            Gates.For("arwen").Open();
-            // Allow ExecuteAsync to pass the WaitAsync and call Subscribe.
-            // The driver's Subscribe is synchronous from the consumer side,
-            // so a brief poll on the pump task being ready suffices.
             await Driver.WaitForSubscriptionAsync();
         }
 
