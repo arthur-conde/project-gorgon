@@ -291,7 +291,7 @@ public sealed class InventoryViewTests
             refData: refData ?? new TwoItemRefData(),
             playerSession: playerSession,
             chatSession: chatSession,
-            gameReports: gameReports);
+            gameReports: gameReports ?? new FakeGameReportsService());
         view.Start();
         return (view, playerWorld, chatWorld, pstate);
     }
