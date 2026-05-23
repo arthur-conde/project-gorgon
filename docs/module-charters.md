@@ -58,7 +58,7 @@ services that have emerged organically through the project's arc —
 [`IPlayerRecipeState`](../src/Mithril.GameState/Recipes/IPlayerRecipeState.cs)
 ([#475](https://github.com/moumantai-gg/mithril/pull/475)),
 [`IGameSessionService`](../src/Mithril.GameState/Sessions/IGameSessionService.cs),
-[`IPlayerQuestJournalService`](../src/Mithril.GameState/Quests/IPlayerQuestJournalService.cs),
+[`IPlayerQuestJournalState`](../src/Mithril.GameState/Quests/IPlayerQuestJournalState.cs),
 [`PlayerAreaTracker`](../src/Mithril.GameState/Areas/PlayerAreaTracker.cs),
 and [`INpcStateTracker`](https://github.com/moumantai-gg/mithril/issues/552)
 (#552, in flight) — are **not** parallel abstractions of their domains;
@@ -634,7 +634,7 @@ libraries; the charter follows the code:
   emulated game from logs, and the GameState services that emerged through the project's
   arc (`IPlayerPositionTracker` #454, `IPlayerSkillState` #462/#465, `IPlayerPinTracker`
   #468, `IInventoryService`, `IPlayerWeatherTracker`, `IPlayerCelestialState` #490,
-  `IPlayerRecipeState` #475, `IGameSessionService`, `IPlayerQuestJournalService` #607, `PlayerAreaTracker`,
+  `IPlayerRecipeState` #475, `IGameSessionService`, `IPlayerQuestJournalState` #607, `PlayerAreaTracker`,
   and `INpcStateTracker` #552 in flight) are the canonical model of that emulated game.
   Articulating the principle explicitly clarifies that modules are *projections* of
   subsets for UX — they consume the canonical model, they don't parallel-emulate it.

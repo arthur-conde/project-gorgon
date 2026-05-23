@@ -28,7 +28,7 @@ namespace Gandalf.Services;
 /// to skip the ~2,000 repeatable quests the player has never touched).
 /// LootSource and UserTimerSource pass null — every catalog row materialises.
 /// When the predicate's external inputs change (the QuestSource pending set
-/// today; <see cref="Mithril.GameState.Quests.IPlayerQuestJournalService"/>
+/// today; <see cref="Mithril.GameState.Quests.IPlayerQuestJournalState"/>
 /// in the planned follow-up), the host VM calls <see cref="RecheckRelevance"/>.</para>
 ///
 /// <para>Refresh signal: fires <see cref="RefreshRequired"/> at the end of
@@ -91,7 +91,7 @@ public sealed class TimerSourceBinder : IDisposable
     /// <summary>
     /// Re-evaluate the relevance predicate against every catalog row. Call
     /// when an external input to the predicate has changed (e.g. the
-    /// QuestSource pending set, after #155 lands the <c>IPlayerQuestJournalService</c>
+    /// QuestSource pending set, after #155 lands the <c>IPlayerQuestJournalState</c>
     /// active-set reshape removes the need for this entirely).
     /// </summary>
     public void RecheckRelevance()

@@ -6,7 +6,7 @@ namespace Mithril.GameState.Quests.Parsing;
 /// Bulk login signal: the player's full quest journal as the server reports
 /// it on character connect. Two ID lists ride along — WorkOrder bulletin-board
 /// quests (list A) and everything else (list B). Drives a snapshot-replace
-/// of the active-quest set in <c>IPlayerQuestJournalService</c> so the journal
+/// of the active-quest set in <c>IPlayerQuestJournalState</c> so the journal
 /// stays in sync with the game across restarts and character switches.
 /// </summary>
 public sealed record QuestJournalLoadedEvent(
@@ -19,15 +19,17 @@ public sealed record QuestJournalLoadedEvent(
 /// Player accepted a quest. Recovered from the companion <c>ProcessBook</c>
 /// line that fires alongside <c>ProcessAddQuest</c> — the unresolved
 /// <c>&lt;&lt;&lt;quest_NNNNN_Name&gt;&gt;&gt;</c> localization template carries the quest id.
-/// Drives an incremental add to <c>IPlayerQuestJournalService.ActiveQuests</c>.
+/// Drives an incremental add to <c>IPlayerQuestJournalState.ActiveQuests</c>.
 /// </summary>
 public sealed record QuestAcceptedEvent(DateTime Timestamp, string QuestInternalName)
     : LogEvent(Timestamp);
 
 /// <summary>
 /// Player completed (turned in) a repeatable quest. Removes the quest from the
-/// active journal and stamps <c>IPlayerQuestJournalService.CompletionHistory</c> with this
-/// timestamp; downstream cooldown clocks anchor on it.
+/// active journal and fires a <c>PlayerQuestCompleted</c> event stamped on this
+/// timestamp; downstream cooldown clocks (e.g. Gandalf's
+/// <c>DerivedTimerProgressService</c>) anchor on it. The journal does not retain
+/// completion history — module-side ledgers own cross-session continuity (#718).
 /// </summary>
 public sealed record QuestCompletedEvent(DateTime Timestamp, string QuestInternalName)
     : LogEvent(Timestamp);

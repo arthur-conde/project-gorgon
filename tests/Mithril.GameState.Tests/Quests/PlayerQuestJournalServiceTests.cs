@@ -1,48 +1,25 @@
-using System.IO;
-using System.Threading.Channels;
 using FluentAssertions;
 using Mithril.GameState.Quests;
 using Mithril.GameState.Quests.Parsing;
 using Mithril.GameState.Tests.TestSupport;
-using Mithril.Shared.Character;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Reference;
 using Mithril.TestSupport;
 using Xunit;
 
 namespace Mithril.GameState.Tests.Quests;
 
-[Trait("Category", "FileIO")]
-[Collection("FileIO")]
-public sealed class PlayerQuestJournalServiceTests : IDisposable
+/// <summary>
+/// Post-#718 the quest journal is the active-character active set only — no
+/// persistence, no completion-history map, no on-subscribe replay of historic
+/// completions. Tests exercise the fold (ProcessLoadQuests / ProcessBook /
+/// ProcessCompleteQuest) and Subscribe's narrowed replay contract.
+/// </summary>
+public sealed class PlayerQuestJournalServiceTests
 {
-    private readonly string _dir;
-    private readonly string _charactersDir;
-
-    public PlayerQuestJournalServiceTests()
-    {
-        _dir = TestPaths.CreateTempDir("quests_service");
-        _charactersDir = Path.Combine(_dir, "characters");
-        Directory.CreateDirectory(_charactersDir);
-    }
-
-    public void Dispose()
-    {
-        try { Directory.Delete(_dir, recursive: true); } catch { /* best-effort */ }
-    }
-
-    private (PlayerQuestJournalService svc, ScriptedStream stream, FakeActiveCharacterService active,
-             FakeReferenceData refData, PerCharacterView<PlayerQuestJournalState> view)
-        Build(IReadOnlyList<(string Key, Mithril.Reference.Models.Quests.Quest Quest)>? quests = null,
-              string character = "Arthur", string server = "Kwatoxi")
+    private (PlayerQuestJournalService svc, ScriptedStream stream, FakeReferenceData refData)
+        Build(IReadOnlyList<(string Key, Mithril.Reference.Models.Quests.Quest Quest)>? quests = null)
     {
         var refData = new FakeReferenceData(quests ?? []);
-        var active = new FakeActiveCharacterService();
-        active.SetActiveCharacter(character, server);
-
-        var store = new PerCharacterStore<PlayerQuestJournalState>(_charactersDir, "quests.json",
-            PlayerQuestJournalStateJsonContext.Default.PlayerQuestJournalState);
-        var view = new PerCharacterView<PlayerQuestJournalState>(active, store);
 
         var stream = new ScriptedStream(Array.Empty<string>());
         var svc = new PlayerQuestJournalService(
@@ -50,20 +27,23 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
             new QuestJournalLoadParser(),
             new QuestAcceptedParser(refData),
             new QuestCompletedParser(refData),
-            view,
             refData);
-        return (svc, stream, active, refData, view);
+        return (svc, stream, refData);
     }
 
     [Fact]
-    public async Task SubscribeAfterMutation_ReplaysActiveAsAcceptedAndHistoryAsCompleted()
+    public async Task SubscribeAfterMutation_ReplaysActiveAsAcceptedOnly_NoCompletedReplay()
     {
+        // Post-#718 contract change: Subscribe replays only the current
+        // active set (as PlayerQuestAccepted), NOT historic completions.
+        // Cross-session completion anchors are owned by module-side ledgers
+        // (Gandalf's DerivedTimerProgressService), not the journal.
         var quests = new[]
         {
             QuestFactory.Repeatable("quest_1", "Q1", "Quest 1", TimeSpan.FromHours(1)),
             QuestFactory.Repeatable("quest_2", "Q2", "Quest 2", TimeSpan.FromHours(1)),
         };
-        var (svc, stream, _, _, _) = Build(quests);
+        var (svc, stream, _) = Build(quests);
         try
         {
             stream.Push("[10:00:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_1_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
@@ -71,14 +51,15 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
             stream.Push("[10:02:00] LocalPlayer: ProcessCompleteQuest(123, 1)");
             await RunUntilDrainedAsync(svc, stream);
 
-            var replayed = new List<QuestEvent>();
+            var replayed = new List<PlayerQuestEvent>();
             using var sub = svc.Subscribe(replayed.Add);
 
-            // Q2 is still active → replays as Accepted; Q1 is in completion
-            // history → replays as Completed.
-            replayed.Should().HaveCount(2);
-            replayed.Should().Contain(e => e.Kind == QuestEventKind.Accepted && e.InternalName == "Q2");
-            replayed.Should().Contain(e => e.Kind == QuestEventKind.Completed && e.InternalName == "Q1");
+            // Q2 is still active → replays as PlayerQuestAccepted. Q1 was
+            // completed but only the current-session active map is replayed
+            // on subscribe; no PlayerQuestCompleted appears.
+            replayed.Should().ContainSingle()
+                .Which.Should().BeOfType<PlayerQuestAccepted>()
+                .Which.InternalName.Should().Be("Q2");
         }
         finally { await StopAsync(svc); }
     }
@@ -91,7 +72,7 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
             QuestFactory.Repeatable("quest_50208", "Quest_WO_50208", "Work Order 50208", TimeSpan.FromHours(20)),
             QuestFactory.Repeatable("quest_3", "Quest_Reg_3", "Regular 3", TimeSpan.FromHours(1)),
         };
-        var (svc, stream, _, _, _) = Build(quests);
+        var (svc, stream, _) = Build(quests);
         try
         {
             stream.Push("[10:00:00] LocalPlayer: ProcessLoadQuests(8285856, TransitionalQuestState[], [50208,], [3,])");
@@ -110,7 +91,7 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
         {
             QuestFactory.Repeatable("quest_50208", "Quest_WO_50208", "WO 50208", TimeSpan.FromHours(1)),
         };
-        var (svc, stream, _, _, _) = Build(quests);
+        var (svc, stream, _) = Build(quests);
         try
         {
             stream.Push("[10:00:00] LocalPlayer: ProcessLoadQuests(123, TransitionalQuestState[], [50208, 999999,], [])");
@@ -124,14 +105,13 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
     [Fact]
     public async Task BulkJournalLoad_InfersAbandonedFromDroppedEntries_StampedOnLogTimestamp()
     {
-        // The Abandoned event here is a real inference from a real log event:
-        // ProcessLoadQuests is PG's authoritative snapshot of the journal, so
-        // anything that was active before and is absent from the new snapshot
-        // has been abandoned (or completed off-session, but Abandoned is the
-        // conservative observation given no ProcessCompleteQuest preceded).
-        // Timestamps come from the log line itself — no wall-clock leak. This
-        // is the inference that #607 explicitly preserves while retiring the
-        // character-switch synthesis path.
+        // The PlayerQuestAbandoned event here is a real inference from a real
+        // log event: ProcessLoadQuests is PG's authoritative snapshot of the
+        // journal, so anything that was active before and is absent from the
+        // new snapshot has been abandoned (or completed off-session, but
+        // Abandoned is the conservative observation given no
+        // ProcessCompleteQuest preceded). Timestamps come from the log line
+        // itself — no wall-clock leak.
         var quests = new[]
         {
             QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
@@ -140,7 +120,7 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
         };
         var firstLoadTs = new DateTime(2026, 5, 18, 10, 0, 0, DateTimeKind.Utc);
         var secondLoadTs = new DateTime(2026, 5, 18, 11, 0, 0, DateTimeKind.Utc);
-        var (svc, stream, _, _, _) = Build(quests);
+        var (svc, stream, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);
         try
         {
@@ -149,7 +129,7 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
                 "LocalPlayer: ProcessLoadQuests(1, TransitionalQuestState[], [], [1,2,])"));
             await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
-            var live = new List<QuestEvent>();
+            var live = new List<PlayerQuestEvent>();
             using var sub = svc.Subscribe(live.Add);
             live.Clear(); // discard the Subscribe replay so we only see the next bulk diff
 
@@ -159,15 +139,12 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
                 "LocalPlayer: ProcessLoadQuests(1, TransitionalQuestState[], [], [1,3,])"));
             await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
-            live.Should().Contain(e =>
-                e.Kind == QuestEventKind.Abandoned
-                && e.InternalName == "Q2"
-                && e.Timestamp == secondLoadTs);
-            live.Should().Contain(e =>
-                e.Kind == QuestEventKind.Accepted
-                && e.InternalName == "Q3"
-                && e.Timestamp == secondLoadTs);
-            live.Should().NotContain(e => e.Kind == QuestEventKind.Accepted && e.InternalName == "Q1");
+            live.OfType<PlayerQuestAbandoned>()
+                .Should().ContainSingle(a => a.InternalName == "Q2" && a.Timestamp == secondLoadTs);
+            live.OfType<PlayerQuestAccepted>()
+                .Should().ContainSingle(a => a.InternalName == "Q3" && a.Timestamp == secondLoadTs);
+            live.OfType<PlayerQuestAccepted>()
+                .Should().NotContain(a => a.InternalName == "Q1");
             svc.ActiveQuests.Should().ContainKeys("Q1", "Q3").And.NotContainKey("Q2");
         }
         finally { await StopAsync(svc); _ = runTask; }
@@ -180,11 +157,11 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
         {
             QuestFactory.Repeatable("quest_25212", "Quest_Sample_25212", "Sample", TimeSpan.FromHours(1)),
         };
-        var (svc, stream, _, _, _) = Build(quests);
+        var (svc, stream, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);
         try
         {
-            var live = new List<QuestEvent>();
+            var live = new List<PlayerQuestEvent>();
             using var sub = svc.Subscribe(live.Add);
 
             stream.Push("[10:00:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_25212_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
@@ -192,7 +169,7 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
             await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
             // Second accept for already-active quest is a no-op (no event re-fired).
-            live.Where(e => e.Kind == QuestEventKind.Accepted)
+            live.OfType<PlayerQuestAccepted>()
                 .Should().ContainSingle().Which.InternalName.Should().Be("Quest_Sample_25212");
             svc.ActiveQuests.Should().ContainKey("Quest_Sample_25212");
         }
@@ -200,26 +177,31 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task Completed_ProcessCompleteQuestRemovesFromActiveAndStampsHistory()
+    public async Task Completed_ProcessCompleteQuestRemovesFromActiveAndFiresCompletedForward()
     {
         var ts = new DateTime(2026, 4, 30, 12, 34, 56, DateTimeKind.Utc);
         var quests = new[]
         {
             QuestFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample", TimeSpan.FromHours(20)),
         };
-        var (svc, stream, _, _, _) = Build(quests);
+        var (svc, stream, _) = Build(quests);
+        var runTask = svc.StartAsync(CancellationToken.None);
         try
         {
+            var live = new List<PlayerQuestEvent>();
+            using var sub = svc.Subscribe(live.Add);
+
             stream.Push(new RawLogLine(ts.AddMinutes(-10), "LocalPlayer: ProcessBook(\"New Quest: <<<quest_14003_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")"));
             stream.Push(new RawLogLine(ts, "LocalPlayer: ProcessCompleteQuest(8298169, 14003)"));
-            await RunUntilDrainedAsync(svc, stream);
+            await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
             svc.ActiveQuests.Should().NotContainKey("Quest_Sample_14003");
-            svc.CompletionHistory.Should().ContainKey("Quest_Sample_14003");
-            svc.CompletionHistory["Quest_Sample_14003"].LastCompletedAt
-                .Should().Be(new DateTimeOffset(ts, TimeSpan.Zero));
+            live.OfType<PlayerQuestCompleted>()
+                .Should().ContainSingle()
+                .Which.Should().Match<PlayerQuestCompleted>(c =>
+                    c.InternalName == "Quest_Sample_14003" && c.Timestamp == ts);
         }
-        finally { await StopAsync(svc); }
+        finally { await StopAsync(svc); _ = runTask; }
     }
 
     [Fact]
@@ -230,11 +212,11 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
         {
             QuestFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample", TimeSpan.FromHours(20)),
         };
-        var (svc, stream, _, _, _) = Build(quests);
+        var (svc, stream, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);
         try
         {
-            var live = new List<QuestEvent>();
+            var live = new List<PlayerQuestEvent>();
             using var sub = svc.Subscribe(live.Add);
 
             stream.Push(new RawLogLine(ts, "LocalPlayer: ProcessCompleteQuest(123, 14003)"));
@@ -242,102 +224,41 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
             await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
             // Same timestamp = same observation. Only one Completed event.
-            live.Where(e => e.Kind == QuestEventKind.Completed).Should().ContainSingle();
-            svc.CompletionHistory["Quest_Sample_14003"].LastCompletedAt
-                .Should().Be(new DateTimeOffset(ts, TimeSpan.Zero));
+            live.OfType<PlayerQuestCompleted>().Should().ContainSingle();
         }
         finally { await StopAsync(svc); _ = runTask; }
     }
 
     [Fact]
-    public async Task Persistence_StateSurvivesServiceRestart()
+    public async Task Completed_DoesNotReplayOnSubscribe()
     {
+        // The defining post-#718 narrowing: a Completed event observed during
+        // the current session is fired forward to live subscribers but is NOT
+        // replayed on subsequent subscriptions. Cross-session completion
+        // anchors are not the journal's concern.
+        var ts = new DateTime(2026, 4, 30, 12, 34, 56, DateTimeKind.Utc);
         var quests = new[]
         {
-            QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
-            QuestFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(20)),
+            QuestFactory.Repeatable("quest_14003", "Quest_Sample_14003", "Sample", TimeSpan.FromHours(20)),
         };
-
-        // First service: accept Q1, complete Q2.
-        {
-            var (svc, stream, _, _, _) = Build(quests);
-            try
-            {
-                stream.Push("[10:00:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_1_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
-                stream.Push("[10:05:00] LocalPlayer: ProcessCompleteQuest(123, 2)");
-                await RunUntilDrainedAsync(svc, stream);
-            }
-            finally { await StopAsync(svc); }
-        }
-
-        // Second service against same character dir: should reload.
-        {
-            var (svc, _, _, _, _) = Build(quests);
-            try
-            {
-                svc.ActiveQuests.Should().ContainKey("Q1");
-                svc.CompletionHistory.Should().ContainKey("Q2");
-            }
-            finally { await StopAsync(svc); }
-        }
-    }
-
-    [Fact]
-    public async Task CharacterSwitch_DoesNotSynthesizeEvents()
-    {
-        // Pre-#607 this service listened for PerCharacterView.CurrentChanged and
-        // synthesized Abandoned/Accepted/Completed events stamped with
-        // _time.GetUtcNow() so live subscribers could mirror the swap without
-        // re-subscribing. Under the world-sim's per-character scope the path
-        // collapses: character B's ledger was always character B's; binding
-        // the UI to it fires no events on character A's service instance.
-        // This regression guards the absence of that synthesis.
-        var quests = new[]
-        {
-            QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
-            QuestFactory.Repeatable("quest_2", "Q2", "Q2", TimeSpan.FromHours(1)),
-        };
-
-        // Pre-populate Bob's quests.json by running a short-lived service against him.
-        {
-            var refData = new FakeReferenceData(quests);
-            var bobActive = new FakeActiveCharacterService();
-            bobActive.SetActiveCharacter("Bob", "Kwatoxi");
-            var bobStore = new PerCharacterStore<PlayerQuestJournalState>(_charactersDir, "quests.json",
-                PlayerQuestJournalStateJsonContext.Default.PlayerQuestJournalState);
-            var bobView = new PerCharacterView<PlayerQuestJournalState>(bobActive, bobStore);
-            var bobStream = new ScriptedStream(Array.Empty<string>());
-            var bobSvc = new PlayerQuestJournalService(bobStream.Driver, new QuestJournalLoadParser(),
-                new QuestAcceptedParser(refData), new QuestCompletedParser(refData), bobView, refData);
-            try
-            {
-                bobStream.Push("[10:00:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_2_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
-                await RunUntilDrainedAsync(bobSvc, bobStream);
-            }
-            finally { await StopAsync(bobSvc); }
-        }
-
-        var (svc, stream, active, _, _) = Build(quests, character: "Arthur");
+        var (svc, stream, _) = Build(quests);
+        var runTask = svc.StartAsync(CancellationToken.None);
         try
         {
-            stream.Push("[10:00:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_1_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
-            await RunUntilDrainedAsync(svc, stream);
+            stream.Push(new RawLogLine(ts, "LocalPlayer: ProcessCompleteQuest(123, 14003)"));
+            await stream.WaitForDrainAsync(TimeSpan.FromSeconds(2));
 
-            var live = new List<QuestEvent>();
-            using var sub = svc.Subscribe(live.Add);
-            live.Clear(); // discard Subscribe replay
+            // Attach a fresh subscriber AFTER the completion fired. It must
+            // NOT see PlayerQuestCompleted as a replay.
+            var lateReplay = new List<PlayerQuestEvent>();
+            using var sub = svc.Subscribe(lateReplay.Add);
 
-            // Flip the active-character service. Pre-#607 this would have
-            // fanned out Abandoned(Q1) + Accepted(Q2) synthesised events;
-            // post-#607 nothing happens — the UI is expected to re-resolve
-            // the per-character service for the new character instead.
-            active.SetActiveCharacter("Bob", "Kwatoxi");
-
-            live.Should().BeEmpty("character switch must not synthesise events on the existing service");
-            svc.ActiveQuests.Should().ContainKey("Q1").And.NotContainKey("Q2",
-                "the service is bound to Arthur's hydrated state; Bob's ledger is not its concern");
+            lateReplay.OfType<PlayerQuestCompleted>().Should().BeEmpty(
+                "post-#718 the journal does not replay historic completions on subscribe");
+            lateReplay.OfType<PlayerQuestAccepted>().Should().BeEmpty(
+                "the completed quest is no longer in the active set, so no Accepted replay either");
         }
-        finally { await StopAsync(svc); }
+        finally { await StopAsync(svc); _ = runTask; }
     }
 
     [Fact]
@@ -347,11 +268,11 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
         {
             QuestFactory.Repeatable("quest_1", "Q1", "Q1", TimeSpan.FromHours(1)),
         };
-        var (svc, stream, _, _, _) = Build(quests);
+        var (svc, stream, _) = Build(quests);
         var runTask = svc.StartAsync(CancellationToken.None);
         try
         {
-            var live = new List<QuestEvent>();
+            var live = new List<PlayerQuestEvent>();
             var sub = svc.Subscribe(live.Add);
 
             stream.Push("[10:00:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_1_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
@@ -389,7 +310,7 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
     /// Byte-equivalence regression test (#550 PR 2): the producer is a
     /// state-rebuilder, so feeding the same backlog twice (cold start, then
     /// a FromSessionStart replay of the very same lines) must yield
-    /// identical active/completed dicts on both runs.
+    /// identical active dicts on both runs.
     /// </summary>
     [Fact]
     public async Task L1_replay_idempotence_byte_equivalence()
@@ -400,9 +321,8 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
             QuestFactory.Repeatable("quest_2", "Q2", "Quest 2", TimeSpan.FromHours(1)),
         };
         IReadOnlyDictionary<string, QuestJournalEntry> firstActive;
-        IReadOnlyDictionary<string, QuestCompletionState> firstCompleted;
         {
-            var (svc, stream, _, _, _) = Build(quests, character: "ReplayUser1");
+            var (svc, stream, _) = Build(quests);
             try
             {
                 stream.Push("[10:00:00] LocalPlayer: ProcessBook(\"New Quest: <<<quest_1_Name>>>\", \"\", \"\", \"\", \"\", False, False, False, False, False, \"\")");
@@ -410,18 +330,15 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
                 stream.Push("[10:02:00] LocalPlayer: ProcessCompleteQuest(123, 1)");
                 await RunUntilDrainedAsync(svc, stream);
                 firstActive = svc.ActiveQuests;
-                firstCompleted = svc.CompletionHistory;
             }
             finally { await StopAsync(svc); }
         }
 
-        // Second pass — same input split across the replay→live boundary
-        // so the test exercises the production FromSessionStart shape (first
+        // Second pass — same input split across the replay→live boundary so
+        // the test exercises the production FromSessionStart shape (first
         // half drains as IsReplay=true envelopes, then the rest is live).
-        // Uses a fresh character so persistence doesn't merge with the first
-        // pass's saved state.
         {
-            var (svc, stream, _, _, _) = Build(quests, character: "ReplayUser2");
+            var (svc, stream, _) = Build(quests);
             try
             {
                 stream.Driver.PushReplay(TestLogEnvelopeFactory.MakeLocalPlayer(
@@ -442,7 +359,6 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
                 await stream.WaitForDrainAsync(cts.Token);
 
                 svc.ActiveQuests.Keys.Should().BeEquivalentTo(firstActive.Keys);
-                svc.CompletionHistory.Keys.Should().BeEquivalentTo(firstCompleted.Keys);
 
                 await cts.CancelAsync();
                 try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
@@ -455,10 +371,9 @@ public sealed class PlayerQuestJournalServiceTests : IDisposable
     /// <summary>
     /// Post-#550 PR 2: adapter that lets these tests keep scripting full
     /// <c>[ts] LocalPlayer: …</c> Player.log lines while the
-    /// service-under-test consumes <see cref="LocalPlayerLogLine"/>s via
-    /// the L1 driver. Stripping is delegated to
-    /// <see cref="TestLogEnvelopeFactory"/> so all four producer-tests share
-    /// one strip semantics.
+    /// service-under-test consumes <see cref="LocalPlayerLogLine"/>s via the
+    /// L1 driver. Stripping is delegated to <see cref="TestLogEnvelopeFactory"/>
+    /// so all producer-tests share one strip semantics.
     /// </summary>
     private sealed class ScriptedStream : IDisposable
     {
