@@ -1,5 +1,4 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 using Mithril.WorldSim.Player.Composers;
@@ -58,24 +57,18 @@ public static class PlayerWorldServiceCollectionExtensions
             // explicitly to IPlayerWorld / IChatWorld.
             .AddSingleton<IWorld>(sp => sp.GetRequiredService<PlayerWorld>());
 
-        // Replace the default IGameClock registration (TimeProvider.System-
-        // backed, set up by AddMithrilGameServices for headless / pre-world
-        // configurations) with one that reads from PlayerWorld's IWorldClock —
-        // scheduler-collapse migration item #12, #613. The in-game clock is
-        // now replay-deterministic: a Replaying-mode tick at world-clock T
-        // yields the same in-game time as a Live-mode tick at the same T.
-        // The shell's countdown chip + Gandalf's GameTimeOfDay-kind alarms
-        // both route through this; both stop leaking real wall-clock into
-        // the state-decision path (docs/world-simulator.md §Eliminations #8).
-        //
-        // Replace (Add + Remove) rather than the safer
-        // Add-Last-Wins-in-Resolution: the latter only works for IEnumerable<T>
-        // resolves, and IGameClock is a single-instance resolve.
-        services.Replace(ServiceDescriptor.Singleton<IGameClock>(sp =>
-        {
-            var world = sp.GetRequiredService<IPlayerWorld>();
-            return new GameClock(() => world.Clock.Now);
-        }));
+        // Intentionally does NOT replace the default IGameClock registration
+        // from AddMithrilGameServices. IGameClock is the wall-clock-anchored
+        // projection of PG in-game time-of-day — its DI-injected consumers
+        // (ShellViewModel chip + countdown; TimerProgressService.ComputeFiringAt
+        // for GameTimeOfDay timers) all want wall-clock semantics. Replay-
+        // deterministic shift event emission flows through
+        // TimeOfDayShiftComposer + the pure static GameClock.Project, with
+        // the world-clock-derived CalendarTimeAdvanced.Now as input —
+        // replay-deterministic by construction without involving the DI
+        // IGameClock. A previous attempt (#709) to rewire IGameClock to read
+        // from world.Clock.Now broke both consumer paths during the Replaying
+        // drain and was reverted in #711.
 
         return services;
     }
