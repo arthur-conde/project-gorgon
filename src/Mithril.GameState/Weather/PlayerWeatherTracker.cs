@@ -65,6 +65,16 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
     private bool _areaInitialised;
     private ILogSubscription? _subscription;
 
+    // Most-recent envelope timestamp the tracker has applied (area
+    // transition or weather change). Subscribe-replay stamps its synthetic
+    // Snapshot notification with this so late subscribers observe the same
+    // envelope-time view already-attached handlers were given (principle 13:
+    // never leak wall clock into world-event-driven state). Mirrors
+    // PlayerPinTracker._lastObservedAt. Default (DateTimeOffset.MinValue)
+    // when no envelope has been applied yet — the snapshot payload is also
+    // empty in that case, so the stamp is never meaningful in isolation.
+    private DateTimeOffset _lastObservedAt;
+
     private const string DiagCategory = "GameState.Weather";
 
     /// <param name="driver">L1 driver — subscribed to via the
@@ -110,10 +120,12 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
         {
             // Replay the current state before going live so a late subscriber
             // observes the same view already-attached handlers see. Mirrors
-            // PlayerPinTracker.Subscribe.
+            // PlayerPinTracker.Subscribe. The stamp comes from the
+            // most-recent envelope the tracker has applied (NOT wall-clock
+            // — principle 13); see _lastObservedAt's field doc.
             Invoke(handler, new WeatherChanged(
                 WeatherChangeKind.Snapshot, _trackedArea, _current,
-                DateTimeOffset.UtcNow));
+                _lastObservedAt));
             _handlers.Add(handler);
             return new Subscription(this, handler);
         }
@@ -140,7 +152,7 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
                         if (_areaParser.TryParse(s.Data, s.Timestamp.UtcDateTime)
                             is AreaTransitionEvent areaEvt)
                         {
-                            ReconcileArea(areaEvt.AreaKey);
+                            ReconcileArea(areaEvt.AreaKey, s.Timestamp);
                         }
                         break;
 
@@ -187,7 +199,13 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
     /// <c>ProcessSetWeather</c> — which follows the <c>LOADING LEVEL</c>
     /// envelope on the same unified pipe — repopulates it.
     /// </summary>
-    private void ReconcileArea(string? area)
+    /// <param name="area">New area key (null for the empty / ChooseCharacter
+    /// form).</param>
+    /// <param name="observedAt">Envelope timestamp of the triggering
+    /// <c>LOADING LEVEL</c> system-signal — stamped on the resulting
+    /// <see cref="WeatherChangeKind.AreaChanged"/> notification so
+    /// consumers see log-instant time, never wall clock (principle 13).</param>
+    private void ReconcileArea(string? area, DateTimeOffset observedAt)
     {
         WeatherChanged? note = null;
         lock (_lock)
@@ -196,15 +214,17 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
             _areaInitialised = true;
             _trackedArea = area;
             _current = null;
+            _lastObservedAt = observedAt;
             note = new WeatherChanged(
                 WeatherChangeKind.AreaChanged, area, null,
-                DateTimeOffset.UtcNow);
+                observedAt);
         }
         if (note is not null) Publish(note);
     }
 
     private void Apply(WeatherChangedEvent evt)
     {
+        var observedAt = ToOffset(evt.Timestamp);
         WeatherChanged? note = null;
         lock (_lock)
         {
@@ -217,10 +237,11 @@ public sealed class PlayerWeatherTracker : BackgroundService, IPlayerWeatherTrac
                 return;
             }
 
-            _current = new WeatherState(evt.Condition, evt.Flag, ToOffset(evt.Timestamp));
+            _current = new WeatherState(evt.Condition, evt.Flag, observedAt);
+            _lastObservedAt = observedAt;
             note = new WeatherChanged(
                 WeatherChangeKind.Changed, _trackedArea, _current,
-                ToOffset(evt.Timestamp));
+                observedAt);
         }
         if (note is not null) Publish(note);
     }
