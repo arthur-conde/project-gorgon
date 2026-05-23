@@ -1,10 +1,6 @@
-using System.IO;
-using System.Text;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Game;
-using Mithril.Shared.Logging;
-using Microsoft.Extensions.Hosting;
+using Mithril.WorldSim;
 
 namespace Mithril.GameState.Areas;
 
@@ -15,293 +11,130 @@ namespace Mithril.GameState.Areas;
 /// Gandalf (chest commits stamp <c>LearnedChest.Area</c>) and Legolas
 /// (per-area survey-projection calibration), among others.
 ///
-/// <para><b>Self-feeding via the L1 driver (#556 Phase 2).</b> When an
-/// <see cref="ILogStreamDriver"/> is supplied, the tracker is a
-/// <see cref="BackgroundService"/> that subscribes to L0.5's
-/// <see cref="ISystemSignalLogStream"/> typed pipe through the L1 driver,
-/// filtered for <see cref="SystemSignalKind.AreaLoading"/>. This is the
-/// canonical update path for shared area state in production.
-/// <see cref="Observe(string,DateTime)"/> remains for the two consumers
-/// (Legolas's <c>PlayerLogIngestionService</c> and Gandalf's
-/// <c>LootIngestionService</c>) that still feed already-classified data
-/// inline; both feed paths converge on the same string-equality,
-/// last-writer-wins state, so concurrent updates against the same area
-/// key are idempotent.</para>
+/// <para><b>World-simulator migration (#775).</b> Pre-migration this class was
+/// a <see cref="Microsoft.Extensions.Hosting.BackgroundService"/> that owned
+/// its own L1 SystemSignal subscription and self-seeded via a reverse-scan of
+/// <c>Player.log</c>. Post-migration it is an <see cref="IFolder{TPayload}"/>
+/// registered with <c>IPlayerWorld</c> for the <see cref="AreaLoadingFrame"/>
+/// payload type: a sibling <see cref="Producers.AreaLoadingFrameProducer"/>
+/// owns the L1 subscription (and the pre-drain seed emission), parses every
+/// <see cref="Mithril.Shared.Logging.SystemSignalKind.AreaLoading"/> envelope
+/// via <see cref="AreaTransitionParser"/>, and emits one
+/// <see cref="AreaLoadingFrame"/> per transition. The world drives
+/// <see cref="Apply"/> per applied frame in source order; the folder returns
+/// <see cref="PlayerAreaChanged"/> change events which the world publishes on
+/// its bus (<c>IPlayerWorld.Bus.Subscribe&lt;PlayerAreaChanged&gt;</c>) in
+/// addition to raising the legacy <see cref="AreaChanged"/> event.</para>
 ///
-/// <para><b>Startup seeding.</b> <see cref="PlayerLogTailReader.SeedToSessionStart"/>
-/// rewinds the live replay window to the most recent <c>ProcessAddPlayer(</c>
-/// line, which lands ~9 s <em>after</em> the <c>LOADING LEVEL</c> line for the
-/// current area — so the area code is just upstream of where playback
-/// begins. <see cref="SeedFromLog"/> closes that gap with its own one-shot
-/// reverse-scan for the most recent <c>LOADING LEVEL</c> line, applied
-/// before the live stream starts. Local change scope; no impact on other
-/// consumers tuned against <see cref="PlayerLogStream"/>'s seed.</para>
+/// <para><b>Dual-surface back-compat.</b> <see cref="CurrentArea"/>
+/// (synchronous read) is preserved verbatim — Gandalf's chest-commit path and
+/// Palantir's debug refresh both rely on it. <see cref="Observe"/> also stays
+/// alive: Legolas's <c>PlayerLogIngestionService</c> and Gandalf's
+/// <c>LootIngestionService</c> still feed already-classified lines inline
+/// during the migration window. The double-feed (live envelope routed through
+/// the producer + Observe push-in) is idempotent — both paths converge on the
+/// same string-equality, last-writer-wins state. Retirement of <c>Observe</c>
+/// is owed once the two callers migrate to the bus event (separate follow-on
+/// under #774); deleting it now would break the bridges the user's scope note
+/// explicitly puts out of this PR.</para>
 ///
-/// <para><b>Threading.</b> <see cref="Observe(string,DateTime)"/> is called
-/// from the log ingestion background thread; the L1 self-feed runs on the
-/// driver's pump thread; <see cref="CurrentArea"/> is read from
-/// chest-commit paths on whichever thread routes the bracket. A simple
-/// lock suffices — the contention is low (one area transition per
-/// minute-ish, vs. dozens of reads per chest interaction).</para>
+/// <para><b>Threading.</b> The world drives <see cref="Apply"/> from its
+/// merger thread; folder mutations + change-event dispatch run under
+/// <see cref="_lock"/>. <see cref="Observe"/> is called from the legacy
+/// ingestion paths (Legolas/Gandalf bridges) on their own pump threads;
+/// the same lock serialises with the world-driven path so the double-feed
+/// stays race-free. <see cref="CurrentArea"/> reads take the same short
+/// critical section.</para>
 /// </summary>
-public sealed class PlayerAreaTracker : BackgroundService
+public sealed class PlayerAreaTracker : IFolder<AreaLoadingFrame>, IPlayerAreaState
 {
     private readonly AreaTransitionParser _parser;
     private readonly IDiagnosticsSink? _diag;
-    private readonly GameConfig? _config;
-    private readonly ILogStreamDriver? _driver;
     private readonly object _lock = new();
-    private readonly object _seedLock = new();
-    private bool _seedAttempted;
     private string? _currentArea;
-    private ILogSubscription? _subscription;
 
     private const string DiagCategory = "GameState.Area";
 
-    /// <param name="config">Optional. When supplied, the tracker owns its own
-    /// one-shot pre-login-preamble seed (lazily, on the first
-    /// <see cref="CurrentArea"/> read or <see cref="Observe(string,DateTime)"/>)
-    /// — consumers no longer trigger <see cref="SeedFromLog"/>. Null in tests
-    /// that drive state directly.</param>
-    /// <param name="driver">Optional L1 subscription driver. When supplied,
-    /// <see cref="ExecuteAsync"/> subscribes to the L0.5 system-signal pipe
-    /// and self-feeds <see cref="SystemSignalKind.AreaLoading"/> envelopes
-    /// (#556 Phase 2). Null in tests that drive state directly via
-    /// <see cref="Observe(string,DateTime)"/>.</param>
     public PlayerAreaTracker(
         AreaTransitionParser parser,
-        IDiagnosticsSink? diag = null,
-        GameConfig? config = null,
-        ILogStreamDriver? driver = null)
+        IDiagnosticsSink? diag = null)
     {
-        _parser = parser;
+        _parser = parser ?? throw new ArgumentNullException(nameof(parser));
         _diag = diag;
-        _config = config;
-        _driver = driver;
     }
 
-    /// <summary>
-    /// Latest area key parsed from a <c>LOADING LEVEL Area*</c> line, or
-    /// <c>null</c> if the player is at character-select / disconnected /
-    /// before the first observed transition. Consumers should treat
-    /// <c>null</c> as "current area is unknown" — chest commits during a
-    /// null-area window persist with <c>Area = null</c> and self-heal on
-    /// the next portal.
-    /// </summary>
+    /// <inheritdoc/>
     public string? CurrentArea
     {
-        get { EnsureSeeded(); lock (_lock) return _currentArea; }
+        get { lock (_lock) return _currentArea; }
+    }
+
+    /// <inheritdoc/>
+    public event EventHandler<PlayerAreaChanged>? AreaChanged;
+
+    /// <summary>
+    /// Apply one area-loading frame to internal state. Returns a single
+    /// <see cref="PlayerAreaChanged"/> when the frame's
+    /// <see cref="AreaLoadingFrame.AreaKey"/> differs from the prior value;
+    /// empty otherwise. Identical-area re-emits (zone replay) are no-ops, so
+    /// consumers stay quiet through the L1 backlog drain. The clock parameter
+    /// is unused — the change event carries the frame's own timestamp so the
+    /// state derivation stays replay-deterministic over the source stream
+    /// (principle 5 + principle 13).
+    /// </summary>
+    public IReadOnlyList<IChangeEvent> Apply(Frame<AreaLoadingFrame> frame, IWorldClock clock)
+    {
+        _ = clock;
+        return ApplyTransition(frame.Payload.AreaKey, frame.Timestamp);
     }
 
     /// <summary>
     /// Feed one log line through the area parser. Idempotent for unrelated
     /// lines (the parser's substring fast-path returns null without touching
-    /// state).
+    /// state). Legacy push-in for the Gandalf/Legolas bridges; new consumers
+    /// should subscribe to <see cref="AreaChanged"/> or the world bus instead.
     /// </summary>
     public void Observe(string line, DateTime timestamp)
     {
-        EnsureSeeded();
-        Apply(line, timestamp);
-    }
-
-    /// <summary>
-    /// Hosted-service entry point (#556 Phase 2). When an
-    /// <see cref="ILogStreamDriver"/> is configured, subscribes to L0.5's
-    /// system-signal pipe and folds every
-    /// <see cref="SystemSignalKind.AreaLoading"/> envelope into the shared
-    /// area state. When no driver is supplied (tests that drive state
-    /// directly), this method returns immediately — the
-    /// <see cref="Observe(string,DateTime)"/> path remains the source of
-    /// truth for those scenarios.
-    ///
-    /// <para>Per-envelope failures are contained by the L1 driver (the
-    /// <c>InlineBridge</c> per-handler try/catch + degraded-state SM); the
-    /// handler body itself is intentionally tiny and unlikely to throw —
-    /// <see cref="Apply"/> swallows non-matching lines via the parser's
-    /// substring fast-path.</para>
-    /// </summary>
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        if (_driver is null)
-        {
-            // Test path / no L1 driver — nothing to subscribe to. Park so
-            // the host's StartAsync await unblocks cleanly; the host will
-            // cancel on shutdown and this method unwinds.
-            try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
-            catch (OperationCanceledException) { }
-            return;
-        }
-
-        _diag?.Info(DiagCategory,
-            "Subscribing to L1 driver (SystemSignal pipe) for AreaLoading self-feed");
-
-        // Lazy-seed before the live stream starts so the reverse-scan
-        // catches a LOADING LEVEL line that sits upstream of the L1
-        // replay window. Mirrors the pre-#556 CurrentArea-read self-seed,
-        // just driven once at startup.
-        EnsureSeeded();
-
-        _subscription = _driver.Subscribe<SystemSignalLogLine>(
-            envelope =>
-            {
-                var s = envelope.Payload;
-                // The unified pipe (and the typed system pipe) carries the
-                // full SystemSignalKind set; ignore everything except
-                // AreaLoading. PG only emits one transition per actual
-                // portal, so this filter is cheap.
-                if (s.Kind == SystemSignalKind.AreaLoading)
-                {
-                    // SystemSignalLogLine.Data is the "LOADING LEVEL <area>"
-                    // tail (with the [ts] prefix eaten by L0.5). The
-                    // parser's substring guard handles unrelated content
-                    // as no-op, so feeding raw Data is safe.
-                    Apply(s.Data, s.Timestamp.UtcDateTime);
-                }
-                return ValueTask.CompletedTask;
-            },
-            new LogSubscriptionOptions
-            {
-                ReplayMode = ReplayMode.FromSessionStart,
-                DeliveryContext = DeliveryContext.Inline,
-                DiagnosticCategory = DiagCategory,
-            });
-
-        // Park until host stop; the L1 subscription runs its own pump on
-        // a Task.Run, so ExecuteAsync's only job after Subscribe is to
-        // dispose the handle on shutdown.
-        try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
-        catch (OperationCanceledException) { /* expected on host stop */ }
-        finally
-        {
-            _subscription?.Dispose();
-            _subscription = null;
-        }
-    }
-
-    public override void Dispose()
-    {
-        _subscription?.Dispose();
-        _subscription = null;
-        base.Dispose();
-    }
-
-    private void Apply(string line, DateTime timestamp)
-    {
         if (_parser.TryParse(line, timestamp) is AreaTransitionEvent evt)
         {
-            lock (_lock)
-            {
-                if (_currentArea != evt.AreaKey)
-                {
-                    _currentArea = evt.AreaKey;
-                    _diag?.Trace("GameState.Area",
-                        $"Player area transition → {evt.AreaKey ?? "(none)"} at {timestamp:O}");
-                }
-            }
+            ApplyTransition(evt.AreaKey, new DateTimeOffset(
+                DateTime.SpecifyKind(timestamp, DateTimeKind.Utc)));
         }
     }
 
     /// <summary>
-    /// Idempotent, owned, one-shot pre-login-preamble seed. Runs at most once
-    /// per instance (lazily, on the first <see cref="CurrentArea"/> read or
-    /// <see cref="Observe(string,DateTime)"/>), so consumers never trigger the
-    /// scan and a new consumer can't forget to. With no log path / no
-    /// <c>LOADING LEVEL</c> found, "area unknown" is surfaced once rather than
-    /// being a silent null. See mithril#514.
+    /// Shared mutation path. Returns the change-event list both call sites
+    /// honour: the folder hands it to the world for bus publication; the
+    /// legacy <see cref="Observe"/> path drops it (the legacy callers
+    /// pre-date the bus and only observe state via <see cref="CurrentArea"/>).
+    /// Either way the <see cref="AreaChanged"/> event fires for any
+    /// subscriber that has attached to the dual-surface event channel.
     /// </summary>
-    private void EnsureSeeded()
+    private IReadOnlyList<IChangeEvent> ApplyTransition(string? areaKey, DateTimeOffset at)
     {
-        lock (_seedLock)
+        PlayerAreaChanged? change = null;
+        lock (_lock)
         {
-            if (_seedAttempted) return;
-            _seedAttempted = true;
+            if (_currentArea == areaKey) return Array.Empty<IChangeEvent>();
+            var previous = _currentArea;
+            _currentArea = areaKey;
+            change = new PlayerAreaChanged(previous, areaKey, at);
+            _diag?.Trace(DiagCategory,
+                $"Player area transition → {areaKey ?? "(none)"} at {at:O}");
         }
-
-        var path = _config?.PlayerLogPath;
-        if (!string.IsNullOrEmpty(path)) ScanForArea(path);
-
-        bool unknown;
-        lock (_lock) unknown = _currentArea is null;
-        if (unknown)
-            _diag?.Info("GameState.Area",
-                "Area unknown after one-shot preamble seed (no LOADING LEVEL " +
-                "found / no log path) — null until the first live transition");
+        RaiseAreaChanged(change);
+        return new IChangeEvent[] { change };
     }
 
-    /// <summary>
-    /// One-shot startup seed. Reads <paramref name="logPath"/> backward in
-    /// chunks looking for the most recent <c>LOADING LEVEL</c> line, parses
-    /// it, and sets <see cref="CurrentArea"/>. No-op if the file is missing
-    /// or no <c>LOADING LEVEL</c> line exists in the scanned region.
-    /// </summary>
-    /// <remarks>
-    /// Scan bound: <see cref="ScanChunkBytes"/> (10 MB, mirrored from
-    /// <see cref="PlayerLogTailReader.SessionScanChunkBytes"/>) per chunk.
-    /// The full file is walked in chunks until the marker is found or the
-    /// start of the file is reached, so the scan is bounded by file size,
-    /// not the chunk constant.
-    /// </remarks>
-    /// <summary>
-    /// Explicit one-shot seed. Retained for tests and any caller that already
-    /// holds the log path; marks the seed attempted so the lazy
-    /// <see cref="EnsureSeeded"/> path won't re-scan. Production consumers do
-    /// <b>not</b> call this — the tracker self-seeds (mithril#514).
-    /// </summary>
-    public void SeedFromLog(string logPath)
+    private void RaiseAreaChanged(PlayerAreaChanged change)
     {
-        lock (_seedLock) _seedAttempted = true;
-        ScanForArea(logPath);
-    }
-
-    private void ScanForArea(string logPath)
-    {
-        if (!File.Exists(logPath)) return;
-
-        var size = new FileInfo(logPath).Length;
-        if (size == 0) return;
-
-        try
+        var handler = AreaChanged;
+        if (handler is null) return;
+        try { handler.Invoke(this, change); }
+        catch (Exception ex)
         {
-            using var fs = new FileStream(
-                logPath, FileMode.Open, FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-
-            var overlap = Marker.Length;
-            var end = size;
-            while (end > 0)
-            {
-                var chunkSize = (int)Math.Min(ScanChunkBytes, end);
-                var scanFrom = end - chunkSize;
-                fs.Seek(scanFrom, SeekOrigin.Begin);
-                var buf = new byte[chunkSize];
-                var read = fs.Read(buf, 0, buf.Length);
-                var text = Encoding.UTF8.GetString(buf, 0, read);
-                var idx = text.LastIndexOf(Marker, StringComparison.Ordinal);
-                if (idx >= 0)
-                {
-                    var lineStart = text.LastIndexOf('\n', idx);
-                    var startInChunk = lineStart < 0 ? 0 : lineStart + 1;
-                    var lineEnd = text.IndexOf('\n', idx);
-                    if (lineEnd < 0) lineEnd = text.Length;
-                    var line = text.Substring(startInChunk, lineEnd - startInChunk).TrimEnd('\r');
-
-                    // Best-effort timestamp. The line itself may carry an
-                    // "[HH:MM:SS]" prefix but PlayerLogTailReader strips it
-                    // before normal parsing; for the seed we only care about
-                    // the AreaKey, not the timestamp, so wall-clock-now is fine.
-                    Apply(line, DateTime.UtcNow);
-                    return;
-                }
-                if (scanFrom == 0) break;
-                end = scanFrom + overlap;
-            }
-        }
-        catch (IOException ex)
-        {
-            _diag?.Warn("GameState.Area", $"SeedFromLog failed: {ex.Message}");
+            _diag?.Warn(DiagCategory, $"AreaChanged subscriber threw: {ex.Message}");
         }
     }
-
-    private const string Marker = "LOADING LEVEL";
-    private const int ScanChunkBytes = 10 * 1024 * 1024;
 }

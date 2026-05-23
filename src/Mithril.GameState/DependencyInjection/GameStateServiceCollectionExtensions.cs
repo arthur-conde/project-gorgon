@@ -1,5 +1,6 @@
 using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
+using Mithril.GameState.Areas.Producers;
 using Mithril.GameState.Celestial;
 using Mithril.GameState.Celestial.Parsing;
 using Mithril.GameState.Chat;
@@ -144,16 +145,36 @@ public static class GameStateServiceCollectionExtensions
 
         // Area tracking is shared live game-state (Gandalf chest-area
         // stamping, Legolas per-area survey calibration, …). One parser,
-        // one tracker, registered once here — consumers inject the tracker.
-        // Self-feeding hosted service since #556 Phase 2 — subscribes to
-        // the L0.5 SystemSignal pipe through the L1 driver and folds
-        // AreaLoading envelopes into CurrentArea. Pin/Weather/Position
-        // still call Observe(raw) until Phase 3 retires that surface;
-        // the double-feed is idempotent under last-writer-wins.
+        // one tracker, registered once here — consumers inject the tracker
+        // (concrete for back-compat) or IPlayerAreaState (new code).
+        //
+        // World-simulator migration (#775): the service is now an
+        // IFolder<AreaLoadingFrame> registered with IPlayerWorld; a sibling
+        // AreaLoadingFrameProducer owns the L1 SystemSignal subscription,
+        // pre-drains a seed frame for the most recent LOADING LEVEL upstream
+        // of L1's session-start anchor, and feeds AreaLoading frames into
+        // the world's merger. The PlayerAreaWorldRegistration hosted
+        // service wires both into the world during the chain's
+        // IHostedService.StartAsync phase, before the trailing
+        // WorldMergerStartHostedService (appended by ShellComposition's
+        // AddMithrilApp — #696 Call 2) calls IWorld.StartMerger and the
+        // merger drain begins.
+        //
+        // The legacy Observe(string, DateTime) push-in stays alive: Legolas's
+        // PlayerLogIngestionService.ApplyAreaIfChanged and Gandalf's
+        // LootIngestionService.Dispatch still feed already-classified lines
+        // inline. The double-feed (live envelope routed through the producer
+        // + the bridge's Observe push-in) is idempotent under last-writer-
+        // wins — both paths converge on the same string-equality state.
+        // Retiring Observe is owed under the #774 follow-on sweep once the
+        // two bridges migrate to the bus event.
         services.AddSingleton<AreaTransitionParser>();
         services
             .AddSingleton<PlayerAreaTracker>()
-            .AddHostedService(sp => sp.GetRequiredService<PlayerAreaTracker>());
+            .AddSingleton<IPlayerAreaState>(sp => sp.GetRequiredService<PlayerAreaTracker>())
+            .AddSingleton<IFolder<AreaLoadingFrame>>(sp => sp.GetRequiredService<PlayerAreaTracker>())
+            .AddSingleton<AreaLoadingFrameProducer>()
+            .AddHostedService<PlayerAreaWorldRegistration>();
 
         // Shared live skill state from Player.log (ProcessLoadSkills /
         // ProcessUpdateSkill) — no character re-export required. Single parser,
@@ -323,6 +344,75 @@ public static class GameStateServiceCollectionExtensions
             .AddHostedService<WordOfPowerViewRegistration>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Hosted service that wires <see cref="PlayerAreaTracker"/> (folder) +
+    /// <see cref="AreaLoadingFrameProducer"/> (producer) into the
+    /// <see cref="IPlayerWorld"/> singleton at host start (#775). Mirrors
+    /// <see cref="PlayerSkillStateWorldRegistration"/>'s shape (the canonical
+    /// Phase 1 template) with one addition: an eager synchronous pre-warm of
+    /// the folder from the producer's reverse-scan seed.
+    ///
+    /// <para><b>Eager pre-warm rationale.</b> Mithril's L1 driver rewinds the
+    /// session-replay window to the most recent <c>ProcessAddPlayer(</c>
+    /// line, which lands ~9 s AFTER the relevant <c>LOADING LEVEL</c> line,
+    /// so a pure-L1 subscription would never see the current area's
+    /// transition. The producer's <c>TryBuildSeedFrame</c> closes that gap
+    /// with a reverse-scan of <c>Player.log</c>. Dispatching the seed via the
+    /// world's merger means the folder's state stays empty until
+    /// <c>WorldMergerStartHostedService</c> (the trailing #696 Call 2 service)
+    /// runs and drains the producer's queue — which is AFTER every other
+    /// hosted service's <c>StartAsync</c>, including Legolas's
+    /// <c>PlayerLogIngestionService</c> whose startup
+    /// <c>ApplyAreaIfChanged</c> needs the area NOW. Pre-warming the folder
+    /// directly inside this registration's <c>StartAsync</c> (which runs
+    /// BEFORE Legolas's per hosted-service registration order) restores the
+    /// pre-#775 synchronous-read semantics: by the time any downstream
+    /// <c>StartAsync</c> reads <see cref="IPlayerAreaState.CurrentArea"/>,
+    /// the folder is hot. The seed is NOT yielded through the producer's
+    /// <c>SubscribeAsync</c> — it would no-op at the folder anyway (Apply on
+    /// the already-current area returns empty) and would arrive only after
+    /// the merger drains, defeating the eager-attach point.</para>
+    /// </summary>
+    private sealed class PlayerAreaWorldRegistration : IHostedService
+    {
+        private readonly IPlayerWorld _world;
+        private readonly PlayerAreaTracker _folder;
+        private readonly AreaLoadingFrameProducer _producer;
+
+        public PlayerAreaWorldRegistration(
+            IPlayerWorld world,
+            PlayerAreaTracker folder,
+            AreaLoadingFrameProducer producer)
+        {
+            _world = world;
+            _folder = folder;
+            _producer = producer;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            // Eager pre-warm: synchronously scan Player.log for the current
+            // area and apply directly to the folder so back-compat
+            // synchronous-read consumers (Legolas's startup
+            // ApplyAreaIfChanged, Gandalf's chest-area stamp, Palantir's
+            // debug refresh) see the right area when THEIR StartAsync runs
+            // later in registration order. The seed frame carries the parsed
+            // [HH:MM:SS] log instant — not wall-clock — so the folder's
+            // state derivation is replay-deterministic over the source
+            // stream (principle 5 + principle 13).
+            if (_producer.TryBuildSeedFrame() is { } seed)
+            {
+                _ = _folder.Apply(seed, _world.Clock);
+            }
+
+            _world.RegisterProducer(_producer);
+            _world.RegisterFolder(_folder);
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>
