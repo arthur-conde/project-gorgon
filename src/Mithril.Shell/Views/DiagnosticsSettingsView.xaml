@@ -49,6 +49,22 @@
                        FontSize="{DynamicResource AppFontSizeHint}" Margin="0,8,0,4"
                        Text="Bind a hotkey to 'Toggle perf-trace recording' under Hotkeys settings to start/stop a session on demand. The status bar shows a red REC dot while a session is active."/>
 
+            <!-- Log capture (#507) — off by default; both toggles cost nothing
+                 unless explicitly enabled for debugging. -->
+            <TextBlock Text="Log capture" Foreground="#88FFFFFF" Margin="0,24,0,4" FontWeight="SemiBold"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8"
+                       Text="Off by default. Turn these on only when actively diagnosing Mithril or capturing data for a bug report — they add per-line cost to the log tail and grow mithril-*.json files quickly under busy PG sessions."/>
+
+            <CheckBox Content="Mirror Player.log and ChatLog lines into Mithril diagnostics"
+                      IsChecked="{Binding Settings.MirrorRawLogLinesToDiagnostics, Mode=TwoWay}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,4"
+                      ToolTip="When on, every raw line from Player.log and ChatLog is mirrored into the in-app Diagnostics view AND the rolling mithril-*.json file at Verbose. Useful for correlating Mithril warnings with the exact source line and for ad-hoc mithril-logs MCP queries. Adds DiagnosticsSink fanout + unbuffered Verbose write per line on the log-tail poll thread (#507) — leave off in normal operation."/>
+            <CheckBox Content="Capture raw line on each L0.5-classified record (Raw field)"
+                      IsChecked="{Binding Settings.CaptureRawPlayerLogLines, Mode=TwoWay}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,16"
+                      ToolTip="When on, the L0.5 classifier fills the Raw field on every classified LocalPlayer/Combat/System line with the exact source text — useful for diagnosing a parse or interpretation failure where you want the original line co-located on the failing datum. When off, Raw is null and no per-line string allocation occurs. Independent of the diagnostics mirror above."/>
+
             <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}"
                        Text="Changes preview live. Settings persist on shutdown."/>

@@ -19,6 +19,9 @@ public sealed class ChatLogStream : IChatLogStream, IDisposable
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
     private readonly ISessionAnchor? _sessionAnchor;
+    // Per-line diagnostics-mirror gate — twin of PlayerLogStream._mirrorAccessor.
+    // See its comment for the #507 rationale.
+    private readonly Func<bool>? _mirrorAccessor;
     private readonly object _gate = new();
     private readonly List<Channel<RawLogLine>> _subs = new();
     private CancellationTokenSource? _runCts;
@@ -28,12 +31,14 @@ public sealed class ChatLogStream : IChatLogStream, IDisposable
         GameConfig config,
         IDiagnosticsSink? diag = null,
         TimeProvider? time = null,
-        ISessionAnchor? sessionAnchor = null)
+        ISessionAnchor? sessionAnchor = null,
+        Func<bool>? mirrorAccessor = null)
     {
         _config = config;
         _diag = diag;
         _time = time ?? TimeProvider.System;
         _sessionAnchor = sessionAnchor;
+        _mirrorAccessor = mirrorAccessor;
         _config.PropertyChanged += OnConfigChanged;
     }
 
@@ -142,9 +147,10 @@ public sealed class ChatLogStream : IChatLogStream, IDisposable
         if (lines.Count == 0) return;
         Channel<RawLogLine>[] snapshot;
         lock (_gate) { snapshot = _subs.ToArray(); }
+        var mirror = _mirrorAccessor?.Invoke() ?? false;
         foreach (var line in lines)
         {
-            _diag?.Trace("ChatLog", line.Line);
+            if (mirror) _diag?.Trace("ChatLog", line.Line);
             foreach (var ch in snapshot) ch.Writer.TryWrite(line);
         }
     }
