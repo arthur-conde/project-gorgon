@@ -21,13 +21,17 @@ public sealed class PlayerLogStream : IPlayerLogStream, IDisposable
     private readonly TimeProvider _time;
     private readonly IDiagnosticsSink? _diag;
     private readonly ISessionAnchor? _sessionAnchor;
-    // Per-line diagnostics-mirror gate. When the accessor is null OR returns
-    // false, the per-line _diag?.Trace call in Publish is skipped entirely
-    // — no DiagnosticsSink fanout, no Serilog Verbose write. Default OFF
-    // closes #507's hot-path cost; the shell wires the accessor to
+    // Diagnostics-mirror gate. When the accessor is null OR returns false,
+    // the per-line _diag?.Trace call in Publish is skipped entirely — no
+    // DiagnosticsSink fanout, no Serilog Verbose write. Default OFF closes
+    // #507's hot-path cost; the shell wires the accessor to
     // ShellSettings.MirrorRawLogLinesToDiagnostics so users can flip it on
-    // when actively debugging. Sampled per-line (cheap delegate invocation)
-    // so flipping the setting takes effect forward without a restart.
+    // when actively debugging. Sampled ONCE per Publish batch (not per
+    // line) — every line in a given batch sees the same value. Flipping
+    // the setting therefore takes effect on the next batch (one poll-tick
+    // boundary, sub-second under default PollIntervalSeconds), not the
+    // next line — a deliberate choice for consistent batch semantics and
+    // to keep the hot path one branch-on-a-cached-bool per line.
     private readonly Func<bool>? _mirrorAccessor;
     private readonly object _gate = new();
     private readonly List<Channel<RawLogLine>> _subs = new();
