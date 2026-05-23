@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using FluentAssertions;
 using Mithril.GameReports;
 using Mithril.GameState.Inventory;
@@ -701,5 +702,178 @@ public sealed class InventoryViewTests
         added[0].Payload.StackSize.Should().Be(42,
             because: "the storage-changed event re-ran LoadExportSeeds and populated the seed map");
         added[0].Payload.SizeConfirmed.Should().BeTrue();
+    }
+
+    // ── Bindable Items surface (issue #729) ─────────────────────────────
+    //
+    // The third read shape of the view layer alongside the typed Bus (React)
+    // and TryResolve/TryGetStackSize (Query): a WPF-friendly bindable list
+    // whose rows expose per-property INotifyPropertyChanged and whose
+    // adds/removes propagate via INotifyCollectionChanged. Used by Palantir's
+    // LiveInventoryViewModel post-#726 instead of re-mirroring the event
+    // stream into a local ObservableCollection.
+
+    [Fact]
+    public void Items_Player_Added_propagates_as_collection_changed_Add()
+    {
+        var (view, pw, _, _) = Build();
+        var changes = new List<NotifyCollectionChangedEventArgs>();
+        view.Items.CollectionChanged += (_, e) => changes.Add(e);
+
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+
+        view.Items.Should().ContainSingle();
+        view.Items[0].InstanceId.Should().Be(42L);
+        view.Items[0].InternalName.Should().Be("Moonstone");
+        view.Items[0].StackSize.Should().Be(1);
+        view.Items[0].SizeConfirmed.Should().BeFalse("no chat correlation yet — unconfirmed default-1");
+        view.Items[0].IsDeleted.Should().BeFalse();
+
+        changes.Should().ContainSingle();
+        changes[0].Action.Should().Be(NotifyCollectionChangedAction.Add);
+        changes[0].NewItems!.Cast<InventoryItem>().Single().InstanceId.Should().Be(42L);
+    }
+
+    [Fact]
+    public void Items_Player_StackUpdated_fires_per_row_PropertyChanged_no_collection_change()
+    {
+        var (view, pw, _, _) = Build();
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        var row = view.Items.Single();
+
+        var propertyChanges = new List<string>();
+        row.PropertyChanged += (_, e) => propertyChanges.Add(e.PropertyName ?? "");
+        var collectionChanges = new List<NotifyCollectionChangedEventArgs>();
+        view.Items.CollectionChanged += (_, e) => collectionChanges.Add(e);
+
+        PlayerStackUpdate(pw, 42, "Moonstone", 13, Ts(2));
+
+        row.StackSize.Should().Be(13);
+        row.SizeConfirmed.Should().BeTrue("StackUpdate is authoritative");
+        propertyChanges.Should().Contain(nameof(InventoryItem.StackSize));
+        propertyChanges.Should().Contain(nameof(InventoryItem.SizeConfirmed));
+        collectionChanges.Should().BeEmpty("stack-size update doesn't add/remove rows");
+    }
+
+    [Fact]
+    public void Items_chat_correlation_flips_SizeConfirmed_via_PropertyChanged_on_existing_row()
+    {
+        // The flagship "third surface" case: Player.log Add lands first with
+        // SizeConfirmed=false (unconfirmed default-1); a later chat status
+        // arrives within TTL and back-fills the size. The bindable row must
+        // see both StackSize and SizeConfirmed flip — no collection change,
+        // same row identity throughout.
+        var (view, pw, cw, _) = Build();
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        var row = view.Items.Single();
+        row.SizeConfirmed.Should().BeFalse("baseline: chat hasn't paired yet");
+
+        var propertyChanges = new List<string>();
+        row.PropertyChanged += (_, e) => propertyChanges.Add(e.PropertyName ?? "");
+        var collectionChanges = new List<NotifyCollectionChangedEventArgs>();
+        view.Items.CollectionChanged += (_, e) => collectionChanges.Add(e);
+
+        ChatObserved(cw, "Moonstone", 7, Ts(2));
+
+        row.StackSize.Should().Be(7);
+        row.SizeConfirmed.Should().BeTrue();
+        propertyChanges.Should().Contain(nameof(InventoryItem.SizeConfirmed));
+        propertyChanges.Should().Contain(nameof(InventoryItem.StackSize));
+        collectionChanges.Should().BeEmpty("flip happens in-place on the existing row");
+        view.Items.Should().ContainSingle("row identity preserved across correlation");
+    }
+
+    [Fact]
+    public void Items_Player_Removed_soft_deletes_row_via_PropertyChanged_collection_membership_preserved()
+    {
+        // Soft-delete semantic (documented in InventoryItem.IsDeleted): the
+        // row stays in Items with IsDeleted = true. Matches the view's _map
+        // retention (Arwen's gift-attribution path needs the pre-delete name
+        // + size via TryResolve / TryGetStackSize) and Palantir's pre-#729
+        // row-greying UI behaviour.
+        var (view, pw, _, _) = Build();
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        var row = view.Items.Single();
+        row.IsDeleted.Should().BeFalse();
+
+        var propertyChanges = new List<string>();
+        row.PropertyChanged += (_, e) => propertyChanges.Add(e.PropertyName ?? "");
+        var collectionChanges = new List<NotifyCollectionChangedEventArgs>();
+        view.Items.CollectionChanged += (_, e) => collectionChanges.Add(e);
+
+        PlayerRemove(pw, 42, "Moonstone", Ts(2));
+
+        row.IsDeleted.Should().BeTrue("soft-delete — row remains in Items");
+        propertyChanges.Should().Contain(nameof(InventoryItem.IsDeleted));
+        collectionChanges.Should().BeEmpty(
+            "soft-delete must NOT remove the row from Items; per-row IsDeleted flip is the signal");
+        view.Items.Should().ContainSingle("soft-delete preserves membership");
+        view.Items[0].Should().BeSameAs(row);
+    }
+
+    [Fact]
+    public void Items_chat_then_Player_added_uses_confirmed_stack_size_on_row()
+    {
+        // Inverse arrival order: chat arrives first (slot stored in _pendingChat),
+        // Player.log Add consumes it at construction → row is born already
+        // confirmed. No StackChanged fires (the size was correct on Add); the
+        // bindable row reflects the confirmed value directly.
+        var (view, pw, cw, _) = Build();
+        ChatObserved(cw, "Moonstone", 5, Ts(1));
+        PlayerAdd(pw, 42, "Moonstone", Ts(2));
+
+        view.Items.Should().ContainSingle();
+        view.Items[0].StackSize.Should().Be(5);
+        view.Items[0].SizeConfirmed.Should().BeTrue("chat slot consumed at Add time");
+    }
+
+    [Fact]
+    public void Items_non_stackable_item_is_confirmed_at_add()
+    {
+        var (view, pw, _, _) = Build();
+        PlayerAdd(pw, 99, "RingOfPower", Ts(1));
+
+        view.Items.Should().ContainSingle();
+        view.Items[0].StackSize.Should().Be(1);
+        view.Items[0].SizeConfirmed.Should().BeTrue("MaxStackSize == 1");
+        view.Items[0].IsDeleted.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Items_re_add_of_previously_deleted_id_reuses_row_identity()
+    {
+        // Rare path — PG normally allocates a fresh id rather than recycling.
+        // But the legacy LiveInventoryViewModel.Upsert handles it as an
+        // in-place reset, and the view's _map keeps the entry under the same
+        // key. The bindable surface must do the same: same row, IsDeleted
+        // flipped back to false, no duplicate add.
+        var (view, pw, _, _) = Build();
+        PlayerAdd(pw, 42, "Moonstone", Ts(1));
+        PlayerRemove(pw, 42, "Moonstone", Ts(2));
+        var row = view.Items.Single();
+        row.IsDeleted.Should().BeTrue();
+
+        var collectionChanges = new List<NotifyCollectionChangedEventArgs>();
+        view.Items.CollectionChanged += (_, e) => collectionChanges.Add(e);
+
+        PlayerAdd(pw, 42, "Moonstone", Ts(3));
+
+        view.Items.Should().ContainSingle("re-add reuses the soft-deleted row identity");
+        view.Items[0].Should().BeSameAs(row);
+        row.IsDeleted.Should().BeFalse("re-add clears the soft-delete marker");
+        collectionChanges.Should().BeEmpty("no new row added; existing row reset in place");
+    }
+
+    [Fact]
+    public void Items_ItemsSyncRoot_is_the_view_mutation_lock()
+    {
+        // The view exposes its internal _stateLock as ItemsSyncRoot so WPF
+        // consumers can pass it to BindingOperations.EnableCollectionSynchronization.
+        // We can't easily test the BindingOperations side from a unit test, but
+        // we can pin that the property returns a stable non-null reference
+        // (calling it twice yields the same object identity).
+        var (view, _, _, _) = Build();
+        view.ItemsSyncRoot.Should().NotBeNull();
+        view.ItemsSyncRoot.Should().BeSameAs(view.ItemsSyncRoot);
     }
 }

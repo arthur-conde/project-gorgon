@@ -1,6 +1,7 @@
 using System.IO;
 using Mithril.GameReports;
 using Mithril.GameState.Sessions;
+using Mithril.Shared.Collections;
 using Mithril.Shared.Correlation;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
@@ -120,13 +121,22 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
     private readonly Dictionary<string, int> _seededStackSizes = new(StringComparer.Ordinal);
 
     // _stateLock guards _map, _shimHandlers, _eventLog, _eventLogOverflowWarned,
-    // _seededStackSizes. The correlators have their own internal locks; we still
-    // take _stateLock around correlator calls so the drain-then-mutate-_map
+    // _seededStackSizes, _items. The correlators have their own internal locks;
+    // we still take _stateLock around correlator calls so the drain-then-mutate-_map
     // sequence inside each handler is atomic. Two independent world-bus
     // subscriptions dispatch on different threads, so _stateLock is also
     // load-bearing for cross-source serialization.
+    //
+    // _items is the WPF "Bind" surface (#729). Per-row InventoryItem state
+    // (StackSize / SizeConfirmed / IsDeleted) mutates via the same code paths
+    // that update _map; collection add/remove fires via _items's INotifyCollectionChanged.
+    // Soft-delete: Removed entries stay in _items with IsDeleted = true (matching
+    // _map's retention for Arwen's gift-attribution path). WPF consumers binding
+    // from a non-dispatcher thread call BindingOperations.EnableCollectionSynchronization
+    // on (_items, _stateLock).
     private readonly object _stateLock = new();
     private readonly Dictionary<long, MapEntry> _map = new();
+    private readonly ObservableInventoryItems _items = new();
 
     // Legacy union-shaped subscriber list — same atomic-replay shape the
     // pre-#602 service offered (#585 contract). The six pre-#602 consumers
@@ -142,7 +152,13 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
     // One-shot SinceSubscribe coercion diag — same as the pre-split service.
     private static int s_sinceSubscribeDiagFired;
 
-    private readonly record struct MapEntry(string InternalName, DateTime Timestamp, bool Deleted, int StackSize, bool SizeConfirmed);
+    // Item is the per-instance row exposed via the bindable _items surface.
+    // The view drives its mutable bits (StackSize / SizeConfirmed / IsDeleted)
+    // in lockstep with MapEntry's scalar fields so the two surfaces never
+    // drift; the duplicate state is the price of giving WPF a row identity
+    // that survives PropertyChanged notifications. MapEntry stays a struct so
+    // dictionary mutations don't allocate.
+    private readonly record struct MapEntry(string InternalName, DateTime Timestamp, bool Deleted, int StackSize, bool SizeConfirmed, InventoryItem Item);
 
     /// <summary>
     /// Correlator scope key: <c>(Server, Character, InternalName)</c>. The
@@ -180,6 +196,10 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
     }
 
     public IWorldEventBus Bus => _bus;
+
+    public IReadOnlyObservableCollection<InventoryItem> Items => _items;
+
+    public object ItemsSyncRoot => _stateLock;
 
     /// <summary>
     /// The view's derived clock — <c>Now</c> = <c>max(lastPlayerFrameTs,
@@ -315,8 +335,26 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
                 _pendingAdd.Add(key, evt.InstanceId);
             }
 
+            // Re-add of a previously-deleted instance id is rare (PG would
+            // normally allocate a fresh id) but the legacy LiveInventoryViewModel
+            // already handles it as an in-place reset. Reuse the existing row so
+            // the bindable surface tracks the same identity instead of leaving
+            // an orphan row + adding a duplicate.
+            InventoryItem newItem;
+            if (_map.TryGetValue(evt.InstanceId, out var reAddExisting))
+            {
+                newItem = reAddExisting.Item;
+                newItem.StackSize = size;
+                newItem.SizeConfirmed = confirmed;
+                newItem.IsDeleted = false;
+            }
+            else
+            {
+                newItem = new InventoryItem(evt.InstanceId, evt.InternalName, size, confirmed);
+                _items.AddItem(newItem);
+            }
             _map[evt.InstanceId] = new MapEntry(
-                evt.InternalName, evt.Timestamp, Deleted: false, StackSize: size, SizeConfirmed: confirmed);
+                evt.InternalName, evt.Timestamp, Deleted: false, StackSize: size, SizeConfirmed: confirmed, Item: newItem);
             var sourceTag = nonStackable ? " (non-stackable)"
                 : seeded ? " (export-seeded)"
                 : confirmed ? " (chat)"
@@ -342,6 +380,7 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
             }
             if (entry.Deleted) return;
             _map[evt.InstanceId] = entry with { Deleted = true, Timestamp = evt.Timestamp };
+            entry.Item.IsDeleted = true;
             _diag?.Trace("GameState.Inventory.View",
                 $"Remove id={evt.InstanceId} name={entry.InternalName} (retained)");
             FireRemoved(evt.InstanceId, entry.InternalName, evt.Timestamp, entry.StackSize, entry.SizeConfirmed);
@@ -364,6 +403,8 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
                 Timestamp = evt.Timestamp,
                 SizeConfirmed = true,
             };
+            entry.Item.StackSize = evt.StackSize;
+            entry.Item.SizeConfirmed = true;
             _diag?.Trace("GameState.Inventory.View",
                 $"StackUpdate id={evt.InstanceId} name={entry.InternalName} size={evt.StackSize}");
             FireStackChanged(evt.InstanceId, entry.InternalName, evt.Timestamp, evt.StackSize, sizeConfirmed: true);
@@ -421,6 +462,8 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
                         Timestamp = evt.Timestamp,
                         SizeConfirmed = true,
                     };
+                    entry.Item.StackSize = evt.Count;
+                    entry.Item.SizeConfirmed = true;
                     _diag?.Trace("GameState.Inventory.View",
                         $"Chat → Add id={instanceId} name={internalName} size={evt.Count}");
                     FireStackChanged(instanceId, internalName, evt.Timestamp, evt.Count, sizeConfirmed: true);
@@ -537,6 +580,8 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
                 if (itemEntry.MaxStackSize != 1) continue;
 
                 _map[id] = entry with { StackSize = 1, Timestamp = nowNs, SizeConfirmed = true };
+                entry.Item.StackSize = 1;
+                entry.Item.SizeConfirmed = true;
                 FireStackChanged(id, entry.InternalName, nowNs, 1, sizeConfirmed: true);
                 nonStackConfirmed++;
             }
@@ -572,6 +617,8 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
 
                 var entry = _map[live.Id];
                 _map[live.Id] = entry with { StackSize = exportSize, Timestamp = nowNs, SizeConfirmed = true };
+                entry.Item.StackSize = exportSize;
+                entry.Item.SizeConfirmed = true;
                 FireStackChanged(live.Id, name, nowNs, exportSize, sizeConfirmed: true);
                 reconciled++;
             }

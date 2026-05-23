@@ -1,3 +1,4 @@
+using Mithril.Shared.Collections;
 using Mithril.WorldSim;
 
 namespace Mithril.GameState.Inventory;
@@ -34,6 +35,38 @@ public interface IInventoryView
     /// canonical post-migration surface.
     /// </summary>
     IWorldEventBus Bus { get; }
+
+    /// <summary>
+    /// Bindable live view of the currently-tracked inventory state — the
+    /// third read surface alongside the typed event <see cref="Bus"/> (React)
+    /// and <see cref="TryResolve"/> / <see cref="TryGetStackSize"/>
+    /// (Query). Per-item state changes (<c>StackSize</c>, <c>SizeConfirmed</c>,
+    /// <c>IsDeleted</c>) propagate as <c>INotifyPropertyChanged</c> on each
+    /// row; add of a new instance id propagates as
+    /// <c>NotifyCollectionChangedAction.Add</c>. Removals follow the
+    /// <b>soft-delete</b> contract — rows stay in the collection with
+    /// <see cref="InventoryItem.IsDeleted"/> = <c>true</c>, matching the
+    /// view's existing <c>_map</c> retention (Arwen's gift-attribution path
+    /// needs pre-delete state). The "Bind" channel of the three-channel
+    /// state-service contract from <c>docs/module-charters.md</c>.
+    ///
+    /// <para><b>Threading.</b> Mutations fire under the view's internal
+    /// <see cref="ItemsSyncRoot"/> on whatever thread originated the
+    /// underlying world bus frame (Player.log L1 dispatch or chat dispatch).
+    /// WPF consumers binding from a non-dispatcher thread MUST call
+    /// <c>BindingOperations.EnableCollectionSynchronization(view.Items,
+    /// view.ItemsSyncRoot)</c> once at bind time so XAML notifications
+    /// marshal correctly across threads.</para>
+    /// </summary>
+    IReadOnlyObservableCollection<InventoryItem> Items { get; }
+
+    /// <summary>
+    /// Lock the view holds while mutating <see cref="Items"/> + firing
+    /// per-row notifications. Passed to
+    /// <c>BindingOperations.EnableCollectionSynchronization</c> by WPF
+    /// consumers binding from a non-dispatcher thread.
+    /// </summary>
+    object ItemsSyncRoot { get; }
 
     /// <summary>
     /// Resolve an instance id to its <c>InternalName</c> via the PlayerWorld
