@@ -1,12 +1,14 @@
 using Mithril.GameState.Inventory;
-using Mithril.Shared.Logging;
 
 namespace Arwen.Tests;
 
 /// <summary>
 /// Tests seed the map via <see cref="Add"/> to mirror what the real
-/// <c>InventoryService</c> would learn from <c>ProcessAddItem</c> and the
-/// chat-correlation / <c>UpdateItemCode</c> paths.
+/// <see cref="InventoryView"/> would learn from <c>ProcessAddItem</c> and the
+/// chat-correlation / <c>UpdateItemCode</c> paths. Implements the Query-only
+/// <see cref="IInventoryService"/> contract the post-#659
+/// <c>CalibrationService</c> still consumes for
+/// <c>TryResolve</c> / <c>TryGetStackSize</c>.
 /// </summary>
 internal sealed class FakeInventory : IInventoryService
 {
@@ -27,14 +29,5 @@ internal sealed class FakeInventory : IInventoryService
         }
         stackSize = 0;
         return false;
-    }
-    public IDisposable Subscribe(
-        Action<InventoryEvent> handler,
-        ReplayMode replay = ReplayMode.FromSessionStart) => NoopSubscription.Instance;
-
-    private sealed class NoopSubscription : IDisposable
-    {
-        public static readonly NoopSubscription Instance = new();
-        public void Dispose() { }
     }
 }

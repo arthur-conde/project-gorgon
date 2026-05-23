@@ -50,7 +50,7 @@ namespace Samwise.State;
 /// <see cref="GardenStateMachine"/> never reads <c>StackSize</c> or
 /// <c>SizeConfirmed</c>, never composes Player.log adds with chat
 /// <c>[Status] X xN added</c> observations, and the pre-migration handler
-/// explicitly dropped <see cref="InventoryEventKind.StackChanged"/> events.
+/// explicitly dropped the union shim's StackChanged events.
 /// Per the principle 4 single-world-direct exit
 /// (<c>docs/world-simulator.md</c> §"Views can compose across all three
 /// categories"), we subscribe directly to
@@ -60,17 +60,17 @@ namespace Samwise.State;
 /// after its own principle-4 audit.</para>
 ///
 /// <para><b>Replay-on-subscribe is unnecessary under Call 1 + Call 2.</b> The
-/// shim's late-attach atomic-replay contract (#585, inherited by
-/// <see cref="IInventoryView"/> post-#602) guarded against frames published
-/// before the subscriber attached. Under the eager-always Call 1 contract
-/// (#695 / PR #705) Samwise's subscriptions attach inside <see cref="StartAsync"/>
-/// before the trailing <c>WorldMergerStartHostedService</c> from Call 2
-/// (#696 / PR #702) begins draining frames, so no frames can have been
-/// dispatched by the time the bus subscription is live. The three-surface
-/// view contract (<c>docs/world-simulator.md</c> §"Three-surface contract for
-/// views") explicitly omits a replay-on-subscribe primitive for the same
-/// reason. The legacy <c>SubscribeAfterSeedAdd_StillResolvesPlant</c>
-/// regression's race is by-construction eliminated here.</para>
+/// retired shim's late-attach atomic-replay contract (#585; the shim itself
+/// retired in #659) guarded against frames published before the subscriber
+/// attached. Under the eager-always Call 1 contract (#695 / PR #705) Samwise's
+/// subscriptions attach inside <see cref="StartAsync"/> before the trailing
+/// <c>WorldMergerStartHostedService</c> from Call 2 (#696 / PR #702) begins
+/// draining frames, so no frames can have been dispatched by the time the bus
+/// subscription is live. The three-surface view contract
+/// (<c>docs/world-simulator.md</c> §"Three-surface contract for views")
+/// explicitly omits a replay-on-subscribe primitive for the same reason. The
+/// legacy <c>SubscribeAfterSeedAdd_StillResolvesPlant</c> regression's race
+/// is by-construction eliminated here.</para>
 ///
 /// <para><b>Containment retired.</b> The pre-L1 <c>ThrottledWarn</c> field,
 /// ctor init, and per-message catch around the parse-and-Apply switch are

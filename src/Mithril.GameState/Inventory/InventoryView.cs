@@ -4,7 +4,6 @@ using Mithril.GameState.Sessions;
 using Mithril.Shared.Collections;
 using Mithril.Shared.Correlation;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
 using Mithril.WorldSim;
 using Mithril.WorldSim.Chat;
@@ -43,19 +42,27 @@ namespace Mithril.GameState.Inventory;
 /// service used <c>TimeProvider.System</c> for the same gate, breaking
 /// determinism under replay.)</para>
 ///
-/// <para><b>Two consumer surfaces.</b>
+/// <para><b>Three consumer surfaces (per the React / Query / Bind taxonomy
+/// in <c>docs/module-charters.md</c>).</b>
 /// <list type="bullet">
-///   <item><b>Typed bus</b> — the canonical post-migration surface. New code
-///   subscribes via <c>view.Bus.Subscribe&lt;InventoryItemAdded&gt;(...)</c>
-///   etc.</item>
-///   <item><b>Legacy union-shaped <c>Subscribe(Action&lt;InventoryEvent&gt;)</c></b>
-///   — preserved for the six pre-#602 consumers (Arwen, Samwise, Palantir,
-///   Legolas, Saruman, Motherlode). The view owns its own event log + handler
-///   list (replacing what <c>InventoryService</c> previously owned), so the
-///   late-subscribe atomic-replay contract (#585) survives unchanged. Migration
-///   of each consumer to the typed bus is tracked in #659.</item>
+///   <item><b>React</b> — typed-frame bus. Subscribers attach via
+///   <c>view.Bus.Subscribe&lt;InventoryItemAdded&gt;(…)</c> /
+///   <c>InventoryItemRemoved</c> / <c>InventoryStackChanged</c>.</item>
+///   <item><b>Query</b> — <see cref="TryResolve"/> /
+///   <see cref="TryGetStackSize"/> on both <see cref="IInventoryView"/> and
+///   <see cref="IInventoryService"/>.</item>
+///   <item><b>Bind</b> — <see cref="IInventoryView.Items"/>: a live
+///   <see cref="IReadOnlyObservableCollection{InventoryItem}"/> for WPF
+///   binding. Per-row mutations propagate via
+///   <see cref="System.ComponentModel.INotifyPropertyChanged"/>; soft-delete
+///   contract — removed rows stay in the collection with
+///   <see cref="InventoryItem.IsDeleted"/> = <c>true</c>.</item>
 /// </list>
-/// </para>
+/// The pre-#659 union-shaped <c>Subscribe(Action&lt;InventoryEvent&gt;)</c>
+/// shim retired with that issue once all six pre-#602 consumers migrated to
+/// their post-shim destinations (PlayerWorld-direct for Samwise/Legolas/Motherlode,
+/// the Bind channel for Palantir, the Tier-2 <c>IGiftSignalService</c> for
+/// Arwen, blueprint-only for Saruman).</para>
 ///
 /// <para><b>Stack-size sources of truth.</b> The composed stack size is the
 /// merge of:
@@ -73,12 +80,13 @@ namespace Mithril.GameState.Inventory;
 /// unconfirmed default-1 — distinguishable from a real stack of 1 confirmed
 /// via chat).</para>
 ///
-/// <para><b>What this PR retires.</b> The legacy <c>InventoryService</c>
+/// <para><b>What #602 retired.</b> The pre-split <c>InventoryService</c>
 /// L1-direct subscriptions to <c>LocalPlayerLogLine</c> and <c>RawLogLine</c>
-/// retire entirely. The class survives only as a thin wrapper that resolves
+/// retired entirely. The class survives only as a thin wrapper that resolves
 /// to this view (so the existing <see cref="IInventoryService"/> DI binding
-/// stays valid for the six pre-#602 consumers). FSW reconcile retired per
-/// #612 — <see cref="IGameReportsService.StorageReportsChanged"/> is the sole
+/// stays valid for the remaining Query-channel consumer, Arwen's
+/// <c>CalibrationService</c>). FSW reconcile retired per #612 —
+/// <see cref="IGameReportsService.StorageReportsChanged"/> is the sole
 /// seed-refresh signal.</para>
 /// </summary>
 public sealed class InventoryView : IInventoryView, IInventoryService, IDisposable
@@ -120,12 +128,12 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
     // MaxStackSize > 1.
     private readonly Dictionary<string, int> _seededStackSizes = new(StringComparer.Ordinal);
 
-    // _stateLock guards _map, _shimHandlers, _eventLog, _eventLogOverflowWarned,
-    // _seededStackSizes, _items. The correlators have their own internal locks;
-    // we still take _stateLock around correlator calls so the drain-then-mutate-_map
-    // sequence inside each handler is atomic. Two independent world-bus
-    // subscriptions dispatch on different threads, so _stateLock is also
-    // load-bearing for cross-source serialization.
+    // _stateLock guards _map, _seededStackSizes, _items. The correlators have
+    // their own internal locks; we still take _stateLock around correlator
+    // calls so the drain-then-mutate-_map sequence inside each handler is
+    // atomic. Two independent world-bus subscriptions dispatch on different
+    // threads, so _stateLock is also load-bearing for cross-source
+    // serialization.
     //
     // _items is the WPF "Bind" surface (#729). Per-row InventoryItem state
     // (StackSize / SizeConfirmed / IsDeleted) mutates via the same code paths
@@ -137,20 +145,6 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
     private readonly object _stateLock = new();
     private readonly Dictionary<long, MapEntry> _map = new();
     private readonly ObservableInventoryItems _items = new();
-
-    // Legacy union-shaped subscriber list — same atomic-replay shape the
-    // pre-#602 service offered (#585 contract). The six pre-#602 consumers
-    // subscribe here through the IInventoryService shim; #659 follow-on PRs
-    // migrate each to the typed bus.
-    private readonly List<Action<InventoryEvent>> _shimHandlers = new();
-
-    private const int EventLogSoftCap = 50_000;
-    private const int EventLogTrimChunk = 4_096;
-    private readonly List<InventoryEvent> _eventLog = new();
-    private bool _eventLogOverflowWarned;
-
-    // One-shot SinceSubscribe coercion diag — same as the pre-split service.
-    private static int s_sinceSubscribeDiagFired;
 
     // Item is the per-instance row exposed via the bindable _items surface.
     // The view drives its mutable bits (StackSize / SizeConfirmed / IsDeleted)
@@ -260,29 +254,6 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
         }
         stackSize = 0;
         return false;
-    }
-
-    public IDisposable Subscribe(
-        Action<InventoryEvent> handler,
-        ReplayMode replay = ReplayMode.FromSessionStart)
-    {
-        ArgumentNullException.ThrowIfNull(handler);
-        if (replay == ReplayMode.SinceSubscribe
-            && Interlocked.CompareExchange(ref s_sinceSubscribeDiagFired, 1, 0) == 0)
-        {
-            _diag?.Trace("GameState.Inventory.View",
-                "ReplayMode.SinceSubscribe is not yet implemented; treating as LiveOnly. " +
-                "This diagnostic fires once per process.");
-        }
-        lock (_stateLock)
-        {
-            if (replay == ReplayMode.FromSessionStart)
-            {
-                foreach (var evt in _eventLog) InvokeShim(handler, evt);
-            }
-            _shimHandlers.Add(handler);
-            return new ShimSubscription(this, handler);
-        }
     }
 
     // ── PlayerWorld bus handlers ─────────────────────────────────────────
@@ -640,50 +611,18 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
     {
         var typed = new InventoryItemAdded(instanceId, internalName, size, confirmed, timestamp);
         _bus.Publish(new Frame<InventoryItemAdded>(new DateTimeOffset(timestamp, TimeSpan.Zero), typed));
-        FireShim(new InventoryEvent(InventoryEventKind.Added, instanceId, internalName, timestamp, size, confirmed));
     }
 
     private void FireRemoved(long instanceId, string internalName, DateTime timestamp, int size, bool confirmed)
     {
         var typed = new InventoryItemRemoved(instanceId, internalName, size, confirmed, timestamp);
         _bus.Publish(new Frame<InventoryItemRemoved>(new DateTimeOffset(timestamp, TimeSpan.Zero), typed));
-        FireShim(new InventoryEvent(InventoryEventKind.Deleted, instanceId, internalName, timestamp, size, confirmed));
     }
 
     private void FireStackChanged(long instanceId, string internalName, DateTime timestamp, int size, bool sizeConfirmed)
     {
         var typed = new InventoryStackChanged(instanceId, internalName, size, sizeConfirmed, timestamp);
         _bus.Publish(new Frame<InventoryStackChanged>(new DateTimeOffset(timestamp, TimeSpan.Zero), typed));
-        FireShim(new InventoryEvent(InventoryEventKind.StackChanged, instanceId, internalName, timestamp, size, sizeConfirmed));
-    }
-
-    /// <summary>MUST hold <see cref="_stateLock"/>.</summary>
-    private void FireShim(InventoryEvent evt)
-    {
-        AppendToEventLog(evt);
-        foreach (var h in _shimHandlers) InvokeShim(h, evt);
-    }
-
-    private void AppendToEventLog(InventoryEvent evt)
-    {
-        if (_eventLog.Count >= EventLogSoftCap)
-        {
-            var trim = Math.Min(EventLogTrimChunk, _eventLog.Count);
-            _eventLog.RemoveRange(0, trim);
-            if (!_eventLogOverflowWarned)
-            {
-                _eventLogOverflowWarned = true;
-                _diag?.Warn("GameState.Inventory.View",
-                    $"React-channel event log exceeded soft cap ({EventLogSoftCap}); dropping oldest entries.");
-            }
-        }
-        _eventLog.Add(evt);
-    }
-
-    private void InvokeShim(Action<InventoryEvent> handler, InventoryEvent evt)
-    {
-        try { handler(evt); }
-        catch (Exception ex) { _diag?.Warn("GameState.Inventory.View", $"Subscriber threw: {ex.Message}"); }
     }
 
     /// <summary>
@@ -704,24 +643,5 @@ public sealed class InventoryView : IInventoryView, IInventoryService, IDisposab
         _playerStackUpdatedSub?.Dispose();
         _chatObservedSub?.Dispose();
         _gameReports.StorageReportsChanged -= OnGameReportsStorageChanged;
-    }
-
-    private sealed class ShimSubscription : IDisposable
-    {
-        private InventoryView? _owner;
-        private readonly Action<InventoryEvent> _handler;
-
-        public ShimSubscription(InventoryView owner, Action<InventoryEvent> handler)
-        {
-            _owner = owner;
-            _handler = handler;
-        }
-
-        public void Dispose()
-        {
-            var owner = Interlocked.Exchange(ref _owner, null);
-            if (owner is null) return;
-            lock (owner._stateLock) { owner._shimHandlers.Remove(_handler); }
-        }
     }
 }
