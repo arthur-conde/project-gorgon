@@ -28,8 +28,11 @@ public enum PinSetChange
 /// <see cref="Pin"/> is the single affected pin for
 /// <see cref="PinSetChange.Added"/>/<see cref="PinSetChange.Removed"/> and
 /// <c>null</c> otherwise. <see cref="ObservedAt"/> is the source log line's
-/// UTC instant as a <see cref="DateTimeOffset"/> (Snapshot replays use the
-/// subscribe instant).
+/// UTC instant as a <see cref="DateTimeOffset"/>; for
+/// <see cref="PinSetChange.Snapshot"/> replays it is the most-recent envelope
+/// timestamp the tracker has applied (<see cref="DateTimeOffset.MinValue"/> if
+/// no envelope has been applied yet — in which case the snapshot payload is
+/// also empty).
 /// </summary>
 /// <param name="Kind">Why this notification arose.</param>
 /// <param name="Area">The area key the set belongs to (may be <c>null</c> if
@@ -40,8 +43,11 @@ public enum PinSetChange
 /// <see cref="PinSetChange.AreaChanged"/>.</param>
 /// <param name="Pins">The full current-area set <em>after</em> the change —
 /// an immutable snapshot, safe to retain.</param>
-/// <param name="ObservedAt">UTC instant of the source log line (or the
-/// subscribe instant for a <see cref="PinSetChange.Snapshot"/> replay).</param>
+/// <param name="ObservedAt">UTC instant of the source log line. For a
+/// <see cref="PinSetChange.Snapshot"/> replay this is the most-recent envelope
+/// timestamp the tracker has applied (<see cref="DateTimeOffset.MinValue"/> if
+/// no envelope has been applied yet — in which case the snapshot payload is
+/// also empty).</param>
 public sealed record PinSetChanged(
     PinSetChange Kind,
     string? Area,
