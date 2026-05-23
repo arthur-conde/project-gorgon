@@ -10,20 +10,22 @@ namespace Gandalf.Services;
 
 /// <summary>
 /// <see cref="ITimerSource"/> for repeatable-quest cooldowns. Pure projector
-/// over <see cref="IPlayerQuestJournalService"/> + <see cref="DerivedTimerProgressService"/>:
+/// over <see cref="IPlayerQuestJournalState"/> + <see cref="DerivedTimerProgressService"/>:
 /// catalog enumerates <c>ActiveQuests ∪ keys-with-progress</c> joined against
 /// <see cref="IReferenceDataService.QuestsByInternalName"/> for static fields.
-/// Active set comes from <see cref="IPlayerQuestJournalService.ActiveQuests"/> (per-character,
-/// persisted in Mithril.GameState); cooldown progress stays Gandalf-internal
-/// via <see cref="DerivedTimerProgressService"/>.
+/// Active set comes from <see cref="IPlayerQuestJournalState.ActiveQuests"/>
+/// (active-character live view, rebuilt per session from
+/// <c>ProcessLoadQuests</c>); cooldown progress is owned here via
+/// <see cref="DerivedTimerProgressService"/>, which is the canonical
+/// cross-session store for repeatable-quest anchors post-#718.
 ///
-/// On <see cref="QuestEventKind.Completed"/> the source anchors the cooldown
-/// row past-anchored on the log-line timestamp, mirroring what the old inline
+/// On <see cref="PlayerQuestCompleted"/> the source anchors the cooldown row
+/// past-anchored on the log-line timestamp, mirroring what the old inline
 /// <c>OnQuestCompleted</c> handler did before #155 split ingestion out.
 ///
 /// Eligibility gates (<c>QuestCompletedRecently</c>, <c>MinFavorLevel</c>,
 /// <c>MinSkillLevel</c>, …) are intentionally not re-evaluated here. The
-/// game is the authoritative gate: a <see cref="QuestEventKind.Completed"/>
+/// game is the authoritative gate: a <see cref="PlayerQuestCompleted"/>
 /// observation already implies the server validated every requirement.
 /// </summary>
 public sealed class QuestSource : ITimerSource, IDisposable
@@ -32,7 +34,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
 
     private readonly DerivedTimerProgressService _derived;
     private readonly IReferenceDataService _refData;
-    private readonly IPlayerQuestJournalService _questSvc;
+    private readonly IPlayerQuestJournalState _questSvc;
     private readonly TimeProvider _time;
     private readonly IWorldClock? _worldClock;
     private readonly object _lock = new();
@@ -44,7 +46,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
     public QuestSource(
         DerivedTimerProgressService derived,
         IReferenceDataService refData,
-        IPlayerQuestJournalService questSvc,
+        IPlayerQuestJournalState questSvc,
         TimeProvider? time = null,
         IPlayerWorld? playerWorld = null)
     {
@@ -80,15 +82,15 @@ public sealed class QuestSource : ITimerSource, IDisposable
     public event EventHandler<TimerReadyEventArgs>? TimerReady;
     public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
-    private void OnQuestEvent(QuestEvent ev)
+    private void OnQuestEvent(PlayerQuestEvent ev)
     {
-        switch (ev.Kind)
+        switch (ev)
         {
-            case QuestEventKind.Completed:
-                AnchorCompletionCooldown(ev.InternalName, ev.Timestamp);
+            case PlayerQuestCompleted completed:
+                AnchorCompletionCooldown(completed.InternalName, completed.Timestamp);
                 break;
-            case QuestEventKind.Accepted:
-            case QuestEventKind.Abandoned:
+            case PlayerQuestAccepted:
+            case PlayerQuestAbandoned:
                 RebuildCatalogAndEmit();
                 break;
         }
@@ -185,7 +187,7 @@ public sealed class QuestSource : ITimerSource, IDisposable
 
     /// <summary>
     /// Project the rendered universe: every quest currently in
-    /// <see cref="IPlayerQuestJournalService.ActiveQuests"/> joined with reference data,
+    /// <see cref="IPlayerQuestJournalState.ActiveQuests"/> joined with reference data,
     /// PLUS every key with non-null cooldown progress (so a completed-but-
     /// still-cooling quest stays visible after it leaves the active journal).
     /// Quests with no <c>Reuse*</c> duration are filtered out — nothing to

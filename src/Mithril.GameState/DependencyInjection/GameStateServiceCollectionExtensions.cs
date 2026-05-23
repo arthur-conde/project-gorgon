@@ -258,18 +258,23 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<IServerCatalogService>(sp => sp.GetRequiredService<ServerCatalogService>())
             .AddHostedService(sp => sp.GetRequiredService<ServerCatalogService>());
 
-        // Per-character quest journal — Player.log only (state half of the
+        // Active-character quest journal — Player.log only (state half of the
         // split that retired the old IQuestService reference/state conflation,
         // world-sim migration item #6, issue #607). Reference data lives in
         // IReferenceDataService.Quests; consumers join the two surfaces.
+        //
+        // No persistence (#718): ProcessLoadQuests re-fires on every login /
+        // zone transition, so the active set rebuilds from each session's
+        // replay (principle 13 of docs/world-simulator.md). Modules that need
+        // cross-session continuity own their own ledgers — Gandalf's
+        // DerivedTimerProgressService holds the repeatable-quest cooldown
+        // anchors that used to live in CompletionHistory.
         services.AddSingleton<QuestJournalLoadParser>();
         services.AddSingleton<QuestAcceptedParser>();
         services.AddSingleton<QuestCompletedParser>();
-        services.AddPerCharacterStore<PlayerQuestJournalState>(
-            "quests.json", PlayerQuestJournalStateJsonContext.Default.PlayerQuestJournalState);
         services
             .AddSingleton<PlayerQuestJournalService>()
-            .AddSingleton<IPlayerQuestJournalService>(sp => sp.GetRequiredService<PlayerQuestJournalService>())
+            .AddSingleton<IPlayerQuestJournalState>(sp => sp.GetRequiredService<PlayerQuestJournalService>())
             .AddHostedService(sp => sp.GetRequiredService<PlayerQuestJournalService>());
 
         // World-sim Words-of-Power split (#603 — Phase 2).

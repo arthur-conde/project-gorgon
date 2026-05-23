@@ -7,8 +7,8 @@ using Gandalf.Views;
 using Mithril.GameState.Areas;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
-// Mithril.GameState now owns the quest parsers + IPlayerQuestJournalService;
-// Gandalf only consumes IPlayerQuestJournalService via QuestSource. The
+// Mithril.GameState now owns the quest parsers + IPlayerQuestJournalState;
+// Gandalf only consumes IPlayerQuestJournalState via QuestSource. The
 // parser singletons + the old QuestIngestionService no longer need to be
 // registered here.
 using Mithril.Shared.Modules;
@@ -119,8 +119,16 @@ public sealed class GandalfModule : IMithrilModule
         // global definitions file + per-char progress files. Runs before module gates open.
         services.AddHostedService<GandalfSplitMigration>();
 
+        // One-shot #718 importer: lift any pre-existing per-character
+        // quests.json completionHistory entries (owned by the pre-#718
+        // PlayerQuestJournalService) into DerivedTimerProgressService rows so
+        // repeatable-quest cooldowns survive the architectural reshape.
+        // After import the source file is renamed to quests.json.migrated;
+        // subsequent startups no-op.
+        services.AddHostedService<QuestCompletionImportService>();
+
         // Quest source — projects Quest POCO ReuseTime_* timers from
-        // IPlayerQuestJournalService.ActiveQuests ∪ keys-with-progress.
+        // IPlayerQuestJournalState.ActiveQuests ∪ keys-with-progress.
         // Ingestion and per-character journal persistence live in
         // Mithril.GameState; this source is purely a Gandalf-side projector
         // that anchors cooldowns via DerivedTimerProgressService.

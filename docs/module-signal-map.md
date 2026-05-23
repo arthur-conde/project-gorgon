@@ -60,7 +60,7 @@ Two streams (Player.log and chat) each **self-scope** via their own intra-source
 | `IPlayerPositionTracker` | character |
 | `IPlayerPinTracker` | character (user pins) |
 | `IInventoryService` | character |
-| `IPlayerQuestJournalService` | character |
+| `IPlayerQuestJournalState` | character |
 
 The `Player*` naming on the world-scope services (`IPlayerWeatherTracker`, `IPlayerCelestialStateService`, parts of `IPlayerAreaTracker`) is misleading under this partition — they're actually world-scope readings of "what the active character can observe of the world." Rename target if/when the world-sim refactor lands; not worth churning ahead of that.
 
@@ -257,19 +257,21 @@ Design notes: [`player-pin-service.md`](player-pin-service.md). Pin grammar: no 
 
 ---
 
-### `IPlayerQuestJournalService`
+### `IPlayerQuestJournalState`
 
 **Inputs**
 - Log: `LocalPlayer` pipe (`QuestAccepted`, `QuestCompleted`, `QuestJournalLoad`)
 
 **State machines**
-- Quest-ledger fold — per-character active + completed sets, derived from Player.log events only
+- Active-quest fold — active character's currently-in-journal set, derived from Player.log events only
 
 **Outputs**
-- `Subscribe(Action<QuestEvent>)`
-- Persisted: per-character JSON (synchronous save per mutation)
+- `Subscribe(Action<PlayerQuestEvent>)` — discriminated subtypes `PlayerQuestAccepted` / `PlayerQuestAbandoned` / `PlayerQuestCompleted` (#657 / #718)
+- No persistence (#718) — `ProcessLoadQuests` re-fires per session, so the active set rebuilds from each session's replay; cross-session completion anchors live in module-side ledgers (Gandalf's `DerivedTimerProgressService`).
 
-✅ Extracted via #607 (world-sim migration item #6): the legacy `IQuestService` is gone. Reference data (what is quest X?) lives in `IReferenceDataService.Quests`; this service owns only state (am I on quest X?). Consumers join the two surfaces explicitly. The previous `PerCharacterView<…>.CurrentChanged` listener and its `_time.GetUtcNow()`-stamped synthetic `Abandoned`/`Accepted`/`Completed` events retired with the extraction — character switch is now a UI binding swap, not a state mutation.
+✅ Extracted via #607 (world-sim migration item #6): the legacy `IQuestService` is gone. Reference data (what is quest X?) lives in `IReferenceDataService.Quests`; this folder owns only state (am I on quest X?). Consumers join the two surfaces explicitly. The previous `PerCharacterView<…>.CurrentChanged` listener and its `_time.GetUtcNow()`-stamped synthetic `Abandoned`/`Accepted`/`Completed` events retired with the extraction — character switch is now a UI binding swap, not a state mutation.
+
+✅ Reshape under #718: the prior `CompletionHistory` map / `TryGetCompletion` API / per-character `quests.json` persistence retired. The folder now has the same shape as `IPlayerSkillState` / `IPlayerRecipeState` — single source, fold-to-snapshot, no persistence, log-derivable (principle 13). Gandalf imports any pre-existing `quests.json` into `DerivedTimerProgressService` on startup (`QuestCompletionImportService`) and deletes the source file once imported.
 
 ℹ️ The `HandleJournalLoaded` log-derived `Abandoned`-inference (deriving `Abandoned` for quests missing from a `ProcessLoadQuests` snapshot) **stays** — that's a necessary inference from a real log event, stamped on the log line's timestamp, not on wall-clock.
 
@@ -444,7 +446,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 
 **Inputs**
 - Log: `LocalPlayer` pipe via `LootIngestionService` (chest interactions, boss kill credit, defeat cooldowns)
-- GameState: `IPlayerQuestJournalService.Subscribe` (quest cooldowns), `IPlayerAreaTracker.CurrentArea` (chest area stamping)
+- GameState: `IPlayerQuestJournalState.Subscribe` (quest cooldowns), `IPlayerAreaTracker.CurrentArea` (chest area stamping)
 - Settings: `GandalfSettings`, `GandalfShiftSettings`, user-defined timer definitions, `IShiftCatalog`
 - Reference: `ICommunityCalibrationService` (chest cooldown community data)
 - Wall-clock: `IGameClock` (PG's in-game time-of-day for shift alarms), `TimeProvider` for timer expiration
@@ -454,7 +456,7 @@ The simplest module — one input, one fold, no peeks, no wall-clock.
 - `LootBracketTracker` — pure synchronous SM that brackets loot lines after a chest interaction (2s `SoftTimeout`, **event-time** gated — replay-safe)
 - `LootIngestionService` — Player.log fan-in; dispatches to `LootBracketTracker`
 - `LootSource` — projects bracketed loot into chest cooldown timers
-- `QuestSource` — projects `IPlayerQuestJournalService` events into quest cooldown timers
+- `QuestSource` — projects `IPlayerQuestJournalState` events into quest cooldown timers
 - `UserTimerSource` — projects user-created timer definitions into timer rows
 - `DerivedTimerProgressService` — composes the heterogeneous timer sources
 - `TimerProgressService` — **wall-clock-driven** expiration; transitions timers between Armed / Firing / Expired / Recurring
@@ -538,7 +540,7 @@ A handful of patterns are worth seeing all at once after the per-component scan.
 - **Both streams self-scope independently.** Player.log identifies its `(Server, Character)` from its own intra-source signals (`Servers:` catalog + `EVENT(Ok): connected, url=…` + `LoginBanner` — the latter two planned). Chat identifies its `(Server, Character)` from its own `**** Logged In As X. Server Y. Timezone Offset Z.` banner. No cross-source coupling for scope determination. Cross-source agreement (both banners' character names match) is verification, not derivation.
 - **View-layer correlators must scope-check.** Once the splits land and cross-source correlation lives in the view layer, every cross-world join must assert both sides are in the same `(Server, Character)` before firing — otherwise it's pairing across a session boundary. In single-server play this is implicitly safe; under multi-server use it's a latent correctness gap that needs the scope check to land alongside the connect-event / catalog parsers.
 - **Wall-clock-gated transitions live in five places.** `IInventoryService` correlator TTL (5s, the only foundation-layer wall-clock gate); `Samwise.GardenStateMachine.PruneWithered` + `AlarmService.IsLikelyGarbageCollected`; `Gandalf.TimerProgressService.CheckExpirations` + `TimerExpirationScheduler` + `ShiftAlarmService`; `Legolas.MotherlodeMeasurementCoordinator` (event-time but compared against a fresh foreign-FSM timestamp, which is wall-clock-shaped). Everything else uses event-time arithmetic on payload timestamps. **Under the worlds**, all of these migrate from `_time.GetUtcNow()` to `IWorldClock.Now` and become replay-deterministic — a mechanical search-replace.
-- **Second event sources (non-log inputs that mutate state).** `IInventoryService` `FileSystemWatcher` for export-reconcile; `Gandalf` three wakeup schedulers; user-input commands across every UI-bearing module. (The legacy `IQuestService` `PerCharacterView.CurrentChanged` character-switch reload was a second event source until #607 — see the `IPlayerQuestJournalService` entry — and is now retired under per-character world scope.) Under the worlds these become **timestamped producer-emitted frames** for a world's merger (filesystem reconcile, wake-at-T) or move out of world scope entirely (user input mutates adjacent state directly).
+- **Second event sources (non-log inputs that mutate state).** `IInventoryService` `FileSystemWatcher` for export-reconcile; `Gandalf` three wakeup schedulers; user-input commands across every UI-bearing module. (The legacy `IQuestService` `PerCharacterView.CurrentChanged` character-switch reload was a second event source until #607 — see the `IPlayerQuestJournalState` entry — and is now retired under per-character world scope.) Under the worlds these become **timestamped producer-emitted frames** for a world's merger (filesystem reconcile, wake-at-T) or move out of world scope entirely (user input mutates adjacent state directly).
 - **Module → GameState dependency graph is shallow.** No module depends on more than four GameState services. The deepest consumer (`Legolas.MotherlodeMeasurementCoordinator` — 4 services) is *today* the only Tier-2 SM in the repo; post-migration (item 3 in the world-simulator design plan) it becomes single-source and the Tier-2 reference vanishes. Arwen depends on 2 (`IInventoryService`, `IGameSessionService`). Samwise on 1 (`IInventoryService`). Saruman on 0 GameState services (consumes reference + per-character view only, despite being a cross-source consumer). Pippin / Bilbo / Silmarillion / Celebrimbor / Elrond on 0.
 - **Five of ten modules are pure projectors** (Pippin, Elrond, Bilbo, Silmarillion, Celebrimbor) — no log subscriptions, no GameState subscriptions for state mutation. They consume reference data + persisted JSON + user input only.
 

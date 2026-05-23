@@ -1,5 +1,4 @@
 using Mithril.GameState.Quests.Parsing;
-using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Reference;
@@ -10,46 +9,44 @@ namespace Mithril.GameState.Quests;
 /// <summary>
 /// Subscribes to the L1 (#550) driver's LocalPlayer pipe for quest signals
 /// (<c>ProcessLoadQuests</c> bulk login + <c>ProcessBook("New Quest:" …)</c>
-/// per-accept + <c>ProcessCompleteQuest</c>) and maintains the per-character
-/// active journal + completion history. Mirrors the
-/// <see cref="Mithril.GameState.Inventory.IInventoryService"/> pattern: lock +
-/// atomic replay on <see cref="Subscribe"/> closes the late-attach race.
+/// per-accept + <c>ProcessCompleteQuest</c>) and maintains the current-session
+/// active journal for the active character.
 ///
-/// Persistence: per-character JSON at <c>characters/{slug}/quests.json</c> via
-/// <see cref="PerCharacterView{T}"/>. <see cref="ActiveQuests"/> is rebuildable
-/// from the next <c>ProcessLoadQuests</c> log line, but
-/// <see cref="CompletionHistory"/> needs disk so cooldown anchors survive
-/// restarts (a quest completed three days ago has no log line in today's
-/// session). Saving on each mutation; quest events arrive at most every few
-/// seconds, no debouncing needed.
+/// <para><b>No persistence (#718).</b> Principle 13 of
+/// <c>docs/world-simulator.md</c>: the world is a deterministic fold over the
+/// log stream. <c>ProcessLoadQuests</c> re-fires on every login / zone
+/// transition, so the active set rebuilds from the next session's replay
+/// without any on-disk cache. Modules that need cross-session continuity (e.g.
+/// Gandalf's repeatable-quest cooldown anchors via
+/// <c>DerivedTimerProgressService</c>) maintain their own per-character
+/// ledgers populated by subscribing to <see cref="PlayerQuestEvent"/>s here.</para>
 ///
-/// Character switch is a UI binding swap, not a state mutation. The service
-/// hydrates from <see cref="PerCharacterView{T}.Current"/> once at
-/// construction (so a post-restart <c>Subscribe</c> sees the persisted
-/// history before any live log line arrives) and never listens for
-/// <see cref="PerCharacterView{T}.CurrentChanged"/> — under the world-sim's
-/// per-character scope (see <c>docs/world-simulator.md</c> migration item #6),
-/// each character has its own ledger and the UI rebinds to the new
-/// character's instance rather than mutating this one.
-///
-/// Threading: ingestion runs on the L1 driver's pump thread (archetype-A
+/// <para>Threading: ingestion runs on the L1 driver's pump thread (archetype-A
 /// default = <c>DeliveryContext.Inline</c>). Subscribers dispatch under the
-/// same lock as the snapshot accessors — non-trivial work must hop off-thread.
+/// same lock as the snapshot accessors — non-trivial work must hop off-thread.</para>
 /// </summary>
-public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJournalService
+public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJournalState
 {
     private readonly ILogStreamDriver _driver;
     private readonly QuestJournalLoadParser _journalLoadParser;
     private readonly QuestAcceptedParser _acceptedParser;
     private readonly QuestCompletedParser _completedParser;
-    private readonly PerCharacterView<PlayerQuestJournalState> _view;
     private readonly IReferenceDataService _refData;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
     private readonly Dictionary<string, QuestJournalEntry> _active = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, QuestCompletionState> _completed = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<Action<QuestEvent>> _handlers = [];
+
+    // In-memory current-session-only set of (InternalName → last completion
+    // stamp). Not exposed, not persisted, not replayed on subscribe — used
+    // solely for idempotency detection: a duplicate ProcessCompleteQuest with
+    // the same timestamp (driver-side replay of the same line) must not
+    // re-fire Completed to subscribers. Resets to empty on Mithril restart;
+    // rebuilt from each session's ProcessCompleteQuest lines during the
+    // session-start log replay.
+    private readonly Dictionary<string, DateTimeOffset> _completedThisSession = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly List<Action<PlayerQuestEvent>> _handlers = [];
     private ILogSubscription? _subscription;
 
     public PlayerQuestJournalService(
@@ -57,7 +54,6 @@ public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJ
         QuestJournalLoadParser journalLoadParser,
         QuestAcceptedParser acceptedParser,
         QuestCompletedParser completedParser,
-        PerCharacterView<PlayerQuestJournalState> view,
         IReferenceDataService refData,
         IDiagnosticsSink? diag = null)
     {
@@ -65,24 +61,13 @@ public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJ
         _journalLoadParser = journalLoadParser;
         _acceptedParser = acceptedParser;
         _completedParser = completedParser;
-        _view = view;
         _refData = refData;
         _diag = diag;
-
-        // Hydrate from disk for the active character before any subscriber
-        // attaches. No event firing here — Subscribe replays the current
-        // active/completed sets atomically when consumers attach.
-        HydrateFromView();
     }
 
     public IReadOnlyDictionary<string, QuestJournalEntry> ActiveQuests
     {
         get { lock (_lock) return new Dictionary<string, QuestJournalEntry>(_active, StringComparer.OrdinalIgnoreCase); }
-    }
-
-    public IReadOnlyDictionary<string, QuestCompletionState> CompletionHistory
-    {
-        get { lock (_lock) return new Dictionary<string, QuestCompletionState>(_completed, StringComparer.OrdinalIgnoreCase); }
     }
 
     public bool TryGetActive(string internalName, out QuestJournalEntry entry)
@@ -95,25 +80,13 @@ public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJ
         }
     }
 
-    public bool TryGetCompletion(string internalName, out QuestCompletionState state)
-    {
-        lock (_lock)
-        {
-            if (_completed.TryGetValue(internalName, out var found)) { state = found; return true; }
-            state = null!;
-            return false;
-        }
-    }
-
-    public IDisposable Subscribe(Action<QuestEvent> handler)
+    public IDisposable Subscribe(Action<PlayerQuestEvent> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
         lock (_lock)
         {
             foreach (var (_, entry) in _active)
-                Invoke(handler, new QuestEvent(QuestEventKind.Accepted, entry.InternalName, entry.AcceptedAt.UtcDateTime));
-            foreach (var (_, c) in _completed)
-                Invoke(handler, new QuestEvent(QuestEventKind.Completed, c.InternalName, c.LastCompletedAt.UtcDateTime));
+                Invoke(handler, new PlayerQuestAccepted(entry.InternalName, entry.AcceptedAt.UtcDateTime));
             _handlers.Add(handler);
             return new Subscription(this, handler);
         }
@@ -123,10 +96,6 @@ public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJ
     {
         _diag?.Info("Quests", "Subscribing to L1 driver (LocalPlayer pipe) for quest events");
         // archetype-A defaults — FromSessionStart replay + Inline delivery.
-        // Driver-owned containment retires the previous catch + _diag.Warn
-        // around Dispatch (capability C of #550). Each parser consumes the
-        // envelope-stripped LocalPlayerLogLine.Data directly — L0.5 (#532)
-        // owns actor classification (#550 PR #555 review).
         _subscription = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
             {
@@ -173,10 +142,10 @@ public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJ
     /// with every quest the server reports as currently in the player's
     /// journal. Resolves int ids → InternalNames via reference data; unknown
     /// ids are dropped silently (game-data drift). Fires
-    /// <see cref="QuestEventKind.Accepted"/> for newly-present entries and
-    /// <see cref="QuestEventKind.Abandoned"/> for entries that were active
-    /// before but aren't anymore — a real inference from a real log event,
-    /// stamped on the <see cref="QuestJournalLoadedEvent.Timestamp"/>.
+    /// <see cref="PlayerQuestAccepted"/> for newly-present entries and
+    /// <see cref="PlayerQuestAbandoned"/> for entries that were active before
+    /// but aren't anymore — a real inference from a real log event, stamped on
+    /// the <see cref="QuestJournalLoadedEvent.Timestamp"/>.
     /// </summary>
     private void HandleJournalLoaded(QuestJournalLoadedEvent loaded)
     {
@@ -189,130 +158,78 @@ public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJ
             if (_refData.Quests.TryGetValue($"quest_{id}", out var q) && !string.IsNullOrEmpty(q.InternalName))
                 newActive[q.InternalName] = new QuestJournalEntry(q.InternalName, stamp);
 
-        var events = new List<QuestEvent>();
-        bool mutated = false;
+        var events = new List<PlayerQuestEvent>();
         lock (_lock)
         {
             foreach (var (name, _) in _active)
                 if (!newActive.ContainsKey(name))
-                    events.Add(new QuestEvent(QuestEventKind.Abandoned, name, loaded.Timestamp));
+                    events.Add(new PlayerQuestAbandoned(name, loaded.Timestamp));
             foreach (var (name, entry) in newActive)
                 if (!_active.ContainsKey(name))
-                    events.Add(new QuestEvent(QuestEventKind.Accepted, name, entry.AcceptedAt.UtcDateTime));
+                    events.Add(new PlayerQuestAccepted(entry.InternalName, entry.AcceptedAt.UtcDateTime));
 
             if (events.Count > 0)
             {
                 _active.Clear();
                 foreach (var (name, entry) in newActive) _active[name] = entry;
-                mutated = true;
                 FireAll(events);
             }
         }
-        if (mutated) PersistAfterMutation();
     }
 
     private void HandleAccepted(QuestAcceptedEvent ev)
     {
         if (string.IsNullOrEmpty(ev.QuestInternalName)) return;
         var stamp = new DateTimeOffset(ev.Timestamp, TimeSpan.Zero);
-        bool mutated = false;
         lock (_lock)
         {
             if (!_active.ContainsKey(ev.QuestInternalName))
             {
                 _active[ev.QuestInternalName] = new QuestJournalEntry(ev.QuestInternalName, stamp);
-                FireOne(new QuestEvent(QuestEventKind.Accepted, ev.QuestInternalName, ev.Timestamp));
-                mutated = true;
+                FireOne(new PlayerQuestAccepted(ev.QuestInternalName, ev.Timestamp));
             }
         }
-        if (mutated) PersistAfterMutation();
     }
 
     private void HandleCompleted(QuestCompletedEvent ev)
     {
         if (string.IsNullOrEmpty(ev.QuestInternalName)) return;
         var stamp = new DateTimeOffset(ev.Timestamp, TimeSpan.Zero);
-        bool persist = false;
         lock (_lock)
         {
             // Idempotency: a replayed ProcessCompleteQuest line carries the
             // same Timestamp. Don't re-fire Completed (downstream cooldown
             // anchors are past-anchored and the duplicate would no-op anyway,
             // but more importantly we don't want subscribers to think a fresh
-            // turn-in just happened).
-            bool isNew = !_completed.TryGetValue(ev.QuestInternalName, out var prior)
-                         || prior.LastCompletedAt != stamp;
-            bool wasActive = _active.Remove(ev.QuestInternalName);
+            // turn-in just happened). The map is in-memory current-session
+            // only — not exposed, not persisted, not replayed on subscribe.
+            bool isNew = !_completedThisSession.TryGetValue(ev.QuestInternalName, out var prior)
+                         || prior != stamp;
+            _active.Remove(ev.QuestInternalName);
 
             if (isNew)
             {
-                _completed[ev.QuestInternalName] = new QuestCompletionState(ev.QuestInternalName, stamp);
-                FireOne(new QuestEvent(QuestEventKind.Completed, ev.QuestInternalName, ev.Timestamp));
-                persist = true;
-            }
-            else if (wasActive)
-            {
-                // Replayed completion + quest still in active set means the
-                // stored state never recorded the original removal. Reconcile
-                // silently (no Abandoned event — would mislead subscribers
-                // into thinking a fresh abandon happened).
-                persist = true;
+                _completedThisSession[ev.QuestInternalName] = stamp;
+                FireOne(new PlayerQuestCompleted(ev.QuestInternalName, ev.Timestamp));
             }
         }
-        if (persist) PersistAfterMutation();
-    }
-
-    /// <summary>
-    /// Construction-time hydration from the persisted per-character view. No
-    /// event firing — no subscribers exist yet, and there is no prior
-    /// in-memory state to diff against. Called once from the ctor.
-    /// </summary>
-    private void HydrateFromView()
-    {
-        var current = _view.Current;
-        if (current is null) return;
-
-        lock (_lock)
-        {
-            foreach (var (k, v) in current.ActiveQuests) _active[k] = v;
-            foreach (var (k, v) in current.CompletionHistory) _completed[k] = v;
-        }
-    }
-
-    private void PersistAfterMutation()
-    {
-        var current = _view.Current;
-        if (current is null) return;
-
-        Dictionary<string, QuestJournalEntry> activeSnap;
-        Dictionary<string, QuestCompletionState> completedSnap;
-        lock (_lock)
-        {
-            activeSnap = new Dictionary<string, QuestJournalEntry>(_active, StringComparer.OrdinalIgnoreCase);
-            completedSnap = new Dictionary<string, QuestCompletionState>(_completed, StringComparer.OrdinalIgnoreCase);
-        }
-
-        current.ActiveQuests = activeSnap;
-        current.CompletionHistory = completedSnap;
-        try { _view.Save(); }
-        catch (Exception ex) { _diag?.Warn("Quests", $"Save failed: {ex.Message}"); }
     }
 
     /// <summary>Caller must hold <see cref="_lock"/>.</summary>
-    private void FireOne(QuestEvent ev)
+    private void FireOne(PlayerQuestEvent ev)
     {
         foreach (var h in _handlers) Invoke(h, ev);
     }
 
     /// <summary>Caller must hold <see cref="_lock"/>.</summary>
-    private void FireAll(IReadOnlyList<QuestEvent> events)
+    private void FireAll(IReadOnlyList<PlayerQuestEvent> events)
     {
         foreach (var ev in events)
             foreach (var h in _handlers)
                 Invoke(h, ev);
     }
 
-    private void Invoke(Action<QuestEvent> handler, QuestEvent ev)
+    private void Invoke(Action<PlayerQuestEvent> handler, PlayerQuestEvent ev)
     {
         try { handler(ev); }
         catch (Exception ex) { _diag?.Warn("Quests", $"Subscriber threw: {ex.Message}"); }
@@ -328,8 +245,8 @@ public sealed class PlayerQuestJournalService : BackgroundService, IPlayerQuestJ
     private sealed class Subscription : IDisposable
     {
         private readonly PlayerQuestJournalService _svc;
-        private Action<QuestEvent>? _handler;
-        public Subscription(PlayerQuestJournalService svc, Action<QuestEvent> handler) { _svc = svc; _handler = handler; }
+        private Action<PlayerQuestEvent>? _handler;
+        public Subscription(PlayerQuestJournalService svc, Action<PlayerQuestEvent> handler) { _svc = svc; _handler = handler; }
         public void Dispose()
         {
             var h = Interlocked.Exchange(ref _handler, null);

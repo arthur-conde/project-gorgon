@@ -378,7 +378,7 @@ public interface IPlayerWorld : IWorld
     IPlayerAreaTracker Areas { get; }
     IPlayerCelestialStateService Celestial { get; }
     IPlayerSessionService Session { get; }
-    IPlayerQuestJournalService QuestJournal { get; } // post-QuestService-split
+    IPlayerQuestJournalState QuestJournal { get; } // post-QuestService-split
     IPlayerWordOfPowerDiscoveryState WordOfPowerDiscovery { get; } // Saruman split
     // …
 }
@@ -666,7 +666,7 @@ After this design lands, the following changes are needed:
 
 ### Eliminations (current-architecture workarounds that collapse)
 
-6. **`QuestService.OnViewCurrentChanged` synthesis.** Character-switch reload with synthesized `Abandoned`/`Accepted`/`Completed` events. Collapses under per-character world scope: character B's ledger was always character B's, so binding the UI to it fires no events on character A. Also splits the reference half (`IReferenceDataService.Quests`) from the state half (`IPlayerQuestJournalService`).
+6. **`QuestService.OnViewCurrentChanged` synthesis.** Character-switch reload with synthesized `Abandoned`/`Accepted`/`Completed` events. Collapses under per-character world scope: character B's ledger was always character B's, so binding the UI to it fires no events on character A. Also splits the reference half (`IReferenceDataService.Quests`) from the state half (`IPlayerQuestJournalState`). Persistence retires entirely under #718; cross-session completion anchors move to module-side ledgers (Gandalf's `DerivedTimerProgressService`).
 7. **Arwen's `_inventory.TryResolve` cross-FSM peek.** Reads from the post-split `IPlayerInventoryService` half — coherent within the PlayerWorld's dispatch order, no race.
 8. **Wall-clock `_time.GetUtcNow()` state-decision uses.** Every one of them migrates to `IWorldClock.Now` of whichever world/view it lives in. Samwise `PruneWithered`, `AlarmService.IsLikelyGarbageCollected`, Gandalf `TimerProgressService.CheckExpirations`, etc.
 
