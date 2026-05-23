@@ -67,8 +67,9 @@ public class GardenLogParserTests
     [Fact]
     public void Ignores_ProcessAddItem()
     {
-        // ProcessAddItem is now sourced from IInventoryService.ItemAdded; the garden
-        // parser must ignore the raw line so it isn't double-processed.
+        // ProcessAddItem arrives via IPlayerWorld.Bus's PlayerInventoryAdded
+        // change event post-#725; the garden parser must ignore the raw line
+        // so it isn't double-processed.
         var line = @"[20:48:30] LocalPlayer: ProcessAddItem(BarleySeeds(86940428), -1, False)";
         _p.TryParse(line, T).Should().BeNull();
     }
@@ -76,7 +77,8 @@ public class GardenLogParserTests
     [Fact]
     public void Ignores_ProcessDeleteItem()
     {
-        // Same as ProcessAddItem — sourced from IInventoryService.ItemDeleted.
+        // Same as ProcessAddItem — arrives via IPlayerWorld.Bus's
+        // PlayerInventoryRemoved change event post-#725.
         var line = @"[20:48:31] LocalPlayer: ProcessDeleteItem(86940428)";
         _p.TryParse(line, T).Should().BeNull();
     }
