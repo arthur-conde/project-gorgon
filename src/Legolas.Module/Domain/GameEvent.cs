@@ -45,9 +45,12 @@ public sealed record MapTargetDetected(
 ///
 /// <para><see cref="Count"/> is preserved as a field-shape carryover from the
 /// retired chat parser; PG emits no count on the primary "collected!" line
-/// (counts moved to the "added to inventory" line — now consumed by
-/// <see cref="ItemCollectionTracker"/> via <c>IInventoryView.Bus</c>), so this
-/// always carries <c>1</c> from <see cref="PlayerLogParser"/>.</para>
+/// (#699 then accepted this as a structural single-world property —
+/// <see cref="ItemCollectionTracker"/> credits one per matched
+/// (Add, Collect) pair against <c>IPlayerWorld.Bus</c>'s
+/// <see cref="Mithril.GameState.Inventory.PlayerInventoryAdded"/> events, with
+/// no separate quantity composition). So this always carries <c>1</c> from
+/// <see cref="PlayerLogParser"/>.</para>
 /// </summary>
 public sealed record ItemCollected(
     DateTime Timestamp,
@@ -55,11 +58,11 @@ public sealed record ItemCollected(
     int Count,
     string? SpeedBonusItem = null) : GameEvent(Timestamp);
 
-// "[Status] X xN added to inventory." retired in #606. The shared
-// IInventoryView (#602) is the post-migration surface — its typed-bus
-// InventoryItemAdded / InventoryStackChanged events compose the same
-// Player.log ProcessAddItem + chat stack-size observations the chat
-// [Status] line carried. ItemCollectionTracker is the in-Legolas consumer.
+// "[Status] X xN added to inventory." retired in #606. The Add channel for
+// the state-machine attribution post-#699 is IPlayerWorld.Bus<
+// PlayerInventoryAdded> — instance-id + InternalName, no quantities, single
+// world (no cross-source view-layer composition). ItemCollectionTracker is
+// the in-Legolas consumer.
 
 /// <summary>
 /// The motherlode-map distance readout — <c>"The treasure is N meters from here."</c>

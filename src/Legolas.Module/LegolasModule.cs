@@ -260,11 +260,14 @@ public sealed class LegolasModule : IMithrilModule
         // the chat-log LogIngestionService retired alongside Phase 3 of the
         // world-sim migration (umbrella #601).
         services.AddHostedService<PlayerLogIngestionService>();
-        // Inventory-add↔Player.log-collect correlator (#606). Replaces the
-        // chat-side [Status] added/collected pairing the retired
-        // LogIngestionService owned; subscribes to IInventoryView.Bus
-        // (typed-frame surface from #602) and ProcessScreenText collect
-        // banners parsed by PlayerLogParser.
+        // Inventory-add↔Player.log-collect attribution (#606 / #699). Replaces
+        // the chat-side [Status] added/collected pairing the retired
+        // LogIngestionService owned; post-#699 subscribes to IPlayerWorld.Bus
+        // (PlayerInventoryAdded — principle 4 single-world-direct, no
+        // cross-source composition through the view layer) and ProcessScreenText
+        // collect banners parsed by PlayerLogParser. The cross-source
+        // PendingCorrelator retired alongside the IInventoryView dependency;
+        // pairing is now bounded by SurveyFlowController's session lifecycle.
         services.AddHostedService<ItemCollectionTracker>();
 
         // Diagnostics — frame-time logger + synthetic-load harness. The logger
