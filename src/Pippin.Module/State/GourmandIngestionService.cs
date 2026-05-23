@@ -63,7 +63,6 @@ public sealed class GourmandIngestionService : BackgroundService
     private readonly GourmandStateService _stateService;
     private readonly PerCharacterView<GourmandState> _view;
     private readonly IDiagnosticsSink? _diag;
-    private readonly ModuleGate _gate;
     private ILogSubscription? _subscription;
 
     public GourmandIngestionService(
@@ -72,7 +71,6 @@ public sealed class GourmandIngestionService : BackgroundService
         GourmandStateMachine state,
         GourmandStateService stateService,
         PerCharacterView<GourmandState> view,
-        ModuleGates gates,
         IDiagnosticsSink? diag = null)
     {
         _driver = driver;
@@ -81,21 +79,24 @@ public sealed class GourmandIngestionService : BackgroundService
         _stateService = stateService;
         _view = view;
         _diag = diag;
-        _gate = gates.For("pippin");
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Eager subscription attach per Call 1 / principle eager-always (#695):
+    /// the active-character wait, persisted-state load, and L1 subscription
+    /// all happen during the IHostedService chain's <c>StartAsync</c>,
+    /// before the trailing world-merger drain starts (#702 / Call 2).
+    /// Pippin's module gate no longer gates state subscription.
+    /// </summary>
+    public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("Pippin", "Waiting for module gate…");
-        await _gate.WaitAsync(stoppingToken).ConfigureAwait(false);
-        _diag?.Info("Pippin", "Gate opened — waiting for active character…");
+        _diag?.Info("Pippin", "Waiting for active character…");
+        await WaitForActiveCharacterAsync(cancellationToken).ConfigureAwait(false);
 
-        await WaitForActiveCharacterAsync(stoppingToken).ConfigureAwait(false);
-
-        try { await _stateService.LoadAsync(stoppingToken).ConfigureAwait(false); }
+        try { await _stateService.LoadAsync(cancellationToken).ConfigureAwait(false); }
         catch (Exception ex) { _diag?.Warn("Pippin", $"Failed to load state: {ex.Message}"); }
 
-        _diag?.Info("Pippin", "State hydrated — subscribing to L1 driver (LocalPlayer pipe)");
+        _diag?.Info("Pippin", "State hydrated — subscribing to L1 driver (LocalPlayer pipe) eagerly");
 
         // Seed the high-water from the freshly hydrated per-character state.
         // null = no prior session processed (first run / pre-#550 fresh state).
@@ -103,6 +104,12 @@ public sealed class GourmandIngestionService : BackgroundService
         // before handler invocation — restart-safe idempotence (#549 / #550
         // capability F). Pippin is the canonical demo of the pattern.
         var persistedHighWater = _view.Current?.LastProcessedSequence;
+
+        // Headless / no-Application contexts fall back to Inline delivery.
+        var dispatcher = Application.Current?.Dispatcher;
+        var deliveryContext = dispatcher is null
+            ? DeliveryContext.Inline
+            : DeliveryContext.Marshaled(dispatcher);
 
         // L0.5 (#532) eats the [ts] + LocalPlayer: envelope; the parser now
         // consumes LocalPlayerLogLine.Data directly (anchor dropped per the
@@ -140,11 +147,16 @@ public sealed class GourmandIngestionService : BackgroundService
             new LogSubscriptionOptions
             {
                 ReplayMode = ReplayMode.FromSessionStart,
-                DeliveryContext = DeliveryContext.Marshaled(Application.Current.Dispatcher),
+                DeliveryContext = deliveryContext,
                 SkipProcessedHighWater = persistedHighWater,
                 DiagnosticCategory = "Pippin.Ingestion",
             });
 
+        await base.StartAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         // Park until the host stops. The L1 subscription runs its own pump
         // on a Task.Run; ExecuteAsync's job is to dispose it on shutdown.
         try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }

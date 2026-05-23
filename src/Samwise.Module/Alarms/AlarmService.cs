@@ -176,6 +176,13 @@ public sealed class AlarmService : IDisposable
 
     private void Fire(ActiveAlarm alarm, PlotStage stage, StageAlarmRule rule)
     {
+        // Call 3 / principle 12 — mode-gate the user-facing projection (audio
+        // playback, window flash, AlarmTriggered event consumed by toast/inbox
+        // UIs). State derivation upstream of this method (the _firedAt /
+        // _snoozedUntil writes in OnPlotChanged) stays mode-agnostic so the
+        // first Live tick after a Replaying drain sees a coherent dedup state.
+        if (_worldClock?.Mode == WorldMode.Replaying) return;
+
         Dispatch(() =>
         {
             TryRouteToChannel(stage, rule, alarm.Key, out _);

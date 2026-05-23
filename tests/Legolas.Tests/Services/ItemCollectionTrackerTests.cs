@@ -34,23 +34,26 @@ public sealed class ItemCollectionTrackerTests
         TestLogStreamDriver Driver,
         SessionState Session,
         CapturingSink Sink,
-        ManualTimeProvider Clock);
+        ManualTimeProvider Clock,
+        ModuleGates Gates);
 
-    private static Harness Build()
+    private static Harness Build() => Build(openGate: true);
+
+    private static Harness Build(bool openGate)
     {
         var view = new FakeInventoryView();
         var driver = new TestLogStreamDriver();
         var parser = new PlayerLogParser();
         var session = new SessionState();
         var gates = new ModuleGates();
-        gates.For("legolas").Open();
+        if (openGate) gates.For("legolas").Open();
         var sink = new CapturingSink();
         var clock = new ManualTimeProvider(new DateTime(2026, 5, 22, 14, 0, 0, DateTimeKind.Utc));
         var refData = new FakeRefData();
         var svc = new ItemCollectionTracker(
             view, driver, parser, gates, session,
             refData: refData, diag: sink, time: clock);
-        return new Harness(svc, view, driver, session, sink, clock);
+        return new Harness(svc, view, driver, session, sink, clock, gates);
     }
 
     private static SurveyItemViewModel SeedSurvey(SessionState session, string displayName)
@@ -111,6 +114,42 @@ public sealed class ItemCollectionTrackerTests
     }
 
     // ── tests ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Call 1 / principle eager-always: both the IInventoryView.Bus
+    /// subscriptions (pre-Call-1 already in StartAsync) AND the L1
+    /// LocalPlayer subscription (pre-Call-1 sat behind <c>_gates.For("legolas").WaitAsync</c>
+    /// inside ExecuteAsync) must be live after `await service.StartAsync(ct)`
+    /// — regardless of whether the Legolas tab is ever activated.
+    ///
+    /// The original sink-list source is the Call 1 ratification in
+    /// docs/world-simulator.md §Decisions ratified post-#642 (resolves #695).
+    /// </summary>
+    [Fact]
+    public async Task Subscription_attaches_in_StartAsync_without_opening_module_gate()
+    {
+        var h = Build(openGate: false);
+        SeedSurvey(h.Session, "Iron Ore");
+        await Run(h, async () =>
+        {
+            // IInventoryView.Bus has no replay-on-subscribe contract; the
+            // #702 trailing-merger invariant is what guarantees the view-bus
+            // subscribe completes before any frame flows in production. The
+            // Run helper above already returned from `await
+            // h.Service.StartAsync` so both the view-bus subs and the L1
+            // driver sub are live by here under Call 1's eager-attach.
+            h.View.PushAdded("IronOre", stackSize: 5, sizeConfirmed: true);
+            h.Driver.PushLive(CollectLine("Iron Ore"));
+            await h.Driver.DrainLocalPlayerAsync();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await WaitUntil(() => h.Session.CollectedItems.ContainsKey("Iron Ore"), cts.Token);
+
+            h.Gates.For("legolas").IsOpen.Should().BeFalse(
+                "the gate-retirement audit — this test must not touch ModuleGate.Open to validate the eager attach (Call 1)");
+            h.Session.CollectedItems["Iron Ore"].Should().Be(5,
+                "the L1 ProcessScreenText subscription is attached by StartAsync regardless of tab activation");
+        });
+    }
 
     /// <summary>
     /// Added (SizeConfirmed=true) then ProcessScreenText collected! within TTL

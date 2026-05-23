@@ -52,6 +52,30 @@ public sealed class VendorIngestionServiceSkillStateTests
         "[22:27:48] LocalPlayer: ProcessVendorAddItem(130, BottleOfWater(78177652), False)";
 
     // ============================================================
+    // Call 1 / principle eager-always (#695) — Smaug is a Lazy module and
+    // pre-Call-1 its L1 subscription sat behind `gates.For("smaug").WaitAsync`
+    // inside ExecuteAsync. After Call 1 the subscription attaches in
+    // StartAsync; the smaug ModuleGate no longer participates in state
+    // subscription. The TestHarness.StartAsync helper no longer touches a
+    // ModuleGates instance — every test in this file structurally exercises
+    // the eager-attach contract by construction. This explicit assertion
+    // makes the contract visible.
+    [Fact]
+    public async Task L1_subscription_attaches_in_StartAsync_without_gate()
+    {
+        // The harness's StartAsync invokes service.StartAsync but never
+        // creates a ModuleGates / Open() — Call 1's eager-attach contract.
+        await using var harness = await TestHarness.StartAsync();
+
+        // Push a skill snapshot so the OnSkillSnapshot handler has observable
+        // effect — proves the subscription is live without any tab activation.
+        harness.SkillState.Push(SnapshotWithCivicPride(level: 7, bonus: 0));
+
+        harness.Context.CivicPrideLevel.Should().Be(7,
+            "the IPlayerSkillState subscription was attached during StartAsync, before any module gate could be opened");
+    }
+
+    // ============================================================
     // Test 1 — snapshot with CivicPride → context updated to raw+bonus.
     // ============================================================
 
@@ -243,19 +267,18 @@ public sealed class VendorIngestionServiceSkillStateTests
             var parser = new VendorLogParser();
             var context = new VendorSellContext();
             var activeChar = new TestActiveCharacterService();
-            var gates = new ModuleGates();
             var driver = new TestDriver();
             var skillState = new FakeSkillState(initialSkillSnapshot ?? PlayerSkillSnapshot.Empty);
 
+            // Post-Call-1 (#695): VendorIngestionService no longer takes a
+            // ModuleGates parameter — its L1 subscription attaches eagerly
+            // in StartAsync, not behind the smaug gate.
             var service = new VendorIngestionService(
-                driver, parser, calibration, context, activeChar, skillState, gates);
-
-            // Open the gate so ExecuteAsync drops into subscribing immediately.
-            gates.For("smaug").Open();
+                driver, parser, calibration, context, activeChar, skillState);
 
             // Kick the service via the hosted-service contract. StartAsync
-            // returns once the executor has begun (does not wait for the
-            // infinite-delay loop to complete).
+            // attaches the L1 subscription and the skill subscription
+            // before returning, then schedules ExecuteAsync's park loop.
             await service.StartAsync(CancellationToken.None);
 
             // Give the service a moment to land on its Subscribe calls.

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Mithril.Shared.Audio;
+using Mithril.WorldSim;
 using Samwise.Alarms;
 using Samwise.Parsing;
 using Samwise.State;
@@ -18,14 +19,17 @@ public class AlarmServiceTests
         GardenStateMachine StateMachine,
         FakeTime Time,
         FakeActiveCharacterService ActiveChar,
-        SamwiseSettings Settings);
+        SamwiseSettings Settings,
+        FakePlayerWorld? PlayerWorld);
 
-    private static Sut BuildSut(AlarmCollisionBehavior collision = AlarmCollisionBehavior.Replace)
+    private static Sut BuildSut(
+        AlarmCollisionBehavior collision = AlarmCollisionBehavior.Replace,
+        FakePlayerWorld? playerWorld = null)
     {
         var cfg = new InMemoryCropConfig();
         var time = new FakeTime(Base);
         var ac = new FakeActiveCharacterService();
-        var sm = new GardenStateMachine(cfg, time, activeChar: ac);
+        var sm = new GardenStateMachine(cfg, time, activeChar: ac, playerWorld: playerWorld);
         ac.SetActiveCharacter("Hits", "");
 
         var settings = new SamwiseSettings();
@@ -35,8 +39,8 @@ public class AlarmServiceTests
         settings.Alarms.Rules[PlotStage.Thirsty].Enabled = true;
 
         var sink = new FakeAudioPlaybackSink();
-        var service = new AlarmService(sm, settings, sink);
-        return new Sut(service, sink, sm, time, ac, settings);
+        var service = new AlarmService(sm, settings, sink, playerWorld);
+        return new Sut(service, sink, sm, time, ac, settings, playerWorld);
     }
 
     /// <summary>
@@ -458,5 +462,83 @@ public class AlarmServiceTests
 
         liveHandle.IsPlaying.Should().BeFalse();
         s.Sink.Plays.Should().HaveCount(2);
+    }
+
+    // ── Call 3 / principle 12 — Mode-gated projection ────────────────────────
+    //
+    // Under WorldMode.Replaying, AlarmService.Fire must not emit user-facing
+    // side effects (audio playback, AlarmTriggered event). Upstream state
+    // derivation (the _firedAt dedup write in OnPlotChanged) stays
+    // mode-agnostic so a Replaying → Live transition mid-session doesn't
+    // re-fire alarms the user already lived through.
+    //
+    // The original sink-list source is the Call 3 ratification in
+    // docs/world-simulator.md §Decisions ratified post-#642 (resolves #676).
+
+    [Fact]
+    public void OnPlotChanged_Replaying_DoesNotPlayAudio_AndDoesNotRaiseAlarmTriggered()
+    {
+        var world = new FakePlayerWorld();
+        world.WorldClock.Mode = WorldMode.Replaying;
+        var s = BuildSut(playerWorld: world);
+        var triggered = new List<ActiveAlarm>();
+        s.Service.AlarmTriggered += (_, a) => triggered.Add(a);
+
+        RipenPlot(s, "1", "Carrot");
+
+        s.Sink.Plays.Should().BeEmpty(
+            "principle 12 — audio playback is a user-facing projection that must not fire while the world is still draining replayed frames");
+        triggered.Should().BeEmpty(
+            "the AlarmTriggered event is also a user-facing side effect (consumed by toast/inbox UIs) and is suppressed under Replaying");
+    }
+
+    [Fact]
+    public void OnPlotChanged_Live_FiresAudioAndAlarmTriggered()
+    {
+        var world = new FakePlayerWorld();
+        world.WorldClock.Mode = WorldMode.Live;
+        var s = BuildSut(playerWorld: world);
+        var triggered = new List<ActiveAlarm>();
+        s.Service.AlarmTriggered += (_, a) => triggered.Add(a);
+
+        RipenPlot(s, "1", "Carrot");
+
+        s.Sink.Plays.Should().HaveCount(1,
+            "Live mode is the projection-honest window: side effects fire normally");
+        triggered.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void OnPlotChanged_Replaying_StillUpdatesFiredAtDedup()
+    {
+        // State derivation is mode-agnostic — _firedAt is updated even under
+        // Replaying so a subsequent same-key transition (e.g., a duplicate
+        // log line during replay) does not blast the user when the mode
+        // transitions to Live.
+        var world = new FakePlayerWorld();
+        world.WorldClock.Mode = WorldMode.Replaying;
+        var s = BuildSut(playerWorld: world);
+
+        RipenPlot(s, "1", "Carrot");
+
+        s.Service.ActiveKeys.Should().HaveCount(1,
+            "OnPlotChanged stamps _firedAt before invoking Fire; that dedup write happens regardless of mode");
+    }
+
+    [Fact]
+    public void OnPlotChanged_NullPlayerWorld_FiresNormally()
+    {
+        // Defensive default: when no IPlayerWorld is injected (e.g., partial
+        // composition tests or pre-#601 code paths), the _worldClock?.Mode
+        // null-conditional treats the world as Live so existing tests aren't
+        // broken by the guard.
+        var s = BuildSut(playerWorld: null);
+        var triggered = new List<ActiveAlarm>();
+        s.Service.AlarmTriggered += (_, a) => triggered.Add(a);
+
+        RipenPlot(s, "1", "Carrot");
+
+        s.Sink.Plays.Should().HaveCount(1);
+        triggered.Should().HaveCount(1);
     }
 }

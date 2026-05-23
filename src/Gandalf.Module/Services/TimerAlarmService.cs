@@ -30,6 +30,7 @@ public sealed class TimerAlarmService : IDisposable
 
     private readonly UserTimerSource _source;
     private readonly GandalfSettings _settings;
+    private readonly IAudioPlaybackSink _audio;
     private readonly TimeProvider _time;
     private readonly IWorldClock? _worldClock;
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
@@ -39,11 +40,13 @@ public sealed class TimerAlarmService : IDisposable
     public TimerAlarmService(
         UserTimerSource source,
         GandalfSettings settings,
+        IAudioPlaybackSink audio,
         TimeProvider? time = null,
         IPlayerWorld? playerWorld = null)
     {
         _source = source;
         _settings = settings;
+        _audio = audio;
         _time = time ?? TimeProvider.System;
         _worldClock = playerWorld?.Clock;
         _source.TimerReady += OnTimerReady;
@@ -75,7 +78,9 @@ public sealed class TimerAlarmService : IDisposable
             handle.Stop();
     }
 
-    private void OnTimerReady(object? sender, TimerReadyEventArgs e)
+    // internal for tests (Gandalf.Tests has InternalsVisibleTo); production
+    // dispatch goes through UserTimerSource.TimerReady subscribed in the ctor.
+    internal void OnTimerReady(object? sender, TimerReadyEventArgs e)
     {
         if (!_settings.AlarmEnabled) return;
         var key = e.Key;
@@ -86,10 +91,17 @@ public sealed class TimerAlarmService : IDisposable
         if (_snoozedUntil.TryGetValue(key, out var until) && until > now) return;
 
         _firedAt[key] = now;
+
+        // Call 3 / principle 12 — mode-gate the user-facing projection (audio
+        // playback + window flash). State derivation upstream of the
+        // projection (the _firedAt dedup write above) stays mode-agnostic so
+        // the next live-mode tick reuses the same suppression contract.
+        if (_worldClock?.Mode == WorldMode.Replaying) return;
+
         var soundPath = ResolveSoundPath(e, _settings);
         Dispatch(() =>
         {
-            var handle = AudioPlayer.Play(soundPath, (float)_settings.AlarmVolume, "gandalf");
+            var handle = _audio.Play(soundPath, (float)_settings.AlarmVolume, "gandalf");
             _playback[key] = handle;
             if (_settings.FlashWindow)
             {

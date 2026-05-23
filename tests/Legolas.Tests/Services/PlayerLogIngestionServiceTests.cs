@@ -51,10 +51,12 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         SpyAreaCalibration Spy,
         SessionState Session,
         SurveyFlowController Flow,
-        PlayerAreaTracker Tracker);
+        PlayerAreaTracker Tracker,
+        ModuleGates Gates);
 
     private static Fixture Build(
-        AreaCalibration? calibration = null, GameConfig? config = null)
+        AreaCalibration? calibration = null, GameConfig? config = null,
+        bool openGate = true)
     {
         var driver = new TestLogStreamDriver();
         // #514: the shared tracker owns its one-shot seed. Route the test's
@@ -67,15 +69,15 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         var settings = new LegolasSettings();
         var flow = new SurveyFlowController(session, settings);
         var gates = new ModuleGates();
-        gates.For("legolas").Open();
+        if (openGate) gates.For("legolas").Open();
         var motherlode = new MotherlodeMeasurementCoordinator(
             new MultilaterationSolver(), new MotherlodeFlowController(session),
             new FakePlayerPositionTracker(), new FakePlayerPinTracker());
         var svc = new PlayerLogIngestionService(
             driver, new PlayerLogParser(), tracker, spy, flow, session, motherlode,
-            settings, gates,
+            settings,
             activeChar: null, ingestionStore: null);
-        return new Fixture(svc, driver, spy, session, flow, tracker);
+        return new Fixture(svc, driver, spy, session, flow, tracker, gates);
     }
 
     /// <summary>
@@ -112,6 +114,44 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             idx += actor.Length;
         }
         return idx == 0 ? line : line.Substring(idx);
+    }
+
+    // ---- Call 1 / principle eager-always (resolves #695) ----------------
+
+    /// <summary>
+    /// Call 1: PlayerLogIngestionService's L1 driver subscription must attach
+    /// during <c>StartAsync</c>, not behind <c>gate.WaitAsync</c> in
+    /// ExecuteAsync. A live envelope pushed after StartAsync — but before the
+    /// legolas tab is activated — must reach the area-bridge / map-fx
+    /// handlers.
+    ///
+    /// The original sink-list source is the Call 1 ratification in
+    /// docs/world-simulator.md §Decisions ratified post-#642.
+    /// </summary>
+    [Fact]
+    public async Task Subscription_attaches_in_StartAsync_without_opening_module_gate()
+    {
+        var f = Build(calibration: Identity(), openGate: false);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var run = f.Service.StartAsync(cts.Token);
+        try
+        {
+            // The MapFx live envelope reaches the handler only if the L1
+            // driver subscription is attached. Pre-Call-1 the subscribe sat
+            // behind gate.WaitAsync, so this drain would hang waiting on the
+            // gate; post-Call-1 the subscribe happens in StartAsync.
+            f.Driver.PushLive(LiveLine(MapFx));
+            await f.Driver.DrainLocalPlayerAsync();
+            await WaitUntil(
+                () => f.Session.LastLogEvent?.Contains("placed (absolute)") == true,
+                cts.Token);
+
+            f.Gates.For("legolas").IsOpen.Should().BeFalse(
+                "the gate-retirement audit — this test must not touch ModuleGate.Open to validate the eager attach (Call 1)");
+            f.Session.Surveys.Should().HaveCount(1,
+                "the L1 subscription processed the MapFx envelope while the gate stayed closed");
+        }
+        finally { await Stop(f, run, cts); }
     }
 
     // ---- area→calibration bridge (Phase 2) -------------------------------
@@ -498,7 +538,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             new FakePlayerPositionTracker(), new FakePlayerPinTracker());
         var svc = new PlayerLogIngestionService(
             driver, new PlayerLogParser(), tracker, spy, flow, session, motherlode,
-            settings, gates,
+            settings,
             activeChar: activeChar, ingestionStore: store);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
@@ -564,7 +604,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             new FakePlayerPositionTracker(), new FakePlayerPinTracker());
         var svc = new PlayerLogIngestionService(
             driver, new PlayerLogParser(), tracker, spy, flow, session, motherlode,
-            settings, gates,
+            settings,
             activeChar: activeChar, ingestionStore: store);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));

@@ -72,9 +72,9 @@ public sealed class VendorIngestionService : BackgroundService
     private readonly IActiveCharacterService _activeCharacter;
     private readonly IPlayerSkillState _skillState;
     private readonly IDiagnosticsSink? _diag;
-    private readonly ModuleGate _gate;
     private ILogSubscription? _subscription;
     private IDisposable? _skillSubscription;
+    private CancellationTokenRegistration _stopRegistration;
 
     public VendorIngestionService(
         ILogStreamDriver driver,
@@ -83,7 +83,6 @@ public sealed class VendorIngestionService : BackgroundService
         VendorSellContext context,
         IActiveCharacterService activeCharacter,
         IPlayerSkillState skillState,
-        ModuleGates gates,
         IDiagnosticsSink? diag = null)
     {
         _driver = driver;
@@ -93,37 +92,35 @@ public sealed class VendorIngestionService : BackgroundService
         _activeCharacter = activeCharacter;
         _skillState = skillState;
         _diag = diag;
-        _gate = gates.For("smaug");
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Eager subscription attach per Call 1 / principle eager-always (#695):
+    /// the L1 LocalPlayer subscription and the shared skill-state subscribe
+    /// both happen during the IHostedService chain's <c>StartAsync</c>,
+    /// before the trailing world-merger drain starts (#702 / Call 2). The
+    /// Smaug module gate no longer gates state subscription — gate-driven
+    /// UI hydration remains Smaug's own concern (today: lazy
+    /// CalibrationViewModel hydration on tab activation, which reads the
+    /// PriceCalibrationService snapshot independently of this service).
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("Smaug", "Waiting for module gate…");
-        await _gate.WaitAsync(stoppingToken).ConfigureAwait(false);
-        _diag?.Info("Smaug", "Gate opened — subscribing to L1 driver (LocalPlayer pipe) for vendor events");
+        _diag?.Info("Smaug",
+            "Subscribing to L1 driver (LocalPlayer pipe) + shared skill state for vendor events (eager attach)");
 
         PrimeCivicPrideFromActiveCharacter();
         _activeCharacter.ActiveCharacterChanged += OnActiveCharacterChanged;
         _activeCharacter.CharacterExportsChanged += OnActiveCharacterChanged;
-        stoppingToken.Register(() =>
-        {
-            _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
-            _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
-        });
 
         // Subscribe to shared skill state (#580). Subscribe is atomic
         // replay + live under the tracker's lock, so the current snapshot
-        // — including any CivicPride observed pre-gate — is delivered
+        // — including any CivicPride observed pre-attach — is delivered
         // synchronously before this call returns, and before any vendor
         // envelope reaches the L1 handler below.
         _skillSubscription = _skillState.Subscribe(OnSkillSnapshot);
 
-        // Latent-bug fix per #549 + #550 capability E. The Smaug gate only
-        // opens after the user has clicked the Smaug tab, so Application.Current
-        // is guaranteed non-null and its Dispatcher already pumping by here. We
-        // fall back to Inline if for any reason no Application is hosting (e.g.
-        // headless integration tests that share this service) — better silent
-        // best-effort than an NRE.
+        // Latent-bug fix per #549 + #550 capability E.
         var uiDispatcher = Application.Current?.Dispatcher;
         var deliveryContext = uiDispatcher is not null
             ? DeliveryContext.Marshaled(uiDispatcher)
@@ -177,6 +174,20 @@ public sealed class VendorIngestionService : BackgroundService
                 DiagnosticCategory = "Smaug.Ingestion",
             });
 
+        return base.StartAsync(cancellationToken);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // Detach active-character handlers on host stop. Pre-Call-1 this hooked
+        // via `stoppingToken.Register` AFTER the gate opened; under eager
+        // attach the registration lives across the host lifetime.
+        _stopRegistration = stoppingToken.Register(() =>
+        {
+            _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
+            _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
+        });
+
         try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
         catch (OperationCanceledException) { /* expected on host stop */ }
         finally
@@ -185,6 +196,7 @@ public sealed class VendorIngestionService : BackgroundService
             _subscription = null;
             _skillSubscription?.Dispose();
             _skillSubscription = null;
+            _stopRegistration.Dispose();
         }
     }
 

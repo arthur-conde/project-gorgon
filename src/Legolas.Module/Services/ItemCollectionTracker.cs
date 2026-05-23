@@ -105,24 +105,22 @@ public sealed class ItemCollectionTracker : BackgroundService
     }
 
     /// <summary>
-    /// Attach the <see cref="IInventoryView.Bus"/> subscriptions <b>before</b>
-    /// the host's <see cref="ExecuteAsync"/> pump spins up — and crucially
-    /// before the <c>"legolas"</c> module gate has any chance of holding back
-    /// the pump on a lazy module. <see cref="ViewEventBus.Subscribe"/> has no
-    /// replay-on-subscribe contract; any frame published before <c>Subscribe</c>
-    /// is lost to a subscriber that attaches later. Pre-#688/#606 the bus
-    /// subscriptions sat inside <see cref="ExecuteAsync"/> behind the gate-wait,
-    /// which for a lazy module means every inventory frame published before
-    /// first-tab activation would be lost — the exact race the
-    /// <c>InventoryItemAdded</c> + <c>InventoryStackChanged</c> credit relies on
-    /// not happening. Attaching here closes that window: the host's
-    /// <see cref="BackgroundService.StartAsync"/> contract guarantees we run
-    /// before any consumer can observe the service as "started," so by the time
-    /// any other hosted-service (or the world's merger) publishes a frame, our
-    /// subscriptions are already live. The <see cref="ILogStreamDriver"/>
-    /// subscription stays inside <see cref="ExecuteAsync"/> behind the gate —
-    /// the L1 driver's own <see cref="ReplayMode"/> semantics cover late-attach
-    /// and the FSM-touching collect handler must wait for the module gate.
+    /// Eager subscription attach per Call 1 / principle eager-always (#695):
+    /// both the <see cref="IInventoryView.Bus"/> subscriptions AND the L1
+    /// ProcessScreenText subscription wire up during <c>StartAsync</c>,
+    /// before the trailing world-merger drain starts (#702 / Call 2). The
+    /// legolas module gate no longer gates state subscription — pre-Call-1
+    /// the L1 subscribe sat inside <see cref="ExecuteAsync"/> behind
+    /// <c>gates.For("legolas").WaitAsync</c>, which on a lazy module
+    /// delayed the collect-credit path until first-tab activation. Now the
+    /// L1 subscribe joins the bus subscribes here so a session-start replay
+    /// drain reaches HandleItemCollected from the moment the host's chain
+    /// completes (#702 invariant: trailing-merger starts after every
+    /// other hosted service's <c>StartAsync</c> returns).
+    ///
+    /// <para><see cref="ViewEventBus.Subscribe"/> still has no
+    /// replay-on-subscribe contract; the attach-before-merger contract
+    /// from #702 is what guarantees no frames are missed.</para>
     /// </summary>
     public override Task StartAsync(CancellationToken cancellationToken)
     {
@@ -133,21 +131,16 @@ public sealed class ItemCollectionTracker : BackgroundService
         // consume the resolved view event downstream of that composition.
         _addedSub ??= _inventoryView.Bus.Subscribe<InventoryItemAdded>(OnInventoryAdded);
         _stackChangedSub ??= _inventoryView.Bus.Subscribe<InventoryStackChanged>(OnInventoryStackChanged);
-        return base.StartAsync(cancellationToken);
-    }
-
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        await _gates.For("legolas").WaitAsync(stoppingToken).ConfigureAwait(false);
 
         // Player.log collect channel — parses ProcessScreenText
         // (ImportantInfo, "<Mineral> collected!"). Mirrors the structural
         // shape PlayerLogIngestionService uses (LiveOnly + Marshaled +
         // Legolas.PlayerLog diagnostic category) so the two services share
-        // the same delivery semantics. Stays inside ExecuteAsync (post-gate)
-        // because the collect handler mutates SessionState (UI-bound surveys
-        // + LastLogEvent) — those mutations must wait for the lazy module
-        // to be active; the bus correlator side does not.
+        // the same delivery semantics. The collect handler mutates
+        // SessionState (UI-bound surveys + LastLogEvent); UI VMs hydrate
+        // lazily from the SessionState snapshot when the legolas tab is
+        // first activated, so the eager subscribe here doesn't depend on
+        // any prior UI construction.
         var dispatcher = Application.Current?.Dispatcher;
         _logSub = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
@@ -170,6 +163,11 @@ public sealed class ItemCollectionTracker : BackgroundService
                 DiagnosticCategory = "Legolas.ItemCollect",
             });
 
+        return base.StartAsync(cancellationToken);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
         catch (OperationCanceledException) { /* expected on host stop */ }
         finally
