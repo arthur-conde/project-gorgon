@@ -57,7 +57,29 @@ public sealed partial class SarumanViewModel : ObservableObject
 
     [ObservableProperty] private bool _hideSpent = true;
 
+    /// <summary>
+    /// One-time post-#603 migration banner (#686). Mirrors the active
+    /// character's <c>SarumanState.ShowPreSplitMigrationHint</c> flag; updated
+    /// on every <see cref="Refresh"/> so a character switch (which fires
+    /// <see cref="SarumanOverrideService.OverridesChanged"/> via the
+    /// <c>PerCharacterView.CurrentChanged</c> chain) re-evaluates against the
+    /// newly-active character's state.
+    /// </summary>
+    [ObservableProperty] private bool _showMigrationHint;
+
     partial void OnHideSpentChanged(bool value) => WordsView.Refresh();
+
+    [RelayCommand]
+    private void DismissMigrationHint()
+    {
+        if (_overrides.DismissMigrationHint())
+        {
+            // OverridesChanged already fires inside DismissMigrationHint, but
+            // that's a dispatched refresh hop — set the local flag synchronously
+            // so the banner collapses on the same UI tick as the click.
+            ShowMigrationHint = false;
+        }
+    }
 
     private bool FilterPredicate(object o)
     {
@@ -99,6 +121,7 @@ public sealed partial class SarumanViewModel : ObservableObject
         }
         TrackedCount = known;
         SpentCount = spent;
+        ShowMigrationHint = _overrides.ShowMigrationHint;
 
         WordsView.Refresh();
     }

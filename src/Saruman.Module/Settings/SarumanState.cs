@@ -27,11 +27,21 @@ public sealed class SarumanState : IVersionedState<SarumanState>
     /// not re-imported here — discovery state rebuilds from log replay; chat
     /// spent state rebuilds from chat replay on first observation per
     /// (server, character). The override ledger starts empty.
+    ///
+    /// <para>Sets <see cref="ShowPreSplitMigrationHint"/> so the next time
+    /// the user opens the Saruman tab they get a one-time banner explaining
+    /// why their previously-marked-spent codes are missing and how to recover
+    /// older offline burns via the right-click <c>Mark as spent</c> path.
+    /// Users who already migrated under a Mithril build that lacked this flag
+    /// won't see the hint — accepted trade-off, the only alternative was a
+    /// retroactive heuristic (e.g. "discovered entries with no overrides")
+    /// that overlaps with the legitimate fresh-install steady state.</para>
     /// </summary>
     public static SarumanState Migrate(SarumanState loaded)
     {
         loaded.SchemaVersion = Version;
         loaded.SpentOverrides ??= new HashSet<string>(StringComparer.Ordinal);
+        loaded.ShowPreSplitMigrationHint = true;
         return loaded;
     }
 
@@ -43,6 +53,16 @@ public sealed class SarumanState : IVersionedState<SarumanState>
     /// at the VM layer: <c>isSpent = view.IsSpent(code) || overrides.Contains(code)</c>.
     /// </summary>
     public HashSet<string> SpentOverrides { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// When <c>true</c>, the Saruman view surfaces a one-time banner explaining
+    /// the pre-#603 spent-flag loss and the manual recovery path. Set by
+    /// <see cref="Migrate"/> (schema 1→2 upgrade) and by
+    /// <c>SarumanLegacyMigration</c> (pre-per-character flat-file migration);
+    /// cleared when the user dismisses the banner. Defaults to <c>false</c> so
+    /// fresh installs never see the notice.
+    /// </summary>
+    public bool ShowPreSplitMigrationHint { get; set; }
 }
 
 [JsonSourceGenerationOptions(

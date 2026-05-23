@@ -100,4 +100,35 @@ public sealed class SarumanOverrideServiceTests : IDisposable
         svc.IsSpent("FEAVEG").Should().BeFalse();
         view.Dispose();
     }
+
+    [Fact]
+    public void DismissMigrationHint_clears_flag_persists_and_fires_event()
+    {
+        // Seed a v1 saruman.json on disk so the store's Load runs Migrate()
+        // and stamps ShowPreSplitMigrationHint, the production path the UX
+        // banner sees.
+        var charDir = Path.Combine(_root, "Arthur_Kwatoxi");
+        Directory.CreateDirectory(charDir);
+        File.WriteAllText(Path.Combine(charDir, "saruman.json"),
+            """{"schemaVersion":1,"spentOverrides":[]}""");
+
+        var (svc, view) = Build();
+        var fires = 0;
+        svc.OverridesChanged += (_, _) => fires++;
+
+        svc.ShowMigrationHint.Should().BeTrue("Migrate() set the flag on load");
+        svc.DismissMigrationHint().Should().BeTrue();
+        svc.ShowMigrationHint.Should().BeFalse();
+        fires.Should().Be(1, "dismiss piggybacks on OverridesChanged for VM refresh");
+
+        // Idempotent: a second dismiss is a no-op.
+        svc.DismissMigrationHint().Should().BeFalse();
+        view.Dispose();
+
+        // Round-trip: the dismissal persisted to disk; reloading does not
+        // re-trigger the hint (Migrate doesn't run for current-version files).
+        var (svc2, view2) = Build();
+        svc2.ShowMigrationHint.Should().BeFalse();
+        view2.Dispose();
+    }
 }
