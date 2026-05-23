@@ -90,6 +90,10 @@ public sealed class TimerProgressService : IDisposable
         var view = new TimerView(def, progress);
         if (view.State != TimerState.Idle) return;
 
+        // Wall-clock per principle-13 user-action carve-out (Tier A): StartedAt feeds
+        // UI elapsed/remaining display via TimerView, so it anchors in the user's
+        // perceived "now," not the world clock. See docs/world-simulator.md §Decisions
+        // ratified post-#642.
         var startedAt = _time.GetUtcNow();
         progress.StartedAt = startedAt;
         progress.CompletedAt = null;
@@ -110,6 +114,10 @@ public sealed class TimerProgressService : IDisposable
         var view = new TimerView(def, progress);
         if (view.State != TimerState.Done) return;
 
+        // Wall-clock per principle-13 user-action carve-out (Tier A): StartedAt feeds
+        // UI elapsed/remaining display via TimerView, so it anchors in the user's
+        // perceived "now," not the world clock. See docs/world-simulator.md §Decisions
+        // ratified post-#642.
         var startedAt = _time.GetUtcNow();
         progress.StartedAt = startedAt;
         progress.CompletedAt = null;
