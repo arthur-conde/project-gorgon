@@ -24,7 +24,7 @@ namespace Mithril.GameState.Gifting;
 ///   is resolved from the signature service's OWN <c>instanceId →
 ///   InternalName</c> map — populated by its own <c>ProcessAddItem</c>
 ///   ingestion — never via a cross-pump call to
-///   <c>IInventoryService.TryResolve</c>. This is the Tier-2 frame-determinism
+///   <see cref="Mithril.GameState.Inventory.IInventoryView.TryResolve"/>. This is the Tier-2 frame-determinism
 ///   commitment: a Tier-2 service consumes only L1 directly so the cross-pump
 ///   race documented in <a href="https://github.com/moumantai-gg/mithril/issues/582">#582</a>
 ///   can't re-appear at a different scope.</item>
@@ -33,9 +33,9 @@ namespace Mithril.GameState.Gifting;
 /// <para><b>Stack-size resolution is the consumer's job</b>, intentionally —
 /// <see cref="ItemInstanceId"/> + <see cref="ItemInternalName"/> are
 /// sufficient for a downstream consumer (Arwen) to look up the pre-delete
-/// stack size via <see cref="Mithril.GameState.Inventory.IInventoryService.TryGetStackSize"/>
+/// stack size via <see cref="Mithril.GameState.Inventory.IInventoryView.TryGetStackSize"/>
 /// at observation-record time. Hoisting stack size onto the event here would
-/// inherit InventoryService's chat-correlation race without giving the consumer
+/// inherit the view's chat-correlation race without giving the consumer
 /// any new lever, so the boundary stays at "item identity, item value, favor
 /// delta, timestamps". See issue
 /// <a href="https://github.com/moumantai-gg/mithril/issues/596">#596</a>

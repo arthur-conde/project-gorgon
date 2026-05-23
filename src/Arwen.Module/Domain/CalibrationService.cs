@@ -21,7 +21,7 @@ public sealed record EstimateResult(double Value, string Tier, int SampleCount);
 /// and computes per-NPC / per-item / per-signature category rates.
 ///
 /// Gift detection sequence:
-/// 1. <see cref="IInventoryService"/> maintains the canonical instanceId → InternalName map
+/// 1. <see cref="IInventoryView"/> maintains the canonical instanceId → InternalName map
 /// 2. ProcessStartInteraction(NPC_Key) → set active NPC context
 /// 3. ProcessDeleteItem(instanceId) → item removed while talking to NPC → pending gift
 /// 4. ProcessDeltaFavor(NPC_Key, delta) → favor gained → correlate with pending gift
@@ -42,7 +42,7 @@ public sealed class CalibrationService
 
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
-    private readonly IInventoryService _inventory;
+    private readonly IInventoryView _inventory;
     private readonly IGameSessionService? _session;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
@@ -105,7 +105,7 @@ public sealed class CalibrationService
     public CalibrationService(
         IReferenceDataService refData,
         GiftIndex giftIndex,
-        IInventoryService inventory,
+        IInventoryView inventory,
         string dataDir,
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,

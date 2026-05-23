@@ -25,7 +25,7 @@ namespace Mithril.GameState.Inventory;
 /// <see cref="TryResolve"/> callers — chiefly Arwen's gift-attribution flow,
 /// which queries the inventory ledger to resolve an id whose delete line was
 /// the trigger — still observe the <c>InternalName</c>. This mirrors the
-/// pre-split <c>IInventoryService.TryResolve</c> behaviour exactly.</para>
+/// pre-split inventory service's <c>TryResolve</c> behaviour exactly.</para>
 ///
 /// <para><b>Threading.</b> The world drives <see cref="Apply"/> from its
 /// merger thread; folder mutations run under <see cref="_lock"/>.

@@ -86,15 +86,14 @@ public static class GameStateServiceCollectionExtensions
         //     (#729) + the typed change-event bus.
         //
         // The legacy InventoryService class retired entirely in #602 — its
-        // L1-direct subscriptions violated world-sim principle 3. The
-        // IInventoryService DI binding still resolves (Arwen's CalibrationService
-        // consumes TryResolve / TryGetStackSize through it) and points at the
-        // view, which implements both surfaces. The union-shaped
+        // L1-direct subscriptions violated world-sim principle 3. The union-shaped
         // Subscribe(Action<InventoryEvent>) shim retired in #659 once all six
         // pre-#602 consumers reached their post-shim destinations
         // (PlayerWorld-direct for Samwise/Legolas/Motherlode, the Bind channel
         // for Palantir, the Tier-2 IGiftSignalService for Arwen, blueprint-only
-        // for Saruman).
+        // for Saruman). The legacy Query-only IInventoryService interface
+        // retired with the Arwen consumer migration — CalibrationService now
+        // injects IInventoryView directly for TryResolve / TryGetStackSize.
         //
         // Folder + producer registration happens in PlayerInventoryWorldRegistration
         // / ChatInventoryWorldRegistration hosted services (ordering preserved by
@@ -116,8 +115,7 @@ public static class GameStateServiceCollectionExtensions
 
         services
             .AddSingleton<InventoryView>()
-            .AddSingleton<IInventoryView>(sp => sp.GetRequiredService<InventoryView>())
-            .AddSingleton<IInventoryService>(sp => sp.GetRequiredService<InventoryView>());
+            .AddSingleton<IInventoryView>(sp => sp.GetRequiredService<InventoryView>());
 
         // Shared live player-effects set from Player.log (ProcessAddEffects /
         // ProcessRemoveEffects / ProcessUpdateEffectName). Foundation for the
@@ -137,7 +135,7 @@ public static class GameStateServiceCollectionExtensions
         // (#594 umbrella; first sub-issue is #596). Owns its own
         // LocalPlayer L1 subscription AND its own instanceId → InternalName
         // map populated from ProcessAddItem — explicitly does NOT consume
-        // IInventoryService.TryResolve, to retire the cross-pump race
+        // IInventoryView.TryResolve, to retire the cross-pump race
         // documented in #582's "Replay correctness" section.
         services
             .AddSingleton<GiftSignalService>()

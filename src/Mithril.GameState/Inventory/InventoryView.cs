@@ -49,8 +49,7 @@ namespace Mithril.GameState.Inventory;
 ///   <c>view.Bus.Subscribe&lt;InventoryItemAdded&gt;(…)</c> /
 ///   <c>InventoryItemRemoved</c> / <c>InventoryStackChanged</c>.</item>
 ///   <item><b>Query</b> — <see cref="TryResolve"/> /
-///   <see cref="TryGetStackSize"/> on both <see cref="IInventoryView"/> and
-///   <see cref="IInventoryService"/>.</item>
+///   <see cref="TryGetStackSize"/> on <see cref="IInventoryView"/>.</item>
 ///   <item><b>Bind</b> — <see cref="IInventoryView.Items"/>: a live
 ///   <see cref="IReadOnlyObservableCollection{InventoryItem}"/> for WPF
 ///   binding. Per-row mutations propagate via
@@ -82,14 +81,13 @@ namespace Mithril.GameState.Inventory;
 ///
 /// <para><b>What #602 retired.</b> The pre-split <c>InventoryService</c>
 /// L1-direct subscriptions to <c>LocalPlayerLogLine</c> and <c>RawLogLine</c>
-/// retired entirely. The class survives only as a thin wrapper that resolves
-/// to this view (so the existing <see cref="IInventoryService"/> DI binding
-/// stays valid for the remaining Query-channel consumer, Arwen's
-/// <c>CalibrationService</c>). FSW reconcile retired per #612 —
+/// retired entirely. The Query-only legacy <c>IInventoryService</c> interface
+/// retired with the Arwen consumer migration — <c>CalibrationService</c> now
+/// injects <see cref="IInventoryView"/> directly. FSW reconcile retired per #612 —
 /// <see cref="IGameReportsService.StorageReportsChanged"/> is the sole
 /// seed-refresh signal.</para>
 /// </summary>
-public sealed class InventoryView : IInventoryView, IInventoryService, IDisposable
+public sealed class InventoryView : IInventoryView, IDisposable
 {
     private static readonly TimeSpan PendingChatTtl = TimeSpan.FromSeconds(5);
 
