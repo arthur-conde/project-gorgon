@@ -1,11 +1,15 @@
 using Legolas.Domain;
 using Legolas.Flow;
 using Mithril.GameState.Areas;
+// Mithril.GameState.Inventory: PlayerInventoryRemoved (folder-emitted change
+// event on the PlayerWorld bus, not the retired IInventoryService shim).
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Movement;
 using Mithril.GameState.Pins;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 
 namespace Legolas.Services;
 
@@ -172,7 +176,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         MotherlodeFlowController flow,
         IPlayerPositionTracker positionTracker,
         IPlayerPinTracker pinTracker,
-        IInventoryService? inventory = null,
+        IPlayerWorld? playerWorld = null,
         IReferenceDataService? refData = null,
         LegolasSettings? settings = null,
         ICharacterPinAnchor? characterPin = null,
@@ -189,11 +193,13 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         // Replay-on-subscribe is fine: a position fix only matters once a use
         // references it within MaxFeederGap. Inventory is consumed for the
         // *Deleted* completion signal only — never to create slots from stock.
+        // PlayerWorld single-world-direct (principle 4): the dig signal is
+        // Player.log ProcessDeleteItem only — no chat fusion — so we subscribe
+        // straight to PlayerInventoryRemoved on the world bus instead of going
+        // through the view layer's cross-source composer.
         _posSub = positionTracker.Subscribe(OnPlayerPosition);
         _pinSub = pinTracker.Subscribe(OnPinChanged);
-#pragma warning disable CS0618 // back-compat shim use during the #602 → #659 migration window
-        _invSub = inventory?.Subscribe(OnInventory);
-#pragma warning restore CS0618
+        _invSub = playerWorld?.Bus.Subscribe<PlayerInventoryRemoved>(OnPlayerInventoryRemoved);
     }
 
     // ---- Feeder inputs (tracker thread) ----------------------------------
@@ -229,9 +235,10 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     /// uncollected slot. The <c>Added</c> branch is intentionally absent —
     /// holding stock must create nothing (the 100-maps pathology).
     /// </summary>
-    private void OnInventory(InventoryEvent e)
+    private void OnPlayerInventoryRemoved(Frame<PlayerInventoryRemoved> frame)
     {
-        if (e.Kind != InventoryEventKind.Deleted || !IsMotherlodeMap(e.InternalName)) return;
+        var payload = frame.Payload;
+        if (!IsMotherlodeMap(payload.InternalName)) return;
         bool changed = false;
         lock (_gate)
         {
@@ -241,7 +248,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             // location which never received a distance, within the tight
             // window), discard that ephemeral location so it doesn't pollute
             // the solve / trip divergence.
-            var at = new DateTimeOffset(DateTime.SpecifyKind(e.Timestamp, DateTimeKind.Utc));
+            var at = new DateTimeOffset(DateTime.SpecifyKind(payload.Timestamp, DateTimeKind.Utc));
             if (_open is { } o && o.DistanceCount == 0
                 && _lastUseAt is { } lu
                 && (at - lu).TotalSeconds <= MapConsumeWindowSeconds)
@@ -266,12 +273,12 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             {
                 _session.Surveys[bestIdx] = b with { Collected = true };
                 _diag?.Info("Legolas.Motherlode",
-                    $"Map consumed ({e.InternalName}) — slot {bestIdx} collected; dug={_dugMaps}.");
+                    $"Map consumed ({payload.InternalName}) — slot {bestIdx} collected; dug={_dugMaps}.");
             }
             else
             {
                 _diag?.Info("Legolas.Motherlode",
-                    $"Map consumed ({e.InternalName}) — dug={_dugMaps} (no measured slot to retire).");
+                    $"Map consumed ({payload.InternalName}) — dug={_dugMaps} (no measured slot to retire).");
             }
             changed = true;
         }

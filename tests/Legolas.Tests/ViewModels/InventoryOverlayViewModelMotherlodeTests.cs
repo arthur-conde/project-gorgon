@@ -28,12 +28,12 @@ public class InventoryOverlayViewModelMotherlodeTests
 
     private static (InventoryOverlayViewModel overlay, SessionState session,
         MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
-        FakeInventoryService inv) Build()
+        FakeMotherlodePlayerWorld inv) Build()
     {
         var session = new SessionState();
         var pos = new FakePlayerPositionTracker();
         var pins = new FakePlayerPinTracker();
-        var inv = new FakeInventoryService();
+        var inv = new FakeMotherlodePlayerWorld();
         var refData = new FakeMotherlodeRefData(
             (KurSimpleIN, KurSimple), (KurBasicIN, KurBasic));
         var flow = new MotherlodeFlowController(new SessionState());

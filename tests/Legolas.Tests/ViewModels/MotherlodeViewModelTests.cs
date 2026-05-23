@@ -90,7 +90,7 @@ public class MotherlodeViewModelTests
     {
         var pos = new FakePlayerPositionTracker();
         var pins = new FakePlayerPinTracker();
-        var inv = new FakeInventoryService();
+        var inv = new FakeMotherlodePlayerWorld();
         var refData = new FakeMotherlodeRefData(
             ("MiningSurveyKurMountains1X", "Kur Mountains Simple Metal Motherlode Map"));
         var flow = new MotherlodeFlowController(new SessionState());
