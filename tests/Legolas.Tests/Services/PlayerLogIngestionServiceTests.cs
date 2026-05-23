@@ -55,15 +55,22 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         ModuleGates Gates);
 
     private static Fixture Build(
-        AreaCalibration? calibration = null, GameConfig? config = null,
+        AreaCalibration? calibration = null, string? preSeededArea = null,
         bool openGate = true)
     {
         var driver = new TestLogStreamDriver();
-        // #514: the shared tracker owns its one-shot seed. Route the test's
-        // config to the tracker so a startup-seed test drives the owned
-        // self-seed (lazy-on-first-read of CurrentArea — which
-        // ApplyAreaIfChanged does at gate-open).
-        var tracker = new PlayerAreaTracker(new AreaTransitionParser(), config: config);
+        // #775: the tracker's lazy self-seed retired; the production seed
+        // path is PlayerAreaWorldRegistration.StartAsync (eager pre-warm
+        // via AreaLoadingFrameProducer.TryBuildSeedFrame -> folder.Apply).
+        // For the unit test fixture that exercises Legolas directly without
+        // wiring a producer/world, the eager pre-warm is faked via a single
+        // Observe() call before constructing the service — same semantics,
+        // simpler scaffolding.
+        var tracker = new PlayerAreaTracker(new AreaTransitionParser());
+        if (preSeededArea is not null)
+        {
+            tracker.Observe($"LOADING LEVEL {preSeededArea}", DateTime.UtcNow);
+        }
         var spy = new SpyAreaCalibration(calibration);
         var session = new SessionState();
         var settings = new LegolasSettings();
@@ -206,23 +213,22 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
     }
 
     /// <summary>
-    /// #514 + #550 LiveOnly composition: PlayerAreaTracker self-seeds on
-    /// first <see cref="PlayerAreaTracker.CurrentArea"/> read. The L1
-    /// subscription is LiveOnly so we do NOT pump replay envelopes — the
-    /// tracker's own log scan delivers the area before any live envelope.
+    /// #514 + #550 LiveOnly composition + #775 eager pre-warm:
+    /// <see cref="PlayerAreaTracker"/>'s current area is populated BEFORE
+    /// Legolas's <c>StartAsync</c> runs (in production: the
+    /// <c>PlayerAreaWorldRegistration</c> hosted service eagerly applies the
+    /// producer's reverse-scan seed during its own <c>StartAsync</c>, which
+    /// runs before Legolas's per registration order). The L1 subscription
+    /// is LiveOnly so we do NOT pump replay envelopes — the eager pre-warm
+    /// delivers the area before any live envelope. The unit fixture fakes
+    /// the pre-warm via <see cref="PlayerAreaTracker.Observe"/>; the
+    /// production seed shape is covered by
+    /// <c>AreaLoadingFrameProducerTests.Seed_picks_the_LATEST_LOADING_LEVEL_with_its_parsed_log_timestamp</c>.
     /// </summary>
     [Fact]
     public async Task Startup_seed_applies_current_area_before_live_lines()
     {
-        var logPath = Path.Combine(_tempDir, "Player.log");
-        File.WriteAllText(
-            logPath,
-            "LocalPlayer: ProcessAddItem(Apple(1), -1, True)\n" +
-            "LOADING LEVEL AreaEltibule\n" +
-            "LocalPlayer: ProcessAddPlayer(...)\n",
-            new UTF8Encoding(false));
-
-        var f = Build(config: new GameConfig { GameRoot = _tempDir });
+        var f = Build(preSeededArea: "AreaEltibule");
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var run = f.Service.StartAsync(cts.Token);
         try
