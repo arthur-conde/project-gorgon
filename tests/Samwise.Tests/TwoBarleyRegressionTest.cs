@@ -106,41 +106,33 @@ public class TwoBarleyRegressionTest
     }
 
     [Fact]
-    public void SeedAddBeforePlant_ResolvesPlantViaBusDelivery()
+    public void SeedAddItemBeforePlant_StateMachine_ResolvesPlant()
     {
-        // Pins the post-#725 contract: a PlayerInventoryAdded delivered for the
-        // seed instance before the SetPetOwner / ProcessUpdateItemCode pair is
-        // observed populates the state-machine's id→crop ledger so the plant
-        // resolves. Direction-of-cause is identical to the pre-migration
-        // SubscribeAfterSeedAdd test; the migration retires the
-        // replay-on-attach guard the shim provided because Call 1 + Call 2
-        // (#695 + #696) make the late-attach race structurally impossible
-        // — every bus subscriber is live before the world's merger drains
-        // any frames. This test is the consumer-side guard for that
-        // invariant: if a future migration accidentally re-introduces a
-        // late-attach gap, the plant will fail to resolve and this test
-        // will go red the same way the original repro did.
+        // State-machine-only guard for the seed→crop resolution invariant: an
+        // AddItem for the seed instance, applied to the state machine before
+        // the SetPetOwner / ProcessUpdateItemCode pair, must populate the
+        // id→crop ledger so the subsequent plant resolves. This pins a
+        // GardenStateMachine input property (the in-memory ledger semantics),
+        // NOT the bus-delivery path; see GardenIngestionServiceBusDeliveryTests
+        // for the consumer-side bus integration guard added under #725.
         var parser = new GardenLogParser();
         var cfg = new InMemoryCropConfigStore();
         var ac = new FakeActiveCharacterService();
         ac.SetActiveCharacter("Hits", "");
         var sm = new GardenStateMachine(cfg, referenceData: new BarleyOnlyReferenceData(), activeChar: ac);
 
-        // Simulate GardenIngestionService.OnPlayerInventoryAdded with the seed
-        // instance arriving as the first observed inventory frame.
         sm.Apply(new AddItem(
             new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc),
             ItemId: "86940428",
             ItemName: "BarleySeeds"));
 
-        // Now plant: SetPetOwner + ProcessUpdateItemCode (parser-driven path).
         Feed(sm, parser, "[20:50:22] LocalPlayer: ProcessSetPetOwner(590342, 588755, PassiveFollow)",
             new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc));
         Feed(sm, parser, "[20:50:22] LocalPlayer: ProcessUpdateItemCode(86940428, 796683, True)",
             new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc));
 
         sm.Snapshot()["Hits"]["590342"].CropType
-            .Should().Be("Barley", "the pre-plant Add must populate the id→crop ledger so plant-resolve maps 86940428→Barley");
+            .Should().Be("Barley", "the pre-plant AddItem populates the id→crop ledger so plant-resolve maps 86940428→Barley");
     }
 
     private sealed class BarleyOnlyReferenceData : IReferenceDataService

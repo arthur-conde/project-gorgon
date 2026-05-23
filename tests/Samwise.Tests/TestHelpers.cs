@@ -86,6 +86,11 @@ internal sealed class TestEventBus : IWorldEventBus
         foreach (var h in snap) ((Action<Frame<T>>)h)(frame);
     }
 
+    public int SubscriberCountFor(Type t)
+    {
+        lock (_lock) return _handlers.TryGetValue(t, out var list) ? list.Count : 0;
+    }
+
     private sealed class Sub(TestEventBus o, Type t, Delegate h) : IDisposable
     {
         public void Dispose()

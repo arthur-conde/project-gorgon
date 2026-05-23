@@ -76,9 +76,16 @@ namespace Samwise.State;
 /// ctor init, and per-message catch around the parse-and-Apply switch are
 /// gone — L1 owns containment for every subscription via the driver's
 /// rate-limited <c>Warn</c> + per-subscription fault state machine (#550
-/// capabilities C + G). The bus subscription path keeps its own in-process
-/// error surface — bus dispatch swallows handler exceptions per the
-/// <see cref="IWorldEventBus"/> contract.</para>
+/// capabilities C + G). The bus does <em>not</em> swallow handler exceptions;
+/// handlers must be exception-safe on the synchronous path because a throw
+/// aborts the merger's per-frame dispatch loop (abandoning the remaining
+/// subscriber snapshot for that frame). The current handlers only build a
+/// value record and hand <see cref="GardenStateMachine.Apply"/> to the UI
+/// dispatcher via <see cref="DispatchInventory"/>
+/// (<see cref="System.Windows.Threading.Dispatcher.InvokeAsync(Action)"/> is
+/// fire-and-forget on the merger thread), so any state-mutation throw lands
+/// on the UI thread, not the bus path. Future inline work added to either
+/// handler must hold that invariant or wrap the new code in a try/catch.</para>
 ///
 /// <para><b>Gardening XP via <see cref="IPlayerSkillState.SubscribeChanges"/>.</b>
 /// The harvest-confirmation signal (per
