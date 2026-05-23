@@ -196,7 +196,15 @@ public partial class MapOverlayView : Window
     /// <summary>The calibration phase overrides the user's click-through
     /// preference: Drop ⇒ click-through ON (right-clicks reach the game), Pair
     /// ⇒ OFF (the overlay captures the pairing/correction left-clicks). Outside
-    /// calibration, honour <see cref="LegolasSettings.ClickThroughMap"/>.</summary>
+    /// calibration, honour <see cref="LegolasSettings.ClickThroughMap"/>.
+    ///
+    /// <para>#520: pass the header strip as an <em>interactive region</em>,
+    /// so when click-through is in effect (either the user setting or the
+    /// calibration Drop force-on) the chrome — drag handle + nudge-pad
+    /// toggle — stays reachable while the body still passes clicks to the
+    /// game underneath. Without the carve-out, enabling click-through also
+    /// locked out the toggle that's supposed to let the user dismiss the
+    /// pad without alt-tabbing.</para></summary>
     private void ApplyClickThrough()
     {
         var clickThrough = Settings?.ClickThroughMap ?? false;
@@ -205,7 +213,7 @@ public partial class MapOverlayView : Window
             if (vm.IsCalibrationDropping) clickThrough = true;
             else if (vm.IsCalibrationCapturing) clickThrough = false;
         }
-        ClickThrough.Apply(this, clickThrough);
+        ClickThrough.Apply(this, clickThrough, HeaderChrome);
     }
 
     private static Color ParseColor(string hex) => LegolasBrushes.Parse(hex);

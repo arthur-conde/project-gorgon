@@ -28,7 +28,8 @@
                    Opacity="{Binding Session.MapOpacity, FallbackValue=1.0}" />
         <Border BorderBrush="#FF303030" BorderThickness="1">
         <DockPanel>
-            <Border DockPanel.Dock="Top" Background="#FF252525" Padding="8,4"
+            <Border x:Name="HeaderChrome"
+                    DockPanel.Dock="Top" Background="#FF252525" Padding="8,4"
                     MouseLeftButtonDown="Header_MouseLeftButtonDown">
                 <Grid>
                     <Grid.ColumnDefinitions>
