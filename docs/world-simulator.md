@@ -4,7 +4,7 @@ Design rationale for the three-layer world-simulator architecture: source stream
 
 > **Vocabulary:** see [`docs/glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
 
-**Status:** design notebook, not implementation spec. Captures the architectural commitments, contracts, and migration plan. Concrete contracts may iterate as implementation surfaces issues; principles are load-bearing.
+**Status:** reference doc; migration delivered 2026-05-23 (umbrella [#601](https://github.com/moumantai-gg/mithril/issues/601) closed). Captures the architectural commitments, contracts, and the migration plan that landed. Principles are load-bearing — every new world-sim consumer adheres to them. The migration-path section below records what shipped, not what's owed; for residual long-tail work see [#700](https://github.com/moumantai-gg/mithril/issues/700) (Phase 5 consolidation umbrella).
 
 **Companion docs:**
 - [`module-signal-map.md`](module-signal-map.md) — the topology this design feeds against (read first).
@@ -647,9 +647,9 @@ Player.log + chat don't see vault contents (the player isn't observing them in-b
 
 ---
 
-## Migration path (concrete to-do)
+## Migration path (delivered)
 
-After this design lands, the following changes are needed:
+All 13 items below shipped as part of the world-sim architecture migration; umbrella [#601](https://github.com/moumantai-gg/mithril/issues/601) closed 2026-05-23. Per-item PR references live in the closure-ceremony comment on #601. This section remains as a record of the migration's scope and decisions; for residual long-tail work see [#700](https://github.com/moumantai-gg/mithril/issues/700).
 
 ### Splits (services that span both sources)
 

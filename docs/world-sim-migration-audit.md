@@ -2,6 +2,8 @@
 
 > **Vocabulary:** see [`docs/glossary.md`](glossary.md) for definitions of the world-sim terminology used in this doc.
 
+> **Migration closed 2026-05-23 ([#601](https://github.com/moumantai-gg/mithril/issues/601)).** This audit remains as a historical snapshot of pre-migration component state. The live architecture is documented in [`world-simulator.md`](world-simulator.md); per-row updates over the migration's lifetime kept the Inventory / Samwise / Arwen / Palantir rows current, but other rows remain in pre-Phase-2 tense. Full audit refresh (or supersede-with-fresh-audit) is deferred to [#700](https://github.com/moumantai-gg/mithril/issues/700)'s checklist.
+
 Audit date: 2026-05-21
 Audited against: [`docs/world-simulator.md`](world-simulator.md) and
 [`docs/module-signal-map.md`](module-signal-map.md) at commit `51e39f0` (branch

@@ -2,6 +2,8 @@
 
 # World-sim driver playbook (v4)
 
+> **Status (2026-05-23):** umbrella [#601](https://github.com/moumantai-gg/mithril/issues/601) closed; the migration drained the orchestrator's queue. This playbook remains operational for any future world-sim work tracked under [#700](https://github.com/moumantai-gg/mithril/issues/700) — notably the release-cycle-gated [#732](https://github.com/moumantai-gg/mithril/issues/732) and any opportunistic `IPlayer*` rename work. The cheap-probe short-circuit in the slash command body keeps the cost of idle ticks negligible.
+
 This is the playbook **you (top-level Claude at depth 0)** follow when `/world-sim-orchestrate-tick` finds work and reads you. You are the driver. You read GitHub state, pick the next ready issue (if any), deliver it from initial implementation through merge, file follow-ons, and call `ScheduleWakeup` for the next tick.
 
 **You are NOT a subagent.** v4 collapsed the driver into top-level Claude itself (depth 0, where `Agent` works). Earlier versions wrapped this work in a subagent at depth 1 where `Agent` doesn't work. Design rationale lives in [`world-sim-shepherd.md`](world-sim-shepherd.md) (the design notebook, kept under the historical filename) and `scratch/desktop-harness-probe.md`. This playbook is operational only.
