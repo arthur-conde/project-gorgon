@@ -12,12 +12,13 @@ namespace Samwise.Parsing;
 /// classified the line as <c>LocalPlayer:</c>-actored and eaten the envelope,
 /// so the <see cref="SetPetOwnerRx"/> guard no longer re-anchors on it.
 /// Pre-L0.5 anchored prefixes also stayed on the parser for the
-/// <c>IInventoryService</c>-sourced events (AddItem/DeleteItem moved to
-/// <c>InventoryService</c> per #525 and never reach this parser); the
-/// L1 migration only removes the actor anchor on the LocalPlayer-pipe
-/// patterns this parser still owns. All callers still pass raw test
-/// lines that include the <c>LocalPlayer:</c> prefix for back-compat —
-/// the unanchored regex matches both shapes.</para>
+/// PlayerWorld-sourced events (AddItem/DeleteItem moved off this parser per
+/// #525 and now arrive via <c>IPlayerWorld.Bus</c>'s
+/// <c>PlayerInventoryAdded</c> / <c>PlayerInventoryRemoved</c> change events
+/// post-#725, so they never reach this parser); the L1 migration only removes
+/// the actor anchor on the LocalPlayer-pipe patterns this parser still owns.
+/// All callers still pass raw test lines that include the <c>LocalPlayer:</c>
+/// prefix for back-compat — the unanchored regex matches both shapes.</para>
 /// </summary>
 public sealed partial class GardenLogParser : ILogParser
 {
@@ -36,9 +37,11 @@ public sealed partial class GardenLogParser : ILogParser
     [GeneratedRegex(@"ProcessStartInteraction\((\d+),\s*\d+,\s*[\d.-]+,\s*\w+,\s*""(Summoned\w+)""\)", RegexOptions.CultureInvariant)]
     private static partial Regex StartInteractRx();
 
-    // ProcessAddItem and ProcessDeleteItem are sourced from IInventoryService events
-    // (the canonical instanceId → InternalName map). UpdateItemCode is unique to
-    // Samwise's plant-resolve path (stack count > 0 update) and stays here.
+    // ProcessAddItem and ProcessDeleteItem arrive via IPlayerWorld.Bus's
+    // PlayerInventoryAdded / PlayerInventoryRemoved change events post-#725
+    // (the canonical instance-id → InternalName ledger). UpdateItemCode is
+    // unique to Samwise's plant-resolve path (stack count > 0 update) and
+    // stays here.
     [GeneratedRegex(@"ProcessUpdateItemCode\((\d+)", RegexOptions.CultureInvariant)]
     private static partial Regex UpdateItemCodeRx();
 

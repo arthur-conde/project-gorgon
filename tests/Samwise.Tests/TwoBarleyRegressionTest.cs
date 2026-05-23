@@ -2,7 +2,6 @@ using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using System.Text.RegularExpressions;
 using FluentAssertions;
-using Mithril.GameState.Inventory;
 using Mithril.Shared.Reference;
 using Samwise.Config;
 using Samwise.Parsing;
@@ -25,8 +24,9 @@ public class TwoBarleyRegressionTest
     /// <summary>
     /// Mirror of <c>GardenIngestionService</c>'s log handling: parser-emitted
     /// events go straight in; ProcessAddItem/ProcessDeleteItem are sourced via
-    /// IInventoryService in production, so we simulate that synthesis here so
-    /// the test exercises the same state-machine inputs end-to-end.
+    /// <c>IPlayerWorld.Bus</c>'s <c>PlayerInventoryAdded</c> /
+    /// <c>PlayerInventoryRemoved</c> change events in production (post-#725),
+    /// so we simulate the same id+InternalName projection here.
     /// </summary>
     private static void Feed(GardenStateMachine sm, GardenLogParser parser, string line, DateTime ts)
     {
@@ -106,53 +106,32 @@ public class TwoBarleyRegressionTest
     }
 
     [Fact]
-    public void SubscribeAfterSeedAdd_StillResolvesPlant()
+    public void SeedAddBeforePlant_ResolvesPlantViaBusDelivery()
     {
-        // Direct repro for issue #7: the seed AddItem fires during PlayerLogStream's
-        // session-replay flush, BEFORE the gated GardenIngestionService attaches its
-        // handler. Under the old `event ItemAdded` design, that AddItem was lost and
-        // the plant later landed with CropType=null → "Unknown" in the UI.
-        // Under the new Subscribe(replay-on-attach) contract, the AddItem is replayed
-        // synchronously when GardenIngestionService subscribes, so the plant resolves.
-        //
-        // Post-#602 the InventoryService class retired; the late-subscribe atomic
-        // replay contract is inherited by IInventoryView's shim surface (which is
-        // what IInventoryService now resolves to). This test pins the contract via
-        // a minimal IInventoryService fake that mirrors the shim's event-log
-        // replay semantics — the same contract the production view honours.
+        // Pins the post-#725 contract: a PlayerInventoryAdded delivered for the
+        // seed instance before the SetPetOwner / ProcessUpdateItemCode pair is
+        // observed populates the state-machine's id→crop ledger so the plant
+        // resolves. Direction-of-cause is identical to the pre-migration
+        // SubscribeAfterSeedAdd test; the migration retires the
+        // replay-on-attach guard the shim provided because Call 1 + Call 2
+        // (#695 + #696) make the late-attach race structurally impossible
+        // — every bus subscriber is live before the world's merger drains
+        // any frames. This test is the consumer-side guard for that
+        // invariant: if a future migration accidentally re-introduces a
+        // late-attach gap, the plant will fail to resolve and this test
+        // will go red the same way the original repro did.
         var parser = new GardenLogParser();
         var cfg = new InMemoryCropConfigStore();
         var ac = new FakeActiveCharacterService();
         ac.SetActiveCharacter("Hits", "");
         var sm = new GardenStateMachine(cfg, referenceData: new BarleyOnlyReferenceData(), activeChar: ac);
 
-        var inv = new ReplayingFakeInventoryService();
-
-        // Push the seed AddItem BEFORE Samwise subscribes — simulating the gate
-        // race where the inventory service is up but GardenIngestionService is
-        // still doing LoadAllAsync.
-        inv.Raise(new InventoryEvent(
-            InventoryEventKind.Added,
-            InstanceId: 86940428,
-            InternalName: "BarleySeeds",
-            Timestamp: new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc),
-            StackSize: 1,
-            SizeConfirmed: false));
-
-        // Now subscribe — replay must deliver the seed AddItem retroactively.
-#pragma warning disable CS0618 // shim surface used during the #602 → #659 migration window
-        using var sub = inv.Subscribe(evt =>
-        {
-            var idStr = evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            GardenEvent? ge = evt.Kind switch
-            {
-                InventoryEventKind.Added => new AddItem(evt.Timestamp, idStr, evt.InternalName),
-                InventoryEventKind.Deleted => new DeleteItem(evt.Timestamp, idStr),
-                _ => null,
-            };
-            if (ge is not null) sm.Apply(ge);
-        });
-#pragma warning restore CS0618
+        // Simulate GardenIngestionService.OnPlayerInventoryAdded with the seed
+        // instance arriving as the first observed inventory frame.
+        sm.Apply(new AddItem(
+            new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc),
+            ItemId: "86940428",
+            ItemName: "BarleySeeds"));
 
         // Now plant: SetPetOwner + ProcessUpdateItemCode (parser-driven path).
         Feed(sm, parser, "[20:50:22] LocalPlayer: ProcessSetPetOwner(590342, 588755, PassiveFollow)",
@@ -161,82 +140,7 @@ public class TwoBarleyRegressionTest
             new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc));
 
         sm.Snapshot()["Hits"]["590342"].CropType
-            .Should().Be("Barley", "Subscribe replay must deliver the seed AddItem so plant-resolve can map id→Barley");
-    }
-
-    /// <summary>
-    /// Minimal <see cref="IInventoryService"/> fake that mirrors the View's
-    /// late-subscribe atomic-replay contract (#585 — inherited by IInventoryView
-    /// post-#602). The shim's event-log replay semantics are what the
-    /// SubscribeAfterSeedAdd test pins, not the InventoryService class itself
-    /// (which retired in #602).
-    /// </summary>
-    private sealed class ReplayingFakeInventoryService : IInventoryService
-    {
-        private readonly object _lock = new();
-        private readonly List<InventoryEvent> _eventLog = new();
-        private readonly List<Action<InventoryEvent>> _handlers = new();
-        private readonly Dictionary<long, (string Name, int Size, bool Confirmed, bool Deleted)> _map = new();
-
-        public bool TryResolve(long instanceId, out string internalName)
-        {
-            lock (_lock)
-            {
-                if (_map.TryGetValue(instanceId, out var e)) { internalName = e.Name; return true; }
-            }
-            internalName = "";
-            return false;
-        }
-
-        public bool TryGetStackSize(long instanceId, out int stackSize)
-        {
-            lock (_lock)
-            {
-                if (_map.TryGetValue(instanceId, out var e) && e.Confirmed) { stackSize = e.Size; return true; }
-            }
-            stackSize = 0;
-            return false;
-        }
-
-#pragma warning disable CS0618 // shim surface; matches IInventoryView semantics
-        public IDisposable Subscribe(
-            Action<InventoryEvent> handler,
-            Mithril.Shared.Logging.ReplayMode replay = Mithril.Shared.Logging.ReplayMode.FromSessionStart)
-        {
-            lock (_lock)
-            {
-                if (replay == Mithril.Shared.Logging.ReplayMode.FromSessionStart)
-                {
-                    foreach (var e in _eventLog) handler(e);
-                }
-                _handlers.Add(handler);
-                return new Sub(this, handler);
-            }
-        }
-#pragma warning restore CS0618
-
-        public void Raise(InventoryEvent evt)
-        {
-            lock (_lock)
-            {
-                if (evt.Kind == InventoryEventKind.Added)
-                {
-                    _map[evt.InstanceId] = (evt.InternalName, evt.StackSize, evt.SizeConfirmed, false);
-                }
-                else if (evt.Kind == InventoryEventKind.Deleted
-                    && _map.TryGetValue(evt.InstanceId, out var entry))
-                {
-                    _map[evt.InstanceId] = entry with { Deleted = true };
-                }
-                _eventLog.Add(evt);
-                foreach (var h in _handlers.ToArray()) h(evt);
-            }
-        }
-
-        private sealed class Sub(ReplayingFakeInventoryService o, Action<InventoryEvent> h) : IDisposable
-        {
-            public void Dispose() { lock (o._lock) o._handlers.Remove(h); }
-        }
+            .Should().Be("Barley", "the pre-plant Add must populate the id→crop ledger so plant-resolve maps 86940428→Barley");
     }
 
     private sealed class BarleyOnlyReferenceData : IReferenceDataService

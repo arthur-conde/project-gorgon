@@ -5,6 +5,8 @@ using Mithril.GameState.Skills;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 using Samwise.Alarms;
 using Samwise.Calibration;
 using Samwise.Parsing;
@@ -12,10 +14,10 @@ using Samwise.Parsing;
 namespace Samwise.State;
 
 /// <summary>
-/// Bridges the L1 log driver, the <see cref="IInventoryService"/> event
-/// feed, and the <see cref="IPlayerSkillState"/> change channel into the
-/// <see cref="GardenStateMachine"/>. Post-#550 PR 3, the Player.log path
-/// subscribes through <see cref="ILogStreamDriver"/> with the archetype-B
+/// Bridges the L1 log driver, the <see cref="IPlayerWorld"/> inventory
+/// change-event bus, and the <see cref="IPlayerSkillState"/> change channel
+/// into the <see cref="GardenStateMachine"/>. Post-#550 PR 3, the Player.log
+/// path subscribes through <see cref="ILogStreamDriver"/> with the archetype-B
 /// disposition from <a href="https://github.com/moumantai-gg/mithril/issues/549">#549</a>:
 ///
 /// <list type="bullet">
@@ -40,23 +42,43 @@ namespace Samwise.State;
 ///   covers the Player.log payloads Samwise still owns.)</item>
 /// </list>
 ///
-/// <para><b>Inventory stream stays as-is.</b> <see cref="IInventoryService"/>
-/// emits in-process service events (canonical inventory map fan-out from
-/// the shared service), not an L1 log stream — the high-water filter does
-/// not apply to it. <see cref="InventoryService.Subscribe"/> replays the
-/// current map contents synchronously on the subscribing thread, closing
-/// the late-attach race the way it always did. The Samwise-side IDs that
-/// gate plant resolution come from inventory, not Player.log; once the
-/// state machine processes a plant, the AddItem/DeleteItem pair that
-/// originally fed it is irrelevant to restart-safety (the resolved crop
-/// type lives in the persisted plot).</para>
+/// <para><b>Inventory channel — PlayerWorld-direct (#725 / #659 migration off
+/// the <see cref="IInventoryView"/> shim).</b> The state machine's inventory
+/// dependency is structurally a single-world concern: <see cref="HandleAddItem"/>
+/// and the <c>DeleteItem</c> path read only <c>InstanceId</c> + <c>InternalName</c>
+/// (the seed-map id↔crop ledger and the harvest-confirmation prefix match).
+/// <see cref="GardenStateMachine"/> never reads <c>StackSize</c> or
+/// <c>SizeConfirmed</c>, never composes Player.log adds with chat
+/// <c>[Status] X xN added</c> observations, and the pre-migration handler
+/// explicitly dropped <see cref="InventoryEventKind.StackChanged"/> events.
+/// Per the principle 4 single-world-direct exit
+/// (<c>docs/world-simulator.md</c> §"Views can compose across all three
+/// categories"), we subscribe directly to
+/// <see cref="IPlayerWorld.Bus"/>'s <see cref="PlayerInventoryAdded"/> and
+/// <see cref="PlayerInventoryRemoved"/> change events. Same destination
+/// <see cref="Legolas.Services.ItemCollectionTracker"/> picked in #699 → PR #721
+/// after its own principle-4 audit.</para>
+///
+/// <para><b>Replay-on-subscribe is unnecessary under Call 1 + Call 2.</b> The
+/// shim's late-attach atomic-replay contract (#585, inherited by
+/// <see cref="IInventoryView"/> post-#602) guarded against frames published
+/// before the subscriber attached. Under the eager-always Call 1 contract
+/// (#695 / PR #705) Samwise's subscriptions attach inside <see cref="StartAsync"/>
+/// before the trailing <c>WorldMergerStartHostedService</c> from Call 2
+/// (#696 / PR #702) begins draining frames, so no frames can have been
+/// dispatched by the time the bus subscription is live. The dual-surface
+/// view contract (<c>docs/world-simulator.md</c> §"Dual-surface contract for
+/// views") explicitly omits a replay-on-subscribe primitive for the same
+/// reason. The legacy <c>SubscribeAfterSeedAdd_StillResolvesPlant</c>
+/// regression's race is by-construction eliminated here.</para>
 ///
 /// <para><b>Containment retired.</b> The pre-L1 <c>ThrottledWarn</c> field,
 /// ctor init, and per-message catch around the parse-and-Apply switch are
 /// gone — L1 owns containment for every subscription via the driver's
 /// rate-limited <c>Warn</c> + per-subscription fault state machine (#550
-/// capabilities C + G). The <c>InventoryService</c> path keeps its own
-/// in-process error surface (it never crossed L1).</para>
+/// capabilities C + G). The bus subscription path keeps its own in-process
+/// error surface — bus dispatch swallows handler exceptions per the
+/// <see cref="IWorldEventBus"/> contract.</para>
 ///
 /// <para><b>Gardening XP via <see cref="IPlayerSkillState.SubscribeChanges"/>.</b>
 /// The harvest-confirmation signal (per
@@ -72,14 +94,15 @@ public sealed class GardenIngestionService : BackgroundService
     private const string GardeningSkillKey = "Gardening";
 
     private readonly ILogStreamDriver _driver;
-    private readonly IInventoryService _inventory;
+    private readonly IPlayerWorld _playerWorld;
     private readonly IPlayerSkillState _skillState;
     private readonly GardenLogParser _parser;
     private readonly GardenStateMachine _state;
     private readonly GardenStateService _stateService;
     private readonly IDiagnosticsSink? _diag;
     private ILogSubscription? _logSub;
-    private IDisposable? _invSub;
+    private IDisposable? _invAddedSub;
+    private IDisposable? _invRemovedSub;
     private IDisposable? _skillSub;
 
     // These are pulled into the ctor so DI actually constructs them.
@@ -87,7 +110,7 @@ public sealed class GardenIngestionService : BackgroundService
     // is sufficient to keep them alive for the app lifetime.
     public GardenIngestionService(
         ILogStreamDriver driver,
-        IInventoryService inventory,
+        IPlayerWorld playerWorld,
         IPlayerSkillState skillState,
         GardenLogParser parser,
         GardenStateMachine state,
@@ -98,7 +121,7 @@ public sealed class GardenIngestionService : BackgroundService
         IDiagnosticsSink? diag = null)
     {
         _driver = driver;
-        _inventory = inventory;
+        _playerWorld = playerWorld;
         _skillState = skillState;
         _parser = parser;
         _state = state;
@@ -149,19 +172,25 @@ public sealed class GardenIngestionService : BackgroundService
         }
         catch (Exception ex) { _diag?.Warn("Samwise", $"Failed to load state: {ex.Message}"); }
 
-        // Inventory add/delete events are sourced from the shared IInventoryService
-        // so Samwise picks up the same canonical map as Arwen. Subscribe replays
-        // the current map contents synchronously on this thread before going live.
+        // Inventory add/delete events come straight off IPlayerWorld.Bus
+        // (principle 4 single-world-direct exit; see class-level remarks for
+        // the audit and the #699 → #721 Legolas precedent that landed at the
+        // same destination). Two typed subscriptions replace the legacy
+        // union-shaped IInventoryService.Subscribe shim.
         //
-        // This is a SERVICE-event consumer (in-process), NOT an L1 log
-        // stream — the L1 high-water filter does not apply here. The inventory
-        // service owns its own replay/idempotence shape. We marshal each
-        // event onto the UI dispatcher to mirror what the L1 Marshaled
-        // bridge does for the Player.log path, so PlotChanged → bound
-        // ObservableCollection stays single-threaded.
-#pragma warning disable CS0618 // back-compat shim use during the #602 → #659 migration window
-        _invSub = _inventory.Subscribe(OnInventoryEvent);
-#pragma warning restore CS0618
+        // No replay-on-subscribe primitive on the typed bus — the Call 1 +
+        // Call 2 ordering invariant (#695 / #696) guarantees both
+        // subscriptions are live before the world's merger drains any frames,
+        // so no frames are missed. The seed-AddItem-before-plant race the
+        // pre-#725 SubscribeAfterSeedAdd_StillResolvesPlant test pinned is
+        // structurally impossible under the eager-always state-subscriber
+        // contract.
+        //
+        // The bus dispatches on the world's merger thread, which doesn't
+        // satisfy the bound ObservableCollection's thread affinity. Self-marshal
+        // via DispatchInventory exactly the way the pre-#725 shim path did.
+        _invAddedSub = _playerWorld.Bus.Subscribe<PlayerInventoryAdded>(OnPlayerInventoryAdded);
+        _invRemovedSub = _playerWorld.Bus.Subscribe<PlayerInventoryRemoved>(OnPlayerInventoryRemoved);
 
         // Gardening XP arrival is the harvest-confirmation discriminator
         // (GardenStateMachine.HandleGardeningXp commits the staged plot
@@ -176,14 +205,16 @@ public sealed class GardenIngestionService : BackgroundService
         // so a snapshot replay must not commit a harvest.
         //
         // The IPlayerSkillState callback fires on the tracker's ingestion
-        // thread under its internal lock — same shape as IInventoryService.
-        // Self-marshal via DispatchInventory for the same reason: the
-        // GardenStateMachine.Apply path raises PlotChanged → bound
-        // ObservableCollection which has UI-thread affinity.
+        // thread under its internal lock — same off-UI-thread shape as the
+        // IPlayerWorld.Bus subscriptions above. Self-marshal via
+        // DispatchInventory for the same reason: the GardenStateMachine.Apply
+        // path raises PlotChanged → bound ObservableCollection which has
+        // UI-thread affinity.
         _skillSub = _skillState.SubscribeChanges(OnSkillChange);
 
         // L1 driver subscription for the Player.log payloads Samwise still owns
-        // (everything except AddItem/DeleteItem, which come via IInventoryService).
+        // (everything except AddItem/DeleteItem, which arrive via the
+        // IPlayerWorld.Bus subscriptions above post-#725).
         //
         // Disposition table from #549:
         //   ReplayMode            = FromSessionStart   (needs full session to rebuild in-flight crops)
@@ -236,31 +267,31 @@ public sealed class GardenIngestionService : BackgroundService
         finally
         {
             _logSub?.Dispose();
-            _invSub?.Dispose();
+            _invAddedSub?.Dispose();
+            _invRemovedSub?.Dispose();
             _skillSub?.Dispose();
         }
     }
 
-    private void OnInventoryEvent(InventoryEvent evt)
+    private void OnPlayerInventoryAdded(Frame<PlayerInventoryAdded> frame)
     {
-        var idStr = evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        GardenEvent? ge = evt.Kind switch
-        {
-            InventoryEventKind.Added => new AddItem(evt.Timestamp, idStr, evt.InternalName),
-            InventoryEventKind.Deleted => new DeleteItem(evt.Timestamp, idStr),
-            _ => null,
-        };
-        if (ge is null)
-        {
-            _diag?.Trace("Samwise.Parse", $"Skip InventoryEventKind.{evt.Kind} (not a garden-relevant event)");
-            return;
-        }
+        var payload = frame.Payload;
+        var idStr = payload.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var ge = new AddItem(payload.Timestamp, idStr, payload.InternalName);
         _diag?.Trace("Samwise.Parse", Describe(ge));
-        // The InventoryService replay + live feed comes off its own loop
-        // thread, which doesn't satisfy the bound ObservableCollection's
-        // thread affinity. Self-marshal here exactly the way the
-        // pre-L1 ingestion did — this is NOT the L1 path, so L1's
-        // Marshaled context doesn't cover it.
+        // The PlayerWorld bus dispatches on the merger thread, which doesn't
+        // satisfy the bound ObservableCollection's thread affinity. Self-marshal
+        // here exactly the way the pre-#725 shim path did — this is NOT the L1
+        // driver path, so L1's Marshaled context doesn't cover it.
+        DispatchInventory(() => _state.Apply(ge));
+    }
+
+    private void OnPlayerInventoryRemoved(Frame<PlayerInventoryRemoved> frame)
+    {
+        var payload = frame.Payload;
+        var idStr = payload.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var ge = new DeleteItem(payload.Timestamp, idStr);
+        _diag?.Trace("Samwise.Parse", Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -359,12 +390,13 @@ public sealed class GardenIngestionService : BackgroundService
     }
 
     /// <summary>
-    /// Dispatcher hop for the <see cref="IInventoryService"/> event feed.
-    /// L1 doesn't own this stream (it's an in-process service-event source,
-    /// not a log subscription), so the consumer keeps the
-    /// CheckAccess/InvokeAsync helper for inventory deliveries. Identical
-    /// shape to the pre-L1 path; renamed only to make the L1 vs.
-    /// non-L1 split obvious to a future reader.
+    /// Dispatcher hop for the <see cref="IPlayerWorld"/> inventory bus and
+    /// the <see cref="IPlayerSkillState"/> change callback. L1 doesn't own
+    /// either stream (the bus dispatches on the world merger's thread; the
+    /// skill state callback runs on its tracker's ingestion thread under an
+    /// internal lock), so the consumer keeps the CheckAccess/InvokeAsync
+    /// helper for these deliveries. Identical shape to the pre-L1 path;
+    /// renamed only to make the L1 vs. non-L1 split obvious to a future reader.
     /// </summary>
     private static void DispatchInventory(Action a)
     {
