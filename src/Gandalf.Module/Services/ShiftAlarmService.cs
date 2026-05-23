@@ -167,6 +167,16 @@ public sealed class ShiftAlarmService : BackgroundService
         // Gandalf.TimerAlarmService.OnTimerReady (both PR #705).
         if (_world.Clock.Mode == WorldMode.Replaying) return;
 
+        // #712 — cold-start suppression. The composer reports From == null
+        // exactly once per session: the first TimeOfDayShift emission after
+        // Mithril starts, carrying the in-progress shift the user already
+        // sees on-screen. Pre-#709 Reschedule-based scheduling armed only
+        // the NEXT transition, so cold-start was always silent; default-off
+        // matches that prior behaviour. Same shape as the Mode gate above —
+        // ledger has already advanced, only the audio + flash side-effect
+        // is suppressed.
+        if (shift.From is null && !_shiftSettings.RingOnCurrentShiftAtStartup) return;
+
         var path = ResolveSoundPath(config, _globalSettings);
         Dispatch(() =>
         {

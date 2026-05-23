@@ -36,8 +36,26 @@ public sealed class ShiftAlarmConfig : SettingsNode
 /// </summary>
 public sealed class GandalfShiftSettings : SettingsNode, IPostLoadInit
 {
+    private bool _ringOnCurrentShiftAtStartup;
+
     public Dictionary<string, ShiftAlarmConfig> ByShiftSlug { get; set; } =
         new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// When <c>true</c>, the first <c>TimeOfDayShift</c> emission observed
+    /// after Mithril starts — which carries <c>From == null</c> because the
+    /// composer has no prior shift on cold-start — fires the per-shift
+    /// alarm if the shift's <see cref="ShiftAlarmConfig.Enabled"/> is set.
+    /// Defaults to <c>false</c>: pre-#709 <c>Reschedule</c>-based scheduling
+    /// armed only the next transition, so cold-start was always silent.
+    /// Default-off matches that prior behaviour for users who relied on it;
+    /// users who want "ring me when I launch in an enabled shift" opt in.
+    /// </summary>
+    public bool RingOnCurrentShiftAtStartup
+    {
+        get => _ringOnCurrentShiftAtStartup;
+        set => Set(ref _ringOnCurrentShiftAtStartup, value);
+    }
 
     /// <summary>
     /// Lookup-or-create. Used by the settings view and by

@@ -100,6 +100,9 @@ public class ShiftAlarmServiceTests
     [Fact]
     public void Live_TimeOfDayShift_for_enabled_shift_plays_audio()
     {
+        // Genuine cross-shift transition (From != null) — exercises the
+        // "alarm fires on every enabled shift change" smoke path. Cold-
+        // start suppression (#712) is covered separately below.
         var sink = new RecordingAudioSink();
         var settings = new GandalfSettings { AlarmEnabled = true };
         var shifts = new GandalfShiftSettings();
@@ -107,7 +110,7 @@ public class ShiftAlarmServiceTests
         var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live, Now = new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero) } };
         using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
 
-        svc.OnShiftTransitionForTests(new TimeOfDayShift(From: null, To: "dawn",
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(From: "night", To: "dawn",
             At: world.Clock.Now, Mode: WorldMode.Live));
 
         sink.Plays.Should().HaveCount(1, "Live-mode shift transition for an enabled shift fires audio");
@@ -210,6 +213,78 @@ public class ShiftAlarmServiceTests
 
         sink.Plays.Should().BeEmpty("disabled shift never fires audio");
         svc.LastObservedShift.Should().Be("dawn", "ledger advances regardless");
+    }
+
+    // ── #712: cold-start (From == null) suppression ────────────────────
+
+    [Fact]
+    public void ColdStart_TimeOfDayShift_does_not_play_audio_when_setting_is_OFF()
+    {
+        // #712 default — RingOnCurrentShiftAtStartup = false. The composer's
+        // first emission after Mithril starts carries From == null (the
+        // in-progress shift the user already sees on-screen). Pre-#709
+        // Reschedule-based scheduling armed only the next transition, so
+        // cold-start was always silent; default-off matches that behaviour.
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings();
+        shifts.GetOrCreate("dawn").Enabled = true;
+        shifts.RingOnCurrentShiftAtStartup.Should().BeFalse("default — pre-#709 parity");
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live, Now = new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero) } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(From: null, To: "dawn",
+            At: world.Clock.Now, Mode: WorldMode.Live));
+
+        sink.Plays.Should().BeEmpty(
+            "default-off — cold-start (From == null) is silent without opt-in");
+        svc.LastObservedShift.Should().Be("dawn",
+            "ledger advances regardless so the next genuine transition isn't masked");
+    }
+
+    [Fact]
+    public void ColdStart_TimeOfDayShift_plays_audio_when_setting_is_ON()
+    {
+        // #712 opt-in. With RingOnCurrentShiftAtStartup = true, the cold-
+        // start emission rings (subject to the existing AlarmEnabled +
+        // per-shift Enabled gates).
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings { RingOnCurrentShiftAtStartup = true };
+        shifts.GetOrCreate("dawn").Enabled = true;
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live, Now = new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero) } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(From: null, To: "dawn",
+            At: world.Clock.Now, Mode: WorldMode.Live));
+
+        sink.Plays.Should().HaveCount(1,
+            "opt-in — cold-start (From == null) fires the audio when the user has opted in");
+        sink.Plays[0].CallerId.Should().Be("gandalf");
+        svc.LastObservedShift.Should().Be("dawn");
+    }
+
+    [Fact]
+    public void Genuine_cross_shift_transition_fires_regardless_of_cold_start_setting()
+    {
+        // #712 scope — the cold-start gate ONLY suppresses From == null
+        // emissions. A genuine cross-shift transition (From != null) fires
+        // even when RingOnCurrentShiftAtStartup == false; the setting is not
+        // a master kill-switch for shift alarms.
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings();
+        shifts.RingOnCurrentShiftAtStartup.Should().BeFalse();
+        shifts.GetOrCreate("dawn").Enabled = true;
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live, Now = new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero) } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(From: "night", To: "dawn",
+            At: world.Clock.Now, Mode: WorldMode.Live));
+
+        sink.Plays.Should().HaveCount(1,
+            "transition with a known prior shift fires regardless of the cold-start setting");
+        svc.LastObservedShift.Should().Be("dawn");
     }
 
     [Fact]
