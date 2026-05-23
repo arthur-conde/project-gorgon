@@ -163,7 +163,7 @@ public sealed class FavorIngestionService : BackgroundService
                     var favor = _favorView.Current;
                     if (favor is not null)
                     {
-                        favor.SetExactFavor(update.NpcKey, update.AbsoluteFavor, DateTimeOffset.UtcNow);
+                        favor.SetExactFavor(update.NpcKey, update.AbsoluteFavor, ts);
                         _favorView.Save();
                         _state.OnFavorUpdated(update.NpcKey);
                     }
