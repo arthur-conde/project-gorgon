@@ -82,24 +82,44 @@ public sealed class GourmandIngestionService : BackgroundService
     }
 
     /// <summary>
-    /// Eager subscription attach per Call 1 / principle eager-always (#695):
-    /// the active-character wait, persisted-state load, and L1 subscription
-    /// all happen during the IHostedService chain's <c>StartAsync</c>,
-    /// before the trailing world-merger drain starts (#702 / Call 2).
-    /// Pippin's module gate no longer gates state subscription.
+    /// Eager subscription attach per Call 1 / principle eager-always (#695).
+    /// The L1 subscription wires up during the IHostedService chain's
+    /// <c>StartAsync</c>, before the trailing world-merger drain starts
+    /// (#702 / Call 2). Pippin's module gate no longer gates state
+    /// subscription.
+    ///
+    /// <para><b>Non-blocking startup.</b> Pre-Call-1 this method awaited
+    /// <c>WaitForActiveCharacterAsync</c> inside <c>ExecuteAsync</c> — fine
+    /// because <c>ExecuteAsync</c> ran on the thread pool. Under Call 1 the
+    /// work moves into <c>StartAsync</c>, which the host awaits sequentially:
+    /// blocking here would hang the whole shell on a truly fresh install with
+    /// no persisted character. So we no longer wait. Persisted-state hydrate
+    /// runs only when <see cref="PerCharacterView{T}.Current"/> is already
+    /// populated (the common case — <c>ActiveCharacterService</c> initialises
+    /// from persistence in its ctor). On a fresh install the subscription
+    /// still attaches; the handler is null-safe to <c>_view.Current</c>, and
+    /// <see cref="GourmandStateMachine.Apply"/> is snapshot-replace (the
+    /// latest <c>FoodsConsumedReport</c> wins), so missing pre-character-pick
+    /// envelopes is benign.</para>
     /// </summary>
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("Pippin", "Waiting for active character…");
-        await WaitForActiveCharacterAsync(cancellationToken).ConfigureAwait(false);
-
-        try { await _stateService.LoadAsync(cancellationToken).ConfigureAwait(false); }
-        catch (Exception ex) { _diag?.Warn("Pippin", $"Failed to load state: {ex.Message}"); }
-
-        _diag?.Info("Pippin", "State hydrated — subscribing to L1 driver (LocalPlayer pipe) eagerly");
+        if (_view.Current is not null)
+        {
+            try { await _stateService.LoadAsync(cancellationToken).ConfigureAwait(false); }
+            catch (Exception ex) { _diag?.Warn("Pippin", $"Failed to load state: {ex.Message}"); }
+            _diag?.Info("Pippin",
+                "State hydrated for active character — subscribing to L1 driver (LocalPlayer pipe) eagerly");
+        }
+        else
+        {
+            _diag?.Info("Pippin",
+                "No persisted active character — subscribing to L1 driver eagerly; hydrate deferred to next session");
+        }
 
         // Seed the high-water from the freshly hydrated per-character state.
-        // null = no prior session processed (first run / pre-#550 fresh state).
+        // null = no prior session processed (first run / pre-#550 fresh state)
+        // OR no persisted active character (fresh install pre-character-pick).
         // The driver drops every envelope whose Sequence is <= this value
         // before handler invocation — restart-safe idempotence (#549 / #550
         // capability F). Pippin is the canonical demo of the pattern.
@@ -181,26 +201,4 @@ public sealed class GourmandIngestionService : BackgroundService
         base.Dispose();
     }
 
-    private async Task WaitForActiveCharacterAsync(CancellationToken ct)
-    {
-        if (_view.Current is not null) return;
-        var tcs = new TaskCompletionSource();
-        void Handler(object? _, EventArgs __)
-        {
-            if (_view.Current is not null) tcs.TrySetResult();
-        }
-        _view.CurrentChanged += Handler;
-        try
-        {
-            if (_view.Current is not null) return;
-            using (ct.Register(() => tcs.TrySetCanceled(ct)))
-            {
-                await tcs.Task.ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            _view.CurrentChanged -= Handler;
-        }
-    }
 }
