@@ -61,7 +61,7 @@ completeness but deferred to the existing architectural commitment.
 | # | Module / file:line | State holder | What it models | Class | Recommended disposition |
 |---|---|---|---|---|---|
 | 1 | [Saruman/Settings/SarumanState.cs:17](../src/Saruman.Module/Settings/SarumanState.cs) | `Codebook: Dictionary<string, KnownWord>` (per-character) | Player's set of discovered Words of Power + their lifecycle state (Known / Spent, count, timestamps) | **A** | Propose `IPlayerWordOfPowerState` in `Mithril.GameState/WordsOfPower/`. Parallels `IPlayerRecipeState`/`IPlayerSkillState` — same shape (per-character unlocked-set parsed from `Player.log`). Single-consumer today, so this is anticipatory; not load-bearing yet. |
-| 2 | [Pippin/Domain/GourmandState.cs:47](../src/Pippin.Module/Domain/GourmandState.cs) | `EatenFoodsByInternalName: Dictionary<string, int>` (per-character) | Player's set of foods eaten (the Gourmand-skill input domain) | **A** | Same shape as #1. Live signature = `ProcessDeleteItem(<food>(...))` via `IInventoryService` (exists) **+** `ProcessAddEffects([foodEffect],...)` on the same timestamp — the effects half requires a new GameState effects tracker (no `Effects/` submodule under `Mithril.GameState/` today). Snapshot report continues to feed the historical baseline (eats before Mithril was recording). Multi-PR lift; single-consumer today — anticipatory like #1. |
+| 2 | [Pippin/Domain/GourmandState.cs:47](../src/Pippin.Module/Domain/GourmandState.cs) | `EatenFoodsByInternalName: Dictionary<string, int>` (per-character) | Player's set of foods eaten (the Gourmand-skill input domain) | **A** | Same shape as #1. Live signature = `ProcessDeleteItem(<food>(...))` via `IInventoryView` (exists; pre-#602 this was `IInventoryService`) **+** `ProcessAddEffects([foodEffect],...)` on the same timestamp — the effects half requires a new GameState effects tracker (no `Effects/` submodule under `Mithril.GameState/` today). Snapshot report continues to feed the historical baseline (eats before Mithril was recording). Multi-PR lift; single-consumer today — anticipatory like #1. |
 | 3 | [Smaug/State/VendorSellContext.cs:23](../src/Smaug.Module/State/VendorSellContext.cs) | `EntityToNpc: Dictionary<int, string>` (4000-entry capped) | entityId → NpcKey mapping for resolving vendor screens | **A** | Lift into `INpcStateTracker` ([#552](https://github.com/moumantai-gg/mithril/issues/552), in flight). The #552 spec explicitly names "entityId↔NpcKey binding" as in-scope — this is the second uncovered Smaug state holder under that umbrella (the first, `CivicPrideLevel`, is already filed as [#580](https://github.com/moumantai-gg/mithril/issues/580)). |
 | 4 | [Smaug/State/VendorSellContext.cs:11](../src/Smaug.Module/State/VendorSellContext.cs) | `ActiveVendorEntityId / ActiveFavorTier / ActiveNpcKey` | Transient "which vendor screen am I in" context for sell attribution | **B** | Tier-2 signature candidate. Mirrors the Arwen/Gandalf prior-audit deferrals — defer to the #552 Tier-2 work. |
 | 5 | [Smaug/State/VendorCatalogService.cs:38](../src/Smaug.Module/State/VendorCatalogService.cs) | `_entries: IReadOnlyList<VendorCatalogEntry>` | Joined projection of CDN data × `IFavorLookupService` × Civic Pride | **C** | Pure projection; consumes services correctly. Module-specific catalog view. |
@@ -70,9 +70,9 @@ completeness but deferred to the existing architectural commitment.
 | 8 | [Arwen/Domain/ArwenFavorState.cs:19](../src/Arwen.Module/Domain/ArwenFavorState.cs) | `Favor: Dictionary<string, NpcFavorSnapshot>` (per-character) | Per-NPC exact favor from `Player.log` (consumed via `IFavorLookupService` by **Smaug too**) | A (prior-classified, deferred) | Already in flight: [#582](https://github.com/moumantai-gg/mithril/issues/582) covers Arwen's correlation SM; #552's `INpcStateTracker` is the natural home. Cross-module consumption (Smaug reads it via `IFavorLookupService`) is exactly the "shared service" signal the principle predicts. No new ask — confirms prior classification. |
 | 9 | [Arwen/State/FavorStateService.cs:47](../src/Arwen.Module/State/FavorStateService.cs) | `_tierByNpcKey: Dictionary<string, FavorTier>` | Joined view of CDN NPC × character export × persisted exact favor | **D** | Already consumes `IReferenceDataService.FileUpdated`, `IActiveCharacterService.CharacterExportsChanged`, `PerCharacterView`. (Will become a thin adapter once #552 absorbs the favor map.) |
 | 10 | [Arwen/Domain/GiftIndex.cs:29](../src/Arwen.Module/Domain/GiftIndex.cs) | `_npcGifts`, `_items`, `_allMatchesByNpcItem` | Pre-computed CDN-derived index: NPC preferences → matching items | **C** | Pure reference-data projection. Module-specific (rebuilds on `FileUpdated`). |
-| 11 | [Arwen/Domain/CalibrationService.cs:52](../src/Arwen.Module/Domain/CalibrationService.cs) | `_pending: TtlObservableCollection<PendingGiftObservation>` | TTL-aged pending gift confirmations awaiting user quantity input | **C** | Module-specific UX state. Consumes `IInventoryService.TryResolve`/`TryGetStackSize` correctly (Class D in its log consumption). |
+| 11 | [Arwen/Domain/CalibrationService.cs:52](../src/Arwen.Module/Domain/CalibrationService.cs) | `_pending: TtlObservableCollection<PendingGiftObservation>` | TTL-aged pending gift confirmations awaiting user quantity input | **C** | Module-specific UX state. Consumes `IInventoryView.TryResolve`/`TryGetStackSize` correctly (Class D in its log consumption; pre-#753 this was `IInventoryService` on both surfaces). |
 | 12 | [Arwen/Domain/CalibrationService.cs:74](../src/Arwen.Module/Domain/CalibrationService.cs) | `_activeNpcKey`, `_pendingDeletedItem`, `_pendingDelta` | Correlation SM for `DeleteItem + DeltaFavor` gift attribution | B (prior-classified) | Prior audit: deferred to Tier-2 signature work atop #552. No change. |
-| 13 | [Legolas/Services/MotherlodeMeasurementCoordinator.cs:133](../src/Legolas.Module/Services/MotherlodeMeasurementCoordinator.cs) | `_session: MotherlodeSession`, `_dugMaps`, `_open`, `_undo`, `_latestFix`, `_sessionArea` | In-flight surveying activity state (positions, fixes, slot solves) | **D** | Already consumes `IPlayerPositionTracker.Subscribe`, `IPlayerPinTracker.Subscribe`, `IInventoryService.Subscribe`, `PlayerAreaTracker`. Canonical Tier-2 reference per [docs/cross-source-correlation.md](cross-source-correlation.md). |
+| 13 | [Legolas/Services/MotherlodeMeasurementCoordinator.cs:133](../src/Legolas.Module/Services/MotherlodeMeasurementCoordinator.cs) | `_session: MotherlodeSession`, `_dugMaps`, `_open`, `_undo`, `_latestFix`, `_sessionArea` | In-flight surveying activity state (positions, fixes, slot solves) | **D** | Already consumes `IPlayerPositionTracker.Subscribe`, `IPlayerPinTracker.Subscribe`, `IInventoryView.Bus.Subscribe<…>` (post-#606/#659; pre-shim-retirement this was `IInventoryService.Subscribe`), `PlayerAreaTracker`. Canonical Tier-2 reference per [docs/cross-source-correlation.md](cross-source-correlation.md). |
 | 14 | [Legolas/Services/PinCalibrationCoordinator.cs:110](../src/Legolas.Module/Services/PinCalibrationCoordinator.cs) | `_pairs: List<(MapPin, PixelPoint)>`, `_skipped`, `ExistingPins` | Calibration session (clicks paired to map pins) | **D** | Consumes `IPlayerPinTracker.Subscribe` correctly. Module-specific calibration state — Class C in nature, Class D in dependency. |
 | 15 | [Legolas/Domain/LegolasIngestionState.cs:46](../src/Legolas.Module/Domain/LegolasIngestionState.cs) | `PlayerLogHighWaterSequence` (per-character) | Per-character L1 driver dedup high-water | **C** | Module-side ingestion bookkeeping; legitimate per-#550 capability F shape. |
 | 16 | [Legolas/Services/ItemCollectionTracker.cs](../src/Legolas.Module/Services/ItemCollectionTracker.cs) | `_pendingAdds: PendingCorrelator<string, int>` | Module-specific `InventoryItemAdded` ↔ `ProcessScreenText "<X> collected!"` pairing for survey-collect attribution (post-#606) | **C** | Intra-module Tier-1 correlator (per [docs/cross-source-correlation.md](cross-source-correlation.md)); the chat side migrated to `IInventoryView.Bus` in #602, the collect side migrated to Player.log `ProcessScreenText` in #606. |
@@ -101,8 +101,10 @@ and mutated to `Spent` by chat-line events
 **Why Class A:** the shape is identical to `IPlayerRecipeState`
 ([#475](https://github.com/moumantai-gg/mithril/pull/475)), `IPlayerSkillState`
 ([#465](https://github.com/moumantai-gg/mithril/pull/465)), and
-`IInventoryService` — a per-character monotonically-built set of game-mechanic
-identifiers the player has unlocked, derived from `Player.log`. The charter's
+`IInventoryService` (legacy; split into `IPlayerInventoryState` +
+`IChatInventoryState` + `IInventoryView` per #602) — a per-character
+monotonically-built set of game-mechanic identifiers the player has unlocked,
+derived from `Player.log`. The charter's
 principle says *"GameState owns the emulated game world; modules project
 subsets for UX."* Whether the player has discovered a particular Word of
 Power is part of the emulated game world, parallel to whether they know
@@ -128,7 +130,7 @@ the player has eaten
 Today populated **exclusively** from the in-game *Foods Consumed* snapshot
 report (`HandleReport` snapshot-replaces the dict,
 [GourmandStateMachine.cs:113](../src/Pippin.Module/State/GourmandStateMachine.cs));
-Pippin subscribes to neither `IInventoryService` nor any effects channel.
+Pippin subscribes to neither `IInventoryView` (nor its predecessor `IInventoryService` pre-#602) nor any effects channel.
 Charter is explicit: Pippin owns "the per-character set of foods already
 eaten."
 
@@ -141,8 +143,8 @@ event itself is fully observable on event-stream channels. The live
 signature is:
 
 - **`ProcessDeleteItem(<foodInternal>(<instanceId>))`** — the consumable went
-  away. Exposed today via `IInventoryService`. Classify as food via
-  `items.json`.
+  away. Exposed today via `IInventoryView` (pre-#602 this was `IInventoryService`).
+  Classify as food via `items.json`.
 - **`ProcessAddEffects(<charId>, …, [foodEffect, …], True)`** on the same /
   adjacent timestamp — a food-effect appeared on the player. Classify as
   food-effect via `effects.json`. **Requires a new GameState effects
@@ -169,9 +171,11 @@ of an adjacent dependency:
    needed for the `ProcessAddEffects` half of the live signature, and
    broadly useful (Vampirism sun-damage detection, Saruman's WoP effect
    side, future buff trackers).
-2. `IPlayerGourmandState` fusing `IInventoryService.ItemDeleted` (filtered
-   to foods via `items.json`) with the new effects tracker (filtered to
-   food-effects via `effects.json`) via a Tier-1 timestamp correlator per
+2. `IPlayerGourmandState` fusing `IInventoryView.Bus.Subscribe<InventoryItemRemoved>`
+   (post-#602/#659; pre-shim-retirement this would have been
+   `IInventoryService.ItemDeleted`; filtered to foods via `items.json`) with
+   the new effects tracker (filtered to food-effects via `effects.json`) via a
+   Tier-1 timestamp correlator per
    [docs/cross-source-correlation.md](cross-source-correlation.md).
 3. Pippin becomes a thin projection over the GameState service; the
    snapshot report continues to feed the historical baseline through the
@@ -247,11 +251,13 @@ GameState services do so correctly**. Specifically:
 
 - **Arwen's `FavorStateService`** consumes
   `IReferenceDataService`/`IActiveCharacterService`/`PerCharacterView`.
-- **Arwen's `CalibrationService`** consumes `IInventoryService.TryResolve` +
-  `TryGetStackSize` + `IGameSessionService`.
+- **Arwen's `CalibrationService`** consumes `IInventoryView.TryResolve` +
+  `TryGetStackSize` + `IGameSessionService` (post-#753 — pre-#753 this was
+  `IInventoryService` on both query surfaces).
 - **Legolas's `MotherlodeMeasurementCoordinator`** is the canonical Tier-2
   reference — consumes `IPlayerPositionTracker`, `IPlayerPinTracker`,
-  `IInventoryService` all via `Subscribe`.
+  `IInventoryView.Bus` all via `Subscribe` (post-#606/#659 — pre-shim-retirement
+  the inventory path was `IInventoryService.Subscribe`).
 - **Legolas's `PinCalibrationCoordinator`** consumes
   `IPlayerPinTracker.Subscribe`.
 - **Bilbo's `StorageViewModel`** consumes `IActiveCharacterService`.
@@ -259,7 +265,8 @@ GameState services do so correctly**. Specifically:
   `IActiveCharacterService`.
 - **Palantir's `WorldStateViewModel`** consumes `IPlayerPositionTracker`,
   `IPlayerPinTracker`, `IPlayerCelestialState`, `IPlayerWeatherTracker` (and
-  `LiveInventoryViewModel` similarly consumes `IInventoryService`).
+  `LiveInventoryViewModel` similarly consumes `IInventoryView` post-#745 —
+  pre-migration this was `IInventoryService`).
 
 The Palantir/Legolas-VM "manually-building-observable-state" pattern is real
 but is explicitly already named in the charter's three-channel section as the
