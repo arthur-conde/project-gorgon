@@ -257,7 +257,7 @@ public sealed class VendorIngestionService : BackgroundService
     /// When the active character changes, overwrites unconditionally; on first prime, only fills in
     /// a zero level so a live log-parsed value is not clobbered by a stale export.
     ///
-    /// <para><b>Ordering — live wins over export.</b> <see cref="ExecuteAsync"/>
+    /// <para><b>Ordering — live wins over export.</b> <see cref="StartAsync"/>
     /// calls this <em>before</em> subscribing to <see cref="IPlayerSkillState"/>,
     /// so the export-derived value is in place first and the subsequent
     /// synchronous replay of <see cref="OnSkillSnapshot"/> overwrites it with
