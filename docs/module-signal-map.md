@@ -294,7 +294,7 @@ Design notes: [`player-pin-service.md`](player-pin-service.md). Pin grammar: no 
 
 **Inputs**
 - Log: `LocalPlayer` pipe via `GardenIngestionService` — garden parser events (`SetPetOwner`, `UpdateDescription`, `StartInteraction`, `AddItem`, `DeleteItem`, `UpdateItemCode`, `GardeningXp`, `PlantingCapReached`, `ScreenTextError`)
-- GameState: `IInventoryView` composing layer (post-#602; pre-#659 the input was the `IInventoryService.Subscribe` shim re-shaping `Added` / `Deleted` into `AddItem` / `DeleteItem` inside the ingestion service — Samwise's post-#659 PlayerWorld-direct rewiring is tracked under [#665](https://github.com/moumantai-gg/mithril/issues/665))
+- PlayerWorld: `IPlayerWorld.Bus.Subscribe<PlayerInventoryAdded>` / `<PlayerInventoryRemoved>` direct (post-#725 — migrated off the legacy `IInventoryService.Subscribe` shim that re-shaped `Added` / `Deleted` into `AddItem` / `DeleteItem` inside the ingestion service; the shim retired in #659)
 - Reference: `IReferenceDataService` items.json (`FileUpdated`)
 - Identity: `IActiveCharacterService`
 - Settings: `SamwiseSettings`
@@ -303,7 +303,7 @@ Design notes: [`player-pin-service.md`](player-pin-service.md). Pin grammar: no 
 **State machines**
 - `GardenStateMachine` — per-character plot ledger; pairs gardening signals into plot transitions (empty → planted → growing → ripe → withered)
 - `AlarmService` — reactor over `PlotChanged`; fires audio + window flash when a plot reaches Ripe; supports per-plot snooze
-- `GardenIngestionService` — fan-in (Player.log pipe + `IInventoryService.Subscribe` — the latter retired #659; post-shim wiring tracked under [#665](https://github.com/moumantai-gg/mithril/issues/665)); not a real FSM, just a forwarder with dispatcher marshaling
+- `GardenIngestionService` — fan-in (Player.log pipe + `IPlayerWorld.Bus.Subscribe<PlayerInventoryAdded/Removed>` direct, post-#725; pre-#725/#659 the inventory leg was the union-shaped `IInventoryService.Subscribe` shim); not a real FSM, just a forwarder with dispatcher marshaling
 
 **Outputs**
 - `GardenStateMachine.PlotChanged` event
