@@ -2,8 +2,8 @@ namespace Mithril.Shared.Logging;
 
 /// <summary>
 /// Abstract base for typed parser events (L2 territory). Every parser
-/// (<see cref="ILogParser"/> / <see cref="IChatLogParser"/>) returns a
-/// concrete subclass — <c>WeatherChangedEvent</c>, <c>QuestAcceptedEvent</c>,
+/// (<see cref="ILogParser"/>) returns a concrete subclass —
+/// <c>WeatherChangedEvent</c>, <c>QuestAcceptedEvent</c>,
 /// <c>MapPinLogEvent</c>, etc. <c>Timestamp</c> is the <b>UTC</b> instant
 /// the event occurred — carried as <see cref="DateTime"/> (Kind=Utc)
 /// because parsers accept <c>(string line, DateTime timestamp)</c> per the
