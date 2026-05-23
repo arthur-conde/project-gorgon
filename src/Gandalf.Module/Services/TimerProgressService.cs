@@ -220,12 +220,22 @@ public sealed class TimerProgressService : IDisposable
     /// in-game day instead of latching <c>CompletedAt</c> — the alarm event still
     /// fires so consumers (TimerAlarmService) ring on each cycle.
     /// </summary>
-    public void CheckExpirations()
+    public void CheckExpirations() => CheckExpirations(_time.GetUtcNow());
+
+    /// <summary>
+    /// Overload that takes the comparison "now" explicitly. The Gandalf
+    /// scheduler-collapse migration (#613, world-sim item #12) routes
+    /// <see cref="Mithril.WorldSim.CalendarTimeAdvanced"/> ticks here via
+    /// <see cref="TimerExpirationDriver"/> with the event's <c>Now</c> —
+    /// replay-deterministic per principle 13 ("calendar time is a domain
+    /// event, not a clock read"). The no-arg overload above stays for tests
+    /// that drive a <see cref="TimeProvider"/> directly without a world.
+    /// </summary>
+    public void CheckExpirations(DateTimeOffset now)
     {
         var current = _view.Current;
         if (current is null) return;
 
-        var now = _time.GetUtcNow();
         foreach (var (id, progress) in current.ByTimerId)
         {
             var def = _defs.Definitions.FirstOrDefault(d => d.Id == id);

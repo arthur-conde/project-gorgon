@@ -1,30 +1,28 @@
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
+using Mithril.Shared.Audio;
 using Mithril.Shared.Game;
+using Mithril.WorldSim;
+using Mithril.WorldSim.Player;
 using Xunit;
 
 namespace Gandalf.Tests;
 
 /// <summary>
-/// Coverage for <see cref="ShiftAlarmService"/>. Exercise the resolution
-/// helpers (<c>ShouldAlarm</c> / <c>ResolveSoundPath</c>) and the scheduling
-/// state (<c>NextScheduledShift</c>) without driving the WPF dispatcher pump
-/// or invoking <c>AudioPlayer.Play</c> — global <c>AlarmEnabled = false</c>
-/// short-circuits the audio path on tick.
+/// Coverage for the event-driven <see cref="ShiftAlarmService"/>
+/// (scheduler-collapse, #613). The service subscribes to PlayerWorld's
+/// <see cref="TimeOfDayShift"/> domain events; the test fixture publishes
+/// synthetic shifts directly via the test-only bus instead of driving the
+/// real merger pipeline.
+///
+/// <para>The pure resolution helpers (<c>ShouldAlarm</c>,
+/// <c>ResolveSoundPath</c>) are still covered as static decisions — they
+/// pre-existed and have nothing to do with the scheduler collapse.</para>
 /// </summary>
 public class ShiftAlarmServiceTests
 {
-    private static readonly DateTime PgEmissaryAnchorUtc =
-        new(2026, 3, 11, 1, 45, 1, 212, DateTimeKind.Utc);
-
-    private sealed class ManualTime : TimeProvider
-    {
-        private DateTimeOffset _now;
-        public ManualTime(DateTime utc) => _now = new DateTimeOffset(utc, TimeSpan.Zero);
-        public override DateTimeOffset GetUtcNow() => _now;
-        public void Advance(TimeSpan delta) => _now = _now.Add(delta);
-    }
+    private static readonly IShiftCatalog Catalog = new JsonShiftCatalog();
 
     [Fact]
     public void ShouldAlarm_requires_both_global_enabled_and_per_shift_enabled()
@@ -63,51 +61,10 @@ public class ShiftAlarmServiceTests
     }
 
     [Fact]
-    public void Initial_schedule_picks_the_next_transition_after_construction()
-    {
-        // At anchor, in-game = 21:00 (Night). Next transition is Midnight at 0:00,
-        // 3 in-game hours away = 15 real minutes.
-        var time = new ManualTime(PgEmissaryAnchorUtc);
-        var clock = new GameClock(time);
-        var catalog = new JsonShiftCatalog();
-        var settings = new GandalfSettings { AlarmEnabled = false };  // suppress audio path
-        var shifts = new GandalfShiftSettings();
-
-        using var svc = new ShiftAlarmService(clock, catalog, settings, shifts, time);
-        svc.NextScheduledShift.Should().NotBeNull();
-        svc.NextScheduledShift!.Slug.Should().Be("midnight");
-    }
-
-    [Fact]
-    public void After_tick_reschedules_for_the_following_shift()
-    {
-        // At anchor, scheduledFor = midnight. Advance time past the midnight
-        // transition (15 real minutes + 1 second) and force a tick. The
-        // service should re-arm for Dawn (the next transition).
-        var time = new ManualTime(PgEmissaryAnchorUtc);
-        var clock = new GameClock(time);
-        var catalog = new JsonShiftCatalog();
-        var settings = new GandalfSettings { AlarmEnabled = false };
-        var shifts = new GandalfShiftSettings();
-
-        using var svc = new ShiftAlarmService(clock, catalog, settings, shifts, time);
-        svc.NextScheduledShift!.Slug.Should().Be("midnight");
-
-        time.Advance(TimeSpan.FromMinutes(15) + TimeSpan.FromSeconds(1));
-        svc.TickForTests();
-
-        // Midnight (00:00) → Dawn (05:00) is 5 in-game hours = 25 real minutes;
-        // we just used 15 min + 1s so the rescheduled instant is ~25 minutes
-        // out from the new "now", anchored on Dawn.
-        svc.NextScheduledShift!.Slug.Should().Be("dawn");
-    }
-
-    [Fact]
     public void GetOrCreate_returns_a_disabled_default_for_an_untouched_shift()
     {
         var shifts = new GandalfShiftSettings();
-        // Ensure no auto-enable lurking — the user must opt in per shift.
-        foreach (var s in new JsonShiftCatalog().Shifts)
+        foreach (var s in Catalog.Shifts)
         {
             var c = shifts.GetOrCreate(s.Slug);
             c.Enabled.Should().BeFalse();
@@ -118,17 +75,11 @@ public class ShiftAlarmServiceTests
     [Fact]
     public void Settings_keyed_by_pre_refactor_slug_survive_catalog_swap()
     {
-        // The slugs are the persistence contract between #167's shipped
-        // user file (shifts.json under %LocalAppData%/Mithril/Gandalf/) and
-        // whatever shift catalog ships next. Simulate a user who has already
-        // toggled "dawn" + "night" before the refactor: their settings file
-        // contains slugs only, and the new catalog must still resolve them.
         var preRefactor = new GandalfShiftSettings();
         preRefactor.GetOrCreate("dawn").Enabled = true;
         preRefactor.GetOrCreate("night").Enabled = true;
         preRefactor.GetOrCreate("dusk").SoundFilePath = @"C:\sounds\dusk.wav";
 
-        var catalog = new JsonShiftCatalog();
         var liveDawn = preRefactor.GetOrCreate("dawn");
         var liveNight = preRefactor.GetOrCreate("night");
         var liveDusk = preRefactor.GetOrCreate("dusk");
@@ -137,15 +88,146 @@ public class ShiftAlarmServiceTests
         liveNight.Enabled.Should().BeTrue();
         liveDusk.SoundFilePath.Should().Be(@"C:\sounds\dusk.wav");
 
-        // And every catalog slug round-trips through GetOrCreate without
-        // creating a new (empty) overwrite of an existing entry.
-        foreach (var s in catalog.Shifts)
+        foreach (var s in Catalog.Shifts)
         {
             var rehydrated = preRefactor.GetOrCreate(s.Slug);
             rehydrated.Should().NotBeNull();
         }
-        // The two we set must remain enabled after iterating every slug.
         preRefactor.GetOrCreate("dawn").Enabled.Should().BeTrue();
         preRefactor.GetOrCreate("night").Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Live_TimeOfDayShift_for_enabled_shift_plays_audio()
+    {
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings();
+        shifts.GetOrCreate("dawn").Enabled = true;
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live, Now = new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero) } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(From: null, To: "dawn",
+            At: world.Clock.Now, Mode: WorldMode.Live));
+
+        sink.Plays.Should().HaveCount(1, "Live-mode shift transition for an enabled shift fires audio");
+        sink.Plays[0].CallerId.Should().Be("gandalf");
+        svc.LastObservedShift.Should().Be("dawn");
+    }
+
+    [Fact]
+    public void Replaying_TimeOfDayShift_advances_state_but_does_not_play_audio()
+    {
+        // Acceptance criterion #5 from issue #613: drain-time alarms update
+        // state without playing audio. The per-shift last-observed ledger
+        // advances so a subsequent Live tick for the same shift is a no-op
+        // (not a retroactive ring).
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings();
+        shifts.GetOrCreate("dawn").Enabled = true;
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Replaying } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(null, "dawn",
+            new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero), WorldMode.Replaying));
+
+        sink.Plays.Should().BeEmpty(
+            "principle 12 — Replaying-mode side effects (audio + window flash) are suppressed");
+        svc.LastObservedShift.Should().Be("dawn",
+            "state derivation is mode-agnostic so the next Live tick reuses a coherent suppression contract");
+    }
+
+    [Fact]
+    public void ReplayingThenLive_same_shift_does_not_retroactively_fire()
+    {
+        // Missed-alarms-on-restart shape from issue #613: a shift that
+        // transitioned during the drain stays as expired-but-silent; the
+        // Mode → Live flip doesn't replay the already-observed shift.
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings();
+        shifts.GetOrCreate("dawn").Enabled = true;
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Replaying } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        // Replaying tick — drain-time, silent.
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(null, "dawn",
+            new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero), WorldMode.Replaying));
+        sink.Plays.Should().BeEmpty();
+
+        // Mode flips to Live. The composer does NOT re-emit "dawn" — it
+        // emits the next bucket transition. Simulating a stray "dawn"
+        // emission here would exercise the dedup ledger: bucket-level
+        // dedup means even a misbehaving composer can't retroactively
+        // ring the alarm for a shift the service already observed.
+        world.Clock.Mode = WorldMode.Live;
+        svc.OnShiftTransitionForTests(new TimeOfDayShift("night", "dawn",
+            new DateTimeOffset(2026, 5, 23, 5, 0, 1, TimeSpan.Zero), WorldMode.Live));
+        sink.Plays.Should().BeEmpty("dedup ledger blocks retroactive ring for an already-observed shift");
+    }
+
+    [Fact]
+    public void Live_NewShift_after_Replaying_drain_fires_normally()
+    {
+        // Sister assertion to the missed-alarms test: a FRESH transition
+        // after the Mode flip fires audibly. Drain-time replay must not
+        // leave the service in a "perma-suppress" state.
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings();
+        shifts.GetOrCreate("dawn").Enabled = true;
+        shifts.GetOrCreate("morning").Enabled = true;
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Replaying } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        // Replaying drain crosses dawn — silent.
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(null, "dawn",
+            new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero), WorldMode.Replaying));
+        sink.Plays.Should().BeEmpty();
+
+        // World catches up to Live. A new transition (morning) fires audibly.
+        world.Clock.Mode = WorldMode.Live;
+        svc.OnShiftTransitionForTests(new TimeOfDayShift("dawn", "morning",
+            new DateTimeOffset(2026, 5, 23, 8, 0, 0, TimeSpan.Zero), WorldMode.Live));
+
+        sink.Plays.Should().HaveCount(1, "fresh post-flip transitions fire normally");
+        svc.LastObservedShift.Should().Be("morning");
+    }
+
+    [Fact]
+    public void TimeOfDayShift_for_disabled_shift_advances_ledger_but_does_not_play()
+    {
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings();
+        // dawn is NOT enabled — default disabled.
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(null, "dawn",
+            new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero), WorldMode.Live));
+
+        sink.Plays.Should().BeEmpty("disabled shift never fires audio");
+        svc.LastObservedShift.Should().Be("dawn", "ledger advances regardless");
+    }
+
+    [Fact]
+    public void Unknown_shift_slug_is_ignored()
+    {
+        var sink = new RecordingAudioSink();
+        var settings = new GandalfSettings { AlarmEnabled = true };
+        var shifts = new GandalfShiftSettings();
+        shifts.GetOrCreate("dawn").Enabled = true;
+        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live } };
+        using var svc = new ShiftAlarmService(Catalog, settings, shifts, sink, world);
+
+        // A composer that emitted a slug not in the catalog must not crash
+        // the service — the upstream warning is enough.
+        svc.OnShiftTransitionForTests(new TimeOfDayShift(null, "nonsense",
+            new DateTimeOffset(2026, 5, 23, 5, 0, 0, TimeSpan.Zero), WorldMode.Live));
+
+        sink.Plays.Should().BeEmpty();
+        svc.LastObservedShift.Should().BeNull("unknown slugs never advance the ledger");
     }
 }

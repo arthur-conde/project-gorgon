@@ -140,18 +140,22 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<TimerAlarmService>();
 
         // Time-of-day shift alarms — character-agnostic, runs whenever the
-        // shell is open. Listens to the in-game clock and fires per-shift
-        // alarms based on GandalfShiftSettings. Eager because it owns its
-        // own DispatcherTimer; it must wake on schedule even if the user
-        // never opens the Gandalf tab.
+        // shell is open. Subscribes to PlayerWorld's TimeOfDayShift domain
+        // events (scheduler-collapse #613); the world clock drives the
+        // alarm cadence, replacing the retired DispatcherTimer wake
+        // injection (world-sim migration item #12). Eager hosted service
+        // so the subscription attaches during the trailing-merger-start
+        // sequence (#702 / Call 2) regardless of whether the Gandalf tab
+        // is ever opened.
         services.AddSingleton<ShiftAlarmService>();
+        services.AddHostedService(sp => sp.GetRequiredService<ShiftAlarmService>());
 
-        // Drives TimerProgressService.CheckExpirations on a one-shot timer
-        // scheduled at the soonest known user-timer expiration. Replaces
-        // the 1 Hz tick that used to live in TimerListViewModel.Tick. Owns
-        // a DispatcherTimer — kept out of TimerProgressService itself to
-        // keep WPF dependencies away from the per-character data layer.
-        services.AddSingleton<TimerExpirationScheduler>();
+        // Drives TimerProgressService.CheckExpirations off PlayerWorld's
+        // CalendarTimeAdvanced ticks (scheduler-collapse #613). Replaces
+        // the retired TimerExpirationScheduler whose DispatcherTimer woke
+        // the app at the soonest known FiringAt. World-clock-driven ticks
+        // are replay-deterministic per design notebook principle 13.
+        services.AddHostedService<TimerExpirationDriver>();
 
         // Dashboard aggregator + VM — fans in every registered ITimerSource.
         services.AddSingleton<DashboardAggregator>();
@@ -169,23 +173,9 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>()));
 
         services.AddSingleton<GandalfShellViewModel>();
-        services.AddSingleton<GandalfShellView>(sp =>
+        services.AddSingleton<GandalfShellView>(sp => new GandalfShellView
         {
-            // Eagerly construct the expiration scheduler when the shell view
-            // is built. The scheduler subscribes to TimerProgressService /
-            // TimerDefinitionsService events in its ctor and owns a
-            // DispatcherTimer for the user-timer alarm path; nothing else
-            // resolves it. This is the same eager-singleton idiom that pulls
-            // TimerAlarmService in via TimerListViewModel's factory above.
-            _ = sp.GetRequiredService<TimerExpirationScheduler>();
-            // ShiftAlarmService likewise owns a DispatcherTimer for the
-            // time-of-day shift alarm path; eager-resolve here so it starts
-            // running as soon as Gandalf activates (Eager module).
-            _ = sp.GetRequiredService<ShiftAlarmService>();
-            return new GandalfShellView
-            {
-                DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
-            };
+            DataContext = sp.GetRequiredService<GandalfShellViewModel>(),
         });
 
         services.AddSingleton<GandalfSettingsViewModel>();
