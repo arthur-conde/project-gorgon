@@ -198,11 +198,12 @@ channel rule, and this strategic principle):
   *Query* = "what's the current state?" (point-in-time); *React* =
   "what's happening?" (ordered event log); *Bind* = "how does this view
   stay in sync?" (declarative, UI-safe). Conflating them costs
-  concretely. Today `IInventoryService.Subscribe` tries to serve both
-  *current-state-replay* (synthesizes `Added` events for live items) and
-  *event-log-replay* (live events forward) through one API — and
-  silently loses pre-attach `Deleted` and `StackChanged` events. Three
-  current REACT consumers silently degrade as a result:
+  concretely. Today `IInventoryService.Subscribe` (retired by
+  [#659](https://github.com/moumantai-gg/mithril/issues/659)) tries to
+  serve both *current-state-replay* (synthesizes `Added` events for live
+  items) and *event-log-replay* (live events forward) through one API —
+  and silently loses pre-attach `Deleted` and `StackChanged` events.
+  Three current REACT consumers silently degrade as a result:
 
   - [`Samwise.GardenIngestionService.OnInventoryEvent`](../src/Samwise.Module/State/GardenIngestionService.cs)
     loses `_itemIdToCrop` map entries for items added-then-deleted before

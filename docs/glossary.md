@@ -124,8 +124,6 @@ Canonical source: [`docs/world-simulator.md` §Contracts §Producer interface](w
 
 Canonical inventory surface for modules — composes Player.log's instance-id ledger ([IPlayerInventoryState](#iplayerinventorystate)) with chat's name-keyed stack-size observations ([IChatInventoryState](#ichatinventorystate)) via a stateful [PendingCorrelator](#pendingcorrelatortkeytreq) (5s simulated-time TTL). Per #602, the view's canonical surface is the **typed-frame-bus**: subscribers receive `Frame<InventoryItemAdded>` / `Frame<InventoryItemRemoved>` / `Frame<InventoryStackChanged>` on the view's bus, with synchronous resolution helpers `TryResolve(instanceId)` and `TryGetStackSize(instanceId)` preserved for point lookups.
 
-The view also exposes a temporary shim `Subscribe(Action<InventoryEvent>)` annotated `[Obsolete]` during the migration so existing consumers (Bilbo, Arwen, Samwise) can be ported one at a time. Shim removal is tracked in #659.
-
 The view's event types match the [naming conventions in #657](#change-event-type-convention): past-tense participles, no `Event` suffix, no world prefix (view events are above the world layer). See [InventoryItemAdded](#inventoryitemadded), [InventoryItemRemoved](#inventoryitemremoved), [InventoryStackChanged](#inventorystackchanged).
 
 See also: [View](#view), [IPlayerInventoryState](#iplayerinventorystate), [IChatInventoryState](#ichatinventorystate), [IWordOfPowerView](#iwordofpowerview), [Tier 1 (correlation)](#tier-14-correlation), [#661 passthrough refinement](#661-passthrough-refinement).
