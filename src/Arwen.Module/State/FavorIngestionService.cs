@@ -6,7 +6,6 @@ using Mithril.GameState.Gifting;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 
@@ -91,7 +90,6 @@ public sealed class FavorIngestionService : BackgroundService
     private readonly IActiveCharacterService _activeChar;
     private readonly IGiftSignalService _giftSignal;
     private readonly IDiagnosticsSink? _diag;
-    private readonly ModuleGate _gate;
     private ILogSubscription? _subscription;
     private IDisposable? _giftSubscription;
     private Dispatcher? _dispatcher;
@@ -104,7 +102,6 @@ public sealed class FavorIngestionService : BackgroundService
         PerCharacterView<ArwenFavorState> favorView,
         IActiveCharacterService activeChar,
         SettingsAutoSaver<ArwenSettings> autoSaver,
-        ModuleGates gates,
         IGiftSignalService giftSignal,
         IDiagnosticsSink? diag = null)
     {
@@ -117,32 +114,36 @@ public sealed class FavorIngestionService : BackgroundService
         _giftSignal = giftSignal;
         _diag = diag;
         _ = autoSaver; // keep alive for PropertyChanged subscription
-        _gate = gates.For("arwen");
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Eager subscription attach per Call 1 / principle eager-always (#695):
+    /// both the L1 LocalPlayer pipe and the <see cref="IGiftSignalService"/>
+    /// React channel are wired up during the IHostedService chain's
+    /// <c>StartAsync</c>, before the trailing world-merger drain starts
+    /// (#702 / Call 2 ordering invariant). The Arwen module gate no longer
+    /// gates state subscription — gate-driven UI hydration remains
+    /// Arwen's own concern (today: none; Arwen tabs hydrate lazily from
+    /// the per-character view + L1-driven FavorState).
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("Arwen.Ingestion", "Waiting for module gate…");
-        await _gate.WaitAsync(stoppingToken).ConfigureAwait(false);
         _diag?.Info("Arwen.Ingestion",
-            "Gate opened — subscribing to L1 LocalPlayer pipe (favor snapshot verbs) and "
+            "Subscribing to L1 LocalPlayer pipe (favor snapshot verbs) and "
             + "IGiftSignalService (resolved gift events) for calibration");
 
         // Resolve UI dispatcher once. Headless/test contexts (no WPF App
-        // running) get Inline delivery — the production path always has a
-        // dispatcher because Arwen is Eager and the shell wires App before
-        // any module gate opens.
+        // running) get Inline delivery.
         _dispatcher = Application.Current?.Dispatcher;
         var delivery = _dispatcher is null
             ? DeliveryContext.Inline
             : DeliveryContext.Marshaled(_dispatcher);
 
         // GiftSignalService.Subscribe replays the full in-session event log
-        // to the new handler atomically under its own lock (#585 contract);
-        // attach order vs the L1 driver is therefore irrelevant. The handler
-        // fires on the signal service's L1 pump thread — we marshal onto
-        // the dispatcher so calibration mutations land on the same thread
-        // the L1 favor-snapshot path uses.
+        // to the new handler atomically under its own lock (#585 contract).
+        // The handler fires on the signal service's L1 pump thread — we
+        // marshal onto the dispatcher so calibration mutations land on the
+        // same thread the L1 favor-snapshot path uses.
         _giftSubscription = _giftSignal.Subscribe(OnGiftAccepted);
 
         _subscription = _driver.Subscribe<LocalPlayerLogLine>(
@@ -187,6 +188,11 @@ public sealed class FavorIngestionService : BackgroundService
                 // React channel. See type doc.
             });
 
+        return base.StartAsync(cancellationToken);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
         catch (OperationCanceledException) { /* expected on host stop */ }
         finally

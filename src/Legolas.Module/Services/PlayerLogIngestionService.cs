@@ -6,7 +6,6 @@ using Mithril.GameState.Areas;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 
 namespace Legolas.Services;
@@ -62,8 +61,11 @@ namespace Legolas.Services;
 /// subscription — <c>LiveOnly</c> serves both purposes once the tracker
 /// self-seeds.</para>
 ///
-/// <para>Gated on the <c>"legolas"</c> module gate — Legolas is a lazy
-/// module, so log work starts on first tab activation.</para>
+/// <para>Subscribes eagerly during <c>StartAsync</c> (#695 Call 1). The
+/// <c>"legolas"</c> module gate no longer gates state subscription; UI
+/// hydration (overlay windows, hotkeys) stays lazy under the three
+/// surviving UI-hydration gates (<c>AutoOverlayCoordinator</c>,
+/// <c>ForegroundFocusGate</c>, <c>OverlayController</c>).</para>
 ///
 /// <para><b>Containment.</b> The L1 driver wraps each handler invocation in
 /// try/catch + rate-limited Warn, retiring the per-service <c>_diag?.Warn</c>
@@ -91,7 +93,6 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly SessionState _session;
     private readonly MotherlodeMeasurementCoordinator _motherlode;
     private readonly LegolasSettings _settings;
-    private readonly ModuleGates _gates;
     private readonly IActiveCharacterService? _activeChar;
     private readonly PerCharacterStore<LegolasIngestionState>? _ingestionStore;
     private readonly IDiagnosticsSink? _diag;
@@ -120,7 +121,6 @@ public sealed class PlayerLogIngestionService : BackgroundService
         SessionState session,
         MotherlodeMeasurementCoordinator motherlode,
         LegolasSettings settings,
-        ModuleGates gates,
         IActiveCharacterService? activeChar = null,
         PerCharacterStore<LegolasIngestionState>? ingestionStore = null,
         IDiagnosticsSink? diag = null)
@@ -133,7 +133,6 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _session = session;
         _motherlode = motherlode;
         _settings = settings;
-        _gates = gates;
         _activeChar = activeChar;
         _ingestionStore = ingestionStore;
         _diag = diag;
@@ -142,17 +141,26 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _highWaterFlush.Elapsed += (_, _) => FlushHighWater();
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Eager subscription attach per Call 1 / principle eager-always (#695):
+    /// the area-bridge + map-fx + motherlode handlers wire up during
+    /// <c>StartAsync</c>, before the trailing world-merger drain starts
+    /// (#702 / Call 2). Legolas's three UI-hydration gates
+    /// (<c>AutoOverlayCoordinator</c>, <c>ForegroundFocusGate</c>,
+    /// <c>OverlayController</c>) remain gated by the legolas
+    /// <c>ModuleGate</c> — they install overlay windows + Win32
+    /// dispatcher hooks that genuinely depend on the module's view being
+    /// constructed.
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
-        await _gates.For("legolas").WaitAsync(stoppingToken).ConfigureAwait(false);
-
         // Resolve the persisted high-water for the active character (if any)
         // BEFORE we hand the value to the L1 driver — once Subscribe latches
         // SkipProcessedHighWater into its options bag a later character
         // switch can't change the threshold. The character-changed event
         // updates the in-memory write-side so persistence still tracks the
         // active character, but the driver's filter stays whatever was
-        // active at gate-open. See "Character-switch caveat" below.
+        // active at attach time. See "Character-switch caveat" below.
         var initialHighWater = ResolveInitialHighWater();
 
         // Area is seeded by the shared PlayerAreaTracker itself (one-shot,
@@ -256,6 +264,11 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _diag?.Info("Legolas.PlayerLog",
             $"Subscribed to L1 driver (LocalPlayer pipe) — LiveOnly, high-water={initialHighWater}");
 
+        return base.StartAsync(cancellationToken);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         // Park until the host stops. The L1 subscription runs its own pump
         // on a Task.Run; ExecuteAsync's job is to keep us alive long enough
         // to be disposed.

@@ -166,6 +166,47 @@ public sealed class FavorIngestionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Subscription_attaches_in_StartAsync_without_opening_module_gate()
+    {
+        // Call 1 / principle eager-always: the L1 LocalPlayer subscription and
+        // the IGiftSignalService React subscription must both be in place by
+        // the time `await service.StartAsync(ct)` returns — regardless of
+        // whether the Arwen tab is ever activated. Pre-Call-1 the L1
+        // subscribe sat inside ExecuteAsync behind `await gate.WaitAsync`;
+        // post-Call-1 it lifts into StartAsync so a session-start replay
+        // drain reaches the FavorState rebuild even on a never-opened tab.
+        //
+        // The original sink-list source is the Call 1 ratification in
+        // docs/world-simulator.md §Decisions ratified post-#642 (resolves #695).
+
+        var giftedAt = new DateTimeOffset(2026, 5, 19, 10, 30, 00, TimeSpan.Zero);
+
+        using var fixture = NewFixture("EagerStartAsync");
+
+        // Pre-load the L1 driver with a session-start replay snapshot.
+        fixture.Driver.PushReplay(MakeLine(
+            $"ProcessStartInteraction(42, 0, 100.0, True, \"NPC_Sanja\")", giftedAt));
+
+        // Start the host WITHOUT opening the arwen module gate. The Call 1
+        // contract requires the subscription to be live regardless.
+        await fixture.Service.StartAsync(CancellationToken.None);
+        await fixture.Driver.WaitForSubscriptionAsync();
+
+        fixture.Gates.For("arwen").IsOpen.Should().BeFalse(
+            "the gate-retirement audit — this test must not touch ModuleGate.Open to validate the eager attach (Call 1)");
+
+        // The replay snapshot drains through the live subscription.
+        await fixture.Driver.DrainLocalPlayerAsync();
+        await fixture.Service.StopAsync(CancellationToken.None);
+
+        // FavorState was rebuilt from the replayed verb — no tab activation needed.
+        var favor = fixture.FavorState.GetExactFavor("NPC_Sanja");
+        favor.Should().NotBeNull(
+            "the L1 subscription's session-start replay processed the FavorUpdate while the gate stayed closed");
+        favor!.ExactFavor.Should().Be(100.0);
+    }
+
+    [Fact]
     public async Task Late_subscribe_to_IGiftSignalService_still_observes_replayed_gifts()
     {
         // ── The #608 race contract (iteration 2 of the PR).
@@ -302,7 +343,6 @@ public sealed class FavorIngestionServiceTests : IDisposable
                 _view,
                 active,
                 _saver,
-                Gates,
                 GiftSignal);
         }
 
@@ -331,11 +371,14 @@ public sealed class FavorIngestionServiceTests : IDisposable
 
         public async Task StartAsync()
         {
+            // Post-Call-1 (#695): the L1 subscription attaches inside
+            // FavorIngestionService.StartAsync — Subscribe completes before
+            // this await returns, so the WaitForSubscriptionAsync poll
+            // below is a defence-in-depth sync rather than a wait-for-gate.
+            // The Gates field stays on the fixture only so the
+            // "Subscription_attaches_in_StartAsync_without_opening_module_gate"
+            // test can assert IsOpen.Should().BeFalse() against it.
             await Service.StartAsync(CancellationToken.None);
-            Gates.For("arwen").Open();
-            // Allow ExecuteAsync to pass the WaitAsync and call Subscribe.
-            // The driver's Subscribe is synchronous from the consumer side,
-            // so a brief poll on the pump task being ready suffices.
             await Driver.WaitForSubscriptionAsync();
         }
 

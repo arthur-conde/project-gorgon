@@ -174,6 +174,28 @@ public static class Program
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IMithrilModule))}");
             host = builder.Build();
             Boot("host built");
+
+            // Construct the WPF Application BEFORE host.StartAsync().
+            //
+            // Under #695 Call 1 (eager-always state subscription) every
+            // ingestion service's StartAsync resolves Application.Current?.Dispatcher
+            // to bind the L1 driver's DeliveryContext.Marshaled — which means
+            // host.StartAsync() now reads Application.Current during the
+            // sequential hosted-service chain. If `new App()` runs AFTER
+            // host.StartAsync, every Marshaled-vs-Inline fallback silently
+            // selects Inline and L1 envelopes dispatch on the pump thread
+            // instead of the WPF dispatcher, violating the cross-thread
+            // ObservableCollection guarantee that #550 capability E was
+            // introduced to provide. The fix is structural: construct App
+            // here so the Dispatcher exists when the chain attaches its
+            // subscriptions. Queued dispatcher operations sit in the
+            // Application's queue until app.Run() starts the message loop
+            // below; the bounded log backlog drains promptly then.
+            Boot("creating App");
+            var app = new App();
+            app.Init(activateEvent, activateCts);
+            app.InitializeComponent();
+
             host.StartAsync().GetAwaiter().GetResult();
 #pragma warning restore VSTHRD002
             Boot("host started");
@@ -206,21 +228,21 @@ public static class Program
                 if (eager) gates.For(module.Id).Open();
             }
 
-            // Create and run WPF application
-            Boot("creating App");
-            var app = new App();
-            app.Init(activateEvent, activateCts);
+            // App was constructed BEFORE host.StartAsync() above so the L1
+            // dispatcher resolves correctly during the chain. Wire up the
+            // host-dependent App fields now that host services are available.
             app.DeepLinkRouter = host.Services.GetRequiredService<IDeepLinkRouter>();
-            app.InitializeComponent();
 
             _ = new UiFontApplier(app, shellSettings);
 
             // Auto-start a perf-trace session before the shell view-model resolves
             // (which is what fires the first ActivateModule). Anything earlier than
-            // this — Velopack hooks, mutex, settings load, host.Build, eager-module
-            // gate opens — is still only captured by boot.log; the WPF-side hooks
-            // need Application.Current to attach, which only exists from the
-            // `new App()` above onward.
+            // this — Velopack hooks, mutex, settings load, host.Build, host.StartAsync,
+            // eager-module gate opens — is still only captured by boot.log; the
+            // WPF-side hooks need Application.Current to attach, which exists
+            // from the `new App()` above (now constructed before host.StartAsync
+            // so the L1 ingestion services see a non-null Dispatcher during
+            // their StartAsync per #695 Call 1).
             if (shellSettings.EnablePerfTrace && shellSettings.AutoStartPerfTrace)
             {
                 try { host.Services.GetRequiredService<PerfTracerHostedService>().Toggle(); }

@@ -3,7 +3,6 @@ using Mithril.Shared.Diagnostics;
 using Mithril.GameState.Inventory;
 using Mithril.GameState.Skills;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 using Samwise.Alarms;
@@ -79,7 +78,9 @@ public sealed class GardenIngestionService : BackgroundService
     private readonly GardenStateMachine _state;
     private readonly GardenStateService _stateService;
     private readonly IDiagnosticsSink? _diag;
-    private readonly ModuleGate _gate;
+    private ILogSubscription? _logSub;
+    private IDisposable? _invSub;
+    private IDisposable? _skillSub;
 
     // These are pulled into the ctor so DI actually constructs them.
     // They attach to events inside their own ctors, so holding references here
@@ -94,7 +95,6 @@ public sealed class GardenIngestionService : BackgroundService
         AlarmService alarms,
         GrowthCalibrationService calibration,
         SettingsAutoSaver<SamwiseSettings> autoSaver,
-        ModuleGates gates,
         IDiagnosticsSink? diag = null)
     {
         _driver = driver;
@@ -107,7 +107,6 @@ public sealed class GardenIngestionService : BackgroundService
         _ = alarms;       // subscribes to state.PlotChanged in ctor
         _ = calibration;  // subscribes to state.PlotChanged in ctor
         _ = autoSaver;    // subscribes to SamwiseSettings.PropertyChanged in ctor
-        _gate = gates.For("samwise");
 
         if (diag is not null)
         {
@@ -116,11 +115,20 @@ public sealed class GardenIngestionService : BackgroundService
         }
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Eager subscription attach per Call 1 / principle eager-always (#695).
+    /// The persisted-state hydrate + the three subscriptions (inventory,
+    /// skill, L1 driver) all complete during the IHostedService chain's
+    /// <c>StartAsync</c>, before the trailing world-merger drain starts
+    /// (#702 / Call 2 ordering invariant). Samwise was already Eager so
+    /// the gate-open at module-init opened immediately in production —
+    /// the retirement here is a structural cleanup that makes the
+    /// no-frames-missed contract uniform across Samwise + the lazy
+    /// modules.
+    /// </summary>
+    public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("Samwise", "Waiting for module gate…");
-        await _gate.WaitAsync(stoppingToken).ConfigureAwait(false);
-        _diag?.Info("Samwise", "Gate opened — loading persisted state and subscribing to L1 driver");
+        _diag?.Info("Samwise", "Loading persisted state and subscribing to L1 driver (eager attach)");
 
         // Restore previous session before we start applying new events.
         // HydrateCharacter must run on the UI thread: it raises PlotChanged for each
@@ -129,7 +137,7 @@ public sealed class GardenIngestionService : BackgroundService
         long persistedHighWater = 0L;
         try
         {
-            var (loaded, highWater) = await _stateService.LoadAllAsync(stoppingToken).ConfigureAwait(false);
+            var (loaded, highWater) = await _stateService.LoadAllAsync(cancellationToken).ConfigureAwait(false);
             persistedHighWater = highWater;
             DispatchHydrate(() =>
             {
@@ -142,11 +150,8 @@ public sealed class GardenIngestionService : BackgroundService
         catch (Exception ex) { _diag?.Warn("Samwise", $"Failed to load state: {ex.Message}"); }
 
         // Inventory add/delete events are sourced from the shared IInventoryService
-        // so Samwise picks up the same canonical map as Arwen, regardless of how
-        // late this gate opens. Subscribe replays the current map contents
-        // synchronously on this thread before going live, closing the race
-        // where session-replay AddItem events fired before this gate opened
-        // (and a plain += handler would have permanently missed them).
+        // so Samwise picks up the same canonical map as Arwen. Subscribe replays
+        // the current map contents synchronously on this thread before going live.
         //
         // This is a SERVICE-event consumer (in-process), NOT an L1 log
         // stream — the L1 high-water filter does not apply here. The inventory
@@ -155,7 +160,7 @@ public sealed class GardenIngestionService : BackgroundService
         // bridge does for the Player.log path, so PlotChanged → bound
         // ObservableCollection stays single-threaded.
 #pragma warning disable CS0618 // back-compat shim use during the #602 → #659 migration window
-        var subscription = _inventory.Subscribe(OnInventoryEvent);
+        _invSub = _inventory.Subscribe(OnInventoryEvent);
 #pragma warning restore CS0618
 
         // Gardening XP arrival is the harvest-confirmation discriminator
@@ -175,7 +180,7 @@ public sealed class GardenIngestionService : BackgroundService
         // Self-marshal via DispatchInventory for the same reason: the
         // GardenStateMachine.Apply path raises PlotChanged → bound
         // ObservableCollection which has UI-thread affinity.
-        var skillSubscription = _skillState.SubscribeChanges(OnSkillChange);
+        _skillSub = _skillState.SubscribeChanges(OnSkillChange);
 
         // L1 driver subscription for the Player.log payloads Samwise still owns
         // (everything except AddItem/DeleteItem, which come via IInventoryService).
@@ -192,7 +197,7 @@ public sealed class GardenIngestionService : BackgroundService
         var deliveryContext = dispatcher is null
             ? DeliveryContext.Inline               // headless / tests — no dispatcher available
             : DeliveryContext.Marshaled(dispatcher);
-        var logSubscription = _driver.Subscribe<LocalPlayerLogLine>(
+        _logSub = _driver.Subscribe<LocalPlayerLogLine>(
             envelope =>
             {
                 var line = envelope.Payload;
@@ -218,6 +223,11 @@ public sealed class GardenIngestionService : BackgroundService
                 DiagnosticCategory = "Samwise.Ingestion",
             });
 
+        await base.StartAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         try
         {
             await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false);
@@ -225,9 +235,9 @@ public sealed class GardenIngestionService : BackgroundService
         catch (OperationCanceledException) { /* expected on host stop */ }
         finally
         {
-            logSubscription.Dispose();
-            subscription.Dispose();
-            skillSubscription.Dispose();
+            _logSub?.Dispose();
+            _invSub?.Dispose();
+            _skillSub?.Dispose();
         }
     }
 
@@ -274,9 +284,10 @@ public sealed class GardenIngestionService : BackgroundService
     /// <see href="https://github.com/moumantai-gg/mithril/issues/597">#597</see>):</b>
     /// <see cref="IPlayerSkillState.SubscribeChanges"/> is no-replay — a late
     /// subscriber sees only changes from the moment it attaches. The handler
-    /// here attaches after <c>_gate.WaitAsync</c> + <c>LoadAllAsync</c>, while
-    /// <c>PlayerSkillStateService</c> has no gate and can drain L1 envelopes
-    /// ahead of Samwise. Any Gardening <see cref="SkillChangeKind.Delta"/>
+    /// here attaches after the persisted-state hydrate (<c>LoadAllAsync</c>)
+    /// inside <see cref="StartAsync"/>, while <c>PlayerSkillStateService</c>
+    /// attaches earlier in the same chain and can drain L1 envelopes ahead
+    /// of Samwise. Any Gardening <see cref="SkillChangeKind.Delta"/>
     /// fired in that pre-attach window is lost. Bound: harvests completed in
     /// that window stay <c>Ripe</c> with stale <c>_pendingHarvestPlotId</c>
     /// until the next live interaction, where <c>MarkOldestRipeOfType</c>
@@ -284,7 +295,7 @@ public sealed class GardenIngestionService : BackgroundService
     /// on <c>SubscribeChanges</c> (sister to <see href="https://github.com/moumantai-gg/mithril/issues/585">#585</see>).</para>
     /// </summary>
     // internal for tests (Samwise.Tests has InternalsVisibleTo); production
-    // callers go through SubscribeChanges in ExecuteAsync above.
+    // callers go through SubscribeChanges in StartAsync above.
     internal void OnSkillChange(SkillChange change)
     {
         var ge = TryProjectGardeningXp(change);

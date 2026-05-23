@@ -3,7 +3,6 @@ using Mithril.GameState.Skills;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
-using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 using Smaug.Domain;
 using Smaug.Parsing;
@@ -12,8 +11,10 @@ namespace Smaug.State;
 
 /// <summary>
 /// Subscribes (via the L1 <see cref="ILogStreamDriver"/>) to the LocalPlayer
-/// pipe once the Smaug module gate opens, parses vendor-related lines, and
-/// feeds recorded sells into <see cref="PriceCalibrationService"/>.
+/// pipe eagerly during <c>StartAsync</c> (#695 Call 1), parses vendor-related
+/// lines, and feeds recorded sells into <see cref="PriceCalibrationService"/>.
+/// The Smaug module gate no longer gates state subscription; UI hydration
+/// (the calibration tab) stays lazy.
 ///
 /// <para><b>L1 migration shape (#550 PR 3, archetype-B).</b> Subscribes to
 /// <see cref="LocalPlayerLogLine"/> with
@@ -72,7 +73,6 @@ public sealed class VendorIngestionService : BackgroundService
     private readonly IActiveCharacterService _activeCharacter;
     private readonly IPlayerSkillState _skillState;
     private readonly IDiagnosticsSink? _diag;
-    private readonly ModuleGate _gate;
     private ILogSubscription? _subscription;
     private IDisposable? _skillSubscription;
 
@@ -83,7 +83,6 @@ public sealed class VendorIngestionService : BackgroundService
         VendorSellContext context,
         IActiveCharacterService activeCharacter,
         IPlayerSkillState skillState,
-        ModuleGates gates,
         IDiagnosticsSink? diag = null)
     {
         _driver = driver;
@@ -93,37 +92,35 @@ public sealed class VendorIngestionService : BackgroundService
         _activeCharacter = activeCharacter;
         _skillState = skillState;
         _diag = diag;
-        _gate = gates.For("smaug");
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Eager subscription attach per Call 1 / principle eager-always (#695):
+    /// the L1 LocalPlayer subscription and the shared skill-state subscribe
+    /// both happen during the IHostedService chain's <c>StartAsync</c>,
+    /// before the trailing world-merger drain starts (#702 / Call 2). The
+    /// Smaug module gate no longer gates state subscription — gate-driven
+    /// UI hydration remains Smaug's own concern (today: lazy
+    /// CalibrationViewModel hydration on tab activation, which reads the
+    /// PriceCalibrationService snapshot independently of this service).
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("Smaug", "Waiting for module gate…");
-        await _gate.WaitAsync(stoppingToken).ConfigureAwait(false);
-        _diag?.Info("Smaug", "Gate opened — subscribing to L1 driver (LocalPlayer pipe) for vendor events");
+        _diag?.Info("Smaug",
+            "Subscribing to L1 driver (LocalPlayer pipe) + shared skill state for vendor events (eager attach)");
 
         PrimeCivicPrideFromActiveCharacter();
         _activeCharacter.ActiveCharacterChanged += OnActiveCharacterChanged;
         _activeCharacter.CharacterExportsChanged += OnActiveCharacterChanged;
-        stoppingToken.Register(() =>
-        {
-            _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
-            _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
-        });
 
         // Subscribe to shared skill state (#580). Subscribe is atomic
         // replay + live under the tracker's lock, so the current snapshot
-        // — including any CivicPride observed pre-gate — is delivered
+        // — including any CivicPride observed pre-attach — is delivered
         // synchronously before this call returns, and before any vendor
         // envelope reaches the L1 handler below.
         _skillSubscription = _skillState.Subscribe(OnSkillSnapshot);
 
-        // Latent-bug fix per #549 + #550 capability E. The Smaug gate only
-        // opens after the user has clicked the Smaug tab, so Application.Current
-        // is guaranteed non-null and its Dispatcher already pumping by here. We
-        // fall back to Inline if for any reason no Application is hosting (e.g.
-        // headless integration tests that share this service) — better silent
-        // best-effort than an NRE.
+        // Latent-bug fix per #549 + #550 capability E.
         var uiDispatcher = Application.Current?.Dispatcher;
         var deliveryContext = uiDispatcher is not null
             ? DeliveryContext.Marshaled(uiDispatcher)
@@ -177,6 +174,11 @@ public sealed class VendorIngestionService : BackgroundService
                 DiagnosticCategory = "Smaug.Ingestion",
             });
 
+        return base.StartAsync(cancellationToken);
+    }
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
         catch (OperationCanceledException) { /* expected on host stop */ }
         finally
@@ -188,8 +190,20 @@ public sealed class VendorIngestionService : BackgroundService
         }
     }
 
+    public override Task StopAsync(CancellationToken cancellationToken)
+    {
+        // Symmetric with the StartAsync subscribe so a bootstrap failure
+        // that disposes the service without ExecuteAsync ever running
+        // doesn't leak the active-character handlers.
+        _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
+        _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
+        return base.StopAsync(cancellationToken);
+    }
+
     public override void Dispose()
     {
+        _activeCharacter.ActiveCharacterChanged -= OnActiveCharacterChanged;
+        _activeCharacter.CharacterExportsChanged -= OnActiveCharacterChanged;
         _subscription?.Dispose();
         _subscription = null;
         _skillSubscription?.Dispose();
@@ -243,7 +257,7 @@ public sealed class VendorIngestionService : BackgroundService
     /// When the active character changes, overwrites unconditionally; on first prime, only fills in
     /// a zero level so a live log-parsed value is not clobbered by a stale export.
     ///
-    /// <para><b>Ordering — live wins over export.</b> <see cref="ExecuteAsync"/>
+    /// <para><b>Ordering — live wins over export.</b> <see cref="StartAsync"/>
     /// calls this <em>before</em> subscribing to <see cref="IPlayerSkillState"/>,
     /// so the export-derived value is in place first and the subsequent
     /// synchronous replay of <see cref="OnSkillSnapshot"/> overwrites it with
