@@ -96,4 +96,29 @@ public class GandalfShiftSettingsBubbleTests
 
         fired.Should().Be(1, "the second GetOrCreate must not have re-subscribed");
     }
+
+    [Fact]
+    public void RingOnCurrentShiftAtStartup_round_trips_through_JsonSettingsStore()
+    {
+        // Pins the UI checkbox contract (#758): the setting persists through
+        // %LocalAppData%/Mithril/Gandalf/shifts.json so a user opt-in survives
+        // restart. Default is false (matches pre-#709 silent cold-start).
+        var tempPath = Path.Combine(Path.GetTempPath(), $"mithril-shifts-test-{Guid.NewGuid():N}.json");
+        try
+        {
+            new GandalfShiftSettings().RingOnCurrentShiftAtStartup.Should().BeFalse();
+
+            var seed = new GandalfShiftSettings { RingOnCurrentShiftAtStartup = true };
+            var store = new JsonSettingsStore<GandalfShiftSettings>(
+                tempPath, GandalfShiftSettingsJsonContext.Default.GandalfShiftSettings);
+            store.Save(seed);
+
+            var loaded = store.Load();
+            loaded.RingOnCurrentShiftAtStartup.Should().BeTrue();
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+    }
 }

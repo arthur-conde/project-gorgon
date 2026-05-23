@@ -53,6 +53,10 @@
                 it begins (every ~2 real hours per shift). Picking a sound here overrides the global
                 default for that shift only; leave it blank to inherit the global default above.
             </TextBlock>
+            <CheckBox Content="Ring on current shift at startup"
+                      IsChecked="{Binding ShiftSettings.RingOnCurrentShiftAtStartup}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,8"
+                      ToolTip="When Mithril starts and you're already in an enabled shift, ring the alarm immediately. Off by default — matches pre-#709 behaviour of only ringing on the next shift change."/>
             <ItemsControl ItemsSource="{Binding ShiftRows}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
