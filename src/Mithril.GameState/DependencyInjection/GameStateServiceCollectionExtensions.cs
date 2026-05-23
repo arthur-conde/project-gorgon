@@ -24,6 +24,7 @@ using Mithril.GameState.Weather;
 using Mithril.GameState.WordsOfPower;
 using Mithril.GameState.WordsOfPower.Producers;
 using Mithril.Shared.DependencyInjection;
+using Mithril.Shared.Modules;
 using Mithril.WorldSim;
 using Mithril.WorldSim.Chat;
 using Mithril.WorldSim.Player;
@@ -56,6 +57,19 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<GameSessionService>()
             .AddSingleton<IGameSessionService>(sp => sp.GetRequiredService<GameSessionService>())
             .AddHostedService(sp => sp.GetRequiredService<GameSessionService>());
+
+        // View-layer composer (#633): cross-checks the Player.log banner's
+        // server identity against the chat banner's server identity. Verification
+        // only — neither GameSession.Server nor ChatSession.Server is mutated.
+        // Registered as a singleton + IAttentionSource so disagreement surfaces
+        // on IAttentionAggregator alongside other shell-side attention signals.
+        // SessionAgreementWorldRegistration calls Start() at host start so the
+        // subscriptions are in place before the trailing
+        // WorldMergerStartHostedService (#696 Call 2) opens the world drains.
+        services
+            .AddSingleton<SessionAgreementComposer>()
+            .AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<SessionAgreementComposer>())
+            .AddHostedService<SessionAgreementWorldRegistration>();
 
         // World-simulator inventory split (#602 — Phase 2).
         //
@@ -525,6 +539,33 @@ public static class GameStateServiceCollectionExtensions
         public Task StartAsync(CancellationToken cancellationToken)
         {
             _view.Start();
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Hosted service that calls <see cref="SessionAgreementComposer.Start"/> at
+    /// host start so the composer's <see cref="IGameSessionService"/> +
+    /// <see cref="IChatSessionService"/> subscriptions are in place before the
+    /// trailing <c>WorldMergerStartHostedService</c> (#696 Call 2) opens the
+    /// world drains (#633). Mirrors <see cref="WordOfPowerViewRegistration"/>'s
+    /// shape — the composer is itself a singleton via its own DI registration;
+    /// this hosted service exists solely to drive <see cref="SessionAgreementComposer.Start"/>.
+    /// </summary>
+    private sealed class SessionAgreementWorldRegistration : IHostedService
+    {
+        private readonly SessionAgreementComposer _composer;
+
+        public SessionAgreementWorldRegistration(SessionAgreementComposer composer)
+        {
+            _composer = composer;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _composer.Start();
             return Task.CompletedTask;
         }
 
