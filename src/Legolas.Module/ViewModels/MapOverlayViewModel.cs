@@ -764,9 +764,6 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         }
     }
 
-    public double Scale => _projector.Scale;
-    public double RotationDegrees => _projector.RotationRadians * 180.0 / Math.PI;
-
     // The slider value is treated as pixel radius for predictable on-screen sizing —
     // multiplying by projector.Scale caused the pin to visibly shrink/grow after
     // every refit, which felt like a bug to the user.
