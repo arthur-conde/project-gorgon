@@ -532,6 +532,10 @@ Shape:
   prefix matching the issue's scope (feat/, fix/, refactor/, etc.).
 - PR body MUST include "Closes #<issue>" and the "🤖 Generated with Claude
   Code" trailer.
+- Do NOT merge the PR. Stop after `gh pr create` and report `outcome:
+  success` to team-lead. The driver runs reviews and calls `gh pr merge`;
+  if you merge yourself, the driver's review-iteration gate is silently
+  bypassed.
 
 ### Structured outcome reporting (CRITICAL — read carefully)
 
