@@ -1,5 +1,4 @@
 using Gandalf.Parsing;
-using Mithril.GameState.Areas;
 using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
@@ -19,15 +18,12 @@ namespace Gandalf.Services;
 /// anchor (the <see cref="DefeatCooldownParser"/> rejection text remains as
 /// a diagnostic-only "cooldown still active" observation).
 ///
-/// Also feeds <see cref="PlayerAreaTracker"/> so chest commits stamp the
-/// player's current area on <c>LearnedChest.Area</c> (#178). The tracker
-/// self-seeds via <see cref="PlayerAreaTracker.CurrentArea"/>'s lazy
-/// pre-login-preamble scan (#514); the bare <c>LocalPlayerLogLine.Data</c>
-/// we hand it here is a no-op for non-area lines (no <c>LOADING LEVEL</c>
-/// lives on the LocalPlayer pipe — that's a SystemSignal kind). The
-/// canonical live-area updates flow through <c>PlayerPositionTracker</c> /
-/// <c>PlayerWeatherTracker</c> / <c>PlayerPinTracker</c>, which still consume
-/// <see cref="IPlayerLogStream"/> directly and feed the same shared tracker.
+/// <para><b>Area→chest-stamp bridge (#790).</b> Owned by <see cref="LootSource"/>
+/// directly — it injects <c>IPlayerAreaState</c> and queries
+/// <c>CurrentArea</c> at chest-commit time. This service no longer has any
+/// area dep; the per-line area-tracker push-in retired in #790 because
+/// the producer's L1 subscription already owns the <c>LOADING LEVEL</c>
+/// envelope path end-to-end.</para>
 ///
 /// <para><b>L1 migration disposition (#549 Gandalf row, #550 PR 3 archetype-B).</b>
 /// <list type="bullet">
@@ -71,7 +67,6 @@ public sealed class LootIngestionService : BackgroundService
     private readonly LootBracketTracker _bracket;
     private readonly BossKillCreditParser _bossKill;
     private readonly DefeatCooldownParser _defeatCooldown;
-    private readonly PlayerAreaTracker _areaTracker;
     private readonly LootSource _source;
     private readonly IDiagnosticsSink? _diag;
     private ILogSubscription? _subscription;
@@ -82,7 +77,6 @@ public sealed class LootIngestionService : BackgroundService
         LootBracketTracker bracket,
         BossKillCreditParser bossKill,
         DefeatCooldownParser defeatCooldown,
-        PlayerAreaTracker areaTracker,
         LootSource source,
         IDiagnosticsSink? diag = null)
     {
@@ -90,7 +84,6 @@ public sealed class LootIngestionService : BackgroundService
         _bracket = bracket;
         _bossKill = bossKill;
         _defeatCooldown = defeatCooldown;
-        _areaTracker = areaTracker;
         _source = source;
         _diag = diag;
     }
@@ -139,16 +132,6 @@ public sealed class LootIngestionService : BackgroundService
         var line = payload.Data;
         var ts = payload.Timestamp.UtcDateTime;
 
-        // Area transitions update the tracker BEFORE the bracket sees the
-        // line, so any subsequent chest interaction in the same dispatch
-        // batch reads the correct CurrentArea. The LocalPlayer pipe never
-        // carries LOADING LEVEL (that's a SystemSignal), so this call is a
-        // no-op for the area-source case — PlayerAreaTracker.CurrentArea
-        // self-seeds via #514 and the canonical live-area updates flow
-        // through GameState trackers that still consume IPlayerLogStream
-        // directly. Calling Observe here is defence-in-depth (the parser's
-        // substring guard makes the no-op cheap).
-        _areaTracker.Observe(line, ts);
         _bracket.Observe(line, ts);
 
         if (_bossKill.TryParse(line, ts) is BossKillCreditEvent kill)

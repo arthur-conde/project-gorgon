@@ -4,7 +4,6 @@ using Gandalf.Domain;
 using Gandalf.Parsing;
 using Gandalf.Services;
 using Mithril.GameState.Areas;
-using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Character;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Settings;
@@ -259,7 +258,7 @@ public sealed class LootIngestionServiceTests : IDisposable
         public LootSource Source { get; }
         public DerivedTimerProgressService Derived { get; }
         public LootBracketTracker Bracket { get; }
-        public PlayerAreaTracker AreaTracker { get; }
+        public FakePlayerAreaState AreaState { get; }
         public BossKillCreditParser BossKill { get; } = new();
         public DefeatCooldownParser DefeatCooldown { get; } = new();
 
@@ -283,9 +282,9 @@ public sealed class LootIngestionServiceTests : IDisposable
             var cacheStore = new JsonSettingsStore<LootCatalogCache>(cachePath,
                 LootCatalogCacheJsonContext.Default.LootCatalogCache);
             var cache = cacheStore.Load();
-            AreaTracker = new PlayerAreaTracker(new AreaTransitionParser());
+            AreaState = new FakePlayerAreaState();
             Source = new LootSource(Derived, cacheStore, cache,
-                areaTracker: AreaTracker, refData: null, time: time);
+                areaState: AreaState, refData: null, time: time);
             Bracket = new LootBracketTracker(
                 Source,
                 new ChestInteractionParser(),
@@ -298,8 +297,7 @@ public sealed class LootIngestionServiceTests : IDisposable
 
         public async Task<(LootIngestionService svc, Task exec)> StartServiceAsync(FakeLogStreamDriver driver)
         {
-            var svc = new LootIngestionService(driver, Bracket, BossKill, DefeatCooldown,
-                AreaTracker, Source);
+            var svc = new LootIngestionService(driver, Bracket, BossKill, DefeatCooldown, Source);
             var exec = svc.StartAsync(CancellationToken.None);
             // Gandalf is eager — no module gate to open. Subscription happens
             // synchronously inside ExecuteAsync; wait for it to land.

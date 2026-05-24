@@ -4,7 +4,6 @@ using Gandalf.Parsing;
 using Gandalf.Services;
 using Gandalf.ViewModels;
 using Gandalf.Views;
-using Mithril.GameState.Areas;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 // Mithril.GameState now owns the quest parsers + IPlayerQuestJournalState;
@@ -87,8 +86,9 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<InteractionEndParser>();
         services.AddSingleton<InteractionDelayLoopParser>();
         services.AddSingleton<InteractionWaitParser>();
-        // AreaTransitionParser + PlayerAreaTracker now registered once in
-        // AddMithrilGameState() (shared live game-state) — injected here.
+        // Area parser + IPlayerAreaState are registered once in
+        // AddMithrilGameState() (shared live game-state); LootSource queries
+        // CurrentArea directly at chest-commit time (#790).
         services.AddSingleton<BossKillCreditParser>();
         services.AddSingleton<DefeatCooldownParser>();
         services.AddSingleton<LootBracketTracker>();
@@ -96,7 +96,7 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<DerivedTimerProgressService>(),
             sp.GetRequiredService<ISettingsStore<LootCatalogCache>>(),
             sp.GetRequiredService<LootCatalogCache>(),
-            areaTracker: sp.GetService<PlayerAreaTracker>(),
+            areaState: sp.GetService<Mithril.GameState.Areas.IPlayerAreaState>(),
             refData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             time: null,
             diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),

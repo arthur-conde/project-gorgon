@@ -7,7 +7,6 @@ using Legolas.Services;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
 using Mithril.GameState.Areas;
-using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Game;
 using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
@@ -51,7 +50,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         SpyAreaCalibration Spy,
         SessionState Session,
         SurveyFlowController Flow,
-        PlayerAreaTracker Tracker,
+        FakePlayerAreaState AreaState,
         ModuleGates Gates);
 
     private static Fixture Build(
@@ -59,18 +58,14 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         bool openGate = true)
     {
         var driver = new TestLogStreamDriver();
-        // #775: the tracker's lazy self-seed retired; the production seed
-        // path is PlayerAreaWorldRegistration.StartAsync (eager pre-warm
-        // via AreaLoadingFrameProducer.TryBuildSeedFrame -> folder.Apply).
-        // For the unit test fixture that exercises Legolas directly without
-        // wiring a producer/world, the eager pre-warm is faked via a single
-        // Observe() call before constructing the service — same semantics,
-        // simpler scaffolding.
-        var tracker = new PlayerAreaTracker(new AreaTransitionParser());
-        if (preSeededArea is not null)
-        {
-            tracker.Observe($"LOADING LEVEL {preSeededArea}", DateTime.UtcNow);
-        }
+        // #789: the area bridge consumes IPlayerAreaState.Subscribe instead
+        // of feeding a concrete tracker. preSeededArea is staged BEFORE
+        // building the service so the Subscribe call's synthetic Snapshot
+        // replay delivers it to OnAreaChanged — mirrors production where
+        // PlayerAreaWorldRegistration's eager pre-warm seeds the folder
+        // before any consumer attaches.
+        var areaState = new FakePlayerAreaState();
+        if (preSeededArea is not null) areaState.SetArea(preSeededArea);
         var spy = new SpyAreaCalibration(calibration);
         var session = new SessionState();
         var settings = new LegolasSettings();
@@ -81,10 +76,10 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             new MultilaterationSolver(), new MotherlodeFlowController(session),
             new FakePlayerPositionTracker(), new FakePlayerPinTracker());
         var svc = new PlayerLogIngestionService(
-            driver, new PlayerLogParser(), tracker, spy, flow, session, motherlode,
+            driver, new PlayerLogParser(), areaState, spy, flow, session, motherlode,
             settings,
             activeChar: null, ingestionStore: null);
-        return new Fixture(svc, driver, spy, session, flow, tracker, gates);
+        return new Fixture(svc, driver, spy, session, flow, areaState, gates);
     }
 
     /// <summary>
@@ -171,9 +166,12 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         var run = f.Service.StartAsync(cts.Token);
         try
         {
-            f.Driver.PushLive(LiveLine("[08:25:13] LOADING LEVEL AreaEltibule"));
-            f.Driver.PushLive(LiveLine("[08:30:00] LOADING LEVEL AreaEltibule"));
-            await f.Driver.DrainLocalPlayerAsync();
+            // #789: area transitions arrive via IPlayerAreaState.Subscribe,
+            // not via per-line LOADING LEVEL envelopes on the L1 pipe; the
+            // fake area state dispatches a Changed event identical to what
+            // the production folder emits on Apply.
+            f.AreaState.SetArea("AreaEltibule");
+            f.AreaState.SetArea("AreaEltibule"); // same-area re-emit = no-op
             f.Spy.SelectedAreas.Should().Equal("AreaEltibule");
         }
         finally { await Stop(f, run, cts); }
@@ -187,9 +185,8 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         var run = f.Service.StartAsync(cts.Token);
         try
         {
-            f.Driver.PushLive(LiveLine("[08:25:13] LOADING LEVEL AreaEltibule"));
-            f.Driver.PushLive(LiveLine("[08:57:37] LOADING LEVEL AreaSerbule"));
-            await f.Driver.DrainLocalPlayerAsync();
+            f.AreaState.SetArea("AreaEltibule");
+            f.AreaState.SetArea("AreaSerbule");
             f.Spy.SelectedAreas.Should().Equal("AreaEltibule", "AreaSerbule");
         }
         finally { await Stop(f, run, cts); }
@@ -203,26 +200,27 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         var run = f.Service.StartAsync(cts.Token);
         try
         {
-            f.Driver.PushLive(LiveLine("[08:25:13] LOADING LEVEL AreaEltibule"));
-            f.Driver.PushLive(LiveLine("[08:57:00] LOADING LEVEL ChooseCharacter"));
-            f.Driver.PushLive(LiveLine("[09:00:39] LOADING LEVEL AreaEltibule"));
-            await f.Driver.DrainLocalPlayerAsync();
+            f.AreaState.SetArea("AreaEltibule");
+            // ChooseCharacter / disconnect surfaces as a null-area transition
+            // from the production parser; OnAreaChanged resets the latch so
+            // the next non-null re-applies.
+            f.AreaState.SetArea(null);
+            f.AreaState.SetArea("AreaEltibule");
             f.Spy.SelectedAreas.Should().Equal("AreaEltibule", "AreaEltibule");
         }
         finally { await Stop(f, run, cts); }
     }
 
     /// <summary>
-    /// #514 + #550 LiveOnly composition + #775 eager pre-warm:
-    /// <see cref="PlayerAreaTracker"/>'s current area is populated BEFORE
-    /// Legolas's <c>StartAsync</c> runs (in production: the
-    /// <c>PlayerAreaWorldRegistration</c> hosted service eagerly applies the
-    /// producer's reverse-scan seed during its own <c>StartAsync</c>, which
-    /// runs before Legolas's per registration order). The L1 subscription
-    /// is LiveOnly so we do NOT pump replay envelopes — the eager pre-warm
-    /// delivers the area before any live envelope. The unit fixture fakes
-    /// the pre-warm via <see cref="PlayerAreaTracker.Observe"/>; the
-    /// production seed shape is covered by
+    /// #789 + #775 eager pre-warm: the seed area is staged on the fake area
+    /// state BEFORE Legolas's <c>StartAsync</c> runs. The
+    /// <see cref="IPlayerAreaState.Subscribe"/> contract fires a synthetic
+    /// <see cref="PlayerAreaChangeKind.Snapshot"/> notification synchronously
+    /// inside the call carrying the current area, so
+    /// <c>OnAreaChanged</c> applies it before any live envelope arrives.
+    /// Production: <c>PlayerAreaWorldRegistration</c>'s eager pre-warm
+    /// applies the producer's reverse-scan seed during its own
+    /// <c>StartAsync</c>; the seed shape is covered by
     /// <c>AreaLoadingFrameProducerTests.Seed_picks_the_LATEST_LOADING_LEVEL_with_its_parsed_log_timestamp</c>.
     /// </summary>
     [Fact]
@@ -532,7 +530,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         });
 
         var driver = new TestLogStreamDriver();
-        var tracker = new PlayerAreaTracker(new AreaTransitionParser());
+        var areaState = new FakePlayerAreaState();
         var spy = new SpyAreaCalibration(Identity());
         var session = new SessionState();
         var settings = new LegolasSettings();
@@ -543,7 +541,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             new MultilaterationSolver(), new MotherlodeFlowController(session),
             new FakePlayerPositionTracker(), new FakePlayerPinTracker());
         var svc = new PlayerLogIngestionService(
-            driver, new PlayerLogParser(), tracker, spy, flow, session, motherlode,
+            driver, new PlayerLogParser(), areaState, spy, flow, session, motherlode,
             settings,
             activeChar: activeChar, ingestionStore: store);
 
@@ -598,7 +596,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         var activeChar = new FakeActiveCharacterService("Bob", "Beta");
 
         var driver = new TestLogStreamDriver();
-        var tracker = new PlayerAreaTracker(new AreaTransitionParser());
+        var areaState = new FakePlayerAreaState();
         var spy = new SpyAreaCalibration(Identity());
         var session = new SessionState();
         var settings = new LegolasSettings();
@@ -609,7 +607,7 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
             new MultilaterationSolver(), new MotherlodeFlowController(session),
             new FakePlayerPositionTracker(), new FakePlayerPinTracker());
         var svc = new PlayerLogIngestionService(
-            driver, new PlayerLogParser(), tracker, spy, flow, session, motherlode,
+            driver, new PlayerLogParser(), areaState, spy, flow, session, motherlode,
             settings,
             activeChar: activeChar, ingestionStore: store);
 
@@ -682,6 +680,77 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         public List<(string Name, MetreOffset Offset)> NotedSurveys { get; } = new();
         public void NoteSurvey(string name, MetreOffset offset) => NotedSurveys.Add((name, offset));
         public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }
+    }
+
+    /// <summary>
+    /// Minimal <see cref="IPlayerAreaState"/> test double for the #789
+    /// migration: holds a <see cref="CurrentArea"/> and a list of
+    /// subscribers; <see cref="Subscribe"/> fires the synthetic
+    /// <see cref="PlayerAreaChangeKind.Snapshot"/> replay before attaching
+    /// (so a late subscriber sees whatever <see cref="SetArea"/> set
+    /// pre-subscribe), and <see cref="SetArea"/> dispatches a
+    /// <see cref="PlayerAreaChangeKind.Changed"/> notification to every
+    /// attached handler. Mirrors the production
+    /// <see cref="Mithril.GameState.Areas.PlayerAreaTracker"/> contract
+    /// closely enough that the service under test cannot distinguish the
+    /// test double from the real folder.
+    /// </summary>
+    private sealed class FakePlayerAreaState : IPlayerAreaState
+    {
+        private readonly object _lock = new();
+        private readonly List<Action<PlayerAreaChanged>> _handlers = new();
+        private string? _current;
+
+        public string? CurrentArea
+        {
+            get { lock (_lock) return _current; }
+        }
+
+        public IDisposable Subscribe(Action<PlayerAreaChanged> handler)
+        {
+            ArgumentNullException.ThrowIfNull(handler);
+            lock (_lock)
+            {
+                handler(new PlayerAreaChanged(
+                    PlayerAreaChangeKind.Snapshot, Previous: null, Current: _current,
+                    At: DateTimeOffset.MinValue));
+                _handlers.Add(handler);
+                return new Sub(this, handler);
+            }
+        }
+
+        public void SetArea(string? area, DateTimeOffset? at = null)
+        {
+            Action<PlayerAreaChanged>[] toFire;
+            PlayerAreaChanged change;
+            lock (_lock)
+            {
+                if (_current == area) return;
+                var prev = _current;
+                _current = area;
+                change = new PlayerAreaChanged(
+                    PlayerAreaChangeKind.Changed, prev, area, at ?? DateTimeOffset.UtcNow);
+                toFire = _handlers.ToArray();
+            }
+            foreach (var h in toFire) h(change);
+        }
+
+        private sealed class Sub : IDisposable
+        {
+            private FakePlayerAreaState? _owner;
+            private readonly Action<PlayerAreaChanged> _handler;
+            public Sub(FakePlayerAreaState owner, Action<PlayerAreaChanged> handler)
+            {
+                _owner = owner;
+                _handler = handler;
+            }
+            public void Dispose()
+            {
+                var owner = Interlocked.Exchange(ref _owner, null);
+                if (owner is null) return;
+                lock (owner._lock) { owner._handlers.Remove(_handler); }
+            }
+        }
     }
 
     /// <summary>

@@ -50,7 +50,7 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly DerivedTimerProgressService _derived;
     private readonly ISettingsStore<LootCatalogCache> _cacheStore;
     private readonly LootCatalogCache _cache;
-    private readonly PlayerAreaTracker? _areaTracker;
+    private readonly IPlayerAreaState? _areaState;
     private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _time;
     private readonly IWorldClock? _worldClock;
@@ -66,7 +66,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         DerivedTimerProgressService derived,
         ISettingsStore<LootCatalogCache> cacheStore,
         LootCatalogCache cache,
-        PlayerAreaTracker? areaTracker = null,
+        IPlayerAreaState? areaState = null,
         IReferenceDataService? refData = null,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null,
@@ -75,7 +75,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         _derived = derived;
         _cacheStore = cacheStore;
         _cache = cache;
-        _areaTracker = areaTracker;
+        _areaState = areaState;
         _refData = refData;
         _time = time ?? TimeProvider.System;
         _worldClock = playerWorld?.Clock;
@@ -125,7 +125,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         // defeat-cooldown auto-learn path). Area is stamped sticky-once-known
         // (#178) — first commit wins so the same internal name in two zones
         // doesn't ping-pong its area attribution.
-        var currentArea = _areaTracker?.CurrentArea;
+        var currentArea = _areaState?.CurrentArea;
         var learnedChanged = false;
         lock (_catalogLock)
         {
@@ -238,7 +238,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         {
             if (prior is null)
             {
-                var currentArea = _areaTracker?.CurrentArea;
+                var currentArea = _areaState?.CurrentArea;
                 lock (_catalogLock)
                 {
                     if (!_cache.LearnedChests.TryGetValue(chestInternalName, out var entry))

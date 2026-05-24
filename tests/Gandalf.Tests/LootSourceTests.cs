@@ -1,10 +1,7 @@
 using System.IO;
 using FluentAssertions;
 using Gandalf.Domain;
-using Gandalf.Parsing;
 using Gandalf.Services;
-using Mithril.GameState.Areas;
-using Mithril.GameState.Areas.Parsing;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -33,8 +30,8 @@ public class LootSourceTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch { /* best-effort */ }
     }
 
-    private (LootSource src, DerivedTimerProgressService derived, FakeActiveCharacterService active, ManualTime time)
-        Build(PlayerAreaTracker? areaTracker = null, IReferenceDataService? refData = null)
+    private (LootSource src, DerivedTimerProgressService derived, FakeActiveCharacterService active, ManualTime time, FakePlayerAreaState areaState)
+        Build(IReferenceDataService? refData = null)
     {
         var active = new FakeActiveCharacterService();
         active.SetActiveCharacter("Arthur", "Kwatoxi");
@@ -48,16 +45,17 @@ public class LootSourceTests : IDisposable
         var cacheStore = new JsonSettingsStore<LootCatalogCache>(_cachePath,
             LootCatalogCacheJsonContext.Default.LootCatalogCache);
         var cache = cacheStore.Load();
+        var areaState = new FakePlayerAreaState();
         var src = new LootSource(derived, cacheStore, cache,
-            areaTracker: areaTracker, refData: refData, time: time);
+            areaState: areaState, refData: refData, time: time);
 
-        return (src, derived, active, time);
+        return (src, derived, active, time, areaState);
     }
 
     [Fact]
     public void First_loot_of_unknown_chest_creates_unverified_placeholder_row()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // No rejection observed yet → row stamps with PlaceholderChestDuration,
@@ -83,7 +81,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Rejection_after_placeholder_loot_upgrades_duration_and_preserves_StartedAt()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // Loot at T0 with no prior rejection → placeholder row anchored at T0.
@@ -115,7 +113,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Rejection_with_shorter_real_duration_fires_TimerReady_when_already_elapsed()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             var lootTime = time.GetUtcNow().UtcDateTime;
@@ -141,7 +139,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Rejection_after_placeholder_loot_does_not_refire_when_still_cooling()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
@@ -164,7 +162,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Subsequent_loot_after_rejection_uses_verified_duration()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnChestInteraction("GoblinStaticChest1", time.GetUtcNow().UtcDateTime);
@@ -189,7 +187,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Past_anchored_chest_loot_yields_correct_remaining()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
@@ -210,7 +208,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void BossKillCredit_auto_discovers_and_stamps_with_placeholder_when_uncalibrated()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // No calibration overlay → falls back to PlaceholderDefeatDuration,
@@ -233,7 +231,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Calibration_overlay_supplies_verified_duration_and_area()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OverlayDefeatCalibration(
@@ -263,7 +261,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Calibration_overlay_applied_after_discovery_re_projects_existing_rows()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // Discovery first → placeholder row.
@@ -289,7 +287,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void BossKillCredit_within_window_does_not_reset_clock()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OverlayDefeatCalibration(
@@ -315,7 +313,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Replay_of_dismissed_boss_kill_preserves_dismissal()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             var killTime = time.GetUtcNow().UtcDateTime;
@@ -341,7 +339,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Genuine_re_kill_after_dismissal_resurrects_the_row()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnBossKillCredit("Megaspider", time.GetUtcNow().UtcDateTime);
@@ -368,7 +366,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Replay_of_dismissed_chest_loot_preserves_dismissal()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
@@ -391,7 +389,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void DefeatCooldownActive_is_diagnostic_only_does_not_mutate_progress()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnDefeatCooldownActive("Megaspider", time.GetUtcNow().UtcDateTime);
@@ -407,7 +405,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Source_id_is_stable()
     {
-        var (src, derived, _, _) = Build();
+        var (src, derived, _, _, _) = Build();
         try
         {
             src.SourceId.Should().Be("gandalf.loot");
@@ -422,7 +420,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Catalog_includes_both_chest_and_defeat_entries_under_one_source()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
@@ -475,7 +473,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Forget_chest_drops_catalog_progress_and_cache_entries()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnChestCooldownObserved("GoblinStaticChest1", TimeSpan.FromHours(3));
@@ -507,7 +505,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Forget_defeat_drops_learned_entry_and_progress()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnBossKillCredit("Den Mother", time.GetUtcNow().UtcDateTime);
@@ -534,7 +532,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Forget_emits_single_Removed_delta()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnChestInteraction("Chair", time.GetUtcNow().UtcDateTime);
@@ -563,7 +561,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Forget_then_re_observe_resurrects_cleanly()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // User wipes a false-positive entry. If the parser later re-emits
@@ -592,7 +590,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Forget_of_unknown_key_is_noop()
     {
-        var (src, derived, _, _) = Build();
+        var (src, derived, _, _, _) = Build();
         try
         {
             var batches = new List<IReadOnlyList<TimerRowDelta>>();
@@ -613,7 +611,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_emits_RowsChanged_with_added_delta()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             var batches = new List<IReadOnlyList<TimerRowDelta>>();
@@ -644,7 +642,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OverlayDefeatCalibration_emits_one_batched_RowsChanged()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // Pre-populate the catalog with a few learned defeats so the overlay
@@ -686,12 +684,13 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_stamps_current_area_on_LearnedChest()
     {
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-
-        var (src, derived, _, time) = Build(areaTracker);
+        // Post-#790: LootSource queries IPlayerAreaState.CurrentArea at
+        // chest-commit time; the test double's SetArea mirrors the
+        // production folder's Apply.
+        var (src, derived, _, time, areaState) = Build();
         try
         {
+            areaState.SetArea("AreaSerbule");
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
 
             var cache = new JsonSettingsStore<LootCatalogCache>(_cachePath,
@@ -705,8 +704,8 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_with_unknown_area_persists_null()
     {
-        // No area tracker injected → CurrentArea is null path.
-        var (src, derived, _, time) = Build();
+        // No SetArea call → CurrentArea stays null → Area stamp = null.
+        var (src, derived, _, time, _) = Build();
         try
         {
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
@@ -721,17 +720,16 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_area_is_sticky_once_known()
     {
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        var (src, derived, _, time) = Build(areaTracker);
+        var (src, derived, _, time, areaState) = Build();
         try
         {
             // First commit while in AreaSerbule.
-            areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
+            areaState.SetArea("AreaSerbule");
             src.OnChestInteraction("LootChest1", time.GetUtcNow().UtcDateTime);
 
             // Player ports to AreaTomb1, then loots a same-named chest. Sticky:
             // first commit's area wins so the cache doesn't ping-pong.
-            areaTracker.Observe("LOADING LEVEL AreaTomb1", DateTime.UtcNow);
+            areaState.SetArea("AreaTomb1");
             time.Advance(TimeSpan.FromMinutes(5));
             src.OnChestInteraction("LootChest1", time.GetUtcNow().UtcDateTime);
 
@@ -745,16 +743,15 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void OnChestInteraction_stamps_area_late_when_first_commit_was_unknown()
     {
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        var (src, derived, _, time) = Build(areaTracker);
+        var (src, derived, _, time, areaState) = Build();
         try
         {
-            // First commit happens before any LOADING LEVEL → Area is null.
+            // First commit happens before any SetArea → Area is null.
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
 
             // Player transitions, then re-loots the same chest. Sticky-once-known
             // means we DON'T overwrite known Area, but we DO populate from null.
-            areaTracker.Observe("LOADING LEVEL AreaEltibule", DateTime.UtcNow);
+            areaState.SetArea("AreaEltibule");
             time.Advance(TimeSpan.FromHours(4));
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
 
@@ -772,12 +769,10 @@ public class LootSourceTests : IDisposable
         refData.StringsRaw["npc_AreaSerbule/Cow_Moolanda_Name"] = "Wanda";
         refData.StringsRaw["npc_AreaSerbule/Cow_Bessie_Name"] = "Bessie";
 
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-
-        var (src, derived, _, time) = Build(areaTracker, refData);
+        var (src, derived, _, time, areaState) = Build(refData);
         try
         {
+            areaState.SetArea("AreaSerbule");
             src.OnChestInteraction("Cow_Moolanda", time.GetUtcNow().UtcDateTime);
             src.OnChestInteraction("Cow_Bessie", time.GetUtcNow().UtcDateTime);
 
@@ -797,12 +792,10 @@ public class LootSourceTests : IDisposable
         refData.StringsRaw["npc_LootBackpack1_Name"] = "Adventurer's Pack";
         // No npc_AreaSerbule/LootBackpack1_Name entry — global prefab.
 
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-
-        var (src, derived, _, time) = Build(areaTracker, refData);
+        var (src, derived, _, time, areaState) = Build(refData);
         try
         {
+            areaState.SetArea("AreaSerbule");
             src.OnChestInteraction("LootBackpack1", time.GetUtcNow().UtcDateTime);
             var entry = src.Catalog.Single(c => c.Key == LootSource.ChestKey("LootBackpack1"));
             entry.DisplayName.Should().Be("Adventurer's Pack");
@@ -814,7 +807,7 @@ public class LootSourceTests : IDisposable
     public void BuildCatalog_falls_back_to_internal_name_when_strings_all_misses_entirely()
     {
         var refData = new Mithril.TestSupport.FakeReferenceData(); // empty Strings
-        var (src, derived, _, time) = Build(refData: refData);
+        var (src, derived, _, time, _) = Build(refData: refData);
         try
         {
             src.OnChestInteraction("UnknownChest1", time.GetUtcNow().UtcDateTime);
@@ -830,12 +823,10 @@ public class LootSourceTests : IDisposable
         var refData = new Mithril.TestSupport.FakeReferenceData();
         refData.AreasRaw["AreaSerbule"] = new AreaEntry("AreaSerbule", "Serbule", "Serbule");
 
-        var areaTracker = new PlayerAreaTracker(new AreaTransitionParser());
-        areaTracker.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-
-        var (src, derived, _, time) = Build(areaTracker, refData);
+        var (src, derived, _, time, areaState) = Build(refData);
         try
         {
+            areaState.SetArea("AreaSerbule");
             src.OnChestInteraction("EltibuleSecretChest", time.GetUtcNow().UtcDateTime);
             var entry = src.Catalog.Single(c => c.Key == LootSource.ChestKey("EltibuleSecretChest"));
             entry.Region.Should().Be("Serbule");
@@ -846,7 +837,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Cow_rejection_with_no_prior_row_anchors_at_rejection_time()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             var rejectionAt = time.GetUtcNow().UtcDateTime;
@@ -870,7 +861,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Cow_rejection_leaves_active_prior_row_alone()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // Successful milking 10 min ago.
@@ -896,7 +887,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Cow_rejection_refreshes_stale_prior_anchor_to_rejection_time()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // Milking 2 h ago — cooldown of 1 h would have made the row Done at +1 h.
@@ -923,7 +914,7 @@ public class LootSourceTests : IDisposable
     [Fact]
     public void Cow_rejection_replays_idempotently_when_row_still_active()
     {
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             // Milking 10 min ago, 1 h cooldown — row is still in flight.
@@ -953,7 +944,7 @@ public class LootSourceTests : IDisposable
         // Forward-looking chest grammar gives us absolute info — the row's
         // existing StartedAt is more accurate than the rejection timestamp.
         // Default anchorFromRejection=false preserves today's behaviour.
-        var (src, derived, _, time) = Build();
+        var (src, derived, _, time, _) = Build();
         try
         {
             var lootAt = time.GetUtcNow().UtcDateTime;

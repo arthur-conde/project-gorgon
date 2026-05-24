@@ -38,11 +38,12 @@ public interface IAreaCalibrationService
 
     /// <summary>
     /// Set the current area by internal key. The Player.log-driven
-    /// <c>PlayerLogIngestionService.ApplyAreaIfChanged</c> bridge calls this
-    /// whenever <see cref="Mithril.GameState.Areas.PlayerAreaTracker.CurrentArea"/>
-    /// changes (#605 — the prior chat <c>Entering Area:</c> banner path is gone;
-    /// <see cref="Mithril.GameState.Areas.PlayerAreaTracker"/> is the
-    /// authoritative source). Also used by the manual area-picker UI.
+    /// <c>PlayerLogIngestionService.OnAreaChanged</c> bridge calls this
+    /// whenever <see cref="Mithril.GameState.Areas.IPlayerAreaState"/> emits a
+    /// new <see cref="Mithril.GameState.Areas.PlayerAreaChanged"/> notification
+    /// (#605 — the prior chat <c>Entering Area:</c> banner path is gone;
+    /// <c>IPlayerAreaState</c> is the authoritative source). Also used by the
+    /// manual area-picker UI.
     /// </summary>
     void SelectArea(string areaKey);
 
@@ -78,8 +79,8 @@ public interface IAreaCalibrationService
 
 /// <summary>
 /// Owns the per-area calibration lifecycle: area-key handoff (from the
-/// <see cref="Mithril.GameState.Areas.PlayerAreaTracker"/>-driven
-/// <c>PlayerLogIngestionService.ApplyAreaIfChanged</c> bridge or the manual
+/// <see cref="Mithril.GameState.Areas.IPlayerAreaState"/>-driven
+/// <c>PlayerLogIngestionService.OnAreaChanged</c> bridge or the manual
 /// area-picker UI) &#8594; apply persisted <see cref="AreaCalibration"/> on entry,
 /// and the solve/persist path the calibration window drives. Reference points
 /// come from <see cref="IReferenceDataService"/> (landmarks + NPCs with a
@@ -87,7 +88,7 @@ public interface IAreaCalibrationService
 /// positions the player in (verified 2026-05-18).
 ///
 /// <para>The chat-log <c>Entering Area:</c> banner path was retired in #605 —
-/// per #531, <see cref="Mithril.GameState.Areas.PlayerAreaTracker"/> already
+/// per #531, <see cref="Mithril.GameState.Areas.IPlayerAreaState"/> already
 /// exposes the same signal authoritatively from Player.log's
 /// <c>LOADING LEVEL</c> line.</para>
 /// </summary>
