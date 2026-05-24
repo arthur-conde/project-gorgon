@@ -35,6 +35,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Grid.Column="0" Orientation="Horizontal">
                         <TextBlock Text="Map" Foreground="White" FontWeight="SemiBold" />
@@ -46,12 +47,58 @@
                         <TextBlock Text="{Binding PlayerAnchorStatus}" Foreground="#FFCCCCCC"
                                    Visibility="{Binding IsPlayerAnchorStatusVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
                     </StackPanel>
+                    <!-- #524: zoom strip lives in the title bar. The title bar
+                         is a deliberate "control plane" already (drag handle +
+                         the #520 nudge-pad toggle), so the zoom field sits
+                         here rather than competing with the validate banner /
+                         nudge pad on the viewport. Click-through state still
+                         applies — the carve-out for HeaderChrome in
+                         ApplyClickThrough keeps the strip reachable when the
+                         viewport is fully click-through, but
+                         IsZoomFieldVisible additionally hides the strip during
+                         the calibration Drop phase since interacting with it
+                         is meaningless mid-calibration. -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="0,0,8,0"
+                                Visibility="{Binding IsZoomFieldVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
+                        <!-- Amber warning chip — appears when the live zoom
+                             diverges from the calibration stamp by > half a
+                             tick (suppressed for legacy 1.0 stamps + during
+                             active calibration). Clears as the user matches
+                             the zoom or recalibrates; no dismiss button. -->
+                        <Border Margin="0,0,8,0" Padding="6,2" CornerRadius="3"
+                                Background="#CC4A3A0A" BorderBrush="#FFC99A2E" BorderThickness="1"
+                                VerticalAlignment="Center"
+                                Visibility="{Binding IsZoomMismatchWarningVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                                ToolTip="{Binding ZoomMismatchText}">
+                            <icon:PackIconLucide Kind="TriangleAlert" Width="11" Height="11"
+                                                 Foreground="#FFFFE6B3" />
+                        </Border>
+                        <Border Padding="6,2" CornerRadius="3"
+                                Background="#FF1A1A1A" BorderBrush="#FF505050" BorderThickness="1"
+                                ToolTip="In-game map zoom (PG's 'Zoom level: X.XX' readout). Calibration captures this stamp; surveys re-scale to whatever you set here. Assumes you haven't panned the map between calibrating and using it.">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="Zoom" Foreground="#FFCCCCCC" FontSize="11"
+                                           VerticalAlignment="Center" Margin="0,0,6,0" />
+                                <Slider Minimum="0.13" Maximum="2.0"
+                                        SmallChange="0.01" LargeChange="0.1"
+                                        Width="100" VerticalAlignment="Center" Margin="0,0,6,0"
+                                        Focusable="False"
+                                        Value="{Binding Session.CurrentMapZoom, Mode=TwoWay}" />
+                                <TextBox Width="38" VerticalAlignment="Center"
+                                         Background="#FF101010" Foreground="#FFE0E0E0"
+                                         BorderBrush="#FF505050" BorderThickness="1"
+                                         FontSize="11" Padding="2,0"
+                                         Text="{Binding Session.CurrentMapZoom, Mode=TwoWay, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
                     <!-- #520: in-overlay toggle mirroring LegolasSettings.ShowNudgePadOnOverlay,
                          so the user can hide/show the nudge pad without alt-tabbing to
                          Settings. Symmetric: re-enabling stays in reach when hidden. The
                          ToggleButton handles its own click and stops MouseLeftButtonDown
                          from reaching the parent Border's drag handler. -->
-                    <ToggleButton Grid.Column="1" VerticalAlignment="Center"
+                    <ToggleButton Grid.Column="2" VerticalAlignment="Center"
                                   IsChecked="{Binding ElementName=Self, Path=Settings.ShowNudgePadOnOverlay, Mode=TwoWay}"
                                   Background="Transparent" BorderThickness="0"
                                   Padding="4,2" Cursor="Hand" Focusable="False">
@@ -264,45 +311,6 @@
                          pad's Command/IsChecked bindings, so we set it deterministically. -->
                     <views:NudgePadView x:Name="OverlayNudgePad" />
                 </Border>
-
-                <!-- #524: bottom-right zoom strip. Width-capped + right-
-                     aligned so it doesn't fight the centred magenta
-                     validate-calibration banner. Hidden when the overlay is
-                     fully click-through (window-level WS_EX_TRANSPARENT means
-                     individual WPF controls can't override hit-testing):
-                     IsZoomFieldVisible folds Settings.ClickThroughMap and the
-                     calibration Drop-phase forced click-through into one
-                     gate. The wizard surfaces stay reachable in that state. -->
-                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                            Orientation="Horizontal" Margin="0,0,16,72"
-                            Visibility="{Binding IsZoomFieldVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                    <!-- Amber warning chip — same condition as the wizard
-                         Listening row; hidden when stamps match. -->
-                    <Border Margin="0,0,8,0" Padding="8,4" CornerRadius="3"
-                            Background="#CC4A3A0A" BorderBrush="#FFC99A2E" BorderThickness="1"
-                            VerticalAlignment="Center"
-                            Visibility="{Binding IsZoomMismatchWarningVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                        <TextBlock Text="{Binding ZoomMismatchText}"
-                                   Foreground="#FFFFE6B3" FontSize="11"
-                                   TextWrapping="Wrap" MaxWidth="220" />
-                    </Border>
-                    <Border Padding="8,4" CornerRadius="3"
-                            Background="#CC101010" BorderBrush="#FF505050" BorderThickness="1"
-                            ToolTip="In-game map zoom (PG's 'Zoom level: X.XX' readout). Calibration captures it as a stamp; surveys re-scale to whatever you set here. Assumes you haven't panned the map between calibrating and using it.">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock Text="Zoom" Foreground="#FFCCCCCC" FontSize="11"
-                                       VerticalAlignment="Center" Margin="0,0,6,0" />
-                            <Slider Minimum="0.13" Maximum="2.0"
-                                    SmallChange="0.01" LargeChange="0.1"
-                                    Width="100" VerticalAlignment="Center" Margin="0,0,6,0"
-                                    Value="{Binding Session.CurrentMapZoom, Mode=TwoWay}" />
-                            <TextBox Width="38" VerticalAlignment="Center"
-                                     Background="#FF1A1A1A" Foreground="#FFE0E0E0"
-                                     BorderBrush="#FF505050" BorderThickness="1"
-                                     Text="{Binding Session.CurrentMapZoom, Mode=TwoWay, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
 
                 <!-- On-overlay hint banner. Shown only during AwaitingPosition
                      and Listening-with-no-surveys (where a freshly-projected
