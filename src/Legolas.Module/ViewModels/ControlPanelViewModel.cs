@@ -17,6 +17,23 @@ public sealed partial class ControlPanelViewModel : ObservableObject
         _settings = settings;
         Session = session;
         SurveyFlow = surveyFlow;
+
+        // Mirror external mutations of LegolasSettings back to our wrapper
+        // properties. Every wrapper here is named 1:1 with its underlying
+        // LegolasSettings property, so just forward the changed name. Without
+        // this, a writer outside this VM (the #520 in-overlay nudge-pad
+        // toggle writing directly to LegolasSettings.ShowNudgePadOnOverlay,
+        // or any future cross-VM mutation of a wrapped setting) updates the
+        // model but the LegolasSettingsView checkbox bound to
+        // ControlPanel.<X> stays stale until the panel is reopened. Names
+        // that don't have a wrapper here fire a no-op PropertyChanged that
+        // no binding observes — cheaper than maintaining a per-name allow
+        // list as wrappers come and go.
+        _settings.PropertyChanged += (_, e) =>
+        {
+            if (!string.IsNullOrEmpty(e.PropertyName))
+                OnPropertyChanged(e.PropertyName);
+        };
     }
 
     public bool AutoResetWhenAllCollected
