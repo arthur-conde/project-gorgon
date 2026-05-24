@@ -87,8 +87,8 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<InteractionDelayLoopParser>();
         services.AddSingleton<InteractionWaitParser>();
         // Area parser + IPlayerAreaState are registered once in
-        // AddMithrilGameState() (shared live game-state); consumers here
-        // resolve IPlayerAreaState only (#789).
+        // AddMithrilGameState() (shared live game-state); LootSource queries
+        // CurrentArea directly at chest-commit time (#790).
         services.AddSingleton<BossKillCreditParser>();
         services.AddSingleton<DefeatCooldownParser>();
         services.AddSingleton<LootBracketTracker>();
@@ -96,6 +96,7 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<DerivedTimerProgressService>(),
             sp.GetRequiredService<ISettingsStore<LootCatalogCache>>(),
             sp.GetRequiredService<LootCatalogCache>(),
+            areaState: sp.GetService<Mithril.GameState.Areas.IPlayerAreaState>(),
             refData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             time: null,
             diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),

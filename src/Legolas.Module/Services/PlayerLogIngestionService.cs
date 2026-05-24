@@ -108,7 +108,6 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly PerCharacterStore<LegolasIngestionState>? _ingestionStore;
     private readonly IDiagnosticsSink? _diag;
 
-    private string? _cachedArea;
     private IDisposable? _areaSub;
     private ILogSubscription? _subscription;
 
@@ -431,30 +430,19 @@ public sealed class PlayerLogIngestionService : BackgroundService
         $"{CleanName(mt.Short)} @ ({mt.World.X:0},{mt.World.Z:0})";
 
     /// <summary>
-    /// Apply the current area's persisted calibration when (and only when) the
-    /// area actually changes. A null area (character-select / disconnect)
-    /// resets the latch so re-entering the same area later re-applies —
-    /// defensive against any intervening projector reset.
-    ///
-    /// <para>Fires for both the synthetic
-    /// <see cref="PlayerAreaChangeKind.Snapshot"/> replay on subscribe (which
-    /// delivers the seed area) and live
-    /// <see cref="PlayerAreaChangeKind.Changed"/> transitions; the
-    /// previous-equals-current short-circuit means a Snapshot whose
-    /// <c>Current</c> matches an already-applied area is silently dropped,
-    /// matching the pre-#789 idempotent <c>ApplyAreaIfChanged</c> behaviour.</para>
+    /// Apply the current area's persisted calibration. Fires for both the
+    /// synthetic <see cref="PlayerAreaChangeKind.Snapshot"/> replay on
+    /// subscribe (which delivers the seed area) and live
+    /// <see cref="PlayerAreaChangeKind.Changed"/> transitions. Same-area
+    /// dedup lives upstream — <see cref="IPlayerAreaState.Subscribe"/>
+    /// only delivers Changed events on genuine transitions, and Snapshot
+    /// fires exactly once on attach. A null <see cref="PlayerAreaChanged.Current"/>
+    /// (character-select / disconnect / pre-first-observation) is a
+    /// no-op; the next non-null transition re-applies.
     /// </summary>
     private void OnAreaChanged(PlayerAreaChanged evt)
     {
-        var area = evt.Current;
-        if (area is null)
-        {
-            _cachedArea = null;
-            return;
-        }
-        if (area == _cachedArea) return;
-        _cachedArea = area;
-        _areaCalibration.SelectArea(area);
+        if (evt.Current is not null) _areaCalibration.SelectArea(evt.Current);
     }
 
     /// <summary>
