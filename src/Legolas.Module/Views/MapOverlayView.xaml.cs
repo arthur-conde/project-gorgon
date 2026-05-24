@@ -19,9 +19,34 @@ public partial class MapOverlayView : Window
     /// can't take NudgePadViewModel as a ctor param.</summary>
     public NudgePadViewModel? NudgePad { get; }
 
-    /// <summary>Surfaced for the overlay-local toggle binding (Visibility on the
-    /// pad's host border). Same instance as the one MapOverlayViewModel sees.</summary>
-    public LegolasSettings? Settings { get; }
+    /// <summary>Surfaced for overlay-local bindings — the nudge-pad host
+    /// <c>Border.Visibility</c> and the #520 header eye toggle's
+    /// <c>IsChecked</c>/icon both read <c>{Binding ElementName=Self,
+    /// Path=Settings.ShowNudgePadOnOverlay}</c>. Same instance as the one
+    /// <see cref="MapOverlayViewModel"/> sees.
+    ///
+    /// <para><b>Why a DependencyProperty, not a CLR auto-property.</b> The
+    /// parameterized ctor chains to the parameterless one, so
+    /// <c>InitializeComponent()</c> — which evaluates every XAML binding —
+    /// runs <em>before</em> the ctor body assigns this. A plain CLR
+    /// auto-property has no INPC, so WPF would never know <c>Settings</c>
+    /// transitioned null→instance: the bindings resolve against null at
+    /// load, then stay stuck on the null-path fallback forever (pad never
+    /// shows, toggle never writes back). Promoting to a DP makes
+    /// <c>SetValue</c> notify the binding system, so both bindings
+    /// re-resolve the moment <c>Settings</c> is assigned and pick up live
+    /// <c>ShowNudgePadOnOverlay</c> flips from then on.</para></summary>
+    public static readonly DependencyProperty SettingsProperty =
+        DependencyProperty.Register(
+            nameof(Settings),
+            typeof(LegolasSettings),
+            typeof(MapOverlayView));
+
+    public LegolasSettings? Settings
+    {
+        get => (LegolasSettings?)GetValue(SettingsProperty);
+        private set => SetValue(SettingsProperty, value);
+    }
 
     // #454: the editable player anchor is retired for Survey (absolute
     // placement needs none). Viewport interaction now:
