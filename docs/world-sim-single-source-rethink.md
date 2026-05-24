@@ -49,8 +49,8 @@ The single biggest design clarification from the session is to state the fan-out
 | **L0** | `LogSourceTailer` + `PlayerLogClock` / `ChatLogClock` | One line in → one stamped `RawLogLine` out. Linear. |
 | **L0.5** | `PlayerLogLineClassifier` + `PlayerLogPipeSplitter` | One `RawLogLine` in → one classified envelope out (`LocalPlayerLogLine` / `CombatActorLogLine` / `SystemSignalLogLine` / anomaly). One classification per line — discrimination, not distribution. Authoritative source of `IsReplay`. |
 | **L1** | `ILogStreamDriver` | API admits multi-subscriber `Subscribe<T>`, but world-sim exercises it as **one subscription per world** (to the unified classified stream). Multi-subscriber capability persists for operational reasons (tests, opt-in consumers); architectural-layer usage is linear. |
-| **L2** | Verb-keyed dispatch + transform parsing | One envelope in → at most one transform → at most one `Frame<T>` out. Linear under verb-keyed routing (next section). |
-| **L3** | Folders + change events + composers + views + modules | **Genuine fan-out, by data.** Multiple real subscribers per change event today (`PlayerInventoryAdded`, `CalendarTimeAdvanced`, view-emitted domain frames — all have N>1 consumers empirically, not hypothetically). Fan-out earns its keep here because the system has multiple genuine observers of the same event. |
+| **L2** | Envelope → change (verb-keyed parsing) | One envelope in → at most one parsed change out (verb-keyed; PG's verbs are mutually exclusive at the line level). Linear. |
+| **L3** | State machines on world.px + events on world.out + views in the composition pipeline + modules | **Genuine fan-out, by data.** world.px fans changes to multiple state machines (polysemy — same change consumed by multiple SMs). world.out fans events to multiple subscribers (a `GiftAccepted` reaches Arwen + Smaug calibration + UI + future telemetry). comp.in fans the world's + chat's + reports' outputs into N views. All three fan-outs are empirical (N>1 consumers in current modules), not hypothetical. |
 
 The fan-out shape was always architecturally correct at L3. The previous "fan-out at the transform stage" framing was conflating L3's empirical fan-out with an L1→L2 abstraction borrowing the shape one layer too high. Verb-keyed routing at L2 + fan-out at L3 is the architecturally honest split.
 
@@ -68,64 +68,62 @@ Consequences:
 
 The vault example (worked example 3 below) is the canonical case: vault deltas are log-observable (`ProcessAddToStorageVault` / `ProcessRemoveFromStorageVault`); the world owns those deltas; the pre-attach baseline lives in `Mithril.GameReports`; the composition lives in a view.
 
+### Vocabulary — world.in, world.px, world.out, comp
+
+Four named channels, with consistent abbreviations:
+
+- **world.in** — the world's input pipe. Carries envelopes flowing from the Player Log Source (or chat source, for ChatWorld) through the World Filter into the world boundary. Single subscription per world.
+- **world.px** — the world's internal pipe. Carries *changes* (parsed verb data) to state machines within the world. Typed pub-sub; state machines subscribe to change types they care about.
+- **world.out** — the world's output pipe. Carries domain *events* emitted by state machines. Single channel; subscribers consume by typed event.
+- **comp.in** — the composition pipeline's input. Composes inputs from world.out + chatout + reportout (and reference, when needed); the universal view-layer composition point.
+
+Two directional invariants: nothing flows back into world.in from above; nothing flows back into world.px from state machines (state machines emit on world.out, not on world.px). The channels are unidirectional by construction.
+
+### State machines — one kind of thing
+
+Under the rethink, the **folder vs composer distinction collapses** into a single uniform concept: a **state machine within the world**. A state machine:
+
+- Subscribes to specific *change types* on world.px (declares its interest at registration; the pipe fans out changes to subscribers)
+- Maintains its own state (the world-fact it owns)
+- Emits *domain events* on world.out when something externally meaningful happens
+
+There is no "folder emits change events; composer emits domain frames" split. All world.out emissions are domain events; the bus and its subscribers don't categorize by emitter. Whether a state machine emits one event per change (atomic — the Inventory SM emits `InventoryItemAdded` upon processing a `ProcessAddItem` change) or emits after multi-change recognition (compound — the NPC SM emits `GiftAccepted` only after correlating `StartInteraction + DeleteItem + FavorDelta`) is the state machine's choice; the architectural shape is identical.
+
+Today's `IFolder<T>` and `IComposer` collapse into a single interface (working name `IStateMachine`; implementation choice). Today's `IGiftSignalService` is a state machine; today's `PlayerInventoryFolder` becomes a state machine of the same shape.
+
 ### Per-envelope dispatch loop contract
 
-For each envelope arriving from the world's single subscription to its source (`IEnvelopeSource<TEnvelope>`):
+For each envelope arriving on world.in:
 
-1. **Clock advances** to the envelope's timestamp.
-2. **`CalendarTimeAdvanced(now)` fires** on the external bus if the simulated second changed since the previous emission (deduped per simulated second, not per envelope).
-3. **Pre-canonical-dispatch observers see the raw envelope** (side channel; see Observer surface below). No effect on canonical dispatch.
-4. **Dispatch loop discriminates the envelope** (by line-kind first if the world subscribes to the unified classified stream, then by verb prefix / payload discriminator) and looks up the at-most-one registered transform for that key. If a transform is registered, it runs synchronously and returns `Frame<TPayload>?`. If no transform is registered for the discriminated key, no canonical work happens for this envelope.
-5. **For the emitted frame (if any):**
-   - Folder routed by payload type applies the frame; mutates world state; may emit change events on the external bus.
-   - World publishes the frame to the **internal pipe** for composer consumption.
-   - Composers subscribed to that frame type on the internal pipe read it; maintain their own state; may emit events on the external bus when their pattern is recognized.
-6. **Post-canonical-dispatch observers** see `(envelope, optional emitted frame, optional change events / composer events produced)` (side channel).
+1. **World Filter** drops envelopes lacking the timestamp-prefix shape (engine spew, multi-line dumps that inherited their L0 stamp from a prior line). Filtered envelopes never reach the world boundary.
+2. **Clock advances** to the envelope's timestamp (envelope timestamp ≥ world clock; world clock is "last applied frame's timestamp" per principle 5).
+3. **Pre-canonical-dispatch observers** see the raw envelope (side channel — see Observer surface below). No effect on canonical dispatch.
+4. **Envelope is parsed into a change** — the verb's data exposed as typed properties. A change is a `(timestamp, verb-payload)` pair routed by verb-keyed lookup to its parser; at-most-one change per envelope (PG verbs are mutually exclusive at the line level).
+5. **Change is published on world.px**. Every state machine subscribed to that change type receives it (typed pub-sub fan-out; ordering by registration is deterministic, doesn't matter when SMs don't share state).
+6. **Each subscribed state machine** processes the change synchronously — mutates its own state, may emit domain events on world.out. Multiple state machines can consume the same change (polysemy); each does its own thing without coordination.
+7. **Synthetic clock-tick change** (special case): the dispatch loop also publishes a "clock-tick" change on world.px when the simulated clock advances. The **Environment SM** subscribes to clock-ticks and derives all time-related events (`CalendarTimeAdvanced`, `TimeOfDayShift`, `GameDayChange`, plus log-driven `MoonPhaseChange`). This keeps "all world.out events come from state machines" uniform — time events aren't a special-case infrastructure emission; they're the Environment SM's emissions in response to clock-tick changes.
+8. **Post-canonical-dispatch observers** see `(envelope, optional change, domain events emitted)` (side channel).
 
 **Contract notes:**
 
-- "Clock first" is uniform: both the value (`clock.Now`) and the announcement (`CalendarTimeAdvanced`) precede any state-machine work observing them. A folder reading `clock.Now` during `Apply` sees the envelope's timestamp; a `CalendarTimeAdvanced` subscriber sees the tick before any change events whose timestamps belong to it.
-- **No "transforms in registration order" contract is owed.** PG's verbs are mutually exclusive at the line level; no envelope matches more than one transform. If overlapping transforms ever surface, the natural fix is "merge into one transform that emits the right frame type," not "let registration order pick a winner."
-- `CalendarTimeAdvanced` deduplication is **per simulated second**, not per envelope. Many envelopes within the same second emit no tick; the second-boundary envelope emits one.
-- The dispatch loop's emission order on the bus within a single envelope's resolution is determined by the dispatch graph's topological order, fixed at world-registration time via `IComposer.Subscribes`. Subscribers see events in deterministic order across runs.
+- **Clock-first** is uniform across the dispatch loop. The clock advances to the envelope's timestamp *before* any state machine reads it; the synthetic clock-tick change reaches the Environment SM *before* per-verb changes reach their state machines; subscribers to time-related events on world.out see them *before* any other event from the same envelope.
+- **No "subscribers in registration order" contract is owed** for the typed pub-sub on world.px. State machines under world-fact decomposition own disjoint state; the order in which they process the same change doesn't matter because they don't share state to race over.
+- `CalendarTimeAdvanced` deduplication is **per simulated second**, not per envelope. The Environment SM tracks "last emitted second" and emits CalendarTimeAdvanced only when the second changes.
+- world.out emission order within an envelope's resolution is determined by the dispatch graph's topological order, fixed at world-registration time. Subscribers see events in deterministic order across runs.
 
-### Internal pipe vs external bus
+### Changes are polysemous; semantic inference is state-machine-side
 
-Two distinct channels with distinct semantic roles:
+The same change can mean different things to different state machines:
 
-- **Internal pipe** — carries `Frame<T>` for composer consumption. Composers subscribe to frame types they care about; the pipe fans out frames to all subscribed composers in dispatch-graph topological order. Not exposed to modules.
-- **External bus** — carries events for module / view / observer consumption. Both folders and composers emit here. Folders emit *change events* post-Apply (`PlayerInventoryAdded`, `PlayerSkillProgressed`, etc.). Composers emit *outcome events* / domain frames (`GiftAccepted`, `VendorSold`, `CalendarTimeAdvanced`, etc.). Modules subscribe to specific typed channels.
+- `ProcessStartInteraction(npc)` change — vendor open / gift target / quest dialogue / NPC chat / training menu. Consumed by NPC SM, which owns the interaction context and discriminates from co-occurring changes.
+- `ProcessDeleteItem(instanceId)` change — consumed by **both** Inventory SM (for ledger mutation, regardless of why the item was deleted) AND NPC SM (for gift / vendor sale / quest-turn-in detection within an open interaction context). Polysemy is first-class: two state machines, one change, each does its own thing.
+- `ProcessCurrencyDelta(amount)` — vendor sale / vendor purchase / quest reward / council found / training cost. Inventory SM might consume for currency tracking; NPC SM consumes for vendor-sale discrimination.
 
-The split is structurally clean:
+The architectural property: state mutation (the SM's own state) is separated from semantic inference (the meaning derived from co-occurring changes). N state machines interpret the same change N different ways without coordination because each owns disjoint state under world-fact decomposition.
 
-- **Internal pipe direction** — flows from dispatch loop *down* into composers within the world.
-- **External bus direction** — flows from folders + composers *out* to consumers (modules, views, observers).
-- No bidirectional traffic on either channel.
+### World-fact decomposition for state machines
 
-### Composers read frames, not change events
-
-A key refinement: composers consume **raw frames from the internal pipe**, not folder-emitted change events from the external bus. Concretely:
-
-- Folder for `PlayerInventoryDeleteFrame` advances inventory ledger and emits `PlayerInventoryRemoved` change event on external bus (for module consumption).
-- Gift composer reads the same `PlayerInventoryDeleteFrame` from internal pipe (NOT the folder's `PlayerInventoryRemoved` change event).
-
-**Why:** composers should be *self-contained*. Each composer owns its own state and its own resolution; folders shouldn't owe enrichment to downstream pattern recognizers. The folder's contract narrows to "frame in → state mutation"; the "frame in → state mutation + enrichment for downstream consumers" coupling dissolves.
-
-This is the same shape `IGiftSignalService` already implements today (the post-#688 Tier-2 signal service that owns its own L1 subscription and verb-triple correlation, with its own `instanceId → InternalName` resolution map). The rethink generalizes that pattern.
-
-### Frames are polysemous; semantic inference is composer-side
-
-A direct consequence of "composers read frames": *the same frame can mean different things to different composers, and the folder doesn't classify which.* Examples:
-
-- `PlayerStartInteractionFrame(npc)` — vendor open / gift target / quest dialogue / NPC chat / training menu. ≥4 composer interpretations.
-- `PlayerInventoryDeleteFrame(instanceId)` — gift / vendor sale / vault deposit / item destroy / quest turn-in / recipe-craft consume / food consume. ≥6 composer interpretations.
-- `PlayerCurrencyDeltaFrame(amount)` — vendor sale / vendor purchase / quest reward / council found / training cost. Multiple.
-
-The inventory folder mutates the ledger for every `PlayerInventoryDeleteFrame` regardless of *why* the item was deleted. Composers downstream interpret the *meaning* from co-occurring frames. Separating "state mutation" (folder's job) from "semantic inference" (composer's job) is what enables N composers to interpret the same frame N different ways without coordination.
-
-### World-fact decomposition for composers
-
-**Decompose composers by the world-fact they own, not by the output event they emit.** When multiple semantic outcomes share a common context (NPC interaction, crafting, combat, travel), one state machine owns the context and emits all outcome events. When an outcome is solo and context-free, a single-purpose composer is fine.
+**Decompose state machines by the world-fact they own, not by the output event they emit.** When multiple semantic outcomes share a common context (NPC interaction, crafting, combat, travel), one state machine owns the context and emits all outcome events. When an outcome is solo and context-free, a single-purpose state machine is fine.
 
 The canonical example: `INpcInteractionStateMachine` owns "is the player currently in an NPC interaction, and with whom?" and emits:
 
@@ -136,27 +134,28 @@ The canonical example: `INpcInteractionStateMachine` owns "is the player current
 - `QuestTurnedIn(quest, npc)` — discriminated outcome
 - (...additional outcome events as PG's verb vocabulary surfaces them)
 
-It subscribes to the union of relevant frames (`PlayerStartInteractionFrame`, `PlayerInventoryDeleteFrame`, `PlayerFavorDeltaFrame`, `PlayerCurrencyDeltaFrame`, etc.) on the internal pipe. The shared prefix (`StartInteraction + ItemDelete`) is *interaction context*, a real world fact. Outcome events are derived from the context's evolution upon arrival of the discriminating frame.
+It subscribes to the union of relevant changes (`ProcessStartInteraction`, `ProcessDeleteItem`, `ProcessFavorDelta`, `ProcessCurrencyDelta`, etc.) on world.px. The shared prefix (`StartInteraction + ItemDelete`) is *interaction context*, a real world fact. Outcome events are derived from the context's evolution upon arrival of the discriminating change.
 
-Why this is the right decomposition:
+Why this decomposition:
 
-1. **The state being tracked is a real world fact, not just composer bookkeeping.** "Player is interacting with NPC X" is a property of the simulated world. Three composers each maintaining their own copy of this fact is bookkeeping duplication of a real datum.
-2. **Outcomes are mutually exclusive within an interaction.** One state machine naturally enforces this; three independent composers each watching the shared prefix works only because the discriminating frames happen to be mutually exclusive in practice — the architecture doesn't enforce it.
-3. **The interaction lifecycle is itself a meaningful surface.** `InteractionStarted` / `InteractionEnded` are useful regardless of outcome (UI cue, combat-readiness gating, telemetry). One state machine surfaces them; outcome-specific composers wouldn't.
+1. **The state being tracked is a real world fact, not just SM bookkeeping.** "Player is interacting with NPC X" is a property of the simulated world. Three separate SMs each maintaining their own copy is bookkeeping duplication of a real datum.
+2. **Outcomes are mutually exclusive within an interaction.** One state machine naturally enforces this; three independent SMs each watching the shared prefix works only because the discriminating changes happen to be mutually exclusive in practice — the architecture doesn't enforce it.
+3. **The interaction lifecycle is itself a meaningful surface.** `InteractionStarted` / `InteractionEnded` are useful regardless of outcome (UI cue, combat-readiness gating, telemetry). One state machine surfaces them.
 4. **Aligns with the three-surface (Query/React/Bind) contract from [#707](https://github.com/moumantai-gg/mithril/issues/707).** The state machine exposes:
    - **Query** — `Current : InteractionContext?`
-   - **React** — bus emissions for `InteractionStarted`, `InteractionEnded`, `GiftAccepted`, etc.
+   - **React** — world.out emissions for `InteractionStarted`, `InteractionEnded`, `GiftAccepted`, etc.
    - **Bind** (if useful) — observable collection of recent interactions
 
-The `IComposer` interface already supports this — `Observe(eventPayload, clock) → IReadOnlyList<IFrame>` is generic across input event types and across output frame types. One composer can subscribe to N frame types and emit M event types. No interface change needed.
+**Generalizes beyond NPC interaction.** The suggested state machine decomposition for PlayerWorld:
 
-**Generalizes beyond NPC interaction.** Other world-fact-decomposable contexts:
+- **NPC SM** — owns "is the player interacting with an NPC; what items/currency have moved; what was the outcome?" Inputs: `ProcessStartInteraction`, `ProcessDeleteItem`, `ProcessFavorDelta`, `ProcessCurrencyDelta`, quest-related verbs. Outputs: `InteractionStarted`, `InteractionEnded`, `GiftAccepted`, `VendorSold`, `QuestTurnedIn`, ...
+- **Map SM** — owns area + position + pins + weather. Inputs: `LOADING LEVEL`, `ProcessMapPinAdd`/`Remove`, `ProcessAddPlayer`, `Initializing area`, `SPAWNING LOCAL PLAYER`, `ProcessMapFx`, weather verbs. Outputs: `PlayerPositionSet`, `MapChanged`, pin CRUD events, weather events. Owns: weather, pins. References: `areas.json` (the SM stores area IDs; consumers resolve to display names at the view layer — closure-consistent).
+- **Inventory SM** — owns bag + storage delta ledger. Inputs: `ProcessAddItem`, `ProcessDeleteItem`, `ProcessUpdateItemCode`, `ProcessAddToStorageVault`, `ProcessRemoveFromStorageVault`. Outputs: `InventoryItemAdded`, `InventoryItemRemoved`, `InventoryItemUpdated`, `StorageItemAdded`, `StorageItemRemoved`. Owns: inventory ledger, storage delta ledger. (Storage pre-attach baseline is *not* in the SM — that's in `Mithril.GameReports`, composed at the view layer per the closure principle.)
+- **Player SM** — owns effects + attributes + recipes + skills. Inputs: many. Outputs: many (`SkillProgressed`, `RecipeLearned`, `EffectAdded`, `EffectRemoved`, `AttributeChanged`, etc.). Owns: effects, attributes, recipes, skills. References: `effects.json`, `attributes.json` (SM stores identifiers; consumers resolve).
+- **Words of Power SM (PlayerWorld side)** — owns word-of-power discovery state. Inputs: `ProcessBook` (or similar discovery verb). Outputs: `WordOfPowerDiscovered`. ChatWorld has its own WoP SM for the spent side; cross-world composition lives in the composition pipeline.
+- **Environment SM** — owns time-related world state. Inputs: synthetic clock-tick changes (emitted by dispatch loop infrastructure on world.px), plus log-driven moon-phase verbs. Outputs: `CalendarTimeAdvanced`, `TimeOfDayShift`, `GameDayChange`, `MoonPhaseChange`. Owns: moon, current time-of-day, current game-day. The Environment SM is the canonical worked example of the synthetic-change pattern (see worked example 4).
 
-- **Crafting state machine** — owns "player is crafting recipe R"; emits `CraftStarted`, `CraftSucceeded(item)`, `CraftFailed(reason)`, `CraftCanceled`.
-- **Combat state machine** — owns "player is in combat with targets {T1, T2, ...}"; emits `CombatEntered`, `EnemyDefeated`, `PlayerDied`, `CombatExited`.
-- **Travel state machine** — owns "player is portalling / waypointing"; emits `TravelStarted`, `TravelCompleted`.
-
-The principle: identify the world-fact / activity context; one state machine owns the context; it emits multiple outcome events derived from the context's evolution. Today's `IGiftSignalService` is the gift-only special case; the rethink generalizes.
+The principle: identify the world-fact / activity context; one state machine owns it; it emits multiple outcome events derived from the context's evolution. Today's `IGiftSignalService`, `IPlayerInventoryState`, `IPlayerSkillState`, etc. either fold into one of these SMs or stay as today's narrower granularity — the decomposition above is suggestive, not normative; the implementation PR makes the granularity call.
 
 ### Observer surface
 
@@ -171,9 +170,29 @@ Verb-keyed canonical dispatch doesn't preclude multi-subscriber instrumentation;
 **Two placement points** in the dispatch loop:
 
 - **Pre-canonical-dispatch observers** — see the raw envelope before verb routing. For "I want to know every envelope arrived." Perf tracer counting envelopes/sec; test harness recording every line for replay.
-- **Post-canonical-dispatch observers** — see `(envelope, optional emitted frame, change events / composer events produced)`. For outcome-focused instrumentation.
+- **Post-canonical-dispatch observers** — see `(envelope, optional change, events emitted on world.out)`. For outcome-focused instrumentation.
 
 Today's ad-hoc `IDiagnosticsSink.Info(...)` calls scattered through producers (`PlayerInventoryFrameProducer:80,92,95,101`; `SkillFrameProducer:81`; every producer carries similar) are doing this in per-producer form. Lifting them into a first-class observer surface at the dispatch loop is strictly cleaner: diag logic is per-envelope-and-per-dispatch-step (not per-producer); test/replay tooling stops having to plug into N transforms to capture everything.
+
+### Composition Pipeline — universal cross-category composition
+
+The composition pipeline is the named abstraction for what was previously called the view layer. Inputs flow into the pipeline on **comp.in** from three or more sources, depending on what's needed for the composition:
+
+- **world.out** — events from PlayerWorld (one stream per world).
+- **chatout** — events from ChatWorld (analogous; chat's `world.out`).
+- **reportout** — events from `Mithril.GameReports` (snapshot-update notifications).
+- **Reference data** — `Mithril.Reference` consumers may read identifier-to-display-name resolution from items.json, areas.json, effects.json, etc. (typically synchronous lookups rather than event subscriptions).
+
+Inside the pipeline, **views** subscribe to whichever streams they need, maintain composed state, and expose Query / React / Bind surfaces to modules. Examples:
+
+- **`IInventoryView`** — composes PlayerWorld's `InventoryItemAdded` events with ChatWorld's stack-observation events using the existing `PendingCorrelator` (Tier-1 cross-source pairing, relocated from inside today's `InventoryView` to inside this view in the composition pipeline). World + world composition.
+- **`IStorageView`** — composes PlayerWorld's `StorageItemAdded`/`StorageItemRemoved` events with the latest `Mithril.GameReports` vault snapshot. World + report composition. See Worked example 3.
+- **`IWordOfPowerView`** — composes PlayerWorld's `WordOfPowerDiscovered` events with ChatWorld's `WordOfPowerSpent` events (joined by code, no TTL). World + world composition, different join shape from `IInventoryView`.
+- **Future views** as they're needed.
+
+The pipeline is **category-agnostic about its inputs** — world + world, world + report, world + reference data are all the same structural pattern at comp.in. Views decide which inputs they compose; the pipeline doesn't enforce a particular shape.
+
+Modules consume views from the composition pipeline (`Subscribe<TViewEvent>(handler)` on the view's Query/React/Bind surface). Modules may also consume world.out directly for events they don't need composition for (e.g., Samwise can consume `InventoryItemAdded` directly from PlayerWorld.out without going through `IInventoryView` if it doesn't need the chat-side stack size).
 
 ### Mode flip — single observation, source-reader-anchored
 
@@ -185,83 +204,105 @@ Today's ad-hoc `IDiagnosticsSink.Info(...)` calls scattered through producers (`
 
 `IsReplay` is determined as close to L0 as it structurally can be — pushing it into L0 itself would require merging the splitter's snapshot-buffer + live-channel pair into L0, which conflates "tail bytes off disk" with "maintain replay buffer + live channel for late subscribers." The L0/L0.5 split exists for that reason. L0.5 is the right floor.
 
+### Player Log Source — rotation-aware multi-file abstraction
+
+The Player Log Source owns both `Player.log` and `Player-prev.log` and exposes them as a single seekable stream of lines. Necessary because PG rotates its log on startup:
+
+1. PG deletes `Player-prev.log` if it exists
+2. PG copies the current `Player.log` to `Player-prev.log`
+3. PG creates a fresh empty `Player.log` and writes to it
+
+Without rotation awareness, Mithril's session-replay seed (scanning backward for the most recent `Logged in as character ` / `ProcessAddPlayer(` marker) walks off the start of `Player.log` and falls through to byte 0 of the current file, missing any session content that lives in `Player-prev.log`. Today's `PlayerLogTailReader` is single-file; the Player Log Source generalizes it.
+
+Consumers downstream don't have to know whether a given line came from `Player.log` or `Player-prev.log` — the source exposes the logical concatenation. Sequence numbers are derived from byte offsets within the logical stream (with rotation boundary handling — exact mechanics are an implementation choice; the *interface* is "one stream, monotonic Sequence within the source's lifetime").
+
 ## Worked examples
 
-### Worked example 1 — Inventory (folder-only case)
+### Worked example 1 — Inventory (single-SM, atomic emission)
 
-Source: `LocalPlayer:` lines containing `ProcessAddItem(instanceId, internalName, slot, bool)`, `ProcessDeleteItem(instanceId)`, `ProcessUpdateItemCode(instanceId, code, bool)`, `ProcessRemoveFromStorageVault(...)`.
+Source: `LocalPlayer:` lines containing `ProcessAddItem(instanceId, internalName, slot, bool)`, `ProcessDeleteItem(instanceId)`, `ProcessUpdateItemCode(instanceId, code, bool)`, `ProcessAddToStorageVault(...)`, `ProcessRemoveFromStorageVault(...)`.
 
 ```
 L0.5: Classifier discriminates → LocalPlayerLogLine envelope (with IsReplay)
-L1:   Forwarded to world's unified-pipe subscription
-World dispatch loop:
-  1. Clock advances
-  2. CalendarTimeAdvanced fires if second changed
-  3. Verb-keyed lookup: ProcessAddItem → PlayerInventoryAddTransform
-  4. Transform returns Frame<PlayerInventoryAddFrame>(timestamp, addPayload)
-  5. PlayerInventoryFolder.Apply(frame, clock):
+L1:   World's single subscription receives the envelope
+World dispatch loop (per envelope on world.in):
+  1. World Filter: envelope passes (has [HH:MM:SS] prefix)
+  2. Clock advances to envelope.Timestamp
+  3. Pre-canonical observers see raw envelope (side channel)
+  4. Verb-keyed parse: ProcessAddItem → PlayerInventoryAddChange(instanceId, internalName)
+  5. Change published on world.px
+  6. Inventory SM (subscribed to PlayerInventoryAddChange) receives it:
      - mutates ledger (instanceId → internalName)
-     - emits PlayerInventoryAdded change event on external bus
-  6. World publishes Frame<PlayerInventoryAddFrame> to internal pipe
-  7. Composers subscribed to PlayerInventoryAddFrame on internal pipe see it
-     (e.g., InventoryEventTracker composer if one wants to compose stack-tracking, etc.)
+     - emits InventoryItemAdded event on world.out
+  (NPC SM, Player SM, etc. are not subscribed to this change type; they ignore.)
+  7. Synthetic clock-tick change published on world.px
+  8. Environment SM (subscribed to clock-tick) receives it:
+     - updates current-second tracker
+     - emits CalendarTimeAdvanced on world.out if second changed (deduped)
+  9. Post-canonical observers see (envelope, change, events emitted)
 ```
 
-`PlayerInventoryAdded` flows on the external bus. Modules and views consume it directly. No view-layer composition needed for the Player.log side (the cross-source `InventoryView` joins Player.log with chat at a layer above the world; it subscribes to `PlayerInventoryAdded` AND `ChatInventoryObserved` from both worlds' external buses).
+`InventoryItemAdded` flows on world.out. Modules and views consume it directly via typed subscription (`Subscribe<InventoryItemAdded>(handler)`). The cross-source `IInventoryView` in the composition pipeline subscribes to `InventoryItemAdded` from PlayerWorld.out AND the corresponding chat-stack-observation event from ChatWorld.out, composes the two via the existing `PendingCorrelator` shape (the correlator survives the rethink — only its mounting changes from "inside `InventoryView`" to "inside `IInventoryView` in comp pipeline").
 
-### Worked example 2 — NPC interaction state machine (composer with multiple outcomes)
+### Worked example 2 — NPC interaction (multi-SM polysemy + compound emission)
 
 Source: same `LocalPlayer:` stream. Relevant verbs:
 
-- `ProcessStartInteraction(npc)` → `PlayerStartInteractionFrame`
-- `ProcessDeleteItem(instanceId)` → `PlayerInventoryDeleteFrame`
-- `ProcessDeltaFavor(npc, delta)` → `PlayerFavorDeltaFrame`
-- `ProcessUpdateCurrency(delta)` → `PlayerCurrencyDeltaFrame`
+- `ProcessStartInteraction(npc)` → `PlayerStartInteractionChange`
+- `ProcessDeleteItem(instanceId)` → `PlayerInventoryDeleteChange`
+- `ProcessDeltaFavor(npc, delta)` → `PlayerFavorDeltaChange`
+- `ProcessUpdateCurrency(delta)` → `PlayerCurrencyDeltaChange`
 - (...quest-related verbs)
-- `ProcessEndInteraction(npc)` (or implicit end via new interaction start)
+
+Polysemy in action: `PlayerInventoryDeleteChange` is consumed by **both** Inventory SM (for ledger mutation, regardless of why) AND NPC SM (for interaction-outcome detection).
 
 ```
-Each frame:
-  - Goes to its folder (interaction folder, inventory folder, favor folder, currency folder, ...)
-  - Folder advances its own state; may emit change event on external bus
-  - World publishes the frame to internal pipe
+Per envelope on world.in:
+  1. World Filter, clock advance, observers (as before)
+  2. Verb-keyed parse → PlayerStartInteractionChange (or DeleteItem / FavorDelta / etc.)
+  3. Change published on world.px
 
-INpcInteractionStateMachine (composer on internal pipe):
-  Subscribes : { PlayerStartInteractionFrame, PlayerInventoryDeleteFrame,
-                 PlayerFavorDeltaFrame, PlayerCurrencyDeltaFrame, ... }
+NPC SM (subscribed to: StartInteraction, DeleteItem, FavorDelta, CurrencyDelta, quest verbs):
 
-  On PlayerStartInteractionFrame:
+  On PlayerStartInteractionChange:
     Open context: _current = new Interaction(npc, started=clock.Now)
-    Emit: InteractionStarted(npc, started)
+    Emit on world.out: InteractionStarted(npc, started)
 
-  On PlayerInventoryDeleteFrame within an open context:
-    Note deleted item in context: _current.AddDeletion(instanceId)
-    (no emission yet — discriminating frame not arrived)
+  On PlayerInventoryDeleteChange within an open context:
+    Note deleted item: _current.AddDeletion(instanceId)
+    (no world.out emission yet — discriminating change not arrived)
 
-  On PlayerFavorDeltaFrame within an open context with a deleted item:
-    Emit: GiftAccepted(npc, item, delta)
+  On PlayerFavorDeltaChange within an open context with a deleted item:
+    Emit on world.out: GiftAccepted(npc, item, delta)
     Close context with outcome=Gift
-    Emit: InteractionEnded(npc, outcome=Gift, ended=clock.Now)
+    Emit on world.out: InteractionEnded(npc, outcome=Gift, ended=clock.Now)
 
-  On PlayerCurrencyDeltaFrame within an open context with a deleted item:
-    Emit: VendorSold(vendor=npc, item, price=delta)
+  On PlayerCurrencyDeltaChange within an open context with a deleted item:
+    Emit on world.out: VendorSold(vendor=npc, item, price=delta)
     Close context with outcome=VendorSale
-    Emit: InteractionEnded(npc, outcome=VendorSale, ended=clock.Now)
+    Emit on world.out: InteractionEnded(npc, outcome=VendorSale, ended=clock.Now)
 
-  On TTL eviction (no discriminating frame within window):
+  On TTL eviction (no discriminating change within window):
     Close context with outcome=Inconclusive
-    Emit: InteractionEnded(npc, outcome=Inconclusive, ended=clock.Now)
+    Emit on world.out: InteractionEnded(npc, outcome=Inconclusive, ended=clock.Now)
+
+Inventory SM also subscribed to PlayerInventoryDeleteChange (polysemy):
+  On PlayerInventoryDeleteChange:
+    Mutate ledger (remove instanceId)
+    Emit on world.out: InventoryItemRemoved(instanceId, eventTimestamp)
+
+Both SMs process the same change independently — no coordination needed.
 ```
 
-All outcome events flow on the external bus. Smaug subscribes to `VendorSold`; Arwen to `GiftAccepted`; future modules to `InteractionStarted` / `InteractionEnded` for lifecycle.
+All outcome events flow on world.out. Smaug subscribes to `VendorSold`; Arwen to `GiftAccepted`; future modules to `InteractionStarted` / `InteractionEnded` for lifecycle.
 
-The state machine owns:
+The NPC SM owns:
 
-- **Query surface** — `Current : InteractionContext?` ("are we in an interaction; with whom; what items got noted?")
-- **React surface** — bus emissions for all outcome events
+- **Query surface** — `Current : InteractionContext?` ("are we in an interaction; with whom; what items/currency moved?")
+- **React surface** — world.out emissions for all interaction events
 - **Bind surface** (optional) — observable collection of recent interactions for UI / telemetry
 
-`IGiftSignalService`'s gift-only logic folds in. Smaug's vendor calibration migrates to consume `VendorSold` from this state machine. Both legacy services retire as separate identities; the unified state machine replaces them.
+Today's `IGiftSignalService` (gift-only) folds in. Smaug's vendor calibration migrates to consume `VendorSold` from this SM. Both legacy services retire as separate identities; the unified NPC SM replaces them.
 
 ### Worked example 3 — Storage (view-layer composition of world + reports)
 
@@ -269,12 +310,12 @@ The canonical worked example for view-layer composition where the second categor
 
 **In the world (Inventory SM):**
 
-Subscribes to vault verbs on the internal pipe:
+Subscribes to vault changes on world.px:
 
-- `PlayerStorageVaultAddFrame(instanceId, internalName)` — derived from `ProcessAddToStorageVault`
-- `PlayerStorageVaultRemoveFrame(instanceId)` — derived from `ProcessRemoveFromStorageVault` (already parsed today by `PlayerInventoryFrameProducer:50-51`)
+- `PlayerStorageVaultAddChange(instanceId, internalName)` — derived from `ProcessAddToStorageVault`
+- `PlayerStorageVaultRemoveChange(instanceId)` — derived from `ProcessRemoveFromStorageVault` (already parsed today by `PlayerInventoryFrameProducer:50-51`)
 
-Maintains a vault delta ledger keyed by instance-id. Emits change events on worldout:
+Maintains a vault delta ledger keyed by instance-id. Emits events on world.out:
 
 - `StorageItemAdded(instanceId, internalName, eventTimestamp)`
 - `StorageItemRemoved(instanceId, eventTimestamp)`
@@ -285,12 +326,12 @@ State is faithful to what the world has observed: vault items added or removed s
 
 Independent foundation-layer service consuming the character export's storage section. Exposes the most recent report-derived vault snapshot. Updates via `FileSystemWatcher` when PG writes a fresh export. **No coupling to the world** — the report service is its own category-2 data source, not attached as an input to any world.
 
-**At the view layer (`IStorageView`):**
+**At the composition pipeline (`IStorageView`):**
 
-Composes the two inputs:
+Composes the two inputs at comp.in:
 
-- Subscribes to the world's `StorageItemAdded` / `StorageItemRemoved` events on worldout
-- Subscribes to `Mithril.GameReports`'s snapshot-updated events
+- Subscribes to the world's `StorageItemAdded` / `StorageItemRemoved` events on world.out
+- Subscribes to `Mithril.GameReports`'s snapshot-updated events on reportout
 - Maintains "current vault contents" = most recent report snapshot ∘ world deltas since that snapshot's export timestamp
 - Exposes the three-surface contract (#707): Query (`TryGetVaultContents()`, `Items`), React (`VaultContentsChanged`), Bind (observable collection)
 
@@ -302,30 +343,84 @@ When a fresh report snapshot arrives, the view rebases — takes the snapshot as
 - Modules wanting "what was just added to the vault" subscribe directly to the world's `StorageItemAdded` event.
 - Both surfaces co-exist; the view doesn't replace the world's direct event surface, it composes on top of it. Same pattern as `IInventoryView` co-existing with PlayerWorld's direct `PlayerInventoryAdded` event subscribers.
 
-**The architectural property worth naming:** the view layer is category-agnostic about its second input. World + world (cross-world composition) and world + report (world + category-2 composition) are the same structural pattern — the view's job is to compose, the inputs it composes are determined by what consumers need. The world stays closed; the view layer is the universal composition point.
+**The architectural property worth naming:** the composition pipeline is category-agnostic about its second input. World + world (cross-world composition) and world + report (world + category-2 composition) are the same structural pattern at comp.in — the pipeline's job is to compose, the inputs it composes are determined by what consumers need. The world stays closed; the composition pipeline is the universal composition point.
+
+### Worked example 4 — Environment SM (synthetic clock-tick + world-clock-derived events)
+
+The canonical example of the **synthetic-change** pattern. The Environment SM owns time-related world state and emits every world-clock-derived event, including `CalendarTimeAdvanced` itself. Demonstrates how time events fit the "all world.out events come from state machines" framing without breaking the dispatch loop's clock-first invariant.
+
+**Mechanism:**
+
+The dispatch loop, after advancing the clock, publishes a synthetic `WorldClockTickChange(now)` on world.px (in addition to the verb-keyed change for the envelope's payload, if any). The Environment SM is subscribed to this synthetic change type.
+
+```
+Per envelope on world.in:
+  1. World Filter, clock advance
+  2. (parallel:) synthetic WorldClockTickChange(now) published on world.px
+                 verb-keyed change for the envelope's payload published on world.px
+  3. Environment SM (subscribed to WorldClockTickChange):
+     - If now-second > last-emitted-second:
+         Emit on world.out: CalendarTimeAdvanced(now)
+         If now crosses a time-of-day shift boundary:
+            Emit on world.out: TimeOfDayShift(from, to, now)
+         If now crosses the server's daily reset boundary:
+            Emit on world.out: GameDayChange(day, now)
+     - Update last-emitted-second to now-second
+  4. Environment SM also subscribed to PlayerMoonPhaseChange (log-driven moon verb):
+     - Update moon-phase state
+     - Emit on world.out: MoonPhaseChange(phase, now)
+```
+
+**The Environment SM owns:**
+
+- Moon phase (log-derived from moon-phase verbs)
+- Current time-of-day band (world-clock-derived)
+- Current game-day (world-clock-derived against the server's daily-reset offset — wall-clock-anchored boundary; the world's clock is derived from envelope timestamps, which are wall-clock at L0, so closure is preserved)
+- Last-emitted-second (for `CalendarTimeAdvanced` deduplication)
+
+**Query / React / Bind:**
+
+- Query — `Current : EnvironmentState` (current time-of-day, current game-day, current moon phase)
+- React — world.out emissions for `CalendarTimeAdvanced`, `TimeOfDayShift`, `GameDayChange`, `MoonPhaseChange`
+- Bind — usually not needed for time state; could expose an observable for current-time display
+
+**Why this pattern:**
+
+- Keeps "all world.out events come from state machines" uniform. Time events aren't a dispatch-loop infrastructure emission with its own special case; they're the Environment SM's emissions in response to a synthetic change.
+- The synthetic clock-tick change pattern generalizes if any future infrastructure-driven inputs to state machines surface (none today; available if needed).
+- Game-day discrimination is wall-clock-anchored (PG's daily reset is at a specific wall-clock time, offset from midnight). The Environment SM does this discrimination against envelope timestamps (which carry wall-clock at L0), not against `TimeProvider.System.GetUtcNow()` — closure preserved, replay-deterministic.
+- Today's `WorldClockTickProducer` + `WorldClockTickFolder` + `TimeOfDayShiftComposer` chain (#644 ratified) folds into this single Environment SM. The #644 ratification's *outcome* (explicit clock-tick ownership; no implicit advancement via folder-irrelevant frames; `CalendarTimeAdvanced` and `TimeOfDayShift` emitted explicitly) survives; the *mechanism* (a producer-folder-composer chain pretending to be peer producers alongside the others) is replaced by one Environment SM consuming a synthetic change.
+
+**Gandalf consumes Environment SM events for scheduler-collapse work (#613) the same way it would have consumed the world-clock-tick-producer chain — same event types on world.out, different emission site. Module side unchanged.**
 
 ## What survives, what retires
 
 | Surviving (unchanged or near-unchanged) | Retiring (replaced by rethink) |
 |---|---|
-| `Frame<T>` and `IFrame` — dispatch envelope | `IFrameProducer<T>` (IAsyncEnumerable contract) |
-| `IFolder<T>` — payload-typed state mutator | `IModeAwareFrameProducer<T>` (per-producer ReachedLive) |
-| `IComposer.Observe(eventPayload, clock) → IReadOnlyList<IFrame>` | Merger machinery in `PlayerWorld` / `ChatWorld` (~150 lines each: `RunMergerAsync`, `Compare`, `UpdateModeIfReady`, `ProducerAdapter<T>`, `ProducerRuntimeState`) |
-| `IWorldClock` and `WorldMode` | `IWorld.RegisterProducer` + `IWorld.StartMerger` (renamed to `StartDispatch` or similar) |
-| `IWorldEventBus` — external bus surface | `WorldClockTickProducer` + `WorldClockTickFolder` (clock advancement absorbs into dispatch loop) |
-| Folder-emitted change events on external bus (#643) | Per-producer `IDiagnosticsSink.Info(...)` calls inside producer subscribe callbacks (lift to observer surface; follow-on cleanup) |
-| Composer-emitted domain frames on external bus (#643) | `IGiftSignalService` (gift-only) — folds into generalized `INpcInteractionStateMachine` |
-| Three-surface Query/React/Bind contract for state holders (#707) | The 8 producer files in `Mithril.GameState/*/Producers/` and `Mithril.WorldSim.{Player,Chat}/Producers/` (~800 lines total — replaced by ~30-line transforms each or folded into folders) |
-| `Mithril.GameReports` / `Mithril.Reference` / view layer (cross-world composition) | The merger's "every producer must have a head" invariant + cross-producer synchronization |
-| L0 / L0.5 / L1 stack (unchanged) | The `WorldMergerStartHostedService` (renamed but kept; trailing-merger ordering invariant from Call 2 still applies, just to a renamed seam) |
+| `IWorldClock` and `WorldMode` | `IFrameProducer<T>` (IAsyncEnumerable contract) |
+| `IWorldEventBus` (world.out surface) | `IModeAwareFrameProducer<T>` (per-producer ReachedLive) |
+| Three-surface Query/React/Bind contract for state machines (#707) | Merger machinery in `PlayerWorld` / `ChatWorld` (~150 lines each: `RunMergerAsync`, `Compare`, `UpdateModeIfReady`, `ProducerAdapter<T>`, `ProducerRuntimeState`) |
+| `Mithril.GameReports` / `Mithril.Reference` / composition pipeline (cross-category composition) | `IWorld.RegisterProducer` + `IWorld.StartMerger` (renamed to `StartDispatch` or similar) |
+| L0 / L0.5 / L1 stack (unchanged) | `WorldClockTickProducer` + `WorldClockTickFolder` + `TimeOfDayShiftComposer` (all fold into Environment SM consuming synthetic clock-tick changes) |
+| Per-frame DAG resolution (principle 11) — applies to event flow within an envelope's processing | `IFolder<T>` (collapses into `IStateMachine` — single uniform interface for state machines that subscribe to changes on world.px and emit events on world.out) |
+| Folder-emitted change events + composer-emitted domain frames on the world bus (#643) — survive in concept, both now uniformly called "events" emitted by state machines on world.out | `IComposer.Observe(eventPayload, clock) → IReadOnlyList<IFrame>` (collapses into `IStateMachine`'s event emission; no separate composer interface) |
+| | Per-producer `IDiagnosticsSink.Info(...)` calls inside producer subscribe callbacks (lift to observer surface; follow-on cleanup) |
+| | `IGiftSignalService` (gift-only) — folds into NPC SM as one of its outcome-event channels |
+| | The 8 producer files in `Mithril.GameState/*/Producers/` and `Mithril.WorldSim.{Player,Chat}/Producers/` (~800 lines total — replaced by SMs that subscribe to changes on world.px and own their parsing) |
+| | The merger's "every producer must have a head" invariant + cross-producer synchronization |
+| | The `WorldMergerStartHostedService` (renamed but kept; trailing-start ordering invariant from Call 2 still applies, just to a renamed seam) |
+| | Folder/composer terminology distinction (collapsed into uniform "state machine") |
 
 **New (introduced by rethink):**
 
-- `IFrameTransform<TEnvelope, TPayload>` — synchronous per-envelope transformer returning `Frame<TPayload>?`. Verb-key declaration determines dispatch routing.
-- `IEnvelopeSource<TEnvelope>` — thin abstraction: `Subscribe(handler) → IDisposable` with per-envelope `IsReplay`. PlayerWorld over `ILogStreamDriver.Subscribe<IClassifiedPlayerLogLine>`; ChatWorld over `ChatLogReplaySource`.
-- Internal pipe (`IInternalFramePipe` or similar; implementation choice — could be a sub-bus, could be direct dispatch) — composer subscription surface for typed frames.
-- Observer surface — pre- and post-canonical-dispatch hook points on `IEnvelopeSource` or on the world; non-mutating, no-claim contract.
-- `INpcInteractionStateMachine` (Phase 2) — the world-fact-decomposed composer that generalizes `IGiftSignalService` and absorbs Smaug's vendor-sale recognition + future interaction outcomes.
+- **`world.in` / `world.px` / `world.out` / `comp.in`** — named channels with clear directional roles. world.in: envelopes into the world. world.px: changes within the world (state-machine inputs). world.out: events out of the world (state-machine outputs). comp.in: composition pipeline input (world.out + chatout + reportout).
+- **Composition Pipeline** — formalized; the universal composition point for cross-category state. Hosts views that subscribe to comp.in from one or more sources.
+- **`IStateMachine` (working name)** — single uniform interface replacing `IFolder<T>` + `IComposer`. Declares change-type subscriptions (`Subscribes : IReadOnlyCollection<Type>`); processes changes synchronously (`Observe(changePayload, clock)`); emits events on world.out.
+- **`IFrameTransform<TEnvelope, TChange>`** — verb-keyed transformer at L2 (envelope → change). Synchronous; at-most-one transform per envelope (PG verbs mutually exclusive).
+- **`IEnvelopeSource<TEnvelope>`** — thin abstraction over the source: `Subscribe(handler) → IDisposable` with per-envelope `IsReplay`. PlayerWorld over `ILogStreamDriver.Subscribe<IClassifiedPlayerLogLine>`; ChatWorld over `ChatLogReplaySource`.
+- **Synthetic clock-tick change** — dispatch loop publishes `WorldClockTickChange(now)` on world.px when the clock advances. Environment SM subscribes; emits time-related events. Pattern available for any future infrastructure-driven SM inputs.
+- **Observer surface** — pre- and post-canonical-dispatch hook points on `IEnvelopeSource` or on the world; non-mutating, no-claim contract.
+- **Suggested state machine decomposition** (PlayerWorld): NPC, Map, Inventory, Player, Words of Power, Environment. Decomposition is suggestive, not normative; the implementation PR makes the granularity call.
 
 ## Sizing and phasing
 
@@ -334,11 +429,11 @@ When a fresh report snapshot arrives, the view rebases — takes the snapshot as
 **Option A — single PR sweep.** Foundation rethink + `INpcInteractionStateMachine` + Smaug/Arwen consumer migration in one PR. ~4–6 days. Cleanest final state on landing; whole architectural shape arrives intact.
 
 - Net ~-1500 to -2000 LoC. Producer files (~800 lines across 8 files) mostly delete; merger machinery (~150 lines each in `PlayerWorld` / `ChatWorld`) deletes; producer-adapter boxing trio (~70 lines per world) deletes. New: ~30-50 lines of dispatch loop per world, ~200-300 lines for `INpcInteractionStateMachine` + consumer migrations.
-- Test rewrite: `tests/Mithril.WorldSim.Player.Tests` and `tests/Mithril.WorldSim.Chat.Tests` lose merger-shape tests (priority tie-breaks, "every producer has a head" mode-aware quorum); gain per-envelope dispatch tests. Parser tests survive as folder tests. Composer behavior tests for the new state machine.
+- Test rewrite: `tests/Mithril.WorldSim.Player.Tests` and `tests/Mithril.WorldSim.Chat.Tests` lose merger-shape tests (priority tie-breaks, "every producer has a head" mode-aware quorum); gain per-envelope dispatch tests. Verb-parsing tests survive as transform tests. State-machine behavior tests (Inventory SM, NPC SM, Environment SM, etc.) replace today's folder/composer test surface.
 
 **Option B — two-PR sequential.** Phase 1 lands the foundation rethink (merger gone, transforms, observers, internal pipe / external bus split, dispatch loop contract); Phase 2 lands `INpcInteractionStateMachine` + Smaug/Arwen migration. ~2-3 days each.
 
-- Reviewer comprehension benefit: smaller per-PR surface; foundation change reviewable independently of composer refactor.
+- Reviewer comprehension benefit: smaller per-PR surface; foundation change reviewable independently of state-machine decomposition / consolidation.
 - Interim state during Phase 1's life: `IGiftSignalService` still exists in gift-only form; vendor-sale doesn't have its proper home yet; module code mostly unchanged.
 
 Either option works. The single-PR sweep is probably cleaner now that the module-constraint framing is dropped (the "modules untouched" virtue of Phase 1 wasn't actually a virtue — it was treating module changes as a cost they aren't).
@@ -349,35 +444,38 @@ Either option works. The single-PR sweep is probably cleaner now that the module
 
 When the implementation PR ships, [`world-simulator.md`](world-simulator.md) needs surgical edits. Checklist:
 
-- [ ] **Principle 1 rewrite.** From *"each world is a timestamp-ordered merger over its N producers"* → *"each world dispatches its source's envelopes through a single canonical handler per envelope, verb-keyed at the transform stage. Observers may fan out from the dispatch loop for diagnostics / test / replay without participating in canonical dispatch."*
-- [ ] **Principle 4 generalization.** Extend the existing principle 4 ("no service spans both Player.log and chat") to its broader form: *"the world is closed under any cross-category input — reports, reference data, community calibration, other worlds. Composition across categories lives at the view layer, not inside the world."* The original cross-source-log rule becomes a specific instance of this broader closure commitment.
-- [ ] **§Three categories of data — "Vault items — the canonical case that requires GameReports" paragraph.** Wrong as written. The vault verbs (`ProcessAddToStorageVault` / `ProcessRemoveFromStorageVault`) ARE in the log; today's `PlayerInventoryFrameProducer:50-51` already parses `ProcessRemoveFromStorageVault`. The corrected framing: *"Vault contents at world-attach are not observable in the log — PG doesn't emit a vault snapshot at session start. The world observes vault deltas via the storage-vault verbs; the pre-attach baseline comes from `Mithril.GameReports`. The composition lives in a view (`IStorageView`), same architectural slot as cross-world views — and the canonical worked example of view-layer composition across world + reports."* This is the canonical worked example for the world-closure principle; document it as such.
-- [ ] **New section — Layer-wide invariant.** Document the L0–L2 single-output, L3 fan-out commitment. The empirical L3 subscriber-multiplicity is what justifies the fan-out shape there; L0 through L2 are linear because each layer's work is discrimination + transformation, not distribution.
+- [ ] **Principle 1 rewrite.** From *"each world is a timestamp-ordered merger over its N producers"* → *"each world consumes envelopes from world.in (a single subscription to its source), parses each envelope into a change, publishes the change on world.px to subscribed state machines, and emits state-machine-derived events on world.out. Observers may fan out from the dispatch loop for diagnostics / test / replay without participating in canonical dispatch."*
+- [ ] **Principle 4 generalization.** Extend the existing principle 4 ("no service spans both Player.log and chat") to its broader form: *"the world is closed under any cross-category input — reports, reference data, community calibration, other worlds. Composition across categories lives in the composition pipeline, not inside the world."* The original cross-source-log rule becomes a specific instance of this broader closure commitment.
+- [ ] **Principle 10 collapse — folders/composers/producers retire.** The three-state-machine-kinds taxonomy collapses. There is no producer concept (replaced by `IFrameTransform` + `IEnvelopeSource` at L2). There is no folder-vs-composer distinction (collapsed into uniform `IStateMachine` consuming changes on world.px and emitting events on world.out). New principle 10: *"A state machine within the world subscribes to specific change types on world.px (typed pub-sub), maintains state for the world-fact it owns, and emits domain events on world.out. State machines are decomposed by the world-fact they own, not by the output event they emit."*
+- [ ] **§Three categories of data — "Vault items — the canonical case that requires GameReports" paragraph.** Wrong as written. The vault verbs (`ProcessAddToStorageVault` / `ProcessRemoveFromStorageVault`) ARE in the log; today's `PlayerInventoryFrameProducer:50-51` already parses `ProcessRemoveFromStorageVault`. The corrected framing: *"Vault contents at world-attach are not observable in the log — PG doesn't emit a vault snapshot at session start. The world observes vault deltas via the storage-vault verbs; the pre-attach baseline comes from `Mithril.GameReports`. The composition lives in `IStorageView` at the composition pipeline, same architectural slot as cross-world views — and the canonical worked example of comp-pipeline composition across world + reports."*
+- [ ] **New section — Layer-wide invariant.** Document the L0–L2 single-output, L3 fan-out commitment. L3 fan-out is empirical (multiple state machines on world.px subscribe to the same change; multiple consumers on world.out subscribe to the same event; multiple views in the composition pipeline compose the same world.out / chatout / reportout streams).
 - [ ] **Contracts section.**
-  - Retire `IFrameProducer<T>`, `IModeAwareFrameProducer<T>`.
-  - Retire `IWorld.RegisterProducer`; rename `IWorld.StartMerger` → `IWorld.StartDispatch` (or similar — keep the named seam Call 2's trailing hosted service hits).
-  - Introduce `IFrameTransform<TEnvelope, TPayload>` + `IEnvelopeSource<TEnvelope>` + internal pipe interface.
-  - Document the per-envelope dispatch loop contract precisely (the six-step sequence).
+  - Retire `IFolder<T>`, `IComposer`, `IFrameProducer<T>`, `IModeAwareFrameProducer<T>` interfaces.
+  - Retire `IWorld.RegisterProducer`; rename `IWorld.StartMerger` → `IWorld.StartDispatch`.
+  - Introduce `IStateMachine` (uniform state-machine interface), `IFrameTransform<TEnvelope, TChange>` (verb-keyed L2 parsers), `IEnvelopeSource<TEnvelope>` (world.in abstraction).
+  - Document the per-envelope dispatch loop contract (envelope on world.in → filter → clock-advance → parse to change → publish on world.px → state machines emit events on world.out).
+  - Define the synthetic clock-tick change pattern (dispatch loop emits `WorldClockTickChange` on world.px; Environment SM derives all time-related events from it).
   - Define the observer surface contract (non-mutating; no-claim; pre and post placement; registration ordering).
-- [ ] **Vocabulary section.** Retire "Producer," "Merger," "WorldClockTickProducer," "synthetic-frame producer." Introduce "Transform," "EnvelopeSource," "Internal pipe," "Observer surface," "World-fact decomposition." Update "Frame" to clarify it's the dispatch envelope (no merger involved). Update "Composer" to note: composers read raw frames from internal pipe, not folder-emitted change events.
-- [ ] **Decisions ratified post-#642 — #644 section.** Mark superseded with pointer to this rethink doc and #800. Leave reasoning intact for trail legibility.
+- [ ] **Vocabulary section.** Retire "Producer," "Merger," "WorldClockTickProducer," "synthetic-frame producer," "Folder," "Composer," "Change event vs domain frame." Introduce "Transform," "EnvelopeSource," "world.in / world.px / world.out / comp.in," "State Machine," "Composition Pipeline," "Synthetic clock-tick change," "Observer surface," "World-fact decomposition," "Polysemous change."
+- [ ] **Decisions ratified post-#642 — #644 section.** Mark superseded with pointer to this rethink doc and #800. The producer-folder-composer chain for clock-tick collapses into the Environment SM consuming a synthetic clock-tick change. Leave reasoning intact for trail legibility.
 - [ ] **Mode-flip section.** Add explicit layer attribution: *"`IsReplay` is stamped at L0.5 (classifier + splitter) and forwarded by L1. The world's mode flip is the dispatch loop's observation of the first envelope where `IsReplay == false`; no per-producer plumbing remains."*
-- [ ] **Layered architecture diagram.** "Producers" boxes/arrows become "Transforms" with one source reader per world. Show the internal-pipe / external-bus split.
-- [ ] **Worked example 1 (Inventory)** in `world-simulator.md` may need updating to reflect the folder + internal-pipe shape (folder emits change events on bus; composers if any read frames from internal pipe).
-- [ ] **New worked example.** Add NPC interaction state machine as a worked example of world-fact decomposition.
-- [ ] **Composer-decomposition guidance.** New short section: "Decompose composers by world-fact, not by output event. When N outcomes share a common context, one state machine owns the context and emits all N outcomes. When an outcome is solo and context-free, a single-purpose composer is fine."
-- [ ] **`docs/glossary.md`.** Mirror the vocabulary updates. Add "Verb-keyed dispatch," "Observer surface," "Canonical handler vs observer," "World-fact decomposition," "Polysemous frame." Retire matching entries.
-- [ ] **`docs/world-sim-migration-audit.md`.** Synthetic-frame-producer references swap to "absorbed into per-envelope dispatch" pointing at this doc. Audit otherwise historical; doesn't need full reworking.
-- [ ] **`docs/cross-source-correlation.md`.** No change (tier hierarchy operates on view-layer composition, not on the producer/merger layer).
-- [ ] **`docs/module-signal-map.md`.** No change (producer concept doesn't surface here; modules consume change events / views).
+- [ ] **Layered architecture diagram.** "Producers" boxes/arrows retire. Show: Player Log Source → world.in → World Filter → parse → world.px → state machines → world.out → comp.in → composition pipeline → modules. Player Log Source spans both `Player.log` and `Player-prev.log` as one seekable stream.
+- [ ] **Worked example 1 (Inventory)** in `world-simulator.md` rewrites to the state-machine shape: Inventory SM subscribes to inventory changes on world.px; emits events on world.out.
+- [ ] **New worked examples.** Add NPC interaction SM (compound emission + polysemy), Storage SM (closure + comp-pipeline composition), Environment SM (synthetic clock-tick change pattern).
+- [ ] **Composer-decomposition guidance** rewrites to **State machine decomposition guidance**: *"Decompose state machines by the world-fact they own, not by the output event they emit. When N outcomes share a common context, one SM owns the context and emits all N outcomes. When an outcome is solo and context-free, a single-purpose SM is fine."*
+- [ ] **Player Log Source as an L0 concept.** Today's L0 (`LogSourceTailer` + `PlayerLogTailReader`) is single-file; the rethink makes it span both `Player.log` and `Player-prev.log` as one seekable stream. PG's startup rotation (delete prev, copy current to prev, create new) means a single Mithril session can need to read across the rotation boundary — today's seed strategy doesn't handle this. The Player Log Source abstraction owns the rotation-aware behavior.
+- [ ] **`docs/glossary.md`.** Mirror the vocabulary updates. Add "world.in / world.px / world.out / comp.in," "State Machine," "Composition Pipeline," "Polysemous change," "Synthetic clock-tick change," "World-fact decomposition." Retire "Producer," "Folder," "Composer" entries (or mark them as superseded).
+- [ ] **`docs/world-sim-migration-audit.md`.** Synthetic-frame-producer references swap to "absorbed into Environment SM via synthetic clock-tick change" pointing at this doc. Audit otherwise historical; doesn't need full reworking.
+- [ ] **`docs/cross-source-correlation.md`.** Tier-1 cross-source correlator (`PendingCorrelator`) survives unchanged in concept; it relocates from "inside `InventoryView`" to "inside the composition pipeline's `IInventoryView` view." Doc may need a minor pointer-update; tier hierarchy itself is unaffected.
+- [ ] **`docs/module-signal-map.md`.** No structural change. Module-signal-map's tables of "modules consume X service" still hold; the underlying services are now state machines instead of folders/composers.
 
 ## Cross-references
 
 - **[#800](https://github.com/moumantai-gg/mithril/issues/800)** — issue body + comment thread. Original proposal in body; ratified refinements in comments. This doc consolidates the ratified state.
 - **[#799](https://github.com/moumantai-gg/mithril/pull/799)** — the splitter unbounded-channel fix that surfaced the structural critique.
-- **[#643](https://github.com/moumantai-gg/mithril/issues/643)** — change events on world bus (ratified); compatible with this rethink — folders still emit change events on external bus for module consumption.
-- **[#644](https://github.com/moumantai-gg/mithril/issues/644)** — explicit clock-tick owner (ratified); outcome survives, mechanism superseded by absorption into the dispatch loop.
-- **[#707](https://github.com/moumantai-gg/mithril/issues/707)** — three-surface (Query/React/Bind) contract; applies to composers as well as folders under this rethink.
+- **[#643](https://github.com/moumantai-gg/mithril/issues/643)** — change events on world bus (ratified); compatible in concept (events flow on world.out for module consumption), but the folder/composer distinction the original framing assumed collapses under this rethink. Both kinds of emission become uniform "events emitted by state machines."
+- **[#644](https://github.com/moumantai-gg/mithril/issues/644)** — explicit clock-tick owner (ratified); outcome survives, mechanism superseded by Environment SM consuming a synthetic clock-tick change.
+- **[#707](https://github.com/moumantai-gg/mithril/issues/707)** — three-surface (Query/React/Bind) contract; applies uniformly to state machines under this rethink (no folder-vs-composer distinction in surface).
 
 ---
 
