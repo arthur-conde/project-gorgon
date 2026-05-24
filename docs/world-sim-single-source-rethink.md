@@ -54,6 +54,20 @@ The single biggest design clarification from the session is to state the fan-out
 
 The fan-out shape was always architecturally correct at L3. The previous "fan-out at the transform stage" framing was conflating L3's empirical fan-out with an L1→L2 abstraction borrowing the shape one layer too high. Verb-keyed routing at L2 + fan-out at L3 is the architecturally honest split.
 
+### World closure — the world is closed under its source
+
+A generalization of [`world-simulator.md`](world-simulator.md) principle 4. The world accepts envelopes from its source stream only. Cross-category inputs — `Mithril.Reference`, `Mithril.GameReports`, `ICommunityCalibrationService`, other worlds — do **not** flow into the world's state machines. Composition with those categories lives at the view layer, not inside the world.
+
+The original principle 4 ("no service spans both Player.log and chat") was a specific instance of this rule with both inputs being log sources. The broader commitment: **the world is closed under any cross-category input**, not just cross-source-log. A state machine inside the world consuming a category-2 source (e.g., an Inventory SM reading report snapshots for vault contents) is the same shape of seal-break as a state machine consuming two log sources — it just uses a different category as the second input.
+
+Consequences:
+
+- **The world's state for any concept is whatever is derivable from its source stream alone.** Incompleteness is faithful, not a gap to paper over. Vault state pre-attach is unknown to the world because PG doesn't emit a vault snapshot at session start; that's what the world's view should faithfully reflect.
+- **Consumers needing "complete current state" across categories go to a view.** Views are the universal composition point per principle 4 — composing world + world, world + report, world + reference data, world + community calibration.
+- **Reports / reference / calibration services consume their own data sources independently.** They are not attached as inputs to a world; their output is consumed at the view layer.
+
+The vault example (worked example 3 below) is the canonical case: vault deltas are log-observable (`ProcessAddToStorageVault` / `ProcessRemoveFromStorageVault`); the world owns those deltas; the pre-attach baseline lives in `Mithril.GameReports`; the composition lives in a view.
+
 ### Per-envelope dispatch loop contract
 
 For each envelope arriving from the world's single subscription to its source (`IEnvelopeSource<TEnvelope>`):
@@ -249,6 +263,47 @@ The state machine owns:
 
 `IGiftSignalService`'s gift-only logic folds in. Smaug's vendor calibration migrates to consume `VendorSold` from this state machine. Both legacy services retire as separate identities; the unified state machine replaces them.
 
+### Worked example 3 — Storage (view-layer composition of world + reports)
+
+The canonical worked example for view-layer composition where the second category is **reports** rather than another world. Same architectural slot as the cross-world `IInventoryView` (PlayerWorld inventory + ChatWorld inventory observations); different second category, same composition shape. Storage is also the canonical worked example of the world-closure principle: deltas are log-observable, so they live inside the world; the pre-attach baseline isn't log-observable, so it lives outside.
+
+**In the world (Inventory SM):**
+
+Subscribes to vault verbs on the internal pipe:
+
+- `PlayerStorageVaultAddFrame(instanceId, internalName)` — derived from `ProcessAddToStorageVault`
+- `PlayerStorageVaultRemoveFrame(instanceId)` — derived from `ProcessRemoveFromStorageVault` (already parsed today by `PlayerInventoryFrameProducer:50-51`)
+
+Maintains a vault delta ledger keyed by instance-id. Emits change events on worldout:
+
+- `StorageItemAdded(instanceId, internalName, eventTimestamp)`
+- `StorageItemRemoved(instanceId, eventTimestamp)`
+
+State is faithful to what the world has observed: vault items added or removed since the world's session-start replay began. Vault contents *before* that point are not in the world's state — PG doesn't emit a vault snapshot at session start, so the world legitimately doesn't know. The world is closed under its source; it doesn't reach into reports for the baseline.
+
+**In `Mithril.GameReports`:**
+
+Independent foundation-layer service consuming the character export's storage section. Exposes the most recent report-derived vault snapshot. Updates via `FileSystemWatcher` when PG writes a fresh export. **No coupling to the world** — the report service is its own category-2 data source, not attached as an input to any world.
+
+**At the view layer (`IStorageView`):**
+
+Composes the two inputs:
+
+- Subscribes to the world's `StorageItemAdded` / `StorageItemRemoved` events on worldout
+- Subscribes to `Mithril.GameReports`'s snapshot-updated events
+- Maintains "current vault contents" = most recent report snapshot ∘ world deltas since that snapshot's export timestamp
+- Exposes the three-surface contract (#707): Query (`TryGetVaultContents()`, `Items`), React (`VaultContentsChanged`), Bind (observable collection)
+
+When a fresh report snapshot arrives, the view rebases — takes the snapshot as the new baseline, re-applies any world deltas whose timestamps follow the snapshot's export time, emits a `VaultContentsRebased` event so subscribers can resynchronize.
+
+**Module consumption pattern:**
+
+- Modules wanting "what's currently in this character's vault" subscribe to `IStorageView`.
+- Modules wanting "what was just added to the vault" subscribe directly to the world's `StorageItemAdded` event.
+- Both surfaces co-exist; the view doesn't replace the world's direct event surface, it composes on top of it. Same pattern as `IInventoryView` co-existing with PlayerWorld's direct `PlayerInventoryAdded` event subscribers.
+
+**The architectural property worth naming:** the view layer is category-agnostic about its second input. World + world (cross-world composition) and world + report (world + category-2 composition) are the same structural pattern — the view's job is to compose, the inputs it composes are determined by what consumers need. The world stays closed; the view layer is the universal composition point.
+
 ## What survives, what retires
 
 | Surviving (unchanged or near-unchanged) | Retiring (replaced by rethink) |
@@ -295,6 +350,8 @@ Either option works. The single-PR sweep is probably cleaner now that the module
 When the implementation PR ships, [`world-simulator.md`](world-simulator.md) needs surgical edits. Checklist:
 
 - [ ] **Principle 1 rewrite.** From *"each world is a timestamp-ordered merger over its N producers"* → *"each world dispatches its source's envelopes through a single canonical handler per envelope, verb-keyed at the transform stage. Observers may fan out from the dispatch loop for diagnostics / test / replay without participating in canonical dispatch."*
+- [ ] **Principle 4 generalization.** Extend the existing principle 4 ("no service spans both Player.log and chat") to its broader form: *"the world is closed under any cross-category input — reports, reference data, community calibration, other worlds. Composition across categories lives at the view layer, not inside the world."* The original cross-source-log rule becomes a specific instance of this broader closure commitment.
+- [ ] **§Three categories of data — "Vault items — the canonical case that requires GameReports" paragraph.** Wrong as written. The vault verbs (`ProcessAddToStorageVault` / `ProcessRemoveFromStorageVault`) ARE in the log; today's `PlayerInventoryFrameProducer:50-51` already parses `ProcessRemoveFromStorageVault`. The corrected framing: *"Vault contents at world-attach are not observable in the log — PG doesn't emit a vault snapshot at session start. The world observes vault deltas via the storage-vault verbs; the pre-attach baseline comes from `Mithril.GameReports`. The composition lives in a view (`IStorageView`), same architectural slot as cross-world views — and the canonical worked example of view-layer composition across world + reports."* This is the canonical worked example for the world-closure principle; document it as such.
 - [ ] **New section — Layer-wide invariant.** Document the L0–L2 single-output, L3 fan-out commitment. The empirical L3 subscriber-multiplicity is what justifies the fan-out shape there; L0 through L2 are linear because each layer's work is discrimination + transformation, not distribution.
 - [ ] **Contracts section.**
   - Retire `IFrameProducer<T>`, `IModeAwareFrameProducer<T>`.
