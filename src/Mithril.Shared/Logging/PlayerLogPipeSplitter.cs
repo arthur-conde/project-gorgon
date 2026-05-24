@@ -105,9 +105,20 @@ public sealed class PlayerLogPipeSplitter :
         PipeRegistry<T> pipe, [EnumeratorCancellation] CancellationToken ct)
         where T : class
     {
-        var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(1024)
+        // Unbounded with single-reader / single-writer. The previous bounded
+        // 1024 + DropOldest configuration silently lost replay backlog when a
+        // long-session cold-start replayed > 1024 LocalPlayer (or other-Kind)
+        // lines faster than the subscriber's pump could drain — see #XXX, in
+        // which the inventory producer's ~134-item ProcessAddItem block was
+        // evicted by later ProcessCombatModeStatus ticks during a 12-minute
+        // session, wedging the world merger on inventory's PendingFetch.
+        // Unbounded mirrors the producer-side channels (SkillFrameProducer,
+        // AreaLoadingFrameProducer, …): PG's source-stream rate is human-
+        // bounded, so unbounded growth is bounded in practice by the source.
+        // A subscriber that genuinely stalls is a bug to surface via L1
+        // diagnostics, not data to silently drop.
+        var channel = Channel.CreateUnbounded<T>(new UnboundedChannelOptions
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
             SingleWriter = true,
         });
@@ -148,9 +159,13 @@ public sealed class PlayerLogPipeSplitter :
         PipeRegistry<T> pipe, [EnumeratorCancellation] CancellationToken ct)
         where T : class
     {
-        var channel = Channel.CreateBounded<MarkerItem<T>>(new BoundedChannelOptions(1024)
+        // Unbounded — see the rationale on <see cref="Subscribe{T}"/>. The
+        // marker variant carries identical drop risk under bounded sizing
+        // because the L1 driver's pump runs through this surface; a long-
+        // session cold-start replay can dispatch many thousands of typed
+        // envelopes before the L1 pump invokes its first consumer handler.
+        var channel = Channel.CreateUnbounded<MarkerItem<T>>(new UnboundedChannelOptions
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
             SingleWriter = true,
         });
