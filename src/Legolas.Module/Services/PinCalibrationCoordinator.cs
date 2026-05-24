@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Legolas.Domain;
+using Legolas.ViewModels;
 using Mithril.GameState.Pins;
 
 namespace Legolas.Services;
@@ -103,6 +104,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
     private readonly IAreaCalibrationService _service;
     private readonly IPlayerPinTracker _pins;
     private readonly LegolasSettings _settings;
+    private readonly SessionState? _session;
     private readonly IDisposable _sub;
 
     // The accumulated solve pairs. Keyed by the MapPin (for spread + identity);
@@ -112,12 +114,18 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
     // everything else is paired (then recycled, so the user is never stuck).
     private readonly List<MapPin> _skipped = new();
 
+    // #524: SessionState carries the live in-game map zoom the user types into
+    // the wizard / overlay slider. Optional so the unit-test ctor stays
+    // unchanged (legacy callers stamp the calibration at the default 1.0,
+    // matching the pre-#524 hardcoded value).
     public PinCalibrationCoordinator(
-        IAreaCalibrationService service, IPlayerPinTracker pins, LegolasSettings settings)
+        IAreaCalibrationService service, IPlayerPinTracker pins, LegolasSettings settings,
+        SessionState? session = null)
     {
         _service = service;
         _pins = pins;
         _settings = settings;
+        _session = session;
         // Subscribe replays a Snapshot synchronously (seeds ExistingPins);
         // live notifications arrive on the tracker's ingestion thread.
         _sub = _pins.Subscribe(OnPinSetChanged);
@@ -396,9 +404,14 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
         var pairs = _pairs
             .Select(p => (new WorldCoord(p.Pin.X, 0, p.Pin.Z), p.Pixel))
             .ToList();
-        // Zoom OCR/CV is deferred (#460) — calibrate at the default zoom stamp,
-        // consistent with the standalone window's unset-zoom path.
-        var result = _service.CalibrateCurrentArea(pairs, calibrationZoom: 1.0);
+        // #524: stamp the live in-game map zoom (read off PG's "Zoom level:
+        // X.XX" readout, kept in sync by the wizard / overlay slider). The
+        // pre-#524 hardcoded 1.0 silently corrupted any session that
+        // calibrated at one zoom and surveyed at another — see issue body for
+        // the ~15× blast radius. Headless / unit-test paths without a
+        // SessionState fall back to 1.0 (the historic default).
+        var zoom = _session?.CurrentMapZoom ?? 1.0;
+        var result = _service.CalibrateCurrentArea(pairs, calibrationZoom: zoom);
         if (result is not null) Disarm();
         return result;
     }

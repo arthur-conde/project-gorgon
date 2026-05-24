@@ -27,6 +27,10 @@ public class MapOverlayPinnedAnchorTests
         BuildSut(bool calibrated)
     {
         var session = new SessionState();
+        // #524: legacy CalibrationZoom = 1.0 stamp ⇒ pin live zoom to 1.0 so
+        // the projection zoomFactor is 1.0 and the pre-#524 byte-identical
+        // assertions still hold.
+        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var projector = new CoordinateProjector();

@@ -58,20 +58,46 @@ public sealed record AreaCalibration(
     /// calibration window's landmark "ghost" projection delegates here so the
     /// two can't drift.
     ///
-    /// <para>Uses <see cref="Scale"/> verbatim, so it is only exact at
-    /// <see cref="CalibrationZoom"/> — the long-standing zoom limitation
-    /// (the in-game zoom isn't machine-readable; OCR/CV deferred). Survey
-    /// targets are absolute identities regardless; only where the marker
-    /// <em>draws</em> carries the ±10% non-affine ceiling.</para>
+    /// <para>This parameterless overload uses <see cref="Scale"/> verbatim and
+    /// is therefore exact only at <see cref="CalibrationZoom"/>. Prefer the
+    /// <see cref="ProjectWorld(WorldCoord, double)"/> overload from any call
+    /// site that knows the live in-game zoom (#524). Retained for tests + old
+    /// call sites that don't yet know the zoom; delegating to the zoom-aware
+    /// overload with <c>currentZoom = CalibrationZoom</c> is byte-identical
+    /// because the zoomFactor collapses to <c>1.0</c>.</para>
     /// </summary>
-    public PixelPoint ProjectWorld(WorldCoord world)
+    public PixelPoint ProjectWorld(WorldCoord world) =>
+        ProjectWorld(world, CalibrationZoom);
+
+    /// <summary>
+    /// #524: zoom-aware absolute world→overlay-pixel projection. Scales
+    /// <see cref="Scale"/> by <c>currentZoom / CalibrationZoom</c>; the origin
+    /// is zoom-invariant under the no-pan assumption (the pixel that renders
+    /// world (0,0,0) depends on pan, not on zoom), so only the metric scale
+    /// changes when the user adjusts PG's map zoom between calibrate and use.
+    ///
+    /// <para>Defensive: a non-positive <paramref name="currentZoom"/> or
+    /// <see cref="CalibrationZoom"/> falls back to a factor of <c>1.0</c>
+    /// (uses <see cref="Scale"/> verbatim) so a malformed value can't crash
+    /// the per-frame projector.</para>
+    ///
+    /// <para>Load-bearing assumption: calibration is exact only at the same
+    /// map pan position used to solve. Surfaced in the wizard tooltip; the
+    /// warning chip in <c>MapOverlayViewModel</c> covers the "user changed
+    /// zoom without updating the field" case.</para>
+    /// </summary>
+    public PixelPoint ProjectWorld(WorldCoord world, double currentZoom)
     {
+        var zoomFactor = (currentZoom > 1e-6 && CalibrationZoom > 1e-6)
+            ? currentZoom / CalibrationZoom
+            : 1.0;
+        var effScale = Scale * zoomFactor;
         var east = world.X;
         var north = MirrorNorth ? -world.Z : world.Z;
         var cos = Math.Cos(RotationRadians);
         var sin = Math.Sin(RotationRadians);
         var rotE = east * cos + north * sin;
         var rotN = -east * sin + north * cos;
-        return new PixelPoint(OriginX + Scale * rotE, OriginY - Scale * rotN);
+        return new PixelPoint(OriginX + effScale * rotE, OriginY - effScale * rotN);
     }
 }

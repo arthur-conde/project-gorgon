@@ -73,4 +73,75 @@ public class AreaCalibrationProjectWorldTests
         plus.ProjectWorld(w).Should().Be(new PixelPoint(10, -7));
         minus.ProjectWorld(w).Should().Be(new PixelPoint(10, 7));
     }
+
+    // ---- #524: zoom-aware overload --------------------------------------
+
+    [Theory]
+    [InlineData(0.13, 1.0)]
+    [InlineData(0.5, 1.0)]
+    [InlineData(1.0, 1.0)]
+    [InlineData(2.0, 1.0)]
+    [InlineData(0.13, 2.0)]
+    [InlineData(0.5, 2.0)]
+    [InlineData(1.0, 2.0)]
+    [InlineData(2.0, 2.0)]
+    public void ProjectWorld_AppliesZoomFactor_AcrossRange(double currentZoom, double calibrationZoom)
+    {
+        // Scale 2 px/unit, no rotation, origin (100, 200). The effective scale
+        // at currentZoom is 2 * (currentZoom / calibrationZoom).
+        var cal = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = calibrationZoom };
+        var w = new WorldCoord(10, 0, 5);
+        var factor = currentZoom / calibrationZoom;
+
+        var projected = cal.ProjectWorld(w, currentZoom);
+
+        // East = X * eff, North = Z * eff. Mirror-north default false → Y = Oy - Scale*eff*Z.
+        projected.X.Should().BeApproximately(100 + 2.0 * factor * 10, 1e-9);
+        projected.Y.Should().BeApproximately(200 - 2.0 * factor * 5, 1e-9);
+    }
+
+    [Fact]
+    public void ProjectWorld_NoOpWhenZoomMatchesCalibration()
+    {
+        // Back-compat: a current zoom equal to the calibration's stamp is the
+        // byte-identical no-op the parameterless overload always produced.
+        var cal = new AreaCalibration(1.7, 0.4, 50, -30, 3, 0) { CalibrationZoom = 1.5 };
+        var w = new WorldCoord(12.5, 0, -7.25);
+
+        var legacy = cal.ProjectWorld(w);
+        var zoomAware = cal.ProjectWorld(w, 1.5);
+
+        zoomAware.X.Should().Be(legacy.X);
+        zoomAware.Y.Should().Be(legacy.Y);
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(-1.0)]
+    [InlineData(-0.13)]
+    public void ProjectWorld_GuardsInvalidZoom(double badZoom)
+    {
+        // Defensive: a non-positive zoom falls back to factor 1.0 — same pixel
+        // as ProjectWorld(world) using Scale verbatim. Keeps a malformed value
+        // from crashing the per-frame projector.
+        var cal = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 0.5 };
+        var w = new WorldCoord(10, 0, 5);
+
+        var guarded = cal.ProjectWorld(w, badZoom);
+        // factor = 1.0 ⇒ effScale = Scale verbatim.
+        guarded.X.Should().BeApproximately(100 + 2.0 * 10, 1e-9);
+        guarded.Y.Should().BeApproximately(200 - 2.0 * 5, 1e-9);
+    }
+
+    [Fact]
+    public void ProjectWorld_LegacyOverload_DelegatesToZoomAware_WithCalibrationZoom()
+    {
+        // The parameterless overload must equal the zoom-aware overload at
+        // currentZoom = CalibrationZoom. This is the back-compat seam — every
+        // pre-#524 call site retains its pixels.
+        var cal = new AreaCalibration(0.85, -0.2, 320, 480, 4, 0) { CalibrationZoom = 1.75, MirrorNorth = true };
+        var w = new WorldCoord(123, 0, -456);
+
+        cal.ProjectWorld(w).Should().Be(cal.ProjectWorld(w, cal.CalibrationZoom));
+    }
 }

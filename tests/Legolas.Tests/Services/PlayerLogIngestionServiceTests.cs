@@ -68,6 +68,10 @@ public sealed class PlayerLogIngestionServiceTests : IDisposable
         if (preSeededArea is not null) areaState.SetArea(preSeededArea);
         var spy = new SpyAreaCalibration(calibration);
         var session = new SessionState();
+        // #524: tests build calibrations with the default CalibrationZoom = 1.0;
+        // pin the live zoom to 1.0 so projection zoomFactor is 1.0 and the
+        // pre-#524 pixel assertions stay byte-identical.
+        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var flow = new SurveyFlowController(session, settings);
         var gates = new ModuleGates();

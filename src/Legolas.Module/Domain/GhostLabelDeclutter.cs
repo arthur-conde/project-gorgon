@@ -36,17 +36,26 @@ public static class GhostLabelDeclutter
     private const double SeparationPx = 2.0;
 
     public static IReadOnlyList<GhostMarker> Build(
-        IEnumerable<CalibrationReference> references, AreaCalibration calibration)
+        IEnumerable<CalibrationReference> references,
+        AreaCalibration calibration,
+        double currentMapZoom = 0.0)
     {
         ArgumentNullException.ThrowIfNull(references);
         ArgumentNullException.ThrowIfNull(calibration);
+
+        // #524: thread the in-game map zoom through the projection so the
+        // validate-calibration ghosts re-scale live as the user drags PG's
+        // zoom slider (and the bound Mithril field). Unsupplied (<= 0) falls
+        // back to the calibration's own zoom — byte-identical to pre-#524 for
+        // legacy callers / tests.
+        var effectiveZoom = currentMapZoom > 1e-6 ? currentMapZoom : calibration.CalibrationZoom;
 
         var markers = new List<GhostMarker>();
         var placed = new List<Rect>();
 
         foreach (var r in references)
         {
-            var p = calibration.ProjectWorld(r.World);
+            var p = calibration.ProjectWorld(r.World, effectiveZoom);
             var name = r.Name ?? string.Empty;
             var box = new Rect(
                 p.X + LabelAnchorDx,
