@@ -200,7 +200,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         // the area changes or its calibration is (re)solved/cleared. Guarded
         // only on the service (independent of the #476 position tracker).
         if (_areaCalibration is not null)
+        {
             _areaCalibration.Changed += (_, _) => PostToUi(OnCalibrationChanged);
+            // Bootstrap: if the area was loaded before the VM constructed
+            // (lazy module attach + PlayerAreaState's synchronous Snapshot
+            // replay), the first Changed event already fired. Run the
+            // handler once so the calibration-stamp label + the #524 zoom
+            // auto-seed pick up the already-applied area.
+            if (_areaCalibration.CurrentCalibration is not null)
+                OnCalibrationChanged();
+        }
     }
 
     /// <summary>
@@ -415,6 +424,20 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             ? $"Calibrated at {cal.CalibrationZoom:0.00} · spread scales, positions assume same pan"
             : string.Empty;
 
+    /// <summary>#524 follow-up: short "cal @ X.XX" label rendered alongside
+    /// the title-bar zoom slider so the user can see at a glance what zoom
+    /// they calibrated this area at — pairs with the auto-seed-on-area-change
+    /// to answer "what should I dial PG's zoom to after a client restart?"
+    /// without opening the wizard. Empty when the area is uncalibrated.</summary>
+    public string CalibrationZoomLabel =>
+        _areaCalibration?.CurrentCalibration is { } cal
+            ? $"cal @ {cal.CalibrationZoom:0.00}"
+            : string.Empty;
+
+    /// <summary>Visibility gate for <see cref="CalibrationZoomLabel"/> — true
+    /// iff the area has a persisted calibration to display the stamp for.</summary>
+    public bool IsCalibrationZoomLabelVisible => _areaCalibration?.CurrentCalibration is not null;
+
     /// <summary>#524: one-time per-area hint in the wizard's Listening step,
     /// shown when the area's calibration predates zoom tracking
     /// (<c>CalibrationZoom == 1.0</c>) and the user hasn't dismissed it this
@@ -527,6 +550,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         OnPropertyChanged(nameof(CalibrationValidationStatus));
     }
 
+    /// <summary>#524 follow-up: the area key the last <see cref="OnCalibrationChanged"/>
+    /// resolved against. Used to detect "entered a new area" vs "recalibrated /
+    /// cleared the same area" — only the former auto-seeds the live zoom from
+    /// the new area's stamp, so a user's manual slider edit on the area they
+    /// are already in is never clobbered by a fresh Changed event.</summary>
+    private string? _lastSeenAreaKey;
+
     /// <summary>Area switched or its calibration (re)solved/cleared. Refresh
     /// the gate and live ghosts. Marshalled to the UI thread by the caller.</summary>
     private void OnCalibrationChanged()
@@ -548,6 +578,24 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         OnPropertyChanged(nameof(IsZoomMismatchWarningVisible));
         OnPropertyChanged(nameof(ZoomMismatchText));
         OnPropertyChanged(nameof(IsLegacyRecalibrateHintVisible));
+        OnPropertyChanged(nameof(CalibrationZoomLabel));
+        OnPropertyChanged(nameof(IsCalibrationZoomLabelVisible));
+
+        // #524 follow-up: on AREA change, seed the live zoom from the new
+        // area's calibration stamp — the user calibrated at some specific
+        // zoom and PG resets to a different default on client restart, so
+        // having Mithril auto-match the stamp gives the user "dial PG to
+        // this one number" instead of "find PG's current zoom AND type it
+        // into Mithril." Skipped when the area key is unchanged (a
+        // recalibrate-in-place fires Changed too; respect the user's
+        // current slider value there since it equals the new stamp anyway).
+        var key = _areaCalibration?.CurrentAreaKey;
+        if (key != _lastSeenAreaKey)
+        {
+            _lastSeenAreaKey = key;
+            if (_areaCalibration?.CurrentCalibration is { } cal)
+                _session.CurrentMapZoom = cal.CalibrationZoom;
+        }
     }
 
     /// <summary>#460/#477A: true while the guided calibration walkthrough is in

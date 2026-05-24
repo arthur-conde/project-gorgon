@@ -109,6 +109,44 @@ public class MapOverlayZoomReactivityTests
     }
 
     [Fact]
+    public void Auto_seeds_CurrentMapZoom_from_calibration_stamp_on_area_change()
+    {
+        // Fresh session defaults to 2.0. Loading an area whose calibration
+        // stamp is 0.5 should pull the slider to 0.5 — the user's "what
+        // zoom should I dial PG to after restart?" answer comes from the
+        // stamp, surfaced via auto-seed.
+        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 0.5 };
+        var (map, cal, session) = Build();
+        session.CurrentMapZoom.Should().Be(2.0, "default before any calibration is loaded");
+
+        cal.SetCalibration(calibration);
+
+        session.CurrentMapZoom.Should().Be(0.5);
+        map.CalibrationZoomLabel.Should().Contain("0.50");
+        map.IsCalibrationZoomLabelVisible.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Recalibrating_same_area_does_not_clobber_user_slider_value()
+    {
+        // After area-load auto-seed sets slider to 0.5, the user might have
+        // manually moved it to 1.5 (e.g., they changed PG's zoom). A fresh
+        // Changed event from a recalibration of the SAME area must not pull
+        // the slider back — it's the user's value now.
+        var calibration = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 0.5 };
+        var (_, cal, session) = Build();
+        cal.SetCalibration(calibration);            // first load → seed to 0.5
+        session.CurrentMapZoom.Should().Be(0.5);
+
+        session.CurrentMapZoom = 1.5;               // user moved the slider
+
+        // Recalibrate the same area (key unchanged) — Changed fires again.
+        cal.SetCalibration(new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 0.5 });
+
+        session.CurrentMapZoom.Should().Be(1.5, "same-area Changed must not clobber user edits");
+    }
+
+    [Fact]
     public void IsZoomFieldVisible_hides_when_overlay_click_through_is_on()
     {
         var (map, _, _) = Build();

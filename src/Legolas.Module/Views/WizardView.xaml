@@ -363,7 +363,7 @@
                             </Button.Template>
                             <Button.Style>
                                 <Style TargetType="Button">
-                                    <Setter Property="ToolTip" Value="Show known landmarks/NPCs on the map to check the calibration still lines up — a consistent offset means recalibrate. Available between runs, not while surveying or plotting motherlodes." />
+                                    <Setter Property="ToolTip" Value="Show known landmarks/NPCs on the map to check the calibration still lines up — a consistent offset means recalibrate. Tip: after a PG client restart, leave Mithril's zoom slider at the calibration stamp and drag PG's zoom slider until the ghosts align with their real landmarks — once they do, PG matches Mithril without typing numbers. Available between runs, not while surveying or plotting motherlodes." />
                                     <Setter Property="Opacity" Value="1" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding MapOverlay.ShowCalibrationGhosts}" Value="True">

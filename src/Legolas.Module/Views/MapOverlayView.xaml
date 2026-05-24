@@ -76,7 +76,7 @@
                         </Border>
                         <Border Padding="6,2" CornerRadius="3"
                                 Background="#FF1A1A1A" BorderBrush="#FF505050" BorderThickness="1"
-                                ToolTip="In-game map zoom (PG's 'Zoom level: X.XX' readout). Calibration captures this stamp; surveys re-scale to whatever you set here. Assumes you haven't panned the map between calibrating and using it.">
+                                ToolTip="In-game map zoom (PG's 'Zoom level: X.XX' readout). Calibration captures this stamp; surveys re-scale to whatever you set here. After a PG restart, dial PG's zoom to the cal stamp shown beside the textbox.">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Zoom" Foreground="#FFCCCCCC" FontSize="11"
                                            VerticalAlignment="Center" Margin="0,0,6,0" />
@@ -90,6 +90,17 @@
                                          BorderBrush="#FF505050" BorderThickness="1"
                                          FontSize="11" Padding="2,0"
                                          Text="{Binding Session.CurrentMapZoom, Mode=TwoWay, StringFormat=0.00, UpdateSourceTrigger=LostFocus}" />
+                                <!-- #524 follow-up: the calibration's stamp,
+                                     surfaced inline so the user can read off
+                                     the target value when dialling PG's zoom
+                                     to match (PG resets zoom on client
+                                     restart). Hidden when the area is
+                                     uncalibrated — nothing to compare to. -->
+                                <TextBlock Text="{Binding CalibrationZoomLabel}"
+                                           Foreground="#FF999999" FontSize="11"
+                                           VerticalAlignment="Center" Margin="6,0,0,0"
+                                           Visibility="{Binding IsCalibrationZoomLabelVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}"
+                                           ToolTip="The zoom this area was calibrated at. Mithril's slider auto-syncs to this on area change; dial PG to the same value for accurate pin placement." />
                             </StackPanel>
                         </Border>
                     </StackPanel>
