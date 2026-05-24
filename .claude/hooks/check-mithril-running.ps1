@@ -2,48 +2,69 @@
 # PreToolUse hook: warn (or block) when `dotnet build|test|publish|pack`
 # is run while Mithril.Shell.exe is running.
 #
-# Why: a running shell holds open handles to module DLLs in
-# src/Mithril.Shell/<config>/modules/. The post-build copy step (see
-# Directory.Build.targets) fails with MSB3026/27 — silently — so bin/Debug
-# updates but the modules folder ends up stale. Tests pass, build prints
-# "succeeded", and the user runs the shell against yesterday's code.
-#
-# Behaviour:
-# - No Mithril.Shell.exe running                   → exit 0 (silent)
-# - Mithril.Shell.exe running, NO debugger attached → exit 2 (block, ask
-#                                                      the user to stop it)
-# - Mithril.Shell.exe running, debugger attached    → exit 0 + stderr warning
-#                                                      (this is a debug
-#                                                      session; the user is
-#                                                      on purpose, but the
-#                                                      modules-folder copy
-#                                                      will still fail)
+# Hosts: Claude Code (exit codes + stderr) and Cursor (JSON on stdout; loads
+# this via .claude/settings.json but does not set $CLAUDE_PROJECT_DIR).
 #
 # Memory ref: mithril_build_file_lock_silent.md.
 
 $ErrorActionPreference = 'Stop'
 
+function Test-CursorHookHost {
+    # Cursor loads .claude/settings.json hooks but does not set CLAUDE_PROJECT_DIR.
+    return -not $env:CLAUDE_PROJECT_DIR
+}
+
+function Write-HookAllow {
+    if (Test-CursorHookHost) {
+        [Console]::Out.WriteLine('{"permission":"allow"}')
+    }
+}
+
+function Write-HookDeny {
+    param([Parameter(Mandatory)][string]$Message)
+    if (Test-CursorHookHost) {
+        $body = @{ permission = 'deny'; agent_message = $Message }
+        [Console]::Out.WriteLine(($body | ConvertTo-Json -Compress))
+    } else {
+        [Console]::Error.WriteLine($Message)
+    }
+}
+
+function Exit-HookAllow {
+    Write-HookAllow
+    exit 0
+}
+
+function Exit-HookDeny {
+    param([Parameter(Mandatory)][string]$Message)
+    Write-HookDeny -Message $Message
+    exit 2
+}
+
 try {
     $payload = [Console]::In.ReadToEnd() | ConvertFrom-Json
 }
 catch {
-    exit 0  # malformed payload — don't block
+    Exit-HookAllow
 }
 
-# Match either Bash or PowerShell tool calls invoking dotnet build/test/publish/pack.
-if ($payload.tool_name -ne 'Bash' -and $payload.tool_name -ne 'PowerShell') { exit 0 }
+# Bash / PowerShell (Claude) or Shell (Cursor preToolUse).
+if ($payload.tool_name -and
+    $payload.tool_name -ne 'Bash' -and
+    $payload.tool_name -ne 'PowerShell' -and
+    $payload.tool_name -ne 'Shell') {
+    Exit-HookAllow
+}
 
 $cmd = $payload.tool_input.command
-if (-not $cmd) { exit 0 }
+if (-not $cmd) { $cmd = $payload.command }
+if (-not $cmd) { Exit-HookAllow }
 
-if ($cmd -notmatch '(?:^|[\s;&|])dotnet\s+(build|test|publish|pack)\b') { exit 0 }
+if ($cmd -notmatch '(?:^|[\s;&|])dotnet\s+(build|test|publish|pack)\b') { Exit-HookAllow }
 
 $running = Get-Process Mithril.Shell -ErrorAction SilentlyContinue
-if (-not $running) { exit 0 }
+if (-not $running) { Exit-HookAllow }
 
-# Detect whether ANY Mithril.Shell process is being debugged.
-# Win32 CheckRemoteDebuggerPresent reports both user-mode debuggers (VS,
-# Rider, dnSpy, WinDbg) and kernel debuggers; that's the canonical signal.
 Add-Type -ErrorAction SilentlyContinue -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -57,27 +78,32 @@ $anyDebugged = $false
 foreach ($p in $running) {
     try {
         $isDbg = $false
-        # Process.Handle requires the same-or-higher integrity level; this
-        # runs as the user, same as the shell, so it's fine.
         if ([MithrilCheckNative]::CheckRemoteDebuggerPresent($p.Handle, [ref]$isDbg) -and $isDbg) {
             $anyDebugged = $true
             break
         }
     } catch {
-        # Handle-acquisition failure (rare; e.g. elevated shell) — fall
-        # through and treat as not-debugged so the block still protects.
+        # Treat as not-debugged so the block still protects.
     }
 }
 
 $pidList = ($running | ForEach-Object { $_.Id }) -join ', '
 
 if ($anyDebugged) {
-    # User is actively debugging — DO NOT block. Surface a one-line note so
-    # neither I nor they are surprised when the modules-folder copy step
-    # fails with MSB3026/27 (that's expected during a debug session and
-    # doesn't matter for what's already loaded in the running shell).
-    [Console]::Error.WriteLine("[mithril-check] Mithril.Shell.exe (PID $pidList) has a debugger attached — allowing the build, but the module-DLL copy step will MSB3026/27. The running shell keeps its loaded DLLs; the copy failure only affects what a *next* launch would pick up.")
-    exit 0
+    [Console]::Error.WriteLine(
+        "[mithril-check] Mithril.Shell.exe (PID $pidList) has a debugger attached — allowing the build, but the module-DLL copy step will MSB3026/27. The running shell keeps its loaded DLLs; the copy failure only affects what a *next* launch would pick up."
+    )
+    Exit-HookAllow
+}
+
+$denyMsg = @(
+    "[mithril-check] Mithril.Shell.exe is running (PID $pidList), no debugger attached."
+    "[mithril-check] Module DLL copy step will silently fail (MSB3026/27); src/Mithril.Shell/*/modules/ would be left stale."
+    "[mithril-check] Close the shell window or 'Stop-Process -Name Mithril.Shell', then retry."
+) -join ' '
+
+if (Test-CursorHookHost) {
+    Exit-HookDeny -Message $denyMsg
 }
 
 [Console]::Error.WriteLine("[mithril-check] Mithril.Shell.exe is running (PID $pidList), no debugger attached.")

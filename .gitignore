@@ -25,3 +25,6 @@ garden/
 
 # Continue
 .continue/agents/local-env.yaml
+
+# Worktrees
+worktrees/
