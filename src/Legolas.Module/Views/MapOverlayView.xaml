@@ -7,6 +7,7 @@
         xmlns:converters="clr-namespace:Legolas.Views.Converters"
         xmlns:views="clr-namespace:Legolas.Views"
         xmlns:rendering="clr-namespace:Legolas.Rendering"
+        xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
         Title="Map Overlay"
         WindowStyle="None"
         AllowsTransparency="True"
@@ -27,23 +28,66 @@
                    Opacity="{Binding Session.MapOpacity, FallbackValue=1.0}" />
         <Border BorderBrush="#FF303030" BorderThickness="1">
         <DockPanel>
-            <Border DockPanel.Dock="Top" Background="#FF252525" Padding="8,4"
+            <Border x:Name="HeaderChrome"
+                    DockPanel.Dock="Top" Background="#FF252525" Padding="8,4"
                     MouseLeftButtonDown="Header_MouseLeftButtonDown">
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Map" Foreground="White" FontWeight="SemiBold" />
-                    <TextBlock Text=" | Scale: " Foreground="#FF888888" Margin="12,0,0,0" />
-                    <TextBlock Text="{Binding Scale, StringFormat=0.00}" Foreground="#FFCCCCCC" />
-                    <TextBlock Text=" px/m, Rot: " Foreground="#FF888888" />
-                    <TextBlock Text="{Binding RotationDegrees, StringFormat=0.0}" Foreground="#FFCCCCCC" />
-                    <TextBlock Text="°" Foreground="#FF888888" />
-                    <!-- #476: Survey player-GPS staleness. Sparse signal
-                         (zone-in / teleport only) — surfaced honestly so the
-                         marker is never read as live. -->
-                    <TextBlock Text=" | " Foreground="#FF888888"
-                               Visibility="{Binding IsPlayerAnchorStatusVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
-                    <TextBlock Text="{Binding PlayerAnchorStatus}" Foreground="#FFCCCCCC"
-                               Visibility="{Binding IsPlayerAnchorStatusVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
-                </StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <TextBlock Text="Map" Foreground="White" FontWeight="SemiBold" />
+                        <!-- #476: Survey player-GPS staleness. Sparse signal
+                             (zone-in / teleport only) — surfaced honestly so the
+                             marker is never read as live. -->
+                        <TextBlock Text=" | " Foreground="#FF888888"
+                                   Visibility="{Binding IsPlayerAnchorStatusVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                        <TextBlock Text="{Binding PlayerAnchorStatus}" Foreground="#FFCCCCCC"
+                                   Visibility="{Binding IsPlayerAnchorStatusVisible, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}" />
+                    </StackPanel>
+                    <!-- #520: in-overlay toggle mirroring LegolasSettings.ShowNudgePadOnOverlay,
+                         so the user can hide/show the nudge pad without alt-tabbing to
+                         Settings. Symmetric: re-enabling stays in reach when hidden. The
+                         ToggleButton handles its own click and stops MouseLeftButtonDown
+                         from reaching the parent Border's drag handler. -->
+                    <ToggleButton Grid.Column="1" VerticalAlignment="Center"
+                                  IsChecked="{Binding ElementName=Self, Path=Settings.ShowNudgePadOnOverlay, Mode=TwoWay}"
+                                  Background="Transparent" BorderThickness="0"
+                                  Padding="4,2" Cursor="Hand" Focusable="False">
+                        <ToggleButton.Template>
+                            <ControlTemplate TargetType="ToggleButton">
+                                <Border Background="{TemplateBinding Background}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center"
+                                                      VerticalAlignment="Center" />
+                                </Border>
+                            </ControlTemplate>
+                        </ToggleButton.Template>
+                        <ToggleButton.Style>
+                            <Style TargetType="ToggleButton">
+                                <Setter Property="ToolTip" Value="Hide the on-overlay nudge pad. Mirror of Legolas → Settings → Pin Nudge → Show nudge pad on the map overlay." />
+                                <Style.Triggers>
+                                    <Trigger Property="IsChecked" Value="False">
+                                        <Setter Property="ToolTip" Value="Show the on-overlay nudge pad." />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ToggleButton.Style>
+                        <icon:PackIconLucide Width="13" Height="13" Kind="Eye">
+                            <icon:PackIconLucide.Style>
+                                <Style TargetType="icon:PackIconLucide">
+                                    <Setter Property="Foreground" Value="#FFE0E0E0" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding ElementName=Self, Path=Settings.ShowNudgePadOnOverlay}" Value="False">
+                                            <Setter Property="Foreground" Value="#FF666666" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </icon:PackIconLucide.Style>
+                        </icon:PackIconLucide>
+                    </ToggleButton>
+                </Grid>
             </Border>
 
             <Grid x:Name="ViewportRoot" ClipToBounds="True" Background="Transparent">
