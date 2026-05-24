@@ -129,9 +129,15 @@ public sealed class PlayerLogClassifier : IClassifiedPlayerLogStream, IDisposabl
         PipeRegistry<T> pipe, [EnumeratorCancellation] CancellationToken ct)
         where T : class
     {
-        var channel = Channel.CreateBounded<T>(new BoundedChannelOptions(1024)
+        // Unbounded with single-reader / single-writer. A previous bounded
+        // 1024 + DropOldest configuration silently lost replay backlog when
+        // the subscriber's pump (today: the splitter's RunAsync) couldn't
+        // drain fast enough during a long-session cold start. See the
+        // matching rationale + the regression test in PlayerLogPipeSplitter
+        // / PlayerLogPipelineTests. PG's source-stream rate is human-
+        // bounded, so unbounded growth is bounded in practice by the source.
+        var channel = Channel.CreateUnbounded<T>(new UnboundedChannelOptions
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
             SingleWriter = true,
         });

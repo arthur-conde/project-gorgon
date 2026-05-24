@@ -165,6 +165,70 @@ public sealed class PlayerLogPipeSplitterTests
     }
 
     [Fact]
+    public async Task Long_backlog_through_typed_pipe_delivers_every_envelope()
+    {
+        // Regression test for the silent-drop bug surfaced during
+        // world-sim debugging. Pre-fix, each per-subscriber typed-pipe
+        // channel was bounded at 1024 with FullMode=DropOldest, so a
+        // long-session cold-start replay that dispatched >1024
+        // LocalPlayer lines faster than the subscriber's pump could
+        // drain would silently evict the earliest items. The concrete
+        // failure: the PlayerInventoryFrameProducer's L1 subscription
+        // received the live ProcessCombatModeStatus tail of a 12-minute
+        // session but had its ~134-item ProcessAddItem replay block
+        // evicted, which left its iterator channel empty, which left
+        // the world merger blocked on inv.PendingFetch, which starved
+        // every downstream producer (notably the area producer — the
+        // user-visible symptom was "area changes don't reach Palantir
+        // or Legolas").
+        //
+        // Post-fix the channel is unbounded — every envelope arrives.
+        var classified = new StubClassifiedStream();
+        using var splitter = new PlayerLogPipeSplitter(classified);
+
+        const int count = 5000; // ~5× the previous 1024 capacity
+        for (var i = 1; i <= count; i++)
+        {
+            classified.PushLive(new LocalPlayerLogLine(Ts, $"L{i}", i, 0));
+        }
+
+        var received = await CollectAsync(
+            ((ILocalPlayerLogStream)splitter).SubscribeAsync, count,
+            TimeSpan.FromSeconds(30));
+
+        received.Should().HaveCount(count, because: "no envelope may be silently dropped under a long replay backlog");
+        received.Select(x => x.Sequence).Should().BeInAscendingOrder();
+        received.Select(x => x.Sequence).Should().Equal(
+            Enumerable.Range(1, count).Select(i => (long)i),
+            because: "every Sequence in the input set must reach the subscriber");
+    }
+
+    [Fact]
+    public async Task Long_backlog_through_marker_variant_delivers_every_envelope()
+    {
+        // Same regression, marker variant (the L1-driver-facing path).
+        var classified = new StubClassifiedStream();
+        using var splitter = new PlayerLogPipeSplitter(classified);
+
+        const int count = 5000;
+        for (var i = 1; i <= count; i++)
+        {
+            classified.Push(new LocalPlayerLogLine(Ts, $"L{i}", i, 0), isReplay: true);
+        }
+
+        var received = await CollectMarkerAsync(
+            ((ILocalPlayerLogStream)splitter).SubscribeWithReplayMarkerAsync, count,
+            TimeSpan.FromSeconds(30));
+
+        received.Should().HaveCount(count, because: "no envelope may be silently dropped under a long replay backlog");
+        received.Select(e => e.Payload.Sequence).Should().Equal(
+            Enumerable.Range(1, count).Select(i => (long)i),
+            because: "every Sequence in the input set must reach the subscriber, in source order");
+        received.Should().OnlyContain(e => e.IsReplay,
+            because: "the marker bit forwarded unchanged from the upstream-replay envelopes");
+    }
+
+    [Fact]
     public async Task Handler_throw_in_typed_subscriber_does_not_kill_splitter_pump()
     {
         // The splitter's per-envelope try/catch contains Dispatch throws so
