@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
+using Legolas.ViewModels;
 using Mithril.Shared.Reference;
 using Xunit;
 using PinShape = Mithril.GameState.Pins.PinShape;
@@ -22,6 +23,15 @@ public class PinCalibrationCoordinatorTests
         var pins = new FakePlayerPinTracker();
         var settings = new LegolasSettings();
         return (new PinCalibrationCoordinator(calib, pins, settings), calib, pins, settings);
+    }
+
+    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakePlayerPinTracker pins, SessionState session) BuildWithSession()
+    {
+        var calib = new FakeCalib();
+        var pins = new FakePlayerPinTracker();
+        var settings = new LegolasSettings();
+        var session = new SessionState();
+        return (new PinCalibrationCoordinator(calib, pins, settings, session), calib, pins, session);
     }
 
     // A well-conditioned scale-only transform: pixel = (100 + 2X, 100 - 2Z),
@@ -306,6 +316,46 @@ public class PinCalibrationCoordinatorTests
         });
     }
 
+    // ---- #524: zoom stamp ------------------------------------------------
+
+    [Fact]
+    public void Persist_StampsCurrentMapZoom_FromSessionState()
+    {
+        var (coord, calib, pins, session) = BuildWithSession();
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(10, 10),
+            FakePlayerPinTracker.Pin(50, 60),
+            FakePlayerPinTracker.Pin(90, 20));
+        session.CurrentMapZoom = 1.5;
+        coord.Arm();
+        // Walk the spread-suggested order so each pin maps to its OWN perfect
+        // pixel (residual ~0 ⇒ Confirm is ungated).
+        PairAllPerfectly(coord);
+
+        var result = coord.Confirm();
+
+        result.Should().NotBeNull();
+        calib.LastCalibrationZoom.Should().Be(1.5, "the live in-game zoom must be stamped, not the pre-#524 hardcoded 1.0");
+        result!.CalibrationZoom.Should().Be(1.5);
+    }
+
+    [Fact]
+    public void Persist_WithoutSessionState_FallsBackToOne()
+    {
+        // Legacy ctor (no SessionState) still works — preserves headless /
+        // unit-test paths and the pre-#524 default stamp.
+        var (coord, calib, pins, _) = Build();
+        pins.SeedExisting(
+            FakePlayerPinTracker.Pin(10, 10),
+            FakePlayerPinTracker.Pin(50, 60),
+            FakePlayerPinTracker.Pin(90, 20));
+        coord.Arm();
+        PairAllPerfectly(coord);
+
+        coord.Confirm().Should().NotBeNull();
+        calib.LastCalibrationZoom.Should().Be(1.0);
+    }
+
     [Fact]
     public void Arm_clears_stale_state()
     {
@@ -328,15 +378,17 @@ public class PinCalibrationCoordinatorTests
     private sealed class FakeCalib : IAreaCalibrationService
     {
         public List<(WorldCoord, PixelPoint)>? LastPairs { get; private set; }
+        public double LastCalibrationZoom { get; private set; }
         public int ChangedCount { get; private set; }
 
         public AreaCalibration? CalibrateCurrentArea(
             IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
         {
             LastPairs = placements.Select(p => (p.World, p.Pixel)).ToList();
+            LastCalibrationZoom = calibrationZoom;
             ChangedCount++;
             Changed?.Invoke(this, EventArgs.Empty);
-            return new AreaCalibration(1, 0, 0, 0, placements.Count, 0);
+            return new AreaCalibration(1, 0, 0, 0, placements.Count, 0) { CalibrationZoom = calibrationZoom };
         }
 
         public string? CurrentAreaKey => "AreaTest";

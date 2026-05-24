@@ -19,6 +19,10 @@ public class MapOverlayCalibrationValidationTests
     private static (MapOverlayViewModel map, FakeAreaCalibrationService cal, SessionState session) Build()
     {
         var session = new SessionState();
+        // #524: these tests build calibrations with the default (legacy)
+        // CalibrationZoom = 1.0; pin the live zoom to match so the projection
+        // zoomFactor is 1.0 and the assertions stay byte-identical to pre-#524.
+        session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());

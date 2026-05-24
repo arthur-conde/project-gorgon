@@ -50,6 +50,11 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 {
                     OnPropertyChanged(nameof(IsCalibrationCapturing));
                     OnPropertyChanged(nameof(IsCalibrationDropping));
+                    // #524: the overlay zoom strip hides during the Drop
+                    // phase (click-through forced ON), and the warning chip
+                    // is suppressed while the user is actively calibrating.
+                    OnPropertyChanged(nameof(IsZoomFieldVisible));
+                    OnPropertyChanged(nameof(IsZoomMismatchWarningVisible));
                 }
                 else if (e.PropertyName is nameof(PinCalibrationCoordinator.PromptText))
                 {
@@ -68,6 +73,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 {
                     OnPropertyChanged(nameof(PinRadius));
                     OnPropertyChanged(nameof(PinDiameter));
+                }
+                // #524: full overlay click-through hides the zoom strip — the
+                // wizard surfaces remain reachable as the always-clickable
+                // fallback control plane.
+                else if (e.PropertyName == nameof(LegolasSettings.ClickThroughMap))
+                {
+                    OnPropertyChanged(nameof(IsZoomFieldVisible));
                 }
             };
         }
@@ -120,6 +132,28 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 OnPropertyChanged(nameof(PlayerMarkerPixel));
                 OnPropertyChanged(nameof(PlayerAnchorStatus));
                 OnPropertyChanged(nameof(IsPlayerAnchorStatusVisible));
+                RebuildAllWedges();
+            }
+            else if (e.PropertyName is nameof(SessionState.CurrentMapZoom))
+            {
+                // #524: dragging the bound slider live-reprojects every
+                // calibration-aware surface. The Motherlode marker pixels read
+                // CurrentMapZoom directly inside their getter, so PropertyChanged
+                // on the collection-bearing property is enough. Survey pin pixels
+                // are stamped at ProcessMapFx time (their PixelPos is cached on
+                // the survey model), so a zoom change after placement doesn't
+                // move existing pins — that matches the "calibration is the
+                // anchor" rule and avoids surprising motion on a stamp re-edit.
+                OnPropertyChanged(nameof(PlayerMarkerPixel));
+                OnPropertyChanged(nameof(MotherlodeMarkerPixels));
+                OnPropertyChanged(nameof(IsZoomMismatchWarningVisible));
+                // Re-resolve the projected Survey GPS anchor — its pixel was
+                // derived through the calibration too.
+                RefreshSurveyPlayerAnchor(fromTrackerFix: false);
+                // Validate-calibration ghosts (+ label declutter): re-projects
+                // through GhostLabelDeclutter.Build at the new zoom.
+                if (ShowCalibrationGhosts) RebuildCalibrationGhosts();
+                RebuildRouteGeometry();
                 RebuildAllWedges();
             }
         };
@@ -199,7 +233,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             _areaCalibration?.CurrentCalibration,
             fromTrackerFix,
             _session.SurveyPlayerIsManual,
-            _session.SurveyPlayerIsPinned);
+            _session.SurveyPlayerIsPinned,
+            _session.CurrentMapZoom);
         if (res is not { } r) return;   // keep current (manual sticky / no change)
 
         _session.SurveyPlayerPixel = r.Pixel;
@@ -234,7 +269,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         AreaCalibration? cal,
         bool fromTrackerFix,
         bool currentIsManual,
-        bool currentIsPinned)
+        bool currentIsPinned,
+        double currentMapZoom = 0.0)
     {
         if (pin is { } p && cal is { } pinCal)
         {
@@ -242,7 +278,11 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 fromTrackerFix && tracker is { } ft && ft.MeasuredAt > p.ObservedAt;
             if (!supersededByFresherAuto)
                 return new SurveyAnchorResolution(
-                    pinCal.ProjectWorld(p.World), p.ObservedAt,
+                    // #524: thread the in-game map zoom; zero/unset falls back
+                    // to the calibration's own zoom (zoomFactor → 1.0), keeping
+                    // pre-#524 callers byte-identical.
+                    pinCal.ProjectWorld(p.World, EffectiveZoom(currentMapZoom, pinCal)),
+                    p.ObservedAt,
                     Source: null, IsManual: true, IsPinned: true);
             // else: a genuinely newer zone-in/teleport wins over the pin.
         }
@@ -255,9 +295,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             return SurveyAnchorResolution.Cleared;
 
         return new SurveyAnchorResolution(
-            c.ProjectWorld(new WorldCoord(fix.X, fix.Y, fix.Z)),
+            c.ProjectWorld(new WorldCoord(fix.X, fix.Y, fix.Z), EffectiveZoom(currentMapZoom, c)),
             fix.MeasuredAt, fix.Source, IsManual: false, IsPinned: false);
     }
+
+    // #524: a caller that doesn't know the live zoom (older tests, legacy
+    // paths) gets the byte-identical no-op (factor 1.0). Live VM paths pass
+    // SessionState.CurrentMapZoom.
+    private static double EffectiveZoom(double currentMapZoom, AreaCalibration cal) =>
+        currentMapZoom > 1e-6 ? currentMapZoom : cal.CalibrationZoom;
 
     /// <summary>
     /// Record the user's "set my position" map click (#476 Option&#160;C,
@@ -322,6 +368,80 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// the wizard's "Validate calibration" affordance. Always false in the
     /// settings-less test ctor (no service).</summary>
     public bool IsCurrentAreaCalibrated => _areaCalibration?.IsCurrentAreaCalibrated == true;
+
+    // ---- #524: zoom-field surfaces ---------------------------------------
+
+    /// <summary>#524: the overlay zoom strip is hidden whenever the overlay is
+    /// fully click-through and inputs cannot reach individual WPF controls.
+    /// That covers two cases — <c>LegolasSettings.ClickThroughMap</c> on (the
+    /// user pref) and the calibration <see cref="CalibrationPhase.Drop"/>
+    /// phase (the wizard forces click-through ON so right-clicks reach the
+    /// game to drop pins). The two wizard surfaces stay reachable in either
+    /// case, so the value is never unreachable.</summary>
+    public bool IsZoomFieldVisible =>
+        !IsCalibrationDropping && _settings?.ClickThroughMap != true;
+
+    /// <summary>#524 (per-area, session-ephemeral): areas whose legacy
+    /// recalibrate hint the user dismissed during this Mithril run. Cleared on
+    /// process restart (intentional — the hint reappears if the area is still
+    /// legacy-stamped next session). Re-checked on
+    /// <see cref="IAreaCalibrationService.Changed"/>, so a successful
+    /// recalibration drops the area out (the hint condition flips to false
+    /// regardless once <c>CalibrationZoom != 1.0</c>).</summary>
+    private readonly HashSet<string> _legacyHintDismissedAreas = new(StringComparer.Ordinal);
+
+    /// <summary>#524: warning chip — shown when the live in-game zoom diverges
+    /// from the stamp the current area was calibrated at by more than half a
+    /// slider tick (~0.05). Suppressed for legacy 1.0 stamps (no deliberate
+    /// choice was ever made; the legacy-recalibrate hint replaces it) and
+    /// while the user is actively calibrating (divergence is meaningless
+    /// then). Clears automatically as the user matches the zoom or recalibrates
+    /// — no dismiss button.</summary>
+    public bool IsZoomMismatchWarningVisible
+    {
+        get
+        {
+            if (_areaCalibration?.CurrentCalibration is not { } cal) return false;
+            if (_pinCal?.IsArmed == true) return false;
+            if (Math.Abs(cal.CalibrationZoom - 1.0) < 1e-6) return false;   // legacy stamp
+            return Math.Abs(_session.CurrentMapZoom - cal.CalibrationZoom) > 0.05;
+        }
+    }
+
+    /// <summary>#524: surfaced verbatim by both the overlay chip and the
+    /// wizard Listening panel row, so the message is single-sourced.</summary>
+    public string ZoomMismatchText =>
+        _areaCalibration?.CurrentCalibration is { } cal
+            ? $"Calibrated at {cal.CalibrationZoom:0.00} · spread scales, positions assume same pan"
+            : string.Empty;
+
+    /// <summary>#524: one-time per-area hint in the wizard's Listening step,
+    /// shown when the area's calibration predates zoom tracking
+    /// (<c>CalibrationZoom == 1.0</c>) and the user hasn't dismissed it this
+    /// session. Drops out the moment they recalibrate (the stamp moves off
+    /// 1.0) or click "Got it".</summary>
+    public bool IsLegacyRecalibrateHintVisible
+    {
+        get
+        {
+            if (_areaCalibration?.CurrentCalibration is not { } cal) return false;
+            if (Math.Abs(cal.CalibrationZoom - 1.0) > 1e-6) return false;
+            var key = _areaCalibration.CurrentAreaKey;
+            return key is not null && !_legacyHintDismissedAreas.Contains(key);
+        }
+    }
+
+    /// <summary>#524: dismiss the legacy hint for the current area for the
+    /// rest of this Mithril session. No persistence (a fresh process gets the
+    /// hint back; recalibrating clears the underlying condition outright).</summary>
+    [RelayCommand]
+    private void DismissLegacyRecalibrateHint()
+    {
+        var key = _areaCalibration?.CurrentAreaKey;
+        if (key is null) return;
+        _legacyHintDismissedAreas.Add(key);
+        OnPropertyChanged(nameof(IsLegacyRecalibrateHintVisible));
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CalibrationValidationStatus))]
@@ -398,7 +518,11 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     {
         CalibrationGhosts.Clear();
         if (_areaCalibration?.CurrentCalibration is not { } cal) return;
-        foreach (var g in GhostLabelDeclutter.Build(_areaCalibration.CurrentAreaReferences, cal))
+        // #524: pass the live in-game zoom so dragging the bound slider live-
+        // reprojects the ghosts (the validate loop is precisely the diagnostic
+        // for surfacing zoom drift after a change).
+        foreach (var g in GhostLabelDeclutter.Build(
+                     _areaCalibration.CurrentAreaReferences, cal, _session.CurrentMapZoom))
             CalibrationGhosts.Add(g);
         OnPropertyChanged(nameof(CalibrationValidationStatus));
     }
@@ -418,6 +542,12 @@ public sealed partial class MapOverlayViewModel : ObservableObject
             RebuildCalibrationGhosts();
         }
         OnPropertyChanged(nameof(CalibrationValidationStatus));
+        // #524: area switch / recalibrate flips warning + legacy-hint conditions
+        // (a recalibration moves CalibrationZoom off 1.0; an area change makes
+        // the per-area dismissal set re-evaluate against the new key).
+        OnPropertyChanged(nameof(IsZoomMismatchWarningVisible));
+        OnPropertyChanged(nameof(ZoomMismatchText));
+        OnPropertyChanged(nameof(IsLegacyRecalibrateHintVisible));
     }
 
     /// <summary>#460/#477A: true while the guided calibration walkthrough is in
@@ -643,9 +773,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 return Array.Empty<PixelPoint>();
 
             List<PixelPoint>? list = null;
+            var zoom = _session.CurrentMapZoom;
             foreach (var s in _motherlode.Snapshot().Surveys)
                 if (!s.Collected && s.SolvedWorld is { } w)
-                    (list ??= new()).Add(cal.ProjectWorld(w));
+                    (list ??= new()).Add(cal.ProjectWorld(w, zoom));
             return list ?? (IReadOnlyList<PixelPoint>)Array.Empty<PixelPoint>();
         }
     }

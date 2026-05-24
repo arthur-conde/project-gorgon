@@ -375,7 +375,12 @@ public sealed class PlayerLogIngestionService : BackgroundService
         }
 
         var name = CleanName(mt.Short);
-        var pixel = cal.ProjectWorld(mt.World);
+        // #524: thread the in-game map zoom through projection so a calibration
+        // solved at one zoom places pins correctly at any other zoom (the
+        // calibration's CalibrationZoom is the captured stamp; CurrentMapZoom
+        // is the live in-game readout the user keeps in sync via the wizard /
+        // overlay slider).
+        var pixel = cal.ProjectWorld(mt.World, _session.CurrentMapZoom);
 
         if (FindDuplicateAbsolute(mt.World, _settings.MapTargetDedupRadiusMetres) is { } dup)
         {
