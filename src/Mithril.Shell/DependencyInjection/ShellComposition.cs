@@ -1,3 +1,5 @@
+using Arda.Hosting;
+using Arda.World.Player;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.GameState.DependencyInjection;
@@ -62,7 +64,8 @@ public static class ShellComposition
     /// it via <see cref="AddMithrilApp"/> so the guard validates exactly what ships.
     /// </summary>
     public static IServiceCollection AddMithrilShell(
-        this IServiceCollection services, ShellCompositionOptions o) =>
+        this IServiceCollection services, ShellCompositionOptions o)
+    {
         services
             .AddMithrilSettings<UserPreferences>(o.PreferencesPath, UserPreferencesJsonContext.Default.UserPreferences)
             .AddSingleton<ISettingsStore<ShellSettings>>(o.ShellStore)
@@ -110,4 +113,15 @@ public static class ShellComposition
             .AddMithrilItemDetail()
             .AddMithrilIngredientSources()
             .AddMithrilShellCommands();
+
+        // Arda pipeline (L0–L3): runs side-by-side with the legacy world sim.
+        // Uses the game root as log directory (Player.log + ChatLogs/).
+        services
+            .AddArda(new ArdaOptions(o.GameConfig.GameRoot))
+            .AddPlayerWorld();
+
+        services.AddHostedService<ArdaDiagnosticBridge>();
+
+        return services;
+    }
 }

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Arda.Hosting.Tests" />
+    <InternalsVisibleTo Include="Arda.Dispatch.Tests" />
   </ItemGroup>
 
 </Project>

@@ -51,6 +51,9 @@ internal static class VerbExtractor
         if (log.StartsWith("LOADING LEVEL "))
             return log["LOADING LEVEL ".Length..];
 
+        if (log is "LOADING LEVEL")
+            return ReadOnlySpan<char>.Empty;
+
         if (log.StartsWith("!!! Initializing area! "))
             return log["!!! Initializing area! ".Length..];
 
