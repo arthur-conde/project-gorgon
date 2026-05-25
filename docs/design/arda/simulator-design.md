@@ -29,17 +29,6 @@ World Internal Pipe
 * a chain of state machines that interpret changes
 
 ```csharp
-abstract class Frame
-{
-    DateTimeOffset timestamp;
-}
-
-abstract class LocalPlayerFrame 
-{
-    string Actor = "LocalPlayer";
-    string Name = "ProcessX";
-}
-
 struct FrameMetadata
 {
    string? Actor;
@@ -81,7 +70,6 @@ interface IStateMachine
    Handle(ISimulationFrame frame);
 }
 ```
-
 
 World sim flow
 1. An envelope arrives from the [log source](log-source.md) from the log source
