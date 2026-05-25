@@ -140,6 +140,14 @@ internal sealed class PlayerLogClock : ILogSourceClock
     /// Externally anchor the clock to a known UTC date (e.g., from a
     /// login banner). Resets rollover tracking.
     /// </summary>
+    /// <remarks>
+    /// TODO: Wire at L0 in PlayerLogSource — same pattern as ChatLogSource's
+    /// TryApplyBannerOffset. The Player.log login banner
+    /// (<c>[HH:MM:SS] Logged in as character X. Time UTC=...</c>) carries the
+    /// authoritative UTC date. PlayerLogSource should extract it with a cheap
+    /// span check before/after classification and call this method.
+    /// Until wired, mtime-based anchoring (EnsureAnchored) covers the common case.
+    /// </remarks>
     internal void AnchorToDate(DateOnly utcDate, TimeSpan timeOfDay)
     {
         _currentUtcDate = utcDate;

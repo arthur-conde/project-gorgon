@@ -19,8 +19,7 @@ public class DispatchTableTests
         var table = Build(new Dictionary<string, List<IFrameHandler>>());
 
         var act = () => table.Dispatch(
-            "ProcessUnknown".AsSpan(),
-            "LocalPlayer: ProcessUnknown(123)".AsSpan(),
+            new ParsedVerb("ProcessUnknown".AsSpan(), "(123)".AsSpan()),
             "LocalPlayer: ProcessUnknown(123)",
             TestMetadata);
 
@@ -33,8 +32,7 @@ public class DispatchTableTests
         var table = Build(new Dictionary<string, List<IFrameHandler>>());
 
         var act = () => table.Dispatch(
-            ReadOnlySpan<char>.Empty,
-            "some random line".AsSpan(),
+            default,
             "some random line",
             TestMetadata);
 
@@ -54,8 +52,7 @@ public class DispatchTableTests
         var table = Build(registry);
 
         table.Dispatch(
-            "ProcessDeleteItem".AsSpan(),
-            "LocalPlayer: ProcessDeleteItem(12345)".AsSpan(),
+            VerbExtractor.Parse("LocalPlayer: ProcessDeleteItem(12345)".AsSpan()),
             "LocalPlayer: ProcessDeleteItem(12345)",
             TestMetadata);
 
@@ -77,8 +74,7 @@ public class DispatchTableTests
         var table = Build(registry);
 
         table.Dispatch(
-            "ProcessDeleteItem".AsSpan(),
-            "LocalPlayer: ProcessDeleteItem(99)".AsSpan(),
+            VerbExtractor.Parse("LocalPlayer: ProcessDeleteItem(99)".AsSpan()),
             "LocalPlayer: ProcessDeleteItem(99)",
             TestMetadata);
 
@@ -100,8 +96,7 @@ public class DispatchTableTests
         var table = Build(registry);
 
         table.Dispatch(
-            "ProcessTest".AsSpan(),
-            "LocalPlayer: ProcessTest(x)".AsSpan(),
+            VerbExtractor.Parse("LocalPlayer: ProcessTest(x)".AsSpan()),
             "LocalPlayer: ProcessTest(x)",
             TestMetadata);
 
@@ -121,8 +116,7 @@ public class DispatchTableTests
         var table = Build(registry);
 
         table.Dispatch(
-            "LOADING_LEVEL".AsSpan(),
-            "LOADING LEVEL AreaSerbule".AsSpan(),
+            VerbExtractor.Parse("LOADING LEVEL AreaSerbule".AsSpan()),
             "LOADING LEVEL AreaSerbule",
             TestMetadata);
 

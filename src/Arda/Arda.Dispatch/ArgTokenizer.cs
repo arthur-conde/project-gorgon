@@ -25,14 +25,14 @@ public ref struct ArgTokenizer
     public long NextLong()
     {
         var token = NextRawToken();
-        return long.Parse(token);
+        return long.Parse(token, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>Read next token as <see cref="int"/>. Advances past trailing delimiter.</summary>
     public int NextInt()
     {
         var token = NextRawToken();
-        return int.Parse(token);
+        return int.Parse(token, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     /// <summary>Read next token as <see cref="double"/>. Advances past trailing delimiter.</summary>

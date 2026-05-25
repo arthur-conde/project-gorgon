@@ -137,20 +137,29 @@ internal sealed class LogSourceTailer
 
             var charCount = Encoding.UTF8.GetCharCount(rawBuf, 0, lastNl + 1);
             var charBuf = ArrayPool<char>.Shared.Rent(charCount);
-            Encoding.UTF8.GetChars(rawBuf, 0, lastNl + 1, charBuf, 0);
-
-            _residual = rawBuf[(lastNl + 1)..totalBytes];
-            _offset += bytesRead;
-
-            var (lines, lineCount) = FindLinesBoundaries(charBuf, charCount);
-
-            return new TailedBatch
+            try
             {
-                Buffer = charBuf,
-                ContentLength = charCount,
-                Lines = lines,
-                LineCount = lineCount
-            };
+                Encoding.UTF8.GetChars(rawBuf, 0, lastNl + 1, charBuf, 0);
+
+                _residual = rawBuf[(lastNl + 1)..totalBytes];
+                _offset += bytesRead;
+
+                var (lines, lineCount) = FindLinesBoundaries(charBuf, charCount);
+
+                // Ownership transfers to TailedBatch — caller returns via Dispose.
+                return new TailedBatch
+                {
+                    Buffer = charBuf,
+                    ContentLength = charCount,
+                    Lines = lines,
+                    LineCount = lineCount
+                };
+            }
+            catch
+            {
+                ArrayPool<char>.Shared.Return(charBuf);
+                throw;
+            }
         }
         finally
         {

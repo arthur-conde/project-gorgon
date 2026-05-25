@@ -175,6 +175,67 @@ public class MapTests
             .Which.Metadata.IsReplay.Should().BeTrue();
     }
 
+    [Fact]
+    public void AreaToArea_Transition_ReportsPreviousArea()
+    {
+        DispatchLoadingLevel("AreaSerbule");
+        DispatchInitializingArea("AreaSerbule");
+        _bus.Clear();
+
+        DispatchLoadingLevel("AreaCasino");
+        DispatchInitializingArea("AreaCasino");
+
+        _map.CurrentArea.Should().Be("AreaCasino");
+        _bus.Published<AreaChanged>().Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(new
+            {
+                PreviousArea = "AreaSerbule",
+                CurrentArea = "AreaCasino"
+            });
+    }
+
+    [Fact]
+    public void PendingConfirmed_Mismatch_InitializingAreaWins()
+    {
+        DispatchLoadingLevel("AreaSerbule");
+        DispatchInitializingArea("AreaCasino");
+
+        _map.CurrentArea.Should().Be("AreaCasino");
+        _map.PendingArea.Should().BeNull();
+    }
+
+    [Fact]
+    public void DuplicateAreaConfirmation_DoesNotEmit()
+    {
+        DispatchLoadingLevel("AreaSerbule");
+        DispatchInitializingArea("AreaSerbule");
+        _bus.Clear();
+
+        DispatchInitializingArea("AreaSerbule");
+
+        _bus.Published<AreaChanged>().Should().BeEmpty();
+        _map.CurrentArea.Should().Be("AreaSerbule");
+    }
+
+    [Fact]
+    public void MalformedInitializingArea_NoColonSpace_IsIgnored()
+    {
+        _map.Handle("(502934)AreaSerbule".AsSpan(), "malformed", Meta());
+
+        _map.CurrentArea.Should().BeNull();
+        _bus.Published<AreaChanged>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void BareLoadingLevel_WhenAlreadyNull_DoesNotEmit()
+    {
+        _map.CurrentArea.Should().BeNull();
+
+        DispatchLoadingLevel("");
+
+        _bus.Published<AreaChanged>().Should().BeEmpty();
+    }
+
     private sealed class SpyEventBus : IDomainEventBus
     {
         private readonly Dictionary<Type, List<object>> _published = [];

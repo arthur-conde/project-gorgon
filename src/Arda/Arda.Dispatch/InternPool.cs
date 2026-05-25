@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Frozen;
 
 namespace Arda.Dispatch;
@@ -11,10 +12,18 @@ namespace Arda.Dispatch;
 /// canonical <see cref="string"/> instances from the reference POCOs — returning
 /// them from <see cref="TryIntern"/> reuses the existing object on the heap.
 /// </para>
+/// <para>
+/// A <see cref="ConcurrentDictionary{TKey,TValue}"/> miss-cache captures values
+/// not present in the frozen sets (e.g. items introduced by a mid-session CDN
+/// refresh). Each unknown value allocates once; subsequent encounters reuse the
+/// cached instance. The miss-cache is naturally cleared on next app restart when
+/// the frozen sets are re-seeded from the updated reference data.
+/// </para>
 /// </summary>
 public sealed class InternPool
 {
     private readonly FrozenDictionary<string, string>.AlternateLookup<ReadOnlySpan<char>>[] _lookups;
+    private readonly ConcurrentDictionary<string, string> _missCache = new(StringComparer.Ordinal);
 
     /// <summary>
     /// Initialize the pool with one or more identity dictionaries.
@@ -30,6 +39,7 @@ public sealed class InternPool
     /// <summary>
     /// Try to intern a span against all known identifier families.
     /// Returns the existing <see cref="string"/> instance if found, <c>null</c> otherwise.
+    /// Does not consult the miss-cache (use <see cref="InternOrAllocate"/> for that).
     /// </summary>
     public string? TryIntern(ReadOnlySpan<char> value)
     {
@@ -43,8 +53,15 @@ public sealed class InternPool
 
     /// <summary>
     /// Intern or allocate. Returns existing instance for known identifiers,
-    /// calls <see cref="MemoryExtensions.ToString"/> for unknown values.
+    /// allocates once and caches for unknown values encountered mid-session.
     /// </summary>
     public string InternOrAllocate(ReadOnlySpan<char> value)
-        => TryIntern(value) ?? value.ToString();
+    {
+        var interned = TryIntern(value);
+        if (interned is not null)
+            return interned;
+
+        var allocated = value.ToString();
+        return _missCache.GetOrAdd(allocated, allocated);
+    }
 }

@@ -16,27 +16,8 @@ internal sealed class ReplayProgress : IReplayProgress
     private bool _playerDone;
     private bool _chatDone;
 
-    public double PlayerProgress
-    {
-        get => _playerProgress;
-        private set
-        {
-            if (Math.Abs(_playerProgress - value) < 0.001) return;
-            _playerProgress = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlayerProgress)));
-        }
-    }
-
-    public double ChatProgress
-    {
-        get => _chatProgress;
-        private set
-        {
-            if (Math.Abs(_chatProgress - value) < 0.001) return;
-            _chatProgress = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ChatProgress)));
-        }
-    }
+    public double PlayerProgress => _playerProgress;
+    public double ChatProgress => _chatProgress;
 
     public Task ReplayComplete => _replayComplete.Task;
 
@@ -48,23 +29,48 @@ internal sealed class ReplayProgress : IReplayProgress
     /// </summary>
     public void MarkComplete(SourceFamily family)
     {
+        bool firePlayer = false;
+        bool fireChat = false;
+        bool fireComplete = false;
+
         lock (_lock)
         {
             switch (family)
             {
                 case SourceFamily.Player:
-                    _playerDone = true;
-                    PlayerProgress = 1.0;
+                    if (!_playerDone)
+                    {
+                        _playerDone = true;
+                        if (Math.Abs(_playerProgress - 1.0) >= 0.001)
+                        {
+                            _playerProgress = 1.0;
+                            firePlayer = true;
+                        }
+                    }
                     break;
                 case SourceFamily.Chat:
-                    _chatDone = true;
-                    ChatProgress = 1.0;
+                    if (!_chatDone)
+                    {
+                        _chatDone = true;
+                        if (Math.Abs(_chatProgress - 1.0) >= 0.001)
+                        {
+                            _chatProgress = 1.0;
+                            fireChat = true;
+                        }
+                    }
                     break;
             }
 
             if (_playerDone && _chatDone)
-                _replayComplete.TrySetResult();
+                fireComplete = true;
         }
+
+        if (firePlayer)
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlayerProgress)));
+        if (fireChat)
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ChatProgress)));
+        if (fireComplete)
+            _replayComplete.TrySetResult();
     }
 
     internal enum SourceFamily { Player, Chat }

@@ -25,24 +25,24 @@ internal sealed class DispatchTable
     }
 
     /// <summary>
-    /// Dispatch a line to registered handlers. If no handler is registered for the
-    /// verb, the line is silently discarded (zero allocation). A throwing handler
-    /// is caught and logged — it does not prevent subsequent handlers from executing.
+    /// Parse and dispatch a line to registered handlers. If the line has no
+    /// recognizable verb, or no handler is registered, it is silently discarded
+    /// (zero allocation). A throwing handler is caught and logged — it does not
+    /// prevent subsequent handlers from executing.
     /// </summary>
-    public void Dispatch(ReadOnlySpan<char> verbSpan, ReadOnlySpan<char> logSpan, string sourceLog, LogLineMetadata metadata)
+    public void Dispatch(ParsedVerb parsed, string sourceLog, LogLineMetadata metadata)
     {
-        if (verbSpan.IsEmpty)
+        if (parsed.IsEmpty)
             return;
 
-        if (!_lookup.TryGetValue(verbSpan, out var handlers))
+        if (!_lookup.TryGetValue(parsed.Verb, out var handlers))
             return;
 
-        var args = VerbExtractor.ExtractArgs(logSpan);
         foreach (var handler in handlers)
         {
             try
             {
-                handler.Handle(args, sourceLog, metadata);
+                handler.Handle(parsed.Args, sourceLog, metadata);
             }
             catch (Exception ex)
             {

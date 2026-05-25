@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Arda.Abstractions.Logs;
 using Arda.Ingest.Classification;
@@ -66,7 +67,10 @@ internal sealed class ChatLogSource : ILogLineSource
                 if (results is null) break;
 
                 foreach (var line in results)
+                {
+                    TryApplyBannerOffset(line.Log);
                     yield return line;
+                }
             }
         }
 
@@ -111,8 +115,72 @@ internal sealed class ChatLogSource : ILogLineSource
             }
 
             foreach (var line in results)
+            {
+                TryApplyBannerOffset(line.Log);
                 yield return line;
+            }
         }
+    }
+
+    // "Timezone Offset " is 16 chars; the value is -?H:mm:ss or -?HH:mm:ss (8–9 chars + trailing '.')
+    private const string TimezoneOffsetMarker = "Timezone Offset ";
+
+    /// <summary>
+    /// If the line is a chat login banner, extract the timezone offset and
+    /// apply it to the clock. This is an L0 concern: the clock needs the
+    /// offset before subsequent lines are classified. The banner line itself
+    /// uses the prior offset (acceptable — it's the first line of a session).
+    /// </summary>
+    private void TryApplyBannerOffset(string log)
+    {
+        if (log.Length < 5 || log[0] != '*')
+            return;
+
+        var span = log.AsSpan();
+        var markerIdx = span.IndexOf(TimezoneOffsetMarker.AsSpan(), StringComparison.Ordinal);
+        if (markerIdx < 0)
+            return;
+
+        var offsetStart = markerIdx + TimezoneOffsetMarker.Length;
+        var remaining = span[offsetStart..];
+
+        // Strip trailing '.' if present
+        if (remaining.Length > 0 && remaining[^1] == '.')
+            remaining = remaining[..^1];
+
+        if (TryParseOffset(remaining, out var offset))
+            _clock.SetOffset(offset);
+    }
+
+    private static bool TryParseOffset(ReadOnlySpan<char> s, out TimeSpan result)
+    {
+        result = default;
+
+        var negative = false;
+        if (s.Length > 0 && s[0] == '-')
+        {
+            negative = true;
+            s = s[1..];
+        }
+
+        // Expected: H:mm:ss or HH:mm:ss
+        var firstColon = s.IndexOf(':');
+        if (firstColon < 1) return false;
+
+        if (!int.TryParse(s[..firstColon], NumberStyles.None, CultureInfo.InvariantCulture, out var hours))
+            return false;
+
+        s = s[(firstColon + 1)..];
+        if (s.Length < 5 || s[2] != ':') return false;
+
+        if (!int.TryParse(s[..2], NumberStyles.None, CultureInfo.InvariantCulture, out var minutes))
+            return false;
+        if (!int.TryParse(s[3..5], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds))
+            return false;
+
+        result = new TimeSpan(hours, minutes, seconds);
+        if (negative) result = result.Negate();
+        return true;
     }
 
     private string[] GetOrderedChatFiles()

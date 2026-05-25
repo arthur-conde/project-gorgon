@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Arda.Hosting;
 using Arda.World.Player;
 using Mithril.Shared.Audio;
@@ -118,7 +119,13 @@ public static class ShellComposition
         // Uses the game root as log directory (Player.log + ChatLogs/).
         services
             .AddArda(new ArdaOptions(o.GameConfig.GameRoot))
-            .AddPlayerWorld();
+            .AddPlayerWorld(sp =>
+            {
+                var refData = sp.GetRequiredService<IReferenceDataService>();
+                var keys = refData.ItemsByInternalName.Keys;
+                var identity = keys.ToFrozenDictionary(k => k, k => k, StringComparer.Ordinal);
+                return new Arda.Dispatch.InternPool(identity);
+            });
 
         services.AddHostedService<ArdaDiagnosticBridge>();
 

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Arda.World.Chat</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Arda.Dispatch\Arda.Dispatch.csproj" />
+    <ProjectReference Include="..\Arda.Hosting\Arda.Hosting.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Arda.World.Chat.Tests" />
+  </ItemGroup>
+
+</Project>

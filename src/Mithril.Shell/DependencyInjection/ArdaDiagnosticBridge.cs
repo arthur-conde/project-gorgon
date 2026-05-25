@@ -15,7 +15,7 @@ internal sealed class ArdaDiagnosticBridge : IHostedService
 {
     private readonly IDomainEventBus _bus;
     private readonly IDiagnosticsSink _diag;
-    private IDisposable? _areaChangedSub;
+    private readonly List<IDisposable> _subscriptions = [];
 
     public ArdaDiagnosticBridge(IDomainEventBus bus, IDiagnosticsSink diag)
     {
@@ -25,21 +25,50 @@ internal sealed class ArdaDiagnosticBridge : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _areaChangedSub = _bus.Subscribe<AreaChanged>(e =>
+        _subscriptions.Add(_bus.Subscribe<AreaChanged>(e =>
         {
             var replay = e.Metadata.IsReplay ? " [replay]" : "";
             _diag.Write(
                 DiagnosticLevel.Info,
                 "Arda.Map",
                 $"Area changed: {e.PreviousArea ?? "(none)"} → {e.CurrentArea ?? "(none)"}{replay}");
-        });
+        }));
+
+        _subscriptions.Add(_bus.Subscribe<InventoryItemAdded>(e =>
+        {
+            var replay = e.Metadata.IsReplay ? " [replay]" : "";
+            _diag.Write(
+                DiagnosticLevel.Trace,
+                "Arda.Inventory",
+                $"+{e.InternalName} ({e.InstanceId}){replay}");
+        }));
+
+        _subscriptions.Add(_bus.Subscribe<InventoryItemRemoved>(e =>
+        {
+            var replay = e.Metadata.IsReplay ? " [replay]" : "";
+            _diag.Write(
+                DiagnosticLevel.Trace,
+                "Arda.Inventory",
+                $"-{e.InternalName} ({e.InstanceId}){replay}");
+        }));
+
+        _subscriptions.Add(_bus.Subscribe<InventoryItemUpdated>(e =>
+        {
+            var replay = e.Metadata.IsReplay ? " [replay]" : "";
+            _diag.Write(
+                DiagnosticLevel.Trace,
+                "Arda.Inventory",
+                $"~{e.InstanceId} stack {e.PreviousStackSize}→{e.NewStackSize}{replay}");
+        }));
 
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        _areaChangedSub?.Dispose();
+        foreach (var sub in _subscriptions)
+            sub.Dispose();
+        _subscriptions.Clear();
         return Task.CompletedTask;
     }
 }

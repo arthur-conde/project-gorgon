@@ -33,9 +33,8 @@ internal sealed class WorldDriver : IWorldDriver
                 _onLiveTransition!();
             }
 
-            var logSpan = line.Log.AsSpan();
-            var verbSpan = VerbExtractor.Extract(logSpan);
-            _dispatch.Dispatch(verbSpan, logSpan, line.Log, line.Metadata);
+            var parsed = VerbExtractor.Parse(line.Log.AsSpan());
+            _dispatch.Dispatch(parsed, line.Log, line.Metadata);
         }
 
         if (!liveSignalled)

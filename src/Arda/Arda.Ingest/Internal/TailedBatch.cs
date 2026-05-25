@@ -10,8 +10,13 @@ namespace Arda.Ingest.Internal;
 /// after processing via <see cref="Dispose"/>. Lines are represented as start/length
 /// pairs into the buffer — no per-line string allocation occurs at this layer.
 /// </para>
+/// <para>
+/// This is a <c>ref struct</c> — the compiler prevents boxing, field storage, and
+/// lambda capture. The only safe consumption pattern is <c>try/finally</c> with
+/// <see cref="Dispose"/> in the finally block.
+/// </para>
 /// </summary>
-internal struct TailedBatch : IDisposable
+internal ref struct TailedBatch
 {
     /// <summary>The pooled char buffer containing decoded UTF-8 text.</summary>
     public char[] Buffer { get; init; }

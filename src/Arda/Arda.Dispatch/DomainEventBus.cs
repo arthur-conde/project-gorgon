@@ -92,7 +92,12 @@ internal sealed class DomainEventBus : IDomainEventBus
 
         internal sealed class Subscription(SubscriptionList<T> list, Action<T> handler) : IDisposable
         {
-            public void Dispose() => list.Remove(handler);
+            private int _disposed;
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                    list.Remove(handler);
+            }
         }
     }
 }

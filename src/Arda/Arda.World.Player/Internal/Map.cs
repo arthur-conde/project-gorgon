@@ -12,14 +12,19 @@ namespace Arda.World.Player.Internal;
 /// Registered for both <see cref="Verbs.LoadingLevel"/> and <see cref="Verbs.InitializingArea"/>.
 /// Differentiates by args format: InitializingArea args start with '(' (the instance id).
 /// </para>
+/// <para>
+/// <c>_pendingArea</c> is a loading-in-progress indicator only; <c>InitializingArea</c>
+/// carries the authoritative area key. The two-phase model is "LOADING_LEVEL suppresses /
+/// signals load; InitializingArea resolves."
+/// </para>
 /// </summary>
 internal sealed class Map : IFrameHandler, IAreaState
 {
-    private static readonly HashSet<string> NonAreaKeys = new(StringComparer.Ordinal)
-    {
+    private static readonly string[] NonAreaKeys =
+    [
         "ChooseCharacter",
         "ReconnectToServer"
-    };
+    ];
 
     private readonly IDomainEventBus _bus;
     private readonly InternPool _areaPool;
@@ -62,8 +67,10 @@ internal sealed class Map : IFrameHandler, IAreaState
     {
         // Format: "(502934): AreaSerbule" — extract the area key after ": "
         var colonSpace = args.IndexOf(": ");
-        var areaSpan = colonSpace >= 0 ? args[(colonSpace + 2)..] : args;
+        if (colonSpace < 0)
+            return;
 
+        var areaSpan = args[(colonSpace + 2)..];
         if (areaSpan.IsEmpty)
             return;
 
@@ -75,6 +82,9 @@ internal sealed class Map : IFrameHandler, IAreaState
     private void SetArea(string? newArea, LogLineMetadata metadata)
     {
         var previous = CurrentArea;
+        if (string.Equals(previous, newArea, StringComparison.Ordinal))
+            return;
+
         CurrentArea = newArea;
         _bus.Publish(new AreaChanged(previous, newArea, metadata));
     }

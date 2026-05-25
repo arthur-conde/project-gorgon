@@ -27,7 +27,6 @@ namespace Arda.Ingest.Classification;
 internal sealed class LineClassifier
 {
     private readonly ILogSourceClock _clock;
-    private DateTimeOffset _lastKnownTimestamp;
 
     public LineClassifier(ILogSourceClock clock)
     {
@@ -45,7 +44,6 @@ internal sealed class LineClassifier
 
         if (result.HasTimestamp)
         {
-            _lastKnownTimestamp = result.Timestamp!.Value;
             var strippedText = line[result.ConsumedLength..].ToString();
 
             return new ClassifiedLine(

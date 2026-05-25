@@ -50,6 +50,10 @@ internal sealed class ChatLogClock : ILogSourceClock
             !int.TryParse(line[15..17], NumberStyles.None, null, out var second))
             return ClockResult.None;
 
+        if (month < 1 || month > 12 || day < 1 || day > 31 ||
+            hour > 23 || minute > 59 || second > 59)
+            return ClockResult.None;
+
         var localDateTime = new DateTime(2000 + year, month, day, hour, minute, second);
 
         var offset = _overrideOffset ?? _timeZone.GetUtcOffset(localDateTime);
@@ -68,9 +72,11 @@ internal sealed class ChatLogClock : ILogSourceClock
     }
 
     /// <summary>
-    /// Override the UTC offset used for timestamp conversion. Called when
-    /// the coordinator observes a login banner with a <c>Timezone Offset</c>
-    /// field, ensuring replay of logs from different timezones is correct.
+    /// Override the UTC offset used for timestamp conversion. Called by
+    /// <see cref="Coordinator.ChatLogSource"/> when it observes a login banner
+    /// with a <c>Timezone Offset</c> field. This is an L0 concern: the offset
+    /// is a clock-calibration signal extracted at the source layer before
+    /// lines enter the classifier.
     /// </summary>
     internal void SetOffset(TimeSpan utcOffset)
     {
