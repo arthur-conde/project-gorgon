@@ -26,10 +26,10 @@ internal static class VerbExtractor
         }
 
         if (log.StartsWith("LOADING LEVEL"))
-            return "LOADING_LEVEL";
+            return Verbs.LoadingLevel;
 
         if (log.StartsWith("!!! Initializing area!"))
-            return "InitializingArea";
+            return Verbs.InitializingArea;
 
         return ReadOnlySpan<char>.Empty;
     }

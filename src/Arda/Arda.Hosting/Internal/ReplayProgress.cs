@@ -3,9 +3,8 @@ using System.ComponentModel;
 namespace Arda.Hosting.Internal;
 
 /// <summary>
-/// Tracks replay progress across source families. Each driver calls
-/// <see cref="ReportProgress"/> and <see cref="MarkComplete"/> as it
-/// processes historical data and catches up to live tailing.
+/// Tracks replay completion across source families. Each driver signals
+/// <see cref="MarkComplete"/> when IsReplay transitions to false.
 /// </summary>
 internal sealed class ReplayProgress : IReplayProgress
 {
@@ -42,22 +41,6 @@ internal sealed class ReplayProgress : IReplayProgress
     public Task ReplayComplete => _replayComplete.Task;
 
     public event PropertyChangedEventHandler? PropertyChanged;
-
-    /// <summary>
-    /// Report progress for a source family. <paramref name="fraction"/> is 0.0–1.0.
-    /// </summary>
-    public void ReportProgress(SourceFamily family, double fraction)
-    {
-        switch (family)
-        {
-            case SourceFamily.Player:
-                PlayerProgress = Math.Clamp(fraction, 0.0, 1.0);
-                break;
-            case SourceFamily.Chat:
-                ChatProgress = Math.Clamp(fraction, 0.0, 1.0);
-                break;
-        }
-    }
 
     /// <summary>
     /// Signal that a source family has completed replay (IsReplay flipped to false).

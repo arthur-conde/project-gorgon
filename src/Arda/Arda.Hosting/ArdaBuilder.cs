@@ -1,5 +1,6 @@
 using Arda.Dispatch;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Hosting;
 
@@ -60,6 +61,7 @@ public sealed class ArdaBuilder
         foreach (var registration in _registrations)
             registration(sp, registry);
 
-        return new DispatchTable(registry);
+        var logger = sp.GetRequiredService<ILogger<DispatchTable>>();
+        return new DispatchTable(registry, logger);
     }
 }

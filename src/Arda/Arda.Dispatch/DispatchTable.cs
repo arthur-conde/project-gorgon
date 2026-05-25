@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using Arda.Abstractions.Logs;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Dispatch;
 
@@ -12,18 +13,21 @@ internal sealed class DispatchTable
 {
     private readonly FrozenDictionary<string, IFrameHandler[]> _handlers;
     private readonly FrozenDictionary<string, IFrameHandler[]>.AlternateLookup<ReadOnlySpan<char>> _lookup;
+    private readonly ILogger<DispatchTable> _logger;
 
-    public DispatchTable(Dictionary<string, List<IFrameHandler>> registry)
+    public DispatchTable(Dictionary<string, List<IFrameHandler>> registry, ILogger<DispatchTable> logger)
     {
         _handlers = registry.ToFrozenDictionary(
             kvp => kvp.Key,
             kvp => kvp.Value.ToArray());
         _lookup = _handlers.GetAlternateLookup<ReadOnlySpan<char>>();
+        _logger = logger;
     }
 
     /// <summary>
     /// Dispatch a line to registered handlers. If no handler is registered for the
-    /// verb, the line is silently discarded (zero allocation).
+    /// verb, the line is silently discarded (zero allocation). A throwing handler
+    /// is caught and logged — it does not prevent subsequent handlers from executing.
     /// </summary>
     public void Dispatch(ReadOnlySpan<char> verbSpan, ReadOnlySpan<char> logSpan, string sourceLog, LogLineMetadata metadata)
     {
@@ -35,6 +39,15 @@ internal sealed class DispatchTable
 
         var args = VerbExtractor.ExtractArgs(logSpan);
         foreach (var handler in handlers)
-            handler.Handle(args, sourceLog, metadata);
+        {
+            try
+            {
+                handler.Handle(args, sourceLog, metadata);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Handler {Handler} threw on verb dispatch", handler.GetType().Name);
+            }
+        }
     }
 }

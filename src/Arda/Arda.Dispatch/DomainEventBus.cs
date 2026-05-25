@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Dispatch;
 
@@ -7,13 +8,19 @@ namespace Arda.Dispatch;
 /// in a copy-on-write list for thread-safe enumeration during publish.
 /// <para>
 /// Publish is synchronous — subscribers execute inline on the driver thread.
-/// This is intentional: it keeps dispatch deterministic and avoids cross-thread
-/// coordination for state machine updates.
+/// A throwing subscriber is caught and logged; it does not prevent remaining
+/// subscribers from receiving the event.
 /// </para>
 /// </summary>
 internal sealed class DomainEventBus : IDomainEventBus
 {
     private readonly ConcurrentDictionary<Type, object> _subscriptions = new();
+    private readonly ILogger<DomainEventBus> _logger;
+
+    public DomainEventBus(ILogger<DomainEventBus> logger)
+    {
+        _logger = logger;
+    }
 
     public IDisposable Subscribe<T>(Action<T> handler) where T : struct
     {
@@ -26,7 +33,7 @@ internal sealed class DomainEventBus : IDomainEventBus
     public void Publish<T>(T domainEvent) where T : struct
     {
         if (_subscriptions.TryGetValue(typeof(T), out var obj))
-            ((SubscriptionList<T>)obj).Publish(domainEvent);
+            ((SubscriptionList<T>)obj).Publish(domainEvent, _logger);
     }
 
     private sealed class SubscriptionList<T> where T : struct
@@ -67,11 +74,20 @@ internal sealed class DomainEventBus : IDomainEventBus
             }
         }
 
-        public void Publish(T domainEvent)
+        public void Publish(T domainEvent, ILogger logger)
         {
             var snapshot = _handlers;
             foreach (var handler in snapshot)
-                handler(domainEvent);
+            {
+                try
+                {
+                    handler(domainEvent);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Subscriber threw handling {EventType}", typeof(T).Name);
+                }
+            }
         }
 
         internal sealed class Subscription(SubscriptionList<T> list, Action<T> handler) : IDisposable

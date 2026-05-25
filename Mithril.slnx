@@ -60,5 +60,6 @@
     <Project Path="tests/Silmarillion.Tests/Silmarillion.Tests.csproj" />
     <Project Path="tests/Smaug.Tests/Smaug.Tests.csproj" />
     <Project Path="tests/Arda.Ingest.Tests/Arda.Ingest.Tests.csproj" />
+    <Project Path="tests/Arda.Dispatch.Tests/Arda.Dispatch.Tests.csproj" />
   </Folder>
 </Solution>
