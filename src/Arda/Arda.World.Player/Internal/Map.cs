@@ -20,12 +20,6 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class Map : IFrameHandler, IAreaState
 {
-    private static readonly string[] NonAreaKeys =
-    [
-        "ChooseCharacter",
-        "ReconnectToServer"
-    ];
-
     private readonly IDomainEventBus _bus;
     private readonly InternPool _areaPool;
     private string? _pendingArea;
@@ -89,13 +83,5 @@ internal sealed class Map : IFrameHandler, IAreaState
         _bus.Publish(new AreaChanged(previous, newArea, metadata));
     }
 
-    private static bool IsNonAreaKey(ReadOnlySpan<char> args)
-    {
-        foreach (var key in NonAreaKeys)
-        {
-            if (args.SequenceEqual(key))
-                return true;
-        }
-        return false;
-    }
+    private static bool IsNonAreaKey(ReadOnlySpan<char> args) => WellKnownArgs.IsNonAreaKey(args);
 }

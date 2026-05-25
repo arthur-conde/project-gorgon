@@ -14,8 +14,6 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class StateResetHandler : IFrameHandler
 {
-    private static readonly string[] NonAreaKeys = ["ChooseCharacter", "ReconnectToServer"];
-
     private readonly Inventory _inventory;
     private readonly Player _player;
     private readonly Npc _npc;
@@ -29,7 +27,7 @@ internal sealed class StateResetHandler : IFrameHandler
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
-        if (args.IsEmpty || IsNonAreaKey(args))
+        if (args.IsEmpty || WellKnownArgs.IsNonAreaKey(args))
         {
             _inventory.Reset();
             _player.Reset();
@@ -40,15 +38,5 @@ internal sealed class StateResetHandler : IFrameHandler
             // Area transition: only Npc needs clearing (stale interaction context)
             _npc.Reset();
         }
-    }
-
-    private static bool IsNonAreaKey(ReadOnlySpan<char> args)
-    {
-        foreach (var key in NonAreaKeys)
-        {
-            if (args.SequenceEqual(key))
-                return true;
-        }
-        return false;
     }
 }

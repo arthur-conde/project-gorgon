@@ -125,4 +125,21 @@ public class DomainEventBusTests
         var act = () => sub.Dispose();
         act.Should().NotThrow();
     }
+
+    [Fact]
+    public void Dispose_Idempotent_DoesNotRemoveOtherSubscription()
+    {
+        var received = new List<int>();
+        Action<TestEvent> handler = e => received.Add(e.Value);
+
+        var sub1 = _bus.Subscribe(handler);
+        var sub2 = _bus.Subscribe(handler);
+
+        sub1.Dispose();
+        sub1.Dispose(); // second dispose must be a no-op
+
+        _bus.Publish(new TestEvent(42));
+
+        received.Should().ContainSingle().Which.Should().Be(42);
+    }
 }

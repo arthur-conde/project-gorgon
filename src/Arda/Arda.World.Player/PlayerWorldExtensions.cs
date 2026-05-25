@@ -85,6 +85,9 @@ public static class PlayerWorldExtensions
             var player = sp.GetRequiredService<Internal.Player>();
             var npc = sp.GetRequiredService<Npc>();
 
+            // Order matters: Map must run before StateResetHandler for LOADING_LEVEL.
+            // Map clears CurrentArea; StateResetHandler then resets downstream state.
+            // DispatchTable preserves insertion order within a verb's handler list.
             RegisterHandler(registry, Verbs.LoadingLevel, new StateResetHandler(inventory, player, npc));
 
             RegisterHandler(registry, Verbs.ProcessAddItem, new AddItemHandler(inventory));
