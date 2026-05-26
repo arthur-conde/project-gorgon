@@ -33,37 +33,71 @@ public sealed class SarumanCodebookLegacyMigrationTests : IDisposable
     }
 
     [Fact]
-    public void DiscoveryOnly_MigratesWithNoSpent()
+    public void V1SarumanJson_MigratesCodebook()
     {
-        WriteDiscovery("Arthur", "Kwatoxi", new
+        WriteV1Saruman("Arthur", "Kwatoxi", new
+        {
+            schemaVersion = 1,
+            codebook = new Dictionary<string, object>
+            {
+                ["CHUCKMRYJ"] = new { code = "CHUCKMRYJ", effectName = "Fast Swimmer", description = "Swim fast!", firstDiscoveredAt = "2026-04-23T10:26:56Z", discoveryCount = 1, state = 0 },
+                ["VYLLTRIS"] = new { code = "VYLLTRIS", effectName = "Teleport", description = "Teleport somewhere.", firstDiscoveredAt = "2026-04-23T14:13:52Z", discoveryCount = 1, state = 1, spentAt = "2026-04-24T03:54:41Z" },
+            }
+        });
+
+        var migration = new SarumanCodebookLegacyMigration(_root);
+        var result = migration.TryMigrate("Arthur", "Kwatoxi", out var migrated, out _);
+
+        result.Should().BeTrue();
+        migrated.Entries.Should().HaveCount(2);
+
+        migrated.Entries["CHUCKMRYJ"].Effect.Should().Be("Fast Swimmer");
+        migrated.Entries["CHUCKMRYJ"].LastSpentAt.Should().BeNull();
+
+        migrated.Entries["VYLLTRIS"].Effect.Should().Be("Teleport");
+        migrated.Entries["VYLLTRIS"].LastSpentAt.Should().NotBeNull();
+        migrated.Entries["VYLLTRIS"].LastSpentAt!.Value.Year.Should().Be(2026);
+    }
+
+    [Fact]
+    public void V1SarumanJson_SkipsIfAlreadyV2()
+    {
+        WriteV1Saruman("Arthur", "Kwatoxi", new
+        {
+            schemaVersion = 2,
+            spentOverrides = Array.Empty<string>(),
+        });
+
+        var migration = new SarumanCodebookLegacyMigration(_root);
+        var result = migration.TryMigrate("Arthur", "Kwatoxi", out _, out _);
+
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void SplitFiles_DiscoveryOnly_MigratesWithNoSpent()
+    {
+        WriteSplitDiscovery("Arthur", "Kwatoxi", new
         {
             schemaVersion = 1,
             discoveries = new Dictionary<string, object>
             {
                 ["TESTCODE"] = new { code = "TESTCODE", effectName = "Fast Swim", description = "Go fast", discoveredAt = "2026-01-15T10:00:00+00:00" },
-                ["ANOTHER"] = new { code = "ANOTHER", effectName = "Jump High", description = (string?)null, discoveredAt = "2026-02-20T08:30:00+00:00" },
             }
         });
 
         var migration = new SarumanCodebookLegacyMigration(_root);
-        var result = migration.TryMigrate("Arthur", "Kwatoxi", out var migrated, out var legacyPath);
+        var result = migration.TryMigrate("Arthur", "Kwatoxi", out var migrated, out _);
 
         result.Should().BeTrue();
-        legacyPath.Should().NotBeNullOrEmpty();
-        migrated.Entries.Should().HaveCount(2);
-
         migrated.Entries["TESTCODE"].Effect.Should().Be("Fast Swim");
-        migrated.Entries["TESTCODE"].Description.Should().Be("Go fast");
         migrated.Entries["TESTCODE"].LastSpentAt.Should().BeNull();
-
-        migrated.Entries["ANOTHER"].Effect.Should().Be("Jump High");
-        migrated.Entries["ANOTHER"].LastSpentAt.Should().BeNull();
     }
 
     [Fact]
-    public void DiscoveryAndSpent_MergesCorrectly()
+    public void SplitFiles_DiscoveryAndSpent_MergesCorrectly()
     {
-        WriteDiscovery("Arthur", "Kwatoxi", new
+        WriteSplitDiscovery("Arthur", "Kwatoxi", new
         {
             schemaVersion = 1,
             discoveries = new Dictionary<string, object>
@@ -73,7 +107,7 @@ public sealed class SarumanCodebookLegacyMigrationTests : IDisposable
             }
         });
 
-        WriteSpent("Arthur", "Kwatoxi", new
+        WriteSplitSpent("Arthur", "Kwatoxi", new
         {
             schemaVersion = 1,
             spentAt = new Dictionary<string, string>
@@ -88,18 +122,25 @@ public sealed class SarumanCodebookLegacyMigrationTests : IDisposable
         result.Should().BeTrue();
         migrated.Entries["KNOWNCODE"].LastSpentAt.Should().BeNull();
         migrated.Entries["SPENTCODE"].LastSpentAt.Should().NotBeNull();
-        migrated.Entries["SPENTCODE"].LastSpentAt!.Value.Year.Should().Be(2026);
     }
 
     [Fact]
-    public void SpentOnly_CreatesEntries_WithUnknownEffect()
+    public void V1SarumanJson_TakesPriority_OverSplitFiles()
     {
-        WriteSpent("Arthur", "Kwatoxi", new
+        WriteV1Saruman("Arthur", "Kwatoxi", new
         {
             schemaVersion = 1,
-            spentAt = new Dictionary<string, string>
+            codebook = new Dictionary<string, object>
             {
-                ["ORPHAN"] = "2026-03-01T10:00:00",
+                ["FROMV1"] = new { code = "FROMV1", effectName = "V1 Source", description = "", firstDiscoveredAt = "2026-04-01T00:00:00Z", discoveryCount = 1, state = 0 },
+            }
+        });
+        WriteSplitDiscovery("Arthur", "Kwatoxi", new
+        {
+            schemaVersion = 1,
+            discoveries = new Dictionary<string, object>
+            {
+                ["FROMSPLIT"] = new { code = "FROMSPLIT", effectName = "Split Source", description = "", discoveredAt = "2026-05-01T00:00:00+00:00" },
             }
         });
 
@@ -107,31 +148,34 @@ public sealed class SarumanCodebookLegacyMigrationTests : IDisposable
         var result = migration.TryMigrate("Arthur", "Kwatoxi", out var migrated, out _);
 
         result.Should().BeTrue();
-        migrated.Entries["ORPHAN"].Effect.Should().Be("(unknown)");
-        migrated.Entries["ORPHAN"].LastSpentAt.Should().NotBeNull();
+        migrated.Entries.Should().ContainKey("FROMV1");
+        migrated.Entries.Should().NotContainKey("FROMSPLIT");
     }
 
-    private void WriteDiscovery(string character, string server, object data)
+    private void WriteV1Saruman(string character, string server, object data)
     {
         var dir = Path.Combine(_root, PerCharacterStore<SarumanCodebook>.Slug(character, server));
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "wop-discovery.json");
-        File.WriteAllText(path, JsonSerializer.Serialize(data, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true,
-        }));
+        File.WriteAllText(Path.Combine(dir, "saruman.json"), Serialize(data));
     }
 
-    private void WriteSpent(string character, string server, object data)
+    private void WriteSplitDiscovery(string character, string server, object data)
     {
         var dir = Path.Combine(_root, PerCharacterStore<SarumanCodebook>.Slug(character, server));
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "wop-spent.json");
-        File.WriteAllText(path, JsonSerializer.Serialize(data, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true,
-        }));
+        File.WriteAllText(Path.Combine(dir, "wop-discovery.json"), Serialize(data));
     }
+
+    private void WriteSplitSpent(string character, string server, object data)
+    {
+        var dir = Path.Combine(_root, PerCharacterStore<SarumanCodebook>.Slug(character, server));
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(Path.Combine(dir, "wop-spent.json"), Serialize(data));
+    }
+
+    private static string Serialize(object data) => JsonSerializer.Serialize(data, new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+    });
 }

@@ -6,14 +6,18 @@ using Mithril.Shared.Character;
 namespace Saruman.State;
 
 /// <summary>
-/// Recovers the Word-of-Power codebook from the old two-file per-character
-/// layout (<c>wop-discovery.json</c> + <c>wop-spent.json</c>) produced by the
-/// pre-Arda <c>PlayerWordOfPowerDiscoveryStateService</c> and
-/// <c>WordOfPowerView</c>. Merges both into a unified <see cref="SarumanCodebook"/>.
+/// Recovers the Word-of-Power codebook from legacy per-character data.
+/// Two source formats are checked in priority order:
 ///
-/// <para>The old files live in the same character directory
-/// (<c>characters/{slug}/</c>) as the new <c>saruman-codebook.json</c>. On
-/// successful migration the store deletes the legacy files.</para>
+/// <list type="number">
+///   <item><b>V1 saruman.json</b> — the pre-#603 format that embedded the codebook
+///   directly in <c>saruman.json</c> as a <c>codebook</c> field.</item>
+///   <item><b>wop-discovery.json + wop-spent.json</b> — the intermediate #603 split
+///   format (may never have been created for users who jumped straight from pre-#603
+///   to post-Arda).</item>
+/// </list>
+///
+/// <para>On successful migration the store deletes the source file(s).</para>
 /// </summary>
 public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCodebook>
 {
@@ -29,7 +33,55 @@ public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCod
         migrated = new SarumanCodebook();
         legacyPath = "";
 
-        var charDir = Path.Combine(_charactersRootDir, PerCharacterStore<SarumanCodebook>.Slug(character, server));
+        var slug = PerCharacterStore<SarumanCodebook>.Slug(character, server);
+
+        // Strategy 1: V1 saruman.json with embedded codebook field
+        if (TryMigrateFromV1Saruman(slug, out migrated, out legacyPath))
+            return true;
+
+        // Strategy 2: Intermediate wop-discovery.json + wop-spent.json split
+        if (TryMigrateFromSplitFiles(slug, out migrated, out legacyPath))
+            return true;
+
+        return false;
+    }
+
+    private bool TryMigrateFromV1Saruman(string slug, out SarumanCodebook migrated, out string legacyPath)
+    {
+        migrated = new SarumanCodebook();
+        legacyPath = "";
+
+        var path = Path.Combine(_charactersRootDir, slug, "saruman.json");
+        var v1State = TryReadV1Saruman(path);
+        if (v1State?.Codebook is null || v1State.Codebook.Count == 0)
+            return false;
+
+        foreach (var (code, entry) in v1State.Codebook)
+        {
+            DateTimeOffset? lastSpent = null;
+            if (entry.State == 1 && entry.SpentAt is not null)
+                lastSpent = entry.SpentAt.Value;
+
+            migrated.Entries[code] = new SarumanCodebook.CodebookEntry
+            {
+                Code = entry.Code ?? code,
+                Effect = entry.EffectName ?? "",
+                Description = entry.Description,
+                DiscoveredAt = entry.FirstDiscoveredAt,
+                LastSpentAt = lastSpent,
+            };
+        }
+
+        // Don't offer saruman.json for cleanup — PerCharacterStore<SarumanState> still uses it.
+        return true;
+    }
+
+    private bool TryMigrateFromSplitFiles(string slug, out SarumanCodebook migrated, out string legacyPath)
+    {
+        migrated = new SarumanCodebook();
+        legacyPath = "";
+
+        var charDir = Path.Combine(_charactersRootDir, slug);
         var discoveryPath = Path.Combine(charDir, "wop-discovery.json");
         var spentPath = Path.Combine(charDir, "wop-spent.json");
 
@@ -61,7 +113,6 @@ public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCod
             }
         }
 
-        // Spent codes that aren't in discovery (shouldn't happen, but defensive)
         if (spent is not null)
         {
             foreach (var (code, spentAt) in spent.SpentAt)
@@ -80,6 +131,19 @@ public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCod
 
         legacyPath = discoveryPath;
         return true;
+    }
+
+    private static LegacyV1SarumanState? TryReadV1Saruman(string? path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+        try
+        {
+            using var stream = File.OpenRead(path);
+            var state = JsonSerializer.Deserialize(stream, LegacyV1SarumanJsonContext.Default.LegacyV1SarumanState);
+            if (state is null || state.SchemaVersion > 1) return null;
+            return state;
+        }
+        catch { return null; }
     }
 
     private static LegacyDiscoveryState? TryReadDiscovery(string path)
@@ -107,6 +171,25 @@ public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCod
 
 // ── Legacy DTOs (read-only, for migration) ─────────────────────────────────
 
+/// <summary>Pre-#603 saruman.json with embedded codebook.</summary>
+internal sealed class LegacyV1SarumanState
+{
+    public int SchemaVersion { get; set; }
+    public Dictionary<string, LegacyV1CodebookEntry>? Codebook { get; set; }
+}
+
+internal sealed class LegacyV1CodebookEntry
+{
+    public string? Code { get; set; }
+    public string? EffectName { get; set; }
+    public string? Description { get; set; }
+    public DateTimeOffset FirstDiscoveredAt { get; set; }
+    public int DiscoveryCount { get; set; }
+    public int State { get; set; }
+    public DateTimeOffset? SpentAt { get; set; }
+}
+
+/// <summary>Intermediate #603 split: wop-discovery.json.</summary>
 internal sealed class LegacyDiscoveryState
 {
     public int SchemaVersion { get; set; }
@@ -121,11 +204,16 @@ internal sealed class LegacyDiscoveryRecord
     public DateTimeOffset DiscoveredAt { get; set; }
 }
 
+/// <summary>Intermediate #603 split: wop-spent.json.</summary>
 internal sealed class LegacySpentState
 {
     public int SchemaVersion { get; set; }
     public Dictionary<string, DateTime> SpentAt { get; set; } = new(StringComparer.Ordinal);
 }
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(LegacyV1SarumanState))]
+internal partial class LegacyV1SarumanJsonContext : JsonSerializerContext;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LegacyDiscoveryState))]
