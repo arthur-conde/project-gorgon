@@ -38,11 +38,23 @@ public sealed partial class SarumanCodebookService : IDisposable
     public SarumanCodebookService(
         string filePath,
         ISessionComposer session,
-        IDomainEventSubscriber events)
+        IDomainEventSubscriber events,
+        SarumanCodebookLegacyMigration? legacyMigration = null)
     {
         _filePath = filePath;
         _session = session;
         _codebook = Load(filePath);
+
+        if (_codebook.Entries.Count == 0 && legacyMigration is not null)
+        {
+            var recovered = legacyMigration.RecoverAll();
+            if (recovered.Count > 0)
+            {
+                _codebook.Entries.AddRange(recovered);
+                Save();
+            }
+        }
+
         _discoverSub = events.Subscribe<WordOfPowerDiscovered>(OnDiscovered);
         _chatLineSub = events.Subscribe<PlayerChatLine>(OnChatLine);
     }
@@ -51,27 +63,21 @@ public sealed partial class SarumanCodebookService : IDisposable
     public event EventHandler? CodebookChanged;
 
     /// <summary>
-    /// Codebook entries for the active server, keyed by code (case-insensitive).
-    /// Empty when no server is known.
+    /// All codebook entries keyed by code (case-insensitive). When entries exist
+    /// on multiple servers, all are included. Server filtering is handled at the
+    /// view layer via the query bar.
     /// </summary>
     public IReadOnlyDictionary<string, SarumanCodebook.CodebookEntry> Entries
     {
         get
         {
-            var server = _session.Current?.Server;
-            if (server is null) return EmptyEntries;
-
             lock (_lock)
             {
                 return _codebook.Entries
-                    .Where(e => string.Equals(e.Server, server, StringComparison.OrdinalIgnoreCase))
                     .ToDictionary(e => e.Code, e => e, StringComparer.OrdinalIgnoreCase);
             }
         }
     }
-
-    private static readonly IReadOnlyDictionary<string, SarumanCodebook.CodebookEntry> EmptyEntries =
-        new Dictionary<string, SarumanCodebook.CodebookEntry>();
 
     private void OnDiscovered(WordOfPowerDiscovered evt)
     {

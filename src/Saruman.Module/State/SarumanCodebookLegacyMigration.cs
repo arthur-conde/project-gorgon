@@ -1,7 +1,6 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.Hosting;
 
 namespace Saruman.State;
 
@@ -38,6 +37,7 @@ public sealed class SarumanCodebookLegacyMigration
         {
             var slug = Path.GetFileName(charDir);
             var server = ExtractServer(slug);
+
             if (server is null) continue;
 
             if (TryRecoverFromV1(charDir, server, entries))
@@ -63,6 +63,7 @@ public sealed class SarumanCodebookLegacyMigration
     {
         var path = Path.Combine(charDir, "saruman.json");
         var v1 = TryReadV1Saruman(path);
+
         if (v1?.Codebook is null || v1.Codebook.Count == 0)
             return false;
 
@@ -174,23 +175,6 @@ public sealed class SarumanCodebookLegacyMigration
             return JsonSerializer.Deserialize(stream, LegacySpentJsonContext.Default.LegacySpentState);
         }
         catch { return null; }
-    }
-}
-
-/// <summary>
-/// Runs the legacy codebook migration once at startup and seeds recovered
-/// entries into <see cref="SarumanCodebookService"/>.
-/// </summary>
-public sealed class SarumanCodebookLegacyMigrationHost(
-    SarumanCodebookLegacyMigration migration,
-    SarumanCodebookService codebookService) : BackgroundService
-{
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
-    {
-        var entries = migration.RecoverAll();
-        if (entries.Count > 0)
-            codebookService.SeedFromLegacy(entries);
-        return Task.CompletedTask;
     }
 }
 

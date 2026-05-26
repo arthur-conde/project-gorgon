@@ -129,23 +129,21 @@ public sealed class SarumanCodebookServiceTests : IDisposable
     }
 
     [Fact]
-    public void DifferentServer_EntriesNotVisible()
+    public void EntriesVisible_RegardlessOfActiveServer()
     {
         Discover("SERVERCODE", "Effect", "");
-        _service.Entries.Should().ContainKey("SERVERCODE");
-
         _session.SetServer("OtherServer");
 
-        _service.Entries.Should().BeEmpty();
+        _service.Entries.Should().ContainKey("SERVERCODE");
     }
 
     [Fact]
-    public void NoServer_EntriesEmpty()
+    public void EntriesVisible_WhenNoSession()
     {
         Discover("NOSERVER", "Effect", "");
         _session.Clear();
 
-        _service.Entries.Should().BeEmpty();
+        _service.Entries.Should().ContainKey("NOSERVER");
     }
 
     [Fact]

@@ -39,10 +39,8 @@ public sealed class SarumanModule : IMithrilModule
         services.AddSingleton(sp => new SarumanCodebookService(
             codebookPath,
             sp.GetRequiredService<Arda.Composition.ISessionComposer>(),
-            sp.GetRequiredService<Arda.Dispatch.IDomainEventSubscriber>()));
-
-        services.AddSingleton(sp => new SarumanCodebookLegacyMigration(charactersRootDir));
-        services.AddHostedService<SarumanCodebookLegacyMigrationHost>();
+            sp.GetRequiredService<Arda.Dispatch.IDomainEventSubscriber>(),
+            new SarumanCodebookLegacyMigration(charactersRootDir)));
         services.AddSingleton<SarumanOverrideService>();
 
         services.AddSingleton<SarumanViewModel>();

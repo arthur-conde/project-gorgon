@@ -81,6 +81,12 @@
                       VerticalAlignment="Center" Margin="8,0,0,0"/>
         </StackPanel>
 
+        <!-- Query filter -->
+        <wpf:MithrilQueryBox DockPanel.Dock="Top" Margin="0,0,0,12"
+                             Grid="{Binding ElementName=CodebookGrid}"
+                             QueryText="{Binding QueryText, Mode=TwoWay}"
+                             Watermark="bare text, or e.g. Server = 'Project Gorgon' AND Effect CONTAINS 'fire'"/>
+
         <!-- Content area: empty state and codebook overlay the same cell so the
              empty panel can center against the full remaining space. -->
         <Grid>
@@ -103,7 +109,9 @@
             </StackPanel>
 
             <!-- Codebook grid -->
-            <wpf:MithrilDataGrid ItemsSource="{Binding WordsView}"
+            <wpf:MithrilDataGrid x:Name="CodebookGrid"
+                                ItemsSource="{Binding WordsView}"
+                                QueryText="{Binding QueryText, Mode=TwoWay}"
                                 Visibility="{Binding HasData, Converter={StaticResource BoolToVis}}"
                                 Mode="ReadOnly"
                                 CanUserSortColumns="False">
@@ -196,6 +204,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
+                <DataGridTextColumn Header="Server" Binding="{Binding Server}" Width="120"/>
                 <DataGridTextColumn Header="Discovered" Binding="{Binding FirstDiscoveredAt, StringFormat=g}" Width="130"/>
             </wpf:MithrilDataGrid.Columns>
             </wpf:MithrilDataGrid>

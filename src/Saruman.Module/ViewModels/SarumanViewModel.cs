@@ -55,6 +55,7 @@ public sealed partial class SarumanViewModel : ObservableObject
     public bool HasData => TrackedCount + SpentCount > 0;
 
     [ObservableProperty] private bool _hideSpent = true;
+    [ObservableProperty] private string? _queryText;
 
     /// <summary>
     /// One-time post-#603 migration banner (#686). Mirrors the active

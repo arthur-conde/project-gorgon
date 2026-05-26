@@ -14,6 +14,7 @@ public sealed partial class KnownWordRow : ObservableObject
     public KnownWordRow(SarumanCodebook.CodebookEntry e, bool userOverrideSpent)
     {
         Code = e.Code;
+        Server = e.Server;
         FirstDiscoveredAt = e.DiscoveredAt.DateTime;
         _effectName = e.Effect;
         _description = e.Description ?? "";
@@ -23,6 +24,7 @@ public sealed partial class KnownWordRow : ObservableObject
     }
 
     public string Code { get; }
+    public string Server { get; }
     public DateTime FirstDiscoveredAt { get; }
 
     [ObservableProperty] private string _effectName;
