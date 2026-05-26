@@ -17,6 +17,21 @@ public static class CompositionExtensions
             var bus = sp.GetRequiredService<IDomainEventBus>();
             return new InventoryComposer(bus);
         });
+
+        services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventBus>();
+            return new SessionComposer(bus);
+        });
+        services.AddSingleton<ISessionComposer>(sp => sp.GetRequiredService<SessionComposer>());
+
+        services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventBus>();
+            return new WordOfPowerComposer(bus);
+        });
+        services.AddSingleton<IWordOfPowerComposer>(sp => sp.GetRequiredService<WordOfPowerComposer>());
+
         return services;
     }
 }

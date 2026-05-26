@@ -1,15 +1,10 @@
+using Arda.Dispatch;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using Legolas.Domain;
 using Legolas.Flow;
-using Mithril.GameState.Areas;
-// Mithril.GameState.Inventory: PlayerInventoryRemoved (folder-emitted change
-// event on the PlayerWorld bus, not the retired IInventoryService shim).
-using Mithril.GameState.Inventory;
-using Mithril.GameState.Movement;
-using Mithril.GameState.Pins;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
 
 namespace Legolas.Services;
 
@@ -108,9 +103,9 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     // The @me/character-named pin (#497) is the player's own location (the
     // intended high-accuracy per-read path), so it ranks well above a generic
     // hand-placed map pin.
-    private static double Confidence(MotherlodePositionSource src, PlayerPositionSource? pos) => src switch
+    private static double Confidence(MotherlodePositionSource src, PositionSource? pos) => src switch
     {
-        MotherlodePositionSource.LogPosition => pos == PlayerPositionSource.Spawn ? 1.0 : 0.8,
+        MotherlodePositionSource.LogPosition => pos == PositionSource.Spawn ? 1.0 : 0.8,
         MotherlodePositionSource.NamedMapPin => 0.85,
         MotherlodePositionSource.MapPin => 0.6,
         MotherlodePositionSource.Gazetteer => 0.3,
@@ -121,7 +116,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     private readonly IMultilaterationSolver _solver;
     private readonly MotherlodeFlowController _flow;
     private readonly ICharacterPinAnchor? _characterPin;
-    private readonly IPlayerAreaState? _areaState;
+    private readonly IAreaState? _areaState;
     private readonly IDiagnosticsSink? _diag;
     private readonly IReferenceDataService? _refData;
     private readonly LegolasSettings? _settings;
@@ -155,7 +150,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     private readonly Stack<ReadUndo> _undo = new();
 
     // Latest feeder fix seen from a tracker (cross-thread; value-only).
-    private (WorldCoord World, MotherlodePositionSource Src, PlayerPositionSource? Pos, DateTimeOffset At)? _latestFix;
+    private (WorldCoord World, MotherlodePositionSource Src, PositionSource? Pos, DateTimeOffset At)? _latestFix;
 
     // The location currently accreting uses/distances, or null.
     private sealed class OpenLocation
@@ -174,13 +169,11 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     public MotherlodeMeasurementCoordinator(
         IMultilaterationSolver solver,
         MotherlodeFlowController flow,
-        IPlayerPositionTracker positionTracker,
-        IPlayerPinTracker pinTracker,
-        IPlayerWorld? playerWorld = null,
+        IDomainEventSubscriber bus,
         IReferenceDataService? refData = null,
         LegolasSettings? settings = null,
         ICharacterPinAnchor? characterPin = null,
-        IPlayerAreaState? areaState = null,
+        IAreaState? areaState = null,
         IDiagnosticsSink? diag = null)
     {
         _solver = solver;
@@ -190,41 +183,29 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         _refData = refData;
         _settings = settings;
         _diag = diag;
-        // Replay-on-subscribe is fine: a position fix only matters once a use
-        // references it within MaxFeederGap. Inventory is consumed for the
-        // *Deleted* completion signal only — never to create slots from stock.
-        // PlayerWorld single-world-direct (principle 4): the dig signal is
-        // Player.log ProcessDeleteItem only — no chat fusion — so we subscribe
-        // straight to PlayerInventoryRemoved on the world bus instead of going
-        // through the view layer's cross-source composer.
-        _posSub = positionTracker.Subscribe(OnPlayerPosition);
-        _pinSub = pinTracker.Subscribe(OnPinChanged);
-        _invSub = playerWorld?.Bus.Subscribe<PlayerInventoryRemoved>(OnPlayerInventoryRemoved);
+        _posSub = bus.Subscribe<PlayerPositionChanged>(OnPlayerPositionChanged);
+        _pinSub = bus.Subscribe<MapPinAdded>(OnMapPinAdded);
+        _invSub = bus.Subscribe<InventoryItemRemoved>(OnInventoryItemRemoved);
     }
 
-    // ---- Feeder inputs (tracker thread) ----------------------------------
+    // ---- Feeder inputs (driver thread) ------------------------------------
 
-    private void OnPlayerPosition(PlayerPosition p)
+    private void OnPlayerPositionChanged(PlayerPositionChanged evt)
     {
+        var at = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
         lock (_gate)
-            _latestFix = (new WorldCoord(p.X, p.Y, p.Z),
-                MotherlodePositionSource.LogPosition, p.Source, p.MeasuredAt);
+            _latestFix = (new WorldCoord(evt.X, evt.Y, evt.Z),
+                MotherlodePositionSource.LogPosition, evt.Source, at);
     }
 
-    private void OnPinChanged(PinSetChanged c)
+    private void OnMapPinAdded(MapPinAdded evt)
     {
-        // Only a genuinely new pin is a feeder; Snapshot/AreaChanged replays
-        // carry no single Pin and must not move the fix. The @me /
-        // character-named pin dropped at the read spot is the intended
-        // high-accuracy position source.
-        if (c.Kind != PinSetChange.Added || c.Pin is not { } pin) return;
-        // #497: a pin the player named after their character / "@me" is an
-        // explicit "I am here" — prefer it over an arbitrary waypoint.
-        var src = _characterPin?.IsSelfPin(pin) == true
+        var src = _characterPin?.IsSelfPin(evt.Label) == true
             ? MotherlodePositionSource.NamedMapPin
             : MotherlodePositionSource.MapPin;
+        var at = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
         lock (_gate)
-            _latestFix = (new WorldCoord(pin.X, 0, pin.Z), src, null, c.ObservedAt);
+            _latestFix = (new WorldCoord(evt.X, 0, evt.Z), src, null, at);
     }
 
     // ---- Completion (inventory thread) -----------------------------------
@@ -235,20 +216,15 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     /// uncollected slot. The <c>Added</c> branch is intentionally absent —
     /// holding stock must create nothing (the 100-maps pathology).
     /// </summary>
-    private void OnPlayerInventoryRemoved(Frame<PlayerInventoryRemoved> frame)
+    private void OnInventoryItemRemoved(InventoryItemRemoved evt)
     {
-        var payload = frame.Payload;
-        if (!IsMotherlodeMap(payload.InternalName)) return;
+        if (!IsMotherlodeMap(evt.InternalName)) return;
         bool changed = false;
         lock (_gate)
         {
             _dugMaps++;
 
-            // If this delete is the completing use (a use that opened a
-            // location which never received a distance, within the tight
-            // window), discard that ephemeral location so it doesn't pollute
-            // the solve / trip divergence.
-            var at = new DateTimeOffset(DateTime.SpecifyKind(payload.Timestamp, DateTimeKind.Utc));
+            var at = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
             if (_open is { } o && o.DistanceCount == 0
                 && _lastUseAt is { } lu
                 && (at - lu).TotalSeconds <= MapConsumeWindowSeconds)
@@ -257,8 +233,6 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 _open = null;
             }
 
-            // Retire the next uncollected slot (lowest route order, else
-            // creation order) — order-based, mirrors the dig-the-cluster flow.
             MotherlodeSurvey? best = null;
             var bestOrder = int.MaxValue;
             var bestIdx = -1;
@@ -273,12 +247,12 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             {
                 _session.Surveys[bestIdx] = b with { Collected = true };
                 _diag?.Info("Legolas.Motherlode",
-                    $"Map consumed ({payload.InternalName}) — slot {bestIdx} collected; dug={_dugMaps}.");
+                    $"Map consumed ({evt.InternalName}) — slot {bestIdx} collected; dug={_dugMaps}.");
             }
             else
             {
                 _diag?.Info("Legolas.Motherlode",
-                    $"Map consumed ({payload.InternalName}) — dug={_dugMaps} (no measured slot to retire).");
+                    $"Map consumed ({evt.InternalName}) — dug={_dugMaps} (no measured slot to retire).");
             }
             changed = true;
         }
@@ -592,7 +566,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         return Math.Sqrt(dx * dx + dz * dz);
     }
 
-    private (WorldCoord World, MotherlodePositionSource Src, PlayerPositionSource? Pos, DateTimeOffset At)? NearestFix(DateTimeOffset useAt)
+    private (WorldCoord World, MotherlodePositionSource Src, PositionSource? Pos, DateTimeOffset At)? NearestFix(DateTimeOffset useAt)
     {
         if (_latestFix is not { } f) return null;
         return Math.Abs((useAt - f.At).TotalSeconds) <= MaxFeederGapSeconds ? f : null;

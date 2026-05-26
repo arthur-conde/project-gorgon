@@ -8,4 +8,5 @@ namespace Arda.World.Player.Events;
 /// </summary>
 public readonly record struct EffectsAdded(
     IReadOnlyList<int> CatalogIds,
+    long SourceCharId,
     LogLineMetadata Metadata);

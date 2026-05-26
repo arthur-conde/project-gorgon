@@ -38,6 +38,11 @@ public static class Verbs
     // Effects
     public const string ProcessAddEffects = "ProcessAddEffects";
     public const string ProcessRemoveEffects = "ProcessRemoveEffects";
+    public const string ProcessUpdateEffectName = "ProcessUpdateEffectName";
+
+    // Quests
+    public const string ProcessLoadQuests = "ProcessLoadQuests";
+    public const string ProcessCompleteQuest = "ProcessCompleteQuest";
 
     // Garden verbs (Tier 2 passthrough, primary consumer: Samwise)
     public const string ProcessUpdateDescription = "ProcessUpdateDescription";
@@ -53,10 +58,18 @@ public static class Verbs
     // Favor verb (Tier 2 passthrough, primary consumer: Arwen via GiftCorrelator)
     public const string ProcessDeltaFavor = "ProcessDeltaFavor";
 
+    // Position
+    public const string ProcessNewPosition = "ProcessNewPosition";
+
+    // Map effects (Tier 2 passthrough, primary consumer: Legolas)
+    public const string ProcessMapFx = "ProcessMapFx";
+
     // Interaction/loot verbs (Tier 2 passthrough, primary consumer: Gandalf)
     public const string ProcessEndInteraction = "ProcessEndInteraction";
     public const string ProcessDoDelayLoop = "ProcessDoDelayLoop";
     public const string ProcessWaitInteraction = "ProcessWaitInteraction";
+    public const string ProcessEnableInteractors = "ProcessEnableInteractors";
+    public const string ProcessTalkScreen = "ProcessTalkScreen";
 
     // Book verb (multi-consumer: Pippin, Saruman/GameState, generic)
     public const string ProcessBook = "ProcessBook";

@@ -1,10 +1,12 @@
 using System.Collections;
+using Arda.Abstractions.Logs;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
-using Mithril.GameState.Movement;
 
 namespace Legolas.Tests.ViewModels;
 
@@ -26,32 +28,42 @@ public class InventoryOverlayViewModelMotherlodeTests
     private const string KurSimple = "Kur Mountains Simple Metal Motherlode Map";
     private const string KurBasic = "Kur Mountains Basic Metal Motherlode Map";
 
+    private static LogLineMetadata Meta(DateTimeOffset at) => new(at, at, false);
+
+    private static void PublishPosition(TestDomainEventBus bus, double x, double y, double z,
+        PositionSource source, DateTimeOffset at)
+        => bus.Publish(new PlayerPositionChanged(x, y, z, source, Meta(at)));
+
+    private static void PublishDelete(TestDomainEventBus bus, long id, string internalName, DateTime at)
+    {
+        var ts = DateTime.SpecifyKind(at, DateTimeKind.Utc);
+        var dto = new DateTimeOffset(ts, TimeSpan.Zero);
+        bus.Publish(new InventoryItemRemoved(id, internalName, Meta(dto)));
+    }
+
     private static (InventoryOverlayViewModel overlay, SessionState session,
-        MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
-        FakeMotherlodePlayerWorld inv) Build()
+        MotherlodeMeasurementCoordinator coord, TestDomainEventBus bus) Build()
     {
         var session = new SessionState();
-        var pos = new FakePlayerPositionTracker();
-        var pins = new FakePlayerPinTracker();
-        var inv = new FakeMotherlodePlayerWorld();
+        var bus = new TestDomainEventBus();
         var refData = new FakeMotherlodeRefData(
             (KurSimpleIN, KurSimple), (KurBasicIN, KurBasic));
         var flow = new MotherlodeFlowController(new SessionState());
         var coord = new MotherlodeMeasurementCoordinator(
-            new MultilaterationSolver(), flow, pos, pins, inv, refData,
+            new MultilaterationSolver(), flow, bus, refData,
             new LegolasSettings());                       // multi-map default
         var optimizer = new AdaptiveRouteOptimizer(
             new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
-        var mlVm = new MotherlodeViewModel(coord, optimizer, flow, pins);
+        var mlVm = new MotherlodeViewModel(coord, optimizer, flow);
         var overlay = new InventoryOverlayViewModel(new InventoryGridSettings(), session, mlVm);
-        return (overlay, session, coord, pos, inv);
+        return (overlay, session, coord, bus);
     }
 
     /// <summary>One read = a named use + its distance (create-on-use).</summary>
-    private static void Read(MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
+    private static void Read(MotherlodeMeasurementCoordinator coord, TestDomainEventBus bus,
         string mapName, int dist, DateTimeOffset at)
     {
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, at);
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, at);
         coord.OnUse(at, mapName);
         coord.OnDistance(dist, at.AddSeconds(1));
     }
@@ -62,9 +74,10 @@ public class InventoryOverlayViewModelMotherlodeTests
     [Fact]
     public void Holding_stock_shows_nothing_in_motherlode_mode()
     {
-        var (overlay, session, _, _, inv) = Build();
+        var (overlay, session, _, _) = Build();
         session.Mode = SessionMode.Motherlode;
-        for (var i = 1; i <= 50; i++) inv.Add(i, KurSimpleIN);   // carried, unused
+        // Post-Arda: the coordinator doesn't react to adds at all.
+        // Holding stock is invisible.
 
         Items(overlay).Should().BeEmpty();                       // create-on-use
     }
@@ -72,8 +85,8 @@ public class InventoryOverlayViewModelMotherlodeTests
     [Fact]
     public void Survey_mode_yields_the_survey_collection_not_motherlode()
     {
-        var (overlay, session, coord, pos, _) = Build();
-        Read(coord, pos, KurSimple, 500, T0);                    // a tracked slot exists
+        var (overlay, session, coord, bus) = Build();
+        Read(coord, bus, KurSimple, 500, T0);                    // a tracked slot exists
 
         session.Mode.Should().Be(SessionMode.Survey);
         Items(overlay).Should().BeEmpty();                       // _session.Surveys is empty
@@ -82,11 +95,11 @@ public class InventoryOverlayViewModelMotherlodeTests
     [Fact]
     public void Motherlode_mode_lists_created_slots_in_read_order()
     {
-        var (overlay, session, coord, pos, _) = Build();
+        var (overlay, session, coord, bus) = Build();
         session.Mode = SessionMode.Motherlode;
 
-        Read(coord, pos, KurSimple, 500, T0);                    // slot 0
-        Read(coord, pos, KurBasic, 600, T0.AddSeconds(3));       // slot 1 (same spot)
+        Read(coord, bus, KurSimple, 500, T0);                    // slot 0
+        Read(coord, bus, KurBasic, 600, T0.AddSeconds(3));       // slot 1 (same spot)
 
         var items = Items(overlay);
         items.Should().HaveCount(2);
@@ -99,15 +112,13 @@ public class InventoryOverlayViewModelMotherlodeTests
     [Fact]
     public void Dug_map_drops_out_and_the_list_recompacts()
     {
-        var (overlay, session, coord, pos, inv) = Build();
+        var (overlay, session, coord, bus) = Build();
         session.Mode = SessionMode.Motherlode;
-        inv.Add(1, KurSimpleIN);                                 // register (no slot)
-        inv.Add(2, KurBasicIN);
-        Read(coord, pos, KurSimple, 500, T0);                    // slot 0
-        Read(coord, pos, KurBasic, 600, T0.AddSeconds(3));       // slot 1
+        Read(coord, bus, KurSimple, 500, T0);                    // slot 0
+        Read(coord, bus, KurBasic, 600, T0.AddSeconds(3));       // slot 1
         Items(overlay).Should().HaveCount(2);
 
-        inv.Delete(1, T0.AddSeconds(10).UtcDateTime);            // a dig → retire next-uncollected (slot 0)
+        PublishDelete(bus, 1, KurSimpleIN, T0.AddSeconds(10).UtcDateTime);
 
         var items = Items(overlay);
         items.Should().ContainSingle().Which.Name.Should().Be(KurBasic);
@@ -117,9 +128,9 @@ public class InventoryOverlayViewModelMotherlodeTests
     [Fact]
     public void Switching_back_to_survey_restores_the_survey_source()
     {
-        var (overlay, session, coord, pos, _) = Build();
+        var (overlay, session, coord, bus) = Build();
         session.Mode = SessionMode.Motherlode;
-        Read(coord, pos, KurSimple, 500, T0);
+        Read(coord, bus, KurSimple, 500, T0);
         Items(overlay).Should().ContainSingle();
 
         session.Mode = SessionMode.Survey;

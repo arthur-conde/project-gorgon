@@ -5,20 +5,25 @@ using Arda.World.Player.Events;
 namespace Arda.World.Player.Internal;
 
 /// <summary>
-/// Tracks the player's skill levels and known recipes.
-/// Receives dispatches from <see cref="LoadSkillsHandler"/>,
-/// <see cref="UpdateSkillHandler"/>, <see cref="LoadRecipesHandler"/>,
-/// and <see cref="UpdateRecipeHandler"/>.
+/// Tracks the player's skill levels and known recipes. Handles its own
+/// verbs directly (adapter collapse): LoadSkills, UpdateSkill,
+/// LoadRecipes, UpdateRecipe. Exposes both the enriched
+/// <see cref="ISkillState"/> (copy-on-write snapshots) and the legacy
+/// <see cref="IPlayerState"/> (raw entries).
 /// </summary>
-internal sealed class Player : IPlayerState
+internal sealed class Player : IPlayerState, ISkillState
 {
-    private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SkillEntry> _rawSkills = new(StringComparer.Ordinal);
     private readonly Dictionary<int, RecipeEntry> _recipes = [];
     private readonly IDomainEventPublisher _bus;
     private readonly InternPool _skillPool;
 
-    public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
+    private Dictionary<string, SkillSnapshot> _skillSnapshots = new(StringComparer.Ordinal);
+
+    public IReadOnlyDictionary<string, SkillEntry> Skills => _rawSkills;
     public IReadOnlyDictionary<int, RecipeEntry> Recipes => _recipes;
+
+    IReadOnlyDictionary<string, SkillSnapshot> ISkillState.Skills => _skillSnapshots;
 
     public Player(IDomainEventPublisher bus, InternPool skillPool)
     {
@@ -26,21 +31,24 @@ internal sealed class Player : IPlayerState
         _skillPool = skillPool;
     }
 
-    /// <summary>
-    /// Clear all state on character switch to prevent stale data persisting.
-    /// </summary>
+    internal IFrameHandler LoadSkillsHandler => new LoadSkillsVerb(this);
+    internal IFrameHandler UpdateSkillHandler => new UpdateSkillVerb(this);
+    internal IFrameHandler LoadRecipesHandler => new LoadRecipesVerb(this);
+    internal IFrameHandler UpdateRecipeHandler => new UpdateRecipeVerb(this);
+
     internal void Reset()
     {
-        _skills.Clear();
+        _rawSkills.Clear();
         _recipes.Clear();
+        _skillSnapshots = new(StringComparer.Ordinal);
     }
 
     /// <summary>
     /// Args format: <c>({type=X,raw=N,bonus=N,xp=N,tnl=N,max=N}, {type=Y,...}, ...)</c>
     /// </summary>
-    internal void OnLoadSkills(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnLoadSkills(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
-        _skills.Clear();
+        _rawSkills.Clear();
 
         var tok = new ArgTokenizer(args);
         tok.SkipOpen();
@@ -52,16 +60,18 @@ internal sealed class Player : IPlayerState
                 break;
 
             if (TryParseSkillTuple(braced, out var key, out var entry))
-                _skills[key] = entry;
+                _rawSkills[key] = entry;
         }
 
-        _bus.Publish(new SkillsLoaded(_skills.Count, metadata));
+        var measuredAt = metadata.Timestamp ?? metadata.ReadOn;
+        RebuildSkillSnapshots(measuredAt);
+        _bus.Publish(new SkillsLoaded(_rawSkills.Count, metadata));
     }
 
     /// <summary>
     /// Args format: <c>({type=X,raw=N,bonus=N,xp=N,tnl=N,max=N}, True, 25, 0, 0)</c>
     /// </summary>
-    internal void OnUpdateSkill(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnUpdateSkill(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
         var tok = new ArgTokenizer(args);
         tok.SkipOpen();
@@ -75,17 +85,24 @@ internal sealed class Player : IPlayerState
 
         tok.NextBool(); // announce flag — not used
         var xpGained = tok.NextInt();
-        // remaining args (0, 0) unused
 
-        _skills[key] = entry;
+        _rawSkills[key] = entry;
+
+        var measuredAt = metadata.Timestamp ?? metadata.ReadOn;
+        var snapshot = new SkillSnapshot(entry.Raw, entry.Bonus, entry.Xp, entry.Tnl, entry.Max, measuredAt);
+        var newDict = new Dictionary<string, SkillSnapshot>(_skillSnapshots, StringComparer.Ordinal)
+        {
+            [key] = snapshot
+        };
+        _skillSnapshots = newDict;
+
         _bus.Publish(new SkillUpdated(key, entry.Raw, entry.Bonus, entry.Xp, entry.Tnl, entry.Max, xpGained, metadata));
     }
 
     /// <summary>
     /// Args format: <c>([1,1026,1027,...,], [7,607,255,...,])</c>
-    /// Parallel arrays: recipe ids and lifetime completion counts.
     /// </summary>
-    internal void OnLoadRecipes(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnLoadRecipes(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
         _recipes.Clear();
 
@@ -106,9 +123,9 @@ internal sealed class Player : IPlayerState
     }
 
     /// <summary>
-    /// Args format: <c>(21000, 2)</c> — recipe id, new absolute lifetime count.
+    /// Args format: <c>(21000, 2)</c>
     /// </summary>
-    internal void OnUpdateRecipe(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnUpdateRecipe(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
         var tok = new ArgTokenizer(args);
         tok.SkipOpen();
@@ -120,12 +137,19 @@ internal sealed class Player : IPlayerState
         _bus.Publish(new RecipeUpdated(recipeId, count, metadata));
     }
 
+    private void RebuildSkillSnapshots(DateTimeOffset measuredAt)
+    {
+        var dict = new Dictionary<string, SkillSnapshot>(_rawSkills.Count, StringComparer.Ordinal);
+        foreach (var (key, e) in _rawSkills)
+            dict[key] = new SkillSnapshot(e.Raw, e.Bonus, e.Xp, e.Tnl, e.Max, measuredAt);
+        _skillSnapshots = dict;
+    }
+
     private bool TryParseSkillTuple(ReadOnlySpan<char> braced, out string key, out SkillEntry entry)
     {
         key = string.Empty;
         entry = default;
 
-        // Format: type=Surveying,raw=44,bonus=3,xp=246,tnl=2000,max=50
         const string typePrefix = "type=";
         const string rawPrefix = "raw=";
         const string bonusPrefix = "bonus=";
@@ -175,5 +199,29 @@ internal sealed class Player : IPlayerState
             span = span[(comma + 1)..];
         }
         return result;
+    }
+
+    private sealed class LoadSkillsVerb(Player owner) : IFrameHandler
+    {
+        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+            => owner.OnLoadSkills(args, sourceLog, metadata);
+    }
+
+    private sealed class UpdateSkillVerb(Player owner) : IFrameHandler
+    {
+        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+            => owner.OnUpdateSkill(args, sourceLog, metadata);
+    }
+
+    private sealed class LoadRecipesVerb(Player owner) : IFrameHandler
+    {
+        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+            => owner.OnLoadRecipes(args, sourceLog, metadata);
+    }
+
+    private sealed class UpdateRecipeVerb(Player owner) : IFrameHandler
+    {
+        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+            => owner.OnUpdateRecipe(args, sourceLog, metadata);
     }
 }

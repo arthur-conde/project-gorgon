@@ -3,6 +3,7 @@ using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
 using Legolas.Tests;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
 
 namespace Legolas.Tests.ViewModels;
@@ -64,9 +65,9 @@ public class LegolasWizardViewModelTests
         var areaCalib = calib ?? new FakeAreaCalib();
         var pinTracker = pins ?? new FakePlayerPinTracker();
         var pinCal = new PinCalibrationCoordinator(areaCalib, pinTracker, settings);
+        var bus = new TestDomainEventBus();
         var coordinator = new MotherlodeMeasurementCoordinator(
-            new MultilaterationSolver(), motherlodeFlow,
-            new FakePlayerPositionTracker(), pinTracker);
+            new MultilaterationSolver(), motherlodeFlow, bus);
         var motherlode = new MotherlodeViewModel(coordinator, optimizer, motherlodeFlow);
         var mapOverlay = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings, pinCal);
         var nudgePad = new NudgePadViewModel(session, mapOverlay, settings);

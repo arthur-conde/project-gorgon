@@ -14,10 +14,15 @@ internal sealed class Session : IFrameHandler, ISessionState
     private readonly IDomainEventPublisher _bus;
 
     public string? ActiveCharacter { get; private set; }
+    public DateTimeOffset? LoggedInAt { get; private set; }
 
     public Session(IDomainEventPublisher bus) => _bus = bus;
 
-    internal void Reset() => ActiveCharacter = null;
+    internal void Reset()
+    {
+        ActiveCharacter = null;
+        LoggedInAt = null;
+    }
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
@@ -33,6 +38,7 @@ internal sealed class Session : IFrameHandler, ISessionState
 
         var name = nameSpan.ToString();
         ActiveCharacter = name;
+        LoggedInAt = metadata.Timestamp ?? metadata.ReadOn;
         _bus.Publish(new SessionStarted(name, metadata));
     }
 }

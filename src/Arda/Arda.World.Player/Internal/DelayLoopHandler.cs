@@ -20,10 +20,12 @@ internal sealed class DelayLoopHandler(IDomainEventPublisher bus) : IFrameHandle
         var verbSpan = tok.NextTokenSpan();
         var textSpan = tok.NextQuotedSpan();
 
+        var isInteractor = args.Contains("IsInteractorDelayLoop", StringComparison.Ordinal);
+
         var verbMem = SliceFromSource(sourceLog, verbSpan);
         var textMem = SliceFromSource(sourceLog, textSpan);
 
-        bus.Publish(new DelayLoopStarted(seconds, verbMem, textMem, metadata));
+        bus.Publish(new DelayLoopStarted(seconds, verbMem, textMem, isInteractor, metadata));
     }
 
     private static ReadOnlyMemory<char> SliceFromSource(string sourceLog, ReadOnlySpan<char> span)

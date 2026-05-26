@@ -1,3 +1,5 @@
+using Arda.Abstractions.Logs;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Mithril.GameState.Effects;
 using Mithril.GameState.Tests.TestSupport;
@@ -10,33 +12,34 @@ namespace Mithril.GameState.Tests.Effects;
 /// <summary>
 /// Acceptance-suite for <see cref="PlayerEffectsStateService"/> per issue
 /// #590. Each test maps to a lettered acceptance bullet (a–g) in the issue
-/// body. The per-test stream wrapper mirrors the
-/// <see cref="Celestial.PlayerCelestialStateServiceTests"/> shape — one L1
-/// driver per service, push raw Player.log lines, drain the LocalPlayer pipe.
+/// body. The service now consumes Arda domain events via
+/// <see cref="TestDomainEventBus"/> rather than raw log lines.
 /// </summary>
 public sealed class PlayerEffectsStateServiceTests
 {
-    private static readonly DateTime Stamp = new(2026, 5, 20, 20, 1, 17, DateTimeKind.Utc);
+    private static readonly DateTimeOffset Stamp = new(2026, 5, 20, 20, 1, 17, TimeSpan.Zero);
+
+    private static LogLineMetadata Meta(DateTimeOffset? ts = null) =>
+        new(ts ?? Stamp, ts ?? Stamp, IsReplay: false);
 
     private static PlayerEffectsStateService NewService(
-        ScriptedStream stream, IDiagnosticsSink? diag = null) =>
-        new(stream.Driver, diag);
+        TestDomainEventBus bus, IDiagnosticsSink? diag = null) =>
+        new(bus, diag);
 
     // ---------- (a) live Add (arg4 == True) → Added ----------
 
     [Fact]
     public async Task LiveAdd_FiresAddedEvent_AndPopulatesActiveSet()
     {
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var seen = new List<EffectEvent>();
         using var sub = svc.Subscribe(seen.Add);
 
         try
         {
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta()));
 
             seen.Should().ContainSingle();
             seen[0].Kind.Should().Be(EffectEventKind.Added);
@@ -57,27 +60,19 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task SnapshotAdd_FillsMissing_AndDoesNotDropPreexistingEntries()
     {
-        // Captured shape: a False snapshot at login lists a subset of the
-        // persistent effects, and equipment-derived ones (e.g. 13303) re-arrive
-        // separately as True adds. The False list is NOT a full snapshot, so
-        // entries present in _active but absent from the list must remain.
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         try
         {
-            // Seed: equipment-bonus effect already active from a True add.
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            // Then a False snapshot that does NOT mention 13303 but adds 26015.
-            stream.Push(Stamp.AddSeconds(1),
-                "[20:01:18] LocalPlayer: ProcessAddEffects(25042203, 0, \"[26015, ]\", False)");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta()));
+            bus.Publish(new EffectsAdded([26015], 0, Meta(Stamp.AddSeconds(1))));
 
             svc.ActiveEffects.Should().ContainKey(13303,
                 "the False snapshot is additive-only and must not drop preexisting entries");
             svc.ActiveEffects.Should().ContainKey(26015);
 
-            // sourceCharId == 0 sentinel preserved for snapshot adds.
             svc.TryGet(26015, out var snapshotState).Should().BeTrue();
             snapshotState.SourceCharId.Should().Be(0);
         }
@@ -89,22 +84,21 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task ReApplySameCatalogId_RefreshesTimestamp_AndFiresNoDuplicateAdded()
     {
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var addedCount = 0;
         using var sub = svc.Subscribe(e => { if (e.Kind == EffectEventKind.Added) addedCount++; });
 
         try
         {
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            stream.Push(Stamp.AddMinutes(5),
-                "[20:06:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta()));
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta(Stamp.AddMinutes(5))));
 
             addedCount.Should().Be(1, "the second Add for the same catalog id is a re-emit, not a new application");
             svc.TryGet(13303, out var state).Should().BeTrue();
-            state.AppliedAt.Should().Be(new DateTimeOffset(Stamp.AddMinutes(5)),
+            state.AppliedAt.Should().Be(Stamp.AddMinutes(5),
                 "re-apply refreshes AppliedAt per the spec's idempotent timestamp-refresh rule");
         }
         finally { await StopAsync(svc); }
@@ -115,21 +109,17 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task UpdateEffectName_CorrelatesToMostRecentUnnamedEntry_AndFiresDisplayNameChanged()
     {
-        // Captured pattern: [302] Add → Update 259328 ("Performance Appreciation, Level 0")
-        // → [303] Add → Update 259329 at the same instant. Spec wording: "most
-        // recently added and still lacks an InstanceId" — LIFO/stack.
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var seen = new List<EffectEvent>();
         using var sub = svc.Subscribe(seen.Add);
 
         try
         {
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([302], 25098977, Meta()));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 0", Meta()));
 
             seen.Should().HaveCount(2);
             seen[0].Kind.Should().Be(EffectEventKind.Added);
@@ -151,20 +141,18 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task RemoveEffects_ByInstanceId_FiresRemoved_AndDropsFromActive()
     {
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var seen = new List<EffectEvent>();
         using var sub = svc.Subscribe(seen.Add);
 
         try
         {
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
-            stream.Push(Stamp.AddSeconds(14),
-                "[21:39:49] LocalPlayer: ProcessRemoveEffects(25098977, [259320,])");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([302], 25098977, Meta()));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 0", Meta()));
+            bus.Publish(new EffectsRemoved([259320], Meta(Stamp.AddSeconds(14))));
 
             seen.Should().HaveCount(3);
             seen[2].Kind.Should().Be(EffectEventKind.Removed);
@@ -180,19 +168,14 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task RemoveEffects_OnUnnamedEntry_LeavesEntryActive()
     {
-        // The catalog-id-only majority (equipment bonuses) never paired with a
-        // ProcessUpdateEffectName, so a RemoveEffects targeting some unrelated
-        // instance id must not touch them. Spec accepts these entries linger
-        // in ActiveEffects.
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         try
         {
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            stream.Push(Stamp.AddSeconds(1),
-                "[20:01:18] LocalPlayer: ProcessRemoveEffects(25042203, [259278,])");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta()));
+            bus.Publish(new EffectsRemoved([259278], Meta(Stamp.AddSeconds(1))));
 
             svc.ActiveEffects.Should().ContainKey(13303,
                 "an un-named entry has no InstanceId bridge and cannot be removed by id");
@@ -205,22 +188,19 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task LateSubscribe_FromSessionStart_ReplaysFullEventLog_InOrder()
     {
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         try
         {
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
-            stream.Push(Stamp.AddSeconds(14),
-                "[21:39:49] LocalPlayer: ProcessRemoveEffects(25098977, [259320,])");
-            stream.Push(Stamp.AddSeconds(20),
-                "[21:39:55] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[15361, ]\", True)");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([302], 25098977, Meta()));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 0", Meta()));
+            bus.Publish(new EffectsRemoved([259320], Meta(Stamp.AddSeconds(14))));
+            bus.Publish(new EffectsAdded([15361], 25098977, Meta(Stamp.AddSeconds(20))));
 
             var replayed = new List<EffectEvent>();
-            using var sub = svc.Subscribe(replayed.Add); // default = FromSessionStart
+            using var sub = svc.Subscribe(replayed.Add);
 
             replayed.Should().HaveCount(4);
             replayed[0].Kind.Should().Be(EffectEventKind.Added);
@@ -239,39 +219,25 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task LateSubscribe_FromSessionStart_ThenLiveEvent_DeliversBoth_AtomicallyOrdered()
     {
-        // The Subscribe path runs replay under the same lock that Fire takes;
-        // a live event arriving between Subscribe return and the next handler
-        // dispatch cannot interleave with the replay. Regression cover for the
-        // post-#585 contract.
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         try
         {
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            await stream.WaitForDrainAsync(cts.Token);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta()));
 
             var seen = new List<EffectEvent>();
             using var sub = svc.Subscribe(seen.Add);
             seen.Should().ContainSingle(
                 "the existing event must replay synchronously before Subscribe returns");
 
-            stream.Push(Stamp.AddSeconds(1),
-                "[20:01:18] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[15361, ]\", True)");
-            await stream.WaitForDrainAsync(cts.Token);
+            bus.Publish(new EffectsAdded([15361], 25042203, Meta(Stamp.AddSeconds(1))));
 
             seen.Should().HaveCount(2);
             seen[1].State.CatalogId.Should().Be(15361);
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch { }
-            _ = runTask;
-            await StopAsync(svc);
-        }
+        finally { await StopAsync(svc); }
     }
 
     // ---------- (g) Subscribe(LiveOnly) skips replay ----------
@@ -279,34 +245,24 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task LateSubscribe_LiveOnly_DoesNotReplay_AndOnlyDeliversFutureEvents()
     {
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         try
         {
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            await stream.WaitForDrainAsync(cts.Token);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta()));
 
             var seen = new List<EffectEvent>();
             using var sub = svc.Subscribe(seen.Add, ReplayMode.LiveOnly);
             seen.Should().BeEmpty("LiveOnly skips the event-log replay");
 
-            stream.Push(Stamp.AddSeconds(1),
-                "[20:01:18] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[15361, ]\", True)");
-            await stream.WaitForDrainAsync(cts.Token);
+            bus.Publish(new EffectsAdded([15361], 25042203, Meta(Stamp.AddSeconds(1))));
 
             seen.Should().ContainSingle();
             seen[0].State.CatalogId.Should().Be(15361);
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch { }
-            _ = runTask;
-            await StopAsync(svc);
-        }
+        finally { await StopAsync(svc); }
     }
 
     // ---------- Misc behaviours ----------
@@ -314,18 +270,16 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task MultipleCatalogIds_InSingleAdd_AllFireAddedInOrder()
     {
-        // PG batches login-snapshot adds (e.g. "[26015, 39006008, ...]"); the
-        // service must emit one Added per id, in list order.
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var seen = new List<EffectEvent>();
         using var sub = svc.Subscribe(seen.Add);
 
         try
         {
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 0, \"[26015, 39006008, 53122008]\", False)");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([26015, 39006008, 53122008], 0, Meta()));
 
             seen.Should().HaveCount(3);
             seen.Select(e => e.State.CatalogId).Should().Equal(26015, 39006008, 53122008);
@@ -341,66 +295,43 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task DisposeSubscription_StopsFurtherEvents()
     {
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var runTask = svc.StartAsync(cts.Token);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         try
         {
+            await svc.StartAsync(CancellationToken.None);
+
             var seen = new List<EffectEvent>();
             var sub = svc.Subscribe(seen.Add, ReplayMode.LiveOnly);
 
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            await stream.WaitForDrainAsync(cts.Token);
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta()));
             seen.Should().ContainSingle();
 
             sub.Dispose();
             sub.Dispose(); // idempotent
 
-            stream.Push(Stamp.AddSeconds(1),
-                "[20:01:18] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[15361, ]\", True)");
-            await stream.WaitForDrainAsync(cts.Token);
+            bus.Publish(new EffectsAdded([15361], 25042203, Meta(Stamp.AddSeconds(1))));
             seen.Should().ContainSingle("the disposed subscription must not receive further events");
         }
-        finally
-        {
-            await cts.CancelAsync();
-            try { await svc.StopAsync(CancellationToken.None); } catch { }
-            _ = runTask;
-            await StopAsync(svc);
-        }
+        finally { await StopAsync(svc); }
     }
 
     [Fact]
     public async Task UnnamedEffect_RemovedBeforeUpdate_DoesNotMisroute()
     {
-        // Defensive: an un-named entry whose Add we observed but whose Update
-        // never came must not corrupt the most-recent-un-named correlation
-        // when a subsequent Update for a DIFFERENT effect arrives. The first
-        // Add's catalog id should be skipped on pop if it's no longer in
-        // _active (here we remove it indirectly by demonstrating a second
-        // Add+Update pair correlates correctly even with a stale un-named
-        // entry on the stack).
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var seen = new List<EffectEvent>();
         using var sub = svc.Subscribe(seen.Add);
 
         try
         {
-            // Equipment-bonus add (no Update ever fires for this one).
-            stream.Push(Stamp,
-                "[20:01:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[13303, ]\", True)");
-            // A named effect arrives later; its Update should correlate to ITS Add,
-            // not back-fill the stale 13303 on the stack.
-            stream.Push(Stamp.AddMinutes(1),
-                "[20:02:17] LocalPlayer: ProcessAddEffects(25042203, 25042203, \"[302, ]\", True)");
-            stream.Push(Stamp.AddMinutes(1),
-                "[20:02:17] LocalPlayer: ProcessUpdateEffectName(25042203, 259320, \"Performance Appreciation, Level 0\")");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
 
-            // 13303 stays unnamed; 302 gets named.
+            bus.Publish(new EffectsAdded([13303], 25042203, Meta()));
+            bus.Publish(new EffectsAdded([302], 25042203, Meta(Stamp.AddMinutes(1))));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 0", Meta(Stamp.AddMinutes(1))));
+
             svc.TryGet(13303, out var equip).Should().BeTrue();
             equip.InstanceId.Should().BeNull();
             equip.DisplayName.Should().BeNull();
@@ -417,25 +348,18 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task DoubleUpdate_SameInstanceId_RoutesToSameCatalog_AndFiresSecondDisplayNameChanged()
     {
-        // Captured pattern for level-tagged skill effects: a single instance id
-        // gets renamed as the underlying skill level changes
-        // ("Performance Appreciation, Level 0" → "Level 1"). The second Update
-        // must NOT pop _unnamed (the entry is already named); it must look up
-        // the instance id directly and rename the SAME catalog id.
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var seen = new List<EffectEvent>();
         using var sub = svc.Subscribe(seen.Add);
 
         try
         {
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
-            stream.Push(Stamp.AddMinutes(2),
-                "[21:41:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 1\")");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([302], 25098977, Meta()));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 0", Meta()));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 1", Meta(Stamp.AddMinutes(2))));
 
             seen.Should().HaveCount(3, "Add + first-name + re-rename");
             seen[0].Kind.Should().Be(EffectEventKind.Added);
@@ -460,24 +384,18 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task DoubleUpdate_SameName_SuppressesSecondDisplayNameChanged()
     {
-        // The interface XML on DisplayNameChanged promises "fires once per
-        // Update line; subsequent Updates ... if the name actually changes".
-        // A redundant Update with the identical name must NOT fire a second
-        // event (it would add a no-op replay entry that confuses consumers).
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var seen = new List<EffectEvent>();
         using var sub = svc.Subscribe(seen.Add);
 
         try
         {
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
-            stream.Push(Stamp.AddSeconds(5),
-                "[21:39:40] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
+
+            bus.Publish(new EffectsAdded([302], 25098977, Meta()));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 0", Meta()));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 0", Meta(Stamp.AddSeconds(5))));
 
             seen.Should().HaveCount(2, "Add + first-name only — the same-name re-emit is suppressed");
             seen[0].Kind.Should().Be(EffectEventKind.Added);
@@ -489,41 +407,28 @@ public sealed class PlayerEffectsStateServiceTests
     [Fact]
     public async Task DoubleUpdate_WithUnrelatedUnnamedPushBetween_RoutesByInstanceId_NotStack()
     {
-        // Stress case: after the first Update names instance 259320 → catalog
-        // 302, an UNRELATED equipment-bonus Add pushes catalog 13303 onto
-        // _unnamed. The second Update for instance 259320 must look up the
-        // bridge dictionary and rename catalog 302; the un-named 13303 must
-        // remain un-named (stack untouched).
-        var stream = new ScriptedStream();
-        var svc = NewService(stream);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus);
         var seen = new List<EffectEvent>();
         using var sub = svc.Subscribe(seen.Add);
 
         try
         {
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[302, ]\", True)");
-            stream.Push(Stamp,
-                "[21:39:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 0\")");
-            // Unrelated equipment-bonus add: stale _unnamed entry on the stack.
-            stream.Push(Stamp.AddMinutes(1),
-                "[21:40:35] LocalPlayer: ProcessAddEffects(25098977, 25098977, \"[13303, ]\", True)");
-            // Re-rename of 259320: must NOT pop 13303 off _unnamed.
-            stream.Push(Stamp.AddMinutes(2),
-                "[21:41:35] LocalPlayer: ProcessUpdateEffectName(25098977, 259320, \"Performance Appreciation, Level 1\")");
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
 
-            // 302 was renamed via the dictionary lookup.
+            bus.Publish(new EffectsAdded([302], 25098977, Meta()));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 0", Meta()));
+            bus.Publish(new EffectsAdded([13303], 25098977, Meta(Stamp.AddMinutes(1))));
+            bus.Publish(new EffectNameUpdated(259320, "Performance Appreciation, Level 1", Meta(Stamp.AddMinutes(2))));
+
             svc.TryGet(302, out var named).Should().BeTrue();
             named.InstanceId.Should().Be(259320);
             named.DisplayName.Should().Be("Performance Appreciation, Level 1");
 
-            // 13303 stayed un-named — proves the dictionary won over the stack.
             svc.TryGet(13303, out var equip).Should().BeTrue();
             equip.InstanceId.Should().BeNull("the stack-based pop must NOT have fired for the re-rename");
             equip.DisplayName.Should().BeNull();
 
-            // Events: Add(302), DisplayName(302, "L0"), Add(13303), DisplayName(302, "L1")
             seen.Should().HaveCount(4);
             seen[3].Kind.Should().Be(EffectEventKind.DisplayNameChanged);
             seen[3].State.CatalogId.Should().Be(302,
@@ -537,30 +442,20 @@ public sealed class PlayerEffectsStateServiceTests
     public async Task Lifecycle_EmitsSubscribingDiagnostic()
     {
         var diag = new DiagnosticsSink();
-        var stream = new ScriptedStream();
-        var svc = NewService(stream, diag);
+        var bus = new TestDomainEventBus();
+        var svc = NewService(bus, diag);
         try
         {
-            await RunUntilDrainedAsync(svc, stream);
+            await svc.StartAsync(CancellationToken.None);
             diag.Snapshot().Should().Contain(e =>
                 e.Level == DiagnosticLevel.Info
                 && e.Category == "GameState.Effects"
-                && e.Message.Contains("Subscribing to L1 driver"));
+                && e.Message.Contains("Subscribing to Arda domain events"));
         }
         finally { await StopAsync(svc); }
     }
 
     // ---------- Plumbing ----------
-
-    private static async Task RunUntilDrainedAsync(PlayerEffectsStateService svc, ScriptedStream stream)
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var runTask = svc.StartAsync(cts.Token);
-        await stream.WaitForDrainAsync(cts.Token);
-        await cts.CancelAsync();
-        try { await svc.StopAsync(CancellationToken.None); } catch (OperationCanceledException) { }
-        _ = runTask;
-    }
 
     private static async Task StopAsync(PlayerEffectsStateService svc)
     {
@@ -568,24 +463,4 @@ public sealed class PlayerEffectsStateServiceTests
         catch { /* test cleanup */ }
         svc.Dispose();
     }
-
-    /// <summary>
-    /// Per-test L1 stream wrapper, same shape as
-    /// <see cref="Celestial.PlayerCelestialStateServiceTests"/>.
-    /// </summary>
-    private sealed class ScriptedStream : IDisposable
-    {
-        public TestLogStreamDriver Driver { get; } = new();
-
-        public void Push(DateTime ts, string line)
-        {
-            Driver.PushLive(TestLogEnvelopeFactory.FromRawLine(new RawLogLine(ts, line)));
-        }
-
-        public Task WaitForDrainAsync(CancellationToken ct) =>
-            Driver.DrainLocalPlayerAsync().WaitAsync(ct);
-
-        public void Dispose() => Driver.Dispose();
-    }
-
 }

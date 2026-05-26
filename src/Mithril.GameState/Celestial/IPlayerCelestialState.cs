@@ -25,6 +25,7 @@ public sealed record CelestialInfo(MoonPhase Phase, string RawPhase, DateTimeOff
 /// <see cref="Current"/> plus a replay-on-<see cref="Subscribe"/> handler so
 /// late subscribers see the same view already-attached ones do.
 /// </summary>
+[Obsolete("Use Arda.World.Player.ICelestialState + IDomainEventSubscriber.Subscribe<CelestialInfoChanged> instead.")]
 public interface IPlayerCelestialState
 {
     /// <summary>

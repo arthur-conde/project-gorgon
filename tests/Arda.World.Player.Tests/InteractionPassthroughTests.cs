@@ -168,10 +168,11 @@ public class InteractionPassthroughTests
         var handler = new ScreenTextHandler(_bus);
         var args = """(ErrorMessage, "Something went wrong")""";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), args, Meta());
 
         _bus.Published<ScreenTextErrorFrame>().Should().ContainSingle();
-        _bus.Published<ScreenTextObserved>().Should().BeEmpty();
+        _bus.Published<ScreenTextObserved>().Should().ContainSingle(
+            "ErrorMessage lines now emit both ScreenTextErrorFrame and ScreenTextObserved");
     }
 
     // ── SpyEventBus ─────────────────────────────────────────────────────

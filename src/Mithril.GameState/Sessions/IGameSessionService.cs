@@ -14,6 +14,7 @@ namespace Mithril.GameState.Sessions;
 /// source clock, #513) can anchor log-line dates on the banner's UTC
 /// instead of file mtime.
 /// </summary>
+[Obsolete("Use Arda.World.Player.ISessionState (L3) + Arda.Composition.ISessionComposer (L4) instead.")]
 public interface IGameSessionService
 {
     /// <summary>

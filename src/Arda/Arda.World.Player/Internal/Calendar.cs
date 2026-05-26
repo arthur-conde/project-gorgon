@@ -39,7 +39,7 @@ internal sealed class Calendar : ILineObserver, ICalendarState
         _shifts = shifts;
     }
 
-    public void Observe(LogLineMetadata metadata)
+    public void Observe(string log, LogLineMetadata metadata)
     {
         if (metadata.Timestamp is not { } ts)
             return;

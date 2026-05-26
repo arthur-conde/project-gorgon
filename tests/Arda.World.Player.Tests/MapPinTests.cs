@@ -22,14 +22,14 @@ public class MapPinTests
 
     private void DispatchAdd(int a, int shape, int color, double x, double y, double z, string label)
     {
-        var args = $"({a}, {shape}, {color}, ({x}, {y}, {z}), \"{label}\")".AsSpan();
-        _mapPins.OnAdd(args, "source", Meta());
+        var args = $"({a}, {shape}, {color}, ({x}, {y}, {z}), \"{label}\")";
+        _mapPins.PinAddHandler.Handle(args.AsSpan(), "source", Meta());
     }
 
     private void DispatchRemove(int a, int shape, int color, double x, double y, double z, string label)
     {
-        var args = $"({a}, {shape}, {color}, ({x}, {y}, {z}), \"{label}\")".AsSpan();
-        _mapPins.OnRemove(args, "source", Meta());
+        var args = $"({a}, {shape}, {color}, ({x}, {y}, {z}), \"{label}\")";
+        _mapPins.PinRemoveHandler.Handle(args.AsSpan(), "source", Meta());
     }
 
     [Fact]

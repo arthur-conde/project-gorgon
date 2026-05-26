@@ -6,17 +6,28 @@ namespace Arda.World.Player.Internal;
 
 /// <summary>
 /// Tracks the current moon phase from <c>ProcessSetCelestialInfo(phase)</c>.
-/// Deduplicates same-phase re-emissions and resets on character switch.
+/// Classifies the raw token into a <see cref="MoonPhase"/> enum and derives
+/// a human-readable display name. Deduplicates same-phase re-emissions and
+/// resets on character switch.
 /// </summary>
 internal sealed class Celestial : IFrameHandler, ICelestialState
 {
     private readonly IDomainEventPublisher _bus;
 
     public string? CurrentPhaseRaw { get; private set; }
+    public MoonPhase Phase { get; private set; }
+    public string? DisplayName { get; private set; }
+    public DateTimeOffset? MeasuredAt { get; private set; }
 
     public Celestial(IDomainEventPublisher bus) => _bus = bus;
 
-    internal void Reset() => CurrentPhaseRaw = null;
+    internal void Reset()
+    {
+        CurrentPhaseRaw = null;
+        Phase = MoonPhase.Unknown;
+        DisplayName = null;
+        MeasuredAt = null;
+    }
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
@@ -34,6 +45,9 @@ internal sealed class Celestial : IFrameHandler, ICelestialState
 
         var previous = CurrentPhaseRaw;
         CurrentPhaseRaw = phase;
-        _bus.Publish(new CelestialInfoChanged(previous, phase, metadata));
+        Phase = MoonPhaseExtensions.ParsePhase(phase);
+        DisplayName = Phase.DisplayName(phase);
+        MeasuredAt = metadata.Timestamp ?? metadata.ReadOn;
+        _bus.Publish(new CelestialInfoChanged(previous, phase, Phase, DisplayName, metadata));
     }
 }

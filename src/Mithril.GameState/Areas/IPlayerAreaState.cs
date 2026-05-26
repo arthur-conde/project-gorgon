@@ -33,6 +33,7 @@ namespace Mithril.GameState.Areas;
 /// feed already-classified lines inline; the cross-source-correlation rules
 /// continue to apply (double-feed is idempotent under last-writer-wins).</para>
 /// </summary>
+[Obsolete("Use Arda.World.Player.IMapState (area, position, weather, pins consolidated) instead.")]
 public interface IPlayerAreaState
 {
     /// <summary>

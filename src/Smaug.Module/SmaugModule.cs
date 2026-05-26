@@ -8,7 +8,6 @@ using Mithril.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Smaug.Domain;
-using Smaug.Parsing;
 using Smaug.State;
 using Smaug.ViewModels;
 using Smaug.Views;
@@ -33,7 +32,6 @@ public sealed class SmaugModule : IMithrilModule
 
         services.AddMithrilSettings<SmaugSettings>(settingsPath, SmaugJsonContext.Default.SmaugSettings);
 
-        services.AddSingleton<VendorLogParser>();
         services.AddSingleton<VendorSellContext>();
         services.AddSingleton<VendorCatalogService>();
         services.AddSingleton<StorageSellbackService>();

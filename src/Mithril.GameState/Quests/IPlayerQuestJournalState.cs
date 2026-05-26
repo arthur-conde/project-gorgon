@@ -70,6 +70,7 @@ public sealed record QuestJournalEntry(string InternalName, DateTimeOffset Accep
 /// <see cref="ActiveQuests"/> / <see cref="TryGetActive"/>, or
 /// <see cref="Subscribe"/> for an atomic replay-then-live event stream.</para>
 /// </summary>
+[Obsolete("Use Arda.World.Player.IQuestState + IDomainEventSubscriber.Subscribe<QuestCompleted/QuestAccepted/QuestsLoaded> instead.")]
 public interface IPlayerQuestJournalState
 {
     /// <summary>

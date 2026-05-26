@@ -73,6 +73,7 @@ public static class PlayerWorldExtensions
             return new Internal.Player(bus, skillPool);
         });
         builder.Services.AddSingleton<IPlayerState>(sp => sp.GetRequiredService<Internal.Player>());
+        builder.Services.AddSingleton<ISkillState>(sp => sp.GetRequiredService<Internal.Player>());
 
         // --- Npc handler (interaction context + gift correlation) ---
         // NPC keys (~200) use miss-cache-only interning like area keys.
@@ -124,12 +125,20 @@ public static class PlayerWorldExtensions
         });
         builder.Services.AddSingleton<IMapPinState>(sp => sp.GetRequiredService<MapPins>());
 
+        // --- Map scope composite (flat IMapState over all map-scoped handlers) ---
+        builder.Services.AddSingleton<IMapState>(sp => new MapScope(
+            sp.GetRequiredService<Map>(),
+            sp.GetRequiredService<PositionHandler>(),
+            sp.GetRequiredService<Weather>(),
+            sp.GetRequiredService<MapPins>()));
+
         // --- Effects handler ---
         builder.Services.AddSingleton(sp =>
         {
             var bus = sp.GetRequiredService<IDomainEventPublisher>();
             return new Effects(bus);
         });
+        builder.Services.AddSingleton<IEffectsState>(sp => sp.GetRequiredService<Effects>());
 
         // --- Quest handler ---
         builder.Services.AddSingleton(sp =>
@@ -137,6 +146,15 @@ public static class PlayerWorldExtensions
             var bus = sp.GetRequiredService<IDomainEventPublisher>();
             return new Quest(bus);
         });
+        builder.Services.AddSingleton<IQuestState>(sp => sp.GetRequiredService<Quest>());
+
+        // --- Position handler (Tier 1 state, ProcessNewPosition + ProcessAddPlayer spawn) ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new PositionHandler(bus);
+        });
+        builder.Services.AddSingleton<IPositionState>(sp => sp.GetRequiredService<PositionHandler>());
 
         // --- Calendar handler (line observer — sees every timestamp) ---
         builder.Services.AddSingleton(sp =>
@@ -149,6 +167,14 @@ public static class PlayerWorldExtensions
         });
         builder.Services.AddSingleton<ICalendarState>(sp => sp.GetRequiredService<Calendar>());
         builder.AddLineObserver<Calendar>();
+
+        // --- Appearance observer (line observer — Download appearance loop pattern) ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new AppearanceObserver(bus);
+        });
+        builder.AddLineObserver<AppearanceObserver>();
 
         // --- Dispatch table wiring ---
         builder.ConfigureHandlers((sp, registry) =>
@@ -166,21 +192,22 @@ public static class PlayerWorldExtensions
             var mapPins = sp.GetRequiredService<MapPins>();
             var effects = sp.GetRequiredService<Effects>();
             var quest = sp.GetRequiredService<Quest>();
+            var position = sp.GetRequiredService<PositionHandler>();
 
             // Order matters: Map must run before StateResetHandler for LOADING_LEVEL.
             // Map clears CurrentArea; StateResetHandler then resets downstream state.
             // DispatchTable preserves insertion order within a verb's handler list.
             RegisterHandler(registry, Verbs.LoadingLevel,
-                new StateResetHandler(inventory, player, npc, weather, session, celestial, mapPins));
+                new StateResetHandler(inventory, player, npc, weather, session, celestial, mapPins, position, effects, quest));
 
             RegisterHandler(registry, Verbs.ProcessAddItem, new AddItemHandler(inventory));
             RegisterHandler(registry, Verbs.ProcessDeleteItem, new DeleteItemHandler(inventory));
             RegisterHandler(registry, Verbs.ProcessUpdateItemCode, new UpdateItemCodeHandler(inventory));
 
-            RegisterHandler(registry, Verbs.ProcessLoadSkills, new LoadSkillsHandler(player));
-            RegisterHandler(registry, Verbs.ProcessUpdateSkill, new UpdateSkillHandler(player));
-            RegisterHandler(registry, Verbs.ProcessLoadRecipes, new LoadRecipesHandler(player));
-            RegisterHandler(registry, Verbs.ProcessUpdateRecipe, new UpdateRecipeHandler(player));
+            RegisterHandler(registry, Verbs.ProcessLoadSkills, player.LoadSkillsHandler);
+            RegisterHandler(registry, Verbs.ProcessUpdateSkill, player.UpdateSkillHandler);
+            RegisterHandler(registry, Verbs.ProcessLoadRecipes, player.LoadRecipesHandler);
+            RegisterHandler(registry, Verbs.ProcessUpdateRecipe, player.UpdateRecipeHandler);
 
             RegisterHandler(registry, Verbs.ProcessStartInteraction, new StartInteractionHandler(npc));
             RegisterHandler(registry, Verbs.ProcessDeleteItem, new NpcDeleteItemHandler(npc));
@@ -195,15 +222,20 @@ public static class PlayerWorldExtensions
             // --- Tier 1 state handlers (multi-consumer) ---
             RegisterHandler(registry, Verbs.ProcessSetWeather, weather);
             RegisterHandler(registry, Verbs.ProcessAddPlayer, session);
+            RegisterHandler(registry, Verbs.ProcessNewPosition, position);
+            RegisterHandler(registry, Verbs.ProcessAddPlayer, position);
             RegisterHandler(registry, Verbs.ProcessSetCelestialInfo, celestial);
 
-            RegisterHandler(registry, Verbs.ProcessMapPinAdd, new MapPinAddHandler(mapPins));
-            RegisterHandler(registry, Verbs.ProcessMapPinRemove, new MapPinRemoveHandler(mapPins));
+            RegisterHandler(registry, Verbs.ProcessMapPinAdd, mapPins.PinAddHandler);
+            RegisterHandler(registry, Verbs.ProcessMapPinRemove, mapPins.PinRemoveHandler);
 
-            RegisterHandler(registry, Verbs.ProcessAddEffects, new AddEffectsHandler(effects));
-            RegisterHandler(registry, Verbs.ProcessRemoveEffects, new RemoveEffectsHandler(effects));
+            RegisterHandler(registry, Verbs.ProcessAddEffects, effects.AddHandler);
+            RegisterHandler(registry, Verbs.ProcessRemoveEffects, effects.RemoveHandler);
+            RegisterHandler(registry, Verbs.ProcessUpdateEffectName, effects.UpdateNameHandler);
 
             RegisterHandler(registry, Verbs.ProcessBook, quest);
+            RegisterHandler(registry, Verbs.ProcessLoadQuests, quest.LoadQuestsHandler);
+            RegisterHandler(registry, Verbs.ProcessCompleteQuest, quest.CompleteQuestHandler);
 
             // --- Garden passthrough handlers (Tier 2, single consumer: Samwise) ---
             RegisterHandler(registry, Verbs.ProcessUpdateDescription, new UpdateDescriptionHandler(pub));
@@ -220,6 +252,11 @@ public static class PlayerWorldExtensions
             RegisterHandler(registry, Verbs.ProcessEndInteraction, new EndInteractionHandler(pub));
             RegisterHandler(registry, Verbs.ProcessDoDelayLoop, new DelayLoopHandler(pub));
             RegisterHandler(registry, Verbs.ProcessWaitInteraction, new WaitInteractionHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessEnableInteractors, new EnableInteractorsHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessTalkScreen, new TalkScreenHandler(pub));
+
+            // --- Map effects passthrough handler (Tier 2, primary consumer: Legolas) ---
+            RegisterHandler(registry, Verbs.ProcessMapFx, new MapFxHandler(pub));
 
             // --- Book handler (multi-consumer: Pippin, Saruman/GameState, generic) ---
             RegisterHandler(registry, Verbs.ProcessBook, new ProcessBookHandler(pub));

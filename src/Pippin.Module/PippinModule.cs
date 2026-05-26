@@ -8,7 +8,6 @@ using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Pippin.Domain;
-using Pippin.Parsing;
 using Pippin.Sharing;
 using Pippin.State;
 using Pippin.ViewModels;
@@ -44,9 +43,6 @@ public sealed class PippinModule : IMithrilModule
         // Domain
         services.AddSingleton<FoodCatalog>(sp =>
             new FoodCatalog(sp.GetRequiredService<IReferenceDataService>()));
-
-        // Parsing
-        services.AddSingleton<GourmandLogParser>();
 
         // State
         services.AddSingleton<GourmandStateMachine>();

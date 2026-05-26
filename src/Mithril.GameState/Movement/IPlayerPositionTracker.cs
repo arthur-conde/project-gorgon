@@ -21,6 +21,7 @@ public sealed record PlayerPosition(
 /// <see cref="Current"/> plus a replay-on-<see cref="Subscribe"/> handler so
 /// late subscribers see the same view already-attached ones do.
 /// </summary>
+[Obsolete("Use Arda.World.Player.IMapState (position via X/Y/Z/PositionMeasuredAt/PositionSource) instead.")]
 public interface IPlayerPositionTracker
 {
     /// <summary>

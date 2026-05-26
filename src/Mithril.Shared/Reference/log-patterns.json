@@ -237,16 +237,16 @@
       ]
     },
     "legolas.PlayerLogParser.ItemCollectedRx": {
-      "pattern": "ProcessScreenText\\(\\s*ImportantInfo\\s*,\\s*\"(?<name>.+?)(?:\\s+x\\d+)?\\s+collected!(?:\\s+Also found\\s+(?<bonus>.+?)(?:\\s+x\\d+)?\\s+\\(speed bonus!\\))?\\.?\"\\s*\\)",
+      "pattern": "^(?<name>.+?)(?:\\s+x\\d+)?\\s+collected!(?:\\s+Also found\\s+(?<bonus>.+?)(?:\\s+x\\d+)?\\s+\\(speed bonus!\\))?\\.?$",
       "source": "player",
       "module": "legolas",
       "csharp": {
         "type": "Legolas.Services.PlayerLogParser",
-        "method": "ItemCollectedRx",
+        "method": "ItemCollectedTextRx",
         "options": ["Compiled", "CultureInvariant"]
       },
       "eventType": "legolas.ItemCollected",
-      "notes": "Player.log mirror of the retired chat \"[Status] X collected!\" line — same payload minus the [Status] prefix, including the optional \"Also found X x<N> (speed bonus!)\" tail. Migrated in #606 so Legolas is Player.log-sim-resident (last chat consumer in the codebase). Anchored on ImportantInfo to discriminate from MotherlodeDistance.",
+      "notes": "Post-Arda: operates on the already-extracted ScreenTextObserved.Text (ImportantInfo category) rather than the full log line. Matches the inner text body only.",
       "fields": [
         { "name": "name", "group": "name", "type": "string" },
         { "name": "bonus", "group": "bonus", "type": "string" }

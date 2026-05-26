@@ -10,4 +10,5 @@ public readonly record struct DelayLoopStarted(
     double Seconds,
     ReadOnlyMemory<char> Verb,
     ReadOnlyMemory<char> Text,
+    bool IsInteractorDelayLoop,
     LogLineMetadata Metadata);

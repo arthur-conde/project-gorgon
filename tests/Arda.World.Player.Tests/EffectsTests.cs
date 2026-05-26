@@ -23,18 +23,20 @@ public class EffectsTests
     [Fact]
     public void AddEffects_EmitsCatalogIds()
     {
-        var args = "(12345, 67890, \"[302, 303]\", True)".AsSpan();
-        _effects.OnAdd(args, "source", Meta());
+        var args = "(12345, 67890, \"[302, 303]\", True)";
+        _effects.AddHandler.Handle(args.AsSpan(), "source", Meta());
 
-        _bus.Published<EffectsAdded>().Should().ContainSingle()
-            .Which.CatalogIds.Should().BeEquivalentTo([302, 303]);
+        var published = _bus.Published<EffectsAdded>();
+        published.Should().ContainSingle();
+        published[0].CatalogIds.Should().BeEquivalentTo([302, 303]);
+        published[0].SourceCharId.Should().Be(67890);
     }
 
     [Fact]
     public void AddEffects_TrailingComma_Tolerated()
     {
-        var args = "(12345, 67890, \"[15361, ]\", False)".AsSpan();
-        _effects.OnAdd(args, "source", Meta());
+        var args = "(12345, 67890, \"[15361, ]\", False)";
+        _effects.AddHandler.Handle(args.AsSpan(), "source", Meta());
 
         _bus.Published<EffectsAdded>().Should().ContainSingle()
             .Which.CatalogIds.Should().BeEquivalentTo([15361]);
@@ -43,8 +45,8 @@ public class EffectsTests
     [Fact]
     public void RemoveEffects_EmitsInstanceIds()
     {
-        var args = "(12345, [259278, 259279])".AsSpan();
-        _effects.OnRemove(args, "source", Meta());
+        var args = "(12345, [259278, 259279])";
+        _effects.RemoveHandler.Handle(args.AsSpan(), "source", Meta());
 
         _bus.Published<EffectsRemoved>().Should().ContainSingle()
             .Which.InstanceIds.Should().BeEquivalentTo([259278L, 259279L]);
@@ -53,10 +55,22 @@ public class EffectsTests
     [Fact]
     public void AddEffects_EmptyList_NoEvent()
     {
-        var args = "(12345, 67890, \"[]\", True)".AsSpan();
-        _effects.OnAdd(args, "source", Meta());
+        var args = "(12345, 67890, \"[]\", True)";
+        _effects.AddHandler.Handle(args.AsSpan(), "source", Meta());
 
         _bus.Published<EffectsAdded>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void UpdateEffectName_EmitsInstanceIdAndDisplayName()
+    {
+        var args = "(25098977, 259320, \"Performance Appreciation, Level 0\")";
+        _effects.UpdateNameHandler.Handle(args.AsSpan(), "source", Meta());
+
+        var published = _bus.Published<EffectNameUpdated>();
+        published.Should().ContainSingle();
+        published[0].InstanceId.Should().Be(259320);
+        published[0].DisplayName.Should().Be("Performance Appreciation, Level 0");
     }
 
     private sealed class SpyEventBus : IDomainEventBus

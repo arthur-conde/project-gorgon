@@ -25,6 +25,8 @@ internal sealed class Map : IFrameHandler, IAreaState
     private string? _pendingArea;
 
     public string? CurrentArea { get; private set; }
+    public string? PreviousArea { get; private set; }
+    public DateTimeOffset? TransitionedAt { get; private set; }
 
     internal string? PendingArea => _pendingArea;
 
@@ -79,7 +81,9 @@ internal sealed class Map : IFrameHandler, IAreaState
         if (string.Equals(previous, newArea, StringComparison.Ordinal))
             return;
 
+        PreviousArea = previous;
         CurrentArea = newArea;
+        TransitionedAt = metadata.Timestamp ?? metadata.ReadOn;
         _bus.Publish(new AreaChanged(previous, newArea, metadata));
     }
 

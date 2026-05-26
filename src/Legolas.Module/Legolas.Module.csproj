@@ -3,6 +3,8 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>Legolas</RootNamespace>
+    <!-- TODO: migrate to Arda interfaces (IMapState, ISkillState, etc.) -->
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
@@ -20,6 +22,7 @@
     <PackageReference Include="Vortice.Direct3D11" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />

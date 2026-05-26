@@ -2,8 +2,12 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <RootNamespace>Mithril.GameState</RootNamespace>
+    <!-- Implementations here naturally reference the [Obsolete] interfaces they implement.
+         Suppress inside this project; external consumers still see the warnings. -->
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <ProjectReference Include="..\Mithril.WorldSim.Core\Mithril.WorldSim.Core.csproj" />
     <ProjectReference Include="..\Mithril.WorldSim.Player\Mithril.WorldSim.Player.csproj" />

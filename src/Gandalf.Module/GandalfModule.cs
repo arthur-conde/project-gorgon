@@ -1,4 +1,6 @@
 using System.IO;
+using Arda.Dispatch;
+using Arda.World.Player;
 using Gandalf.Domain;
 using Gandalf.Parsing;
 using Gandalf.Services;
@@ -6,10 +8,6 @@ using Gandalf.ViewModels;
 using Gandalf.Views;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
-// Mithril.GameState now owns the quest parsers + IPlayerQuestJournalState;
-// Gandalf only consumes IPlayerQuestJournalState via QuestSource. The
-// parser singletons + the old QuestIngestionService no longer need to be
-// registered here.
 using Mithril.Shared.Modules;
 using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
@@ -80,15 +78,10 @@ public sealed class GandalfModule : IMithrilModule
         // durations come from the community calibration overlay (gandalf.json
         // in mithril-calibration); placeholder fallback for not-yet-calibrated
         // bosses.
-        services.AddSingleton<ChestInteractionParser>();
-        services.AddSingleton<ChestRejectionParser>();
-        services.AddSingleton<MilkingRejectionParser>();
-        services.AddSingleton<InteractionEndParser>();
-        services.AddSingleton<InteractionDelayLoopParser>();
-        services.AddSingleton<InteractionWaitParser>();
-        // Area parser + IPlayerAreaState are registered once in
-        // AddMithrilGameState() (shared live game-state); LootSource queries
-        // CurrentArea directly at chest-commit time (#790).
+        //
+        // Post-Arda: parsers for interaction signals retired (replaced by
+        // Arda domain events). BossKillCreditParser and DefeatCooldownParser
+        // retained — they extract NPC names from ScreenTextObserved free text.
         services.AddSingleton<BossKillCreditParser>();
         services.AddSingleton<DefeatCooldownParser>();
         services.AddSingleton<LootBracketTracker>();
@@ -96,11 +89,11 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<DerivedTimerProgressService>(),
             sp.GetRequiredService<ISettingsStore<LootCatalogCache>>(),
             sp.GetRequiredService<LootCatalogCache>(),
-            areaState: sp.GetService<Mithril.GameState.Areas.IPlayerAreaState>(),
+            areaState: sp.GetService<IAreaState>(),
             refData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             time: null,
             diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),
-            playerWorld: sp.GetService<Mithril.WorldSim.Player.IPlayerWorld>()));
+            calendarState: sp.GetService<ICalendarState>()));
         services.AddHostedService<LootIngestionService>();
         services.AddHostedService<DefeatCalibrationBridge>();
         services.AddSingleton<LootTimersViewModel>();
@@ -127,12 +120,13 @@ public sealed class GandalfModule : IMithrilModule
         // subsequent startups no-op.
         services.AddHostedService<QuestCompletionImportService>();
 
-        // Quest source — projects Quest POCO ReuseTime_* timers from
-        // IPlayerQuestJournalState.ActiveQuests ∪ keys-with-progress.
-        // Ingestion and per-character journal persistence live in
-        // Mithril.GameState; this source is purely a Gandalf-side projector
-        // that anchors cooldowns via DerivedTimerProgressService.
-        services.AddSingleton<QuestSource>();
+        services.AddSingleton<QuestSource>(sp => new QuestSource(
+            sp.GetRequiredService<DerivedTimerProgressService>(),
+            sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
+            sp.GetRequiredService<Arda.World.Player.IQuestState>(),
+            sp.GetRequiredService<Arda.Dispatch.IDomainEventSubscriber>(),
+            time: null,
+            calendarState: sp.GetService<ICalendarState>()));
         services.AddSingleton<QuestTimersViewModel>();
 
         services.AddSingleton<TimerDefinitionsService>();
@@ -145,24 +139,26 @@ public sealed class GandalfModule : IMithrilModule
         services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<UserTimerSource>());
         services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<QuestSource>());
         services.AddSingleton<ITimerSource>(sp => sp.GetRequiredService<LootSource>());
-        services.AddSingleton<TimerAlarmService>();
+        services.AddSingleton<TimerAlarmService>(sp => new TimerAlarmService(
+            sp.GetRequiredService<UserTimerSource>(),
+            sp.GetRequiredService<GandalfSettings>(),
+            sp.GetRequiredService<Mithril.Shared.Audio.IAudioPlaybackSink>(),
+            time: null,
+            calendarState: sp.GetService<ICalendarState>(),
+            bus: sp.GetService<IDomainEventSubscriber>()));
 
         // Time-of-day shift alarms — character-agnostic, runs whenever the
-        // shell is open. Subscribes to PlayerWorld's TimeOfDayShift domain
-        // events (scheduler-collapse #613); the world clock drives the
-        // alarm cadence, replacing the retired DispatcherTimer wake
-        // injection (world-sim migration item #12). Eager hosted service
-        // so the subscription attaches during the trailing-merger-start
-        // sequence (#702 / Call 2) regardless of whether the Gandalf tab
-        // is ever opened.
+        // shell is open. Subscribes to Arda's TimeOfDayShifted domain
+        // events via IDomainEventSubscriber. Eager hosted service so the
+        // subscription attaches during startup regardless of whether the
+        // Gandalf tab is ever opened.
         services.AddSingleton<ShiftAlarmService>();
         services.AddHostedService(sp => sp.GetRequiredService<ShiftAlarmService>());
 
-        // Drives TimerProgressService.CheckExpirations off PlayerWorld's
-        // CalendarTimeAdvanced ticks (scheduler-collapse #613). Replaces
-        // the retired TimerExpirationScheduler whose DispatcherTimer woke
-        // the app at the soonest known FiringAt. World-clock-driven ticks
-        // are replay-deterministic per design notebook principle 13.
+        // Drives TimerProgressService.CheckExpirations off Arda's
+        // CalendarTimeAdvanced domain events. Replaces the retired
+        // DispatcherTimer-based scheduler; calendar ticks are
+        // replay-deterministic.
         services.AddHostedService<TimerExpirationDriver>();
 
         // Dashboard aggregator + VM — fans in every registered ITimerSource.

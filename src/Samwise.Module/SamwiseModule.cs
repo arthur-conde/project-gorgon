@@ -10,7 +10,6 @@ using Samwise.Alarms;
 using Samwise.Calibration;
 using Samwise.Config;
 using Samwise.Hotkeys;
-using Samwise.Parsing;
 using Samwise.State;
 using Samwise.ViewModels;
 using Samwise.Views;
@@ -37,7 +36,6 @@ public sealed class SamwiseModule : IMithrilModule
         var settingsPath = Path.Combine(samwiseDir, "settings.json");
 
         services.AddSingleton<ICropConfigStore>(_ => new CropConfigStore(bundledCrops, userCrops));
-        services.AddSingleton<GardenLogParser>();
         services.AddSingleton<GardenStateMachine>(sp => new GardenStateMachine(
             sp.GetRequiredService<ICropConfigStore>(),
             time: null,
@@ -50,7 +48,7 @@ public sealed class SamwiseModule : IMithrilModule
             sp.GetRequiredService<GardenStateMachine>(),
             sp.GetRequiredService<SamwiseSettings>(),
             sp.GetRequiredService<Mithril.Shared.Audio.IAudioPlaybackSink>(),
-            playerWorld: sp.GetService<Mithril.WorldSim.Player.IPlayerWorld>()));
+            bus: sp.GetService<Arda.Dispatch.IDomainEventSubscriber>()));
 
         // Global preferences stay app-wide.
         services.AddMithrilSettings<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings);

@@ -1,11 +1,9 @@
 using System.Diagnostics.CodeAnalysis;
+using Arda.World.Player;
 using Gandalf.Domain;
-using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
@@ -50,10 +48,10 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly DerivedTimerProgressService _derived;
     private readonly ISettingsStore<LootCatalogCache> _cacheStore;
     private readonly LootCatalogCache _cache;
-    private readonly IPlayerAreaState? _areaState;
+    private readonly IAreaState? _areaState;
     private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _time;
-    private readonly IWorldClock? _worldClock;
+    private readonly ICalendarState? _calendarState;
     private readonly IDiagnosticsSink? _diag;
     private readonly object _catalogLock = new();
     private IReadOnlyDictionary<string, DefeatCatalogEntry> _calibrationByDisplayName =
@@ -66,11 +64,11 @@ public sealed class LootSource : ITimerSource, IDisposable
         DerivedTimerProgressService derived,
         ISettingsStore<LootCatalogCache> cacheStore,
         LootCatalogCache cache,
-        IPlayerAreaState? areaState = null,
+        IAreaState? areaState = null,
         IReferenceDataService? refData = null,
         TimeProvider? time = null,
         IDiagnosticsSink? diag = null,
-        IPlayerWorld? playerWorld = null)
+        ICalendarState? calendarState = null)
     {
         _derived = derived;
         _cacheStore = cacheStore;
@@ -78,7 +76,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         _areaState = areaState;
         _refData = refData;
         _time = time ?? TimeProvider.System;
-        _worldClock = playerWorld?.Clock;
+        _calendarState = calendarState;
         _diag = diag;
         _catalog = BuildCatalog();
         _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
@@ -260,9 +258,9 @@ public sealed class LootSource : ITimerSource, IDisposable
                 _derived.Start(Id, key, rejectionAt);
                 rowChanged = true;
             }
-            // State-decision gate: read PlayerWorld's clock (#609) so replay
-            // produces identical stale-anchor decisions regardless of attach time.
-            else if (prior.DismissedAt is null && prior.StartedAt + duration <= (_worldClock?.Now ?? _time.GetUtcNow()))
+        // State-decision gate: read calendar's last timestamp so replay
+        // produces identical stale-anchor decisions regardless of attach time.
+        else if (prior.DismissedAt is null && prior.StartedAt + duration <= (_calendarState?.LastTimestamp ?? _time.GetUtcNow()))
             {
                 // Stale anchor — recorded loot is older than this rejection
                 // implies. Refresh the anchor; the rejection guarantees the
@@ -578,9 +576,9 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     private void FireReady(string key, string displayName, TimeSpan durationOverride, DateTimeOffset atUtc)
     {
-        // State-decision gate: read PlayerWorld's clock (#609) so replay
+        // State-decision gate: read calendar's last timestamp so replay
         // fires the same eager-ready events as a live attach.
-        if (atUtc <= (_worldClock?.Now ?? _time.GetUtcNow()))
+        if (atUtc <= (_calendarState?.LastTimestamp ?? _time.GetUtcNow()))
         {
             TimerReady?.Invoke(this, new TimerReadyEventArgs
             {

@@ -44,6 +44,7 @@ namespace Mithril.GameState.Effects;
 /// See issue #590 "Known unknowns" for the catalog-id / instance-id bridge
 /// gap.</para>
 /// </summary>
+[Obsolete("Use Arda.World.Player.IEffectsState + IDomainEventSubscriber.Subscribe<EffectsAdded/EffectsRemoved/EffectNameUpdated> instead.")]
 public interface IPlayerEffectsStateService
 {
     /// <summary>

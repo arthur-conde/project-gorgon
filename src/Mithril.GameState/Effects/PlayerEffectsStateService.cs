@@ -1,4 +1,5 @@
-using System.Text.RegularExpressions;
+using Arda.Dispatch;
+using Arda.World.Player.Events;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Logging;
 using Microsoft.Extensions.Hosting;
@@ -7,49 +8,29 @@ namespace Mithril.GameState.Effects;
 
 /// <summary>
 /// Hosted-service implementation of <see cref="IPlayerEffectsStateService"/>.
-/// Subscribes to the L1 driver's <see cref="LocalPlayerLogLine"/> pipe with
-/// <see cref="ReplayMode.FromSessionStart"/> — the same shape
-/// <see cref="Mithril.GameState.Inventory.InventoryService"/> uses (#590 spec,
-/// Behaviour section). Maintains the live catalog-id-keyed map plus an
-/// internal event log used to atomically replay history to late subscribers
-/// (post-#585 React-channel contract).
+/// Subscribes to Arda domain events (<see cref="EffectsAdded"/>,
+/// <see cref="EffectsRemoved"/>, <see cref="EffectNameUpdated"/>) via
+/// <see cref="IDomainEventSubscriber"/>. Maintains the live catalog-id-keyed
+/// map plus an internal event log used to atomically replay history to late
+/// subscribers (post-#585 React-channel contract).
 ///
 /// <para><b>Threading.</b> A single <c>_lock</c> guards <c>_active</c>,
 /// <c>_eventLog</c>, <c>_handlers</c>, <c>_unnamed</c>, and
-/// <c>_instanceToCatalog</c>. Both the L1 pump (via <c>OnLocalPlayer</c>)
-/// and <see cref="Subscribe"/> callers take it; live dispatch happens
-/// under the lock so the Subscribe-vs-live-event race is impossible (the
-/// new subscriber either ran its replay before the next event fires, or
+/// <c>_instanceToCatalog</c>. Both the Arda dispatch thread (via domain event
+/// callbacks) and <see cref="Subscribe"/> callers take it; live dispatch
+/// happens under the lock so the Subscribe-vs-live-event race is impossible
+/// (the new subscriber either ran its replay before the next event fires, or
 /// attached after — never in between).</para>
 ///
-/// <para><b>Why a self-feeding BackgroundService.</b> Mirrors
-/// <see cref="Mithril.GameState.Celestial.PlayerCelestialStateService"/>:
-/// live game-state shared across multiple downstream consumers (Pippin
+/// <para><b>Lifecycle.</b> <see cref="StartAsync"/> subscribes eagerly to the
+/// domain bus. Subscriptions are synchronous — no background task is needed.
+/// Live game-state shared across multiple downstream consumers (Pippin
 /// Gourmand, Vampirism sun-damage, Saruman Words-of-Power — see issue #590
 /// "Consumers") that must populate at shell startup independent of any
 /// module activation gate.</para>
 /// </summary>
-public sealed partial class PlayerEffectsStateService : BackgroundService, IPlayerEffectsStateService
+public sealed class PlayerEffectsStateService : IHostedService, IPlayerEffectsStateService, IDisposable
 {
-    // ProcessAddEffects(targetCharId, sourceCharId, "[<catalogId1>, <catalogId2>, ...]", <bool>)
-    // The bracketed list arrives as a quoted string; we capture the inner content
-    // (without the outer quotes) and the bool flag separately. The list tolerates
-    // trailing spaces / commas (e.g. "[15361, ]") per captured samples.
-    [GeneratedRegex(@"ProcessAddEffects\((-?\d+),\s*(-?\d+),\s*""\[([^\]]*)\]"",\s*(True|False)\)",
-        RegexOptions.CultureInvariant)]
-    private static partial Regex AddEffectsRx();
-
-    // ProcessRemoveEffects(targetCharId, [<instanceId1>, <instanceId2>, ...])
-    // The bracketed list is UNQUOTED (not a string literal).
-    [GeneratedRegex(@"ProcessRemoveEffects\((-?\d+),\s*\[([^\]]*)\]\)",
-        RegexOptions.CultureInvariant)]
-    private static partial Regex RemoveEffectsRx();
-
-    // ProcessUpdateEffectName(targetCharId, effectInstanceId, "<displayName>")
-    [GeneratedRegex(@"ProcessUpdateEffectName\((-?\d+),\s*(-?\d+),\s*""((?:[^""\\]|\\.)*)""\)",
-        RegexOptions.CultureInvariant)]
-    private static partial Regex UpdateEffectNameRx();
-
     /// <summary>
     /// Soft cap on the internal event-log size. PG sessions emit ~250 effect
     /// verbs per the wiki captures, so 10,000 is generous (a couple of orders
@@ -59,7 +40,7 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
     /// </summary>
     internal const int EventLogSoftCap = 10_000;
 
-    private readonly ILogStreamDriver _driver;
+    private readonly IDomainEventSubscriber _domainBus;
     private readonly IDiagnosticsSink? _diag;
 
     private readonly object _lock = new();
@@ -67,30 +48,18 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
     private readonly List<EffectEvent> _eventLog = new();
     private readonly List<Action<EffectEvent>> _handlers = new();
 
-    // Stack of un-named catalog ids (most-recent-first) used on the FIRST
-    // ProcessUpdateEffectName for an instance to correlate back to its
-    // preceding ProcessAddEffects entry. Spec wording: "the entry that was
-    // most recently added and still lacks an InstanceId" — LIFO/stack.
-    // Captured Add/Update interleaving is 1:1 ([302] Add → Update 259328 →
-    // [303] Add → Update 259329), so the stack depth is typically 0 or 1.
-    // Subsequent re-renames of an already-named instance bypass the stack and
-    // route via <see cref="_instanceToCatalog"/> below.
     private readonly Stack<int> _unnamed = new();
 
-    // instanceId → catalogId map populated when an Update first names an
-    // entry (alongside the _unnamed pop), and cleared on Remove. Re-renames
-    // of an already-named instance (e.g. level-tagged skill effect bumping
-    // from "Performance Appreciation, Level 0" to "Level 1") route via this
-    // lookup so they hit the SAME catalog id rather than popping an
-    // unrelated _unnamed entry and misrouting the DisplayNameChanged event.
     private readonly Dictionary<long, int> _instanceToCatalog = new();
 
-    private ILogSubscription? _subscription;
+    private IDisposable? _addedSub;
+    private IDisposable? _removedSub;
+    private IDisposable? _namedSub;
     private bool _eventLogCapWarned;
 
-    public PlayerEffectsStateService(ILogStreamDriver driver, IDiagnosticsSink? diag = null)
+    public PlayerEffectsStateService(IDomainEventSubscriber domainBus, IDiagnosticsSink? diag = null)
     {
-        _driver = driver;
+        _domainBus = domainBus;
         _diag = diag;
     }
 
@@ -108,7 +77,6 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
         {
             lock (_lock)
             {
-                // Defensive copy — callers iterate without holding the service lock.
                 return new Dictionary<int, EffectState>(_active);
             }
         }
@@ -123,9 +91,6 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
         {
             if (replay == ReplayMode.FromSessionStart)
             {
-                // Atomic replay under the lock — same shape as InventoryService.Subscribe.
-                // The Fire path also holds _lock, so a new subscriber either ran its
-                // replay strictly before the next live event or attached strictly after.
                 foreach (var evt in _eventLog)
                 {
                     Invoke(handler, evt);
@@ -136,89 +101,53 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
         }
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
         _diag?.Info("GameState.Effects",
-            "Subscribing to L1 driver (LocalPlayer pipe) for ProcessAddEffects / "
-            + "ProcessRemoveEffects / ProcessUpdateEffectName");
-        try
-        {
-            _subscription = _driver.Subscribe<LocalPlayerLogLine>(
-                OnLocalPlayer,
-                new LogSubscriptionOptions
-                {
-                    ReplayMode = ReplayMode.FromSessionStart,
-                    DeliveryContext = DeliveryContext.Inline,
-                    DiagnosticCategory = "GameState.Effects",
-                });
+            "Subscribing to Arda domain events (EffectsAdded / EffectsRemoved / EffectNameUpdated)");
 
-            try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
-            catch (OperationCanceledException) { /* expected on host stop */ }
-        }
-        finally
-        {
-            _subscription?.Dispose();
-            _subscription = null;
-        }
+        _addedSub = _domainBus.Subscribe<EffectsAdded>(OnEffectsAdded);
+        _removedSub = _domainBus.Subscribe<EffectsRemoved>(OnEffectsRemoved);
+        _namedSub = _domainBus.Subscribe<EffectNameUpdated>(OnEffectNameUpdated);
+
+        return Task.CompletedTask;
     }
 
-    public override void Dispose()
+    public Task StopAsync(CancellationToken cancellationToken)
     {
-        _subscription?.Dispose();
-        _subscription = null;
-        base.Dispose();
+        _addedSub?.Dispose();
+        _removedSub?.Dispose();
+        _namedSub?.Dispose();
+        _addedSub = null;
+        _removedSub = null;
+        _namedSub = null;
+        return Task.CompletedTask;
     }
 
-    private ValueTask OnLocalPlayer(LogEnvelope<LocalPlayerLogLine> envelope)
+    public void Dispose()
     {
-        var data = envelope.Payload.Data;
-        // LocalPlayerLogLine.Timestamp is already a DateTimeOffset (UTC) —
-        // L0 normalizes the source clock. No round-trip needed.
-        var ts = envelope.Payload.Timestamp;
-
-        var add = AddEffectsRx().Match(data);
-        if (add.Success
-            && long.TryParse(add.Groups[2].ValueSpan, out var sourceCharId))
-        {
-            var listBody = add.Groups[3].Value;
-            var isLive = add.Groups[4].Value == "True";
-            HandleAddEffects(sourceCharId, listBody, isLive, ts);
-            return ValueTask.CompletedTask;
-        }
-
-        var rem = RemoveEffectsRx().Match(data);
-        if (rem.Success)
-        {
-            HandleRemoveEffects(rem.Groups[2].Value, ts);
-            return ValueTask.CompletedTask;
-        }
-
-        var upd = UpdateEffectNameRx().Match(data);
-        if (upd.Success
-            && long.TryParse(upd.Groups[2].ValueSpan, out var instanceId))
-        {
-            HandleUpdateEffectName(instanceId, upd.Groups[3].Value, ts);
-        }
-        return ValueTask.CompletedTask;
+        _addedSub?.Dispose();
+        _removedSub?.Dispose();
+        _namedSub?.Dispose();
+        _addedSub = null;
+        _removedSub = null;
+        _namedSub = null;
     }
 
-    private void HandleAddEffects(long sourceCharId, string listBody, bool isLive, DateTimeOffset timestamp)
+    private void OnEffectsAdded(EffectsAdded evt)
     {
+        var ts = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
+        var sourceCharId = evt.SourceCharId;
+
         lock (_lock)
         {
-            foreach (var token in EnumerateIntTokens(listBody))
+            foreach (var catalogId in evt.CatalogIds)
             {
-                if (!int.TryParse(token, out var catalogId)) continue;
-
                 if (_active.TryGetValue(catalogId, out var existing))
                 {
-                    // Idempotent re-apply / re-emit. Per #590 spec: refresh AppliedAt,
-                    // no Added event fires. Mirrors InventoryService's add-reemit at
-                    // InventoryService.cs:320-326. Applies to both True (passive
-                    // equipment-bonus re-apply at zone-load) and False (login snapshot).
-                    _active[catalogId] = existing with { AppliedAt = timestamp };
+                    _active[catalogId] = existing with { AppliedAt = ts };
                     _diag?.Trace("GameState.Effects",
-                        $"Add-reemit catalog={catalogId} source={sourceCharId} live={isLive}");
+                        $"Add-reemit catalog={catalogId} source={sourceCharId}");
                     continue;
                 }
 
@@ -227,31 +156,27 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
                     InstanceId: null,
                     DisplayName: null,
                     SourceCharId: sourceCharId,
-                    AppliedAt: timestamp);
+                    AppliedAt: ts);
                 _active[catalogId] = state;
                 _unnamed.Push(catalogId);
 
-                var evt = new EffectEvent(EffectEventKind.Added, state, timestamp);
-                AppendEventLog(evt);
+                var effectEvt = new EffectEvent(EffectEventKind.Added, state, ts);
+                AppendEventLog(effectEvt);
                 _diag?.Trace("GameState.Effects",
-                    $"Add    catalog={catalogId} source={sourceCharId} live={isLive} (total={_active.Count})");
-                Fire(evt);
+                    $"Add    catalog={catalogId} source={sourceCharId} (total={_active.Count})");
+                Fire(effectEvt);
             }
         }
     }
 
-    private void HandleRemoveEffects(string listBody, DateTimeOffset timestamp)
+    private void OnEffectsRemoved(EffectsRemoved evt)
     {
+        var ts = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
+
         lock (_lock)
         {
-            foreach (var token in EnumerateIntTokens(listBody))
+            foreach (var instanceId in evt.InstanceIds)
             {
-                if (!long.TryParse(token, out var instanceId)) continue;
-
-                // Linear scan over _active — bounded by the live set size,
-                // typically << 100. Spec accepts catalog-id-only entries can
-                // never be removed by id (no InstanceId bridge); only entries
-                // that received a ProcessUpdateEffectName are removable here.
                 int? matchedCatalogId = null;
                 foreach (var (catalogId, state) in _active)
                 {
@@ -272,123 +197,71 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
                 var removed = _active[matchedCatalogId.Value];
                 _active.Remove(matchedCatalogId.Value);
                 _instanceToCatalog.Remove(instanceId);
-                var evt = new EffectEvent(EffectEventKind.Removed, removed, timestamp);
-                AppendEventLog(evt);
+                var effectEvt = new EffectEvent(EffectEventKind.Removed, removed, ts);
+                AppendEventLog(effectEvt);
                 _diag?.Trace("GameState.Effects",
                     $"Remove catalog={matchedCatalogId.Value} instance={instanceId} (total={_active.Count})");
-                Fire(evt);
+                Fire(effectEvt);
             }
         }
     }
 
-    private void HandleUpdateEffectName(long instanceId, string displayName, DateTimeOffset timestamp)
+    private void OnEffectNameUpdated(EffectNameUpdated evt)
     {
+        var ts = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
+        var instanceId = evt.InstanceId;
+        var displayName = evt.DisplayName;
+
         lock (_lock)
         {
-            // Route by instance id FIRST. A re-rename of an already-named
-            // effect (e.g. a level-tagged skill effect bumping from
-            // "Performance Appreciation, Level 0" to "Level 1") shares the
-            // same instance id; the catalog id is the existing one, not
-            // whatever happens to be on top of _unnamed. Without this lookup,
-            // a re-rename would pop an unrelated un-named entry (or warn-and-
-            // drop on empty stack) and misroute the DisplayNameChanged event.
             if (_instanceToCatalog.TryGetValue(instanceId, out var knownCatalogId))
             {
                 if (_active.TryGetValue(knownCatalogId, out var existing))
                 {
                     if (existing.DisplayName == displayName)
                     {
-                        // No-op re-emit of the same name; spec wording on
-                        // EffectEventKind.DisplayNameChanged says it fires
-                        // "if the name actually changes."
                         _diag?.Trace("GameState.Effects",
                             $"Update catalog={knownCatalogId} instance={instanceId} name unchanged, no event");
                         return;
                     }
                     var renamed = existing with { DisplayName = displayName };
                     _active[knownCatalogId] = renamed;
-                    var renameEvt = new EffectEvent(EffectEventKind.DisplayNameChanged, renamed, timestamp);
+                    var renameEvt = new EffectEvent(EffectEventKind.DisplayNameChanged, renamed, ts);
                     AppendEventLog(renameEvt);
                     _diag?.Trace("GameState.Effects",
                         $"Update catalog={knownCatalogId} instance={instanceId} rename=\"{displayName}\" (was \"{existing.DisplayName}\")");
                     Fire(renameEvt);
                     return;
                 }
-                // _active entry is gone but the instance bridge survived —
-                // stale; drop the bridge and fall through to the stack path
-                // (treat as first-naming attempt against current un-named set).
                 _instanceToCatalog.Remove(instanceId);
                 _diag?.Trace("GameState.Effects",
                     $"Update instance={instanceId} — stale bridge dropped, falling back to stack");
             }
 
-            // First-naming path: pop the most recently added un-named entry.
-            // PG's captured pattern interleaves Add/Update 1:1 at the same
-            // instant ([302] Add → Update 259328 → [303] Add → Update 259329),
-            // so the stack depth is typically 1 and pop semantics is
-            // unambiguous. Spec accepts a missing pair as "best-effort, drop
-            // with Trace; no synthetic Add."
             while (_unnamed.Count > 0)
             {
                 var catalogId = _unnamed.Pop();
                 if (!_active.TryGetValue(catalogId, out var state))
-                {
-                    // The un-named entry was removed before its Update arrived.
-                    // Keep popping — the next-most-recent un-named is the candidate.
                     continue;
-                }
                 if (state.InstanceId is not null)
-                {
-                    // Already named — should be rare since _instanceToCatalog
-                    // catches the common re-rename path above. Skip and keep
-                    // looking for a genuine un-named candidate.
                     continue;
-                }
 
                 var updated = state with { InstanceId = instanceId, DisplayName = displayName };
                 _active[catalogId] = updated;
                 _instanceToCatalog[instanceId] = catalogId;
-                var evt = new EffectEvent(EffectEventKind.DisplayNameChanged, updated, timestamp);
-                AppendEventLog(evt);
+                var effectEvt = new EffectEvent(EffectEventKind.DisplayNameChanged, updated, ts);
+                AppendEventLog(effectEvt);
                 _diag?.Trace("GameState.Effects",
                     $"Update catalog={catalogId} instance={instanceId} name=\"{displayName}\"");
-                Fire(evt);
+                Fire(effectEvt);
                 return;
             }
 
-            // No un-named candidate. Could happen if the Update fires for an
-            // effect whose Add we missed (mid-session attach without snapshot
-            // replay).
             _diag?.Warn("GameState.Effects",
                 $"Update instance={instanceId} name=\"{displayName}\" — no un-named candidate, dropped");
         }
     }
 
-    /// <summary>
-    /// Tokenize a comma-separated list body (e.g. <c>"302, 303, "</c> or
-    /// <c>"259278,"</c>). Tolerates trailing empty tokens — PG's captured
-    /// shape for both Add (<c>"[15361, ]"</c>) and Remove (<c>"[259278,]"</c>)
-    /// commonly ends with a trailing comma.
-    /// </summary>
-    private static IEnumerable<string> EnumerateIntTokens(string listBody)
-    {
-        if (string.IsNullOrEmpty(listBody)) yield break;
-        foreach (var raw in listBody.Split(','))
-        {
-            var token = raw.Trim();
-            if (token.Length == 0) continue;
-            yield return token;
-        }
-    }
-
-    /// <summary>
-    /// MUST be called with <see cref="_lock"/> held. Appends an event to the
-    /// internal log used by <see cref="Subscribe"/>'s replay path. Soft cap
-    /// (<see cref="EventLogSoftCap"/>) protects against unbounded growth on
-    /// a degenerate stream; a one-time <see cref="DiagnosticLevel.Warn"/>
-    /// fires when the cap is first exceeded. Past the cap the log keeps
-    /// growing — dropping events would silently break the replay contract.
-    /// </summary>
     private void AppendEventLog(EffectEvent evt)
     {
         _eventLog.Add(evt);
@@ -402,15 +275,6 @@ public sealed partial class PlayerEffectsStateService : BackgroundService, IPlay
         }
     }
 
-    /// <summary>
-    /// MUST be called with <see cref="_lock"/> held. Dispatches to every
-    /// currently-attached handler (replay handlers receive live events;
-    /// live-only handlers also do). Holding the lock across dispatch is the
-    /// same atomicity guarantee <see cref="Mithril.GameState.Inventory.InventoryService.Subscribe"/>
-    /// makes: a new subscriber either ran its replay before this Fire and
-    /// will receive the live event, or runs after and saw the event in its
-    /// replay.
-    /// </summary>
     private void Fire(EffectEvent evt)
     {
         foreach (var handler in _handlers) Invoke(handler, evt);

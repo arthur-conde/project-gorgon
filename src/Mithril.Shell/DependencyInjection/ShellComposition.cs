@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using Arda.Composition;
 using Arda.Hosting;
 using Arda.World.Player;
 using Mithril.Shared.Audio;
@@ -133,6 +134,8 @@ public static class ShellComposition
                     var catalog = sp.GetRequiredService<IShiftCatalog>();
                     return catalog.Shifts.Select(s => (s.Slug, s.StartHour)).ToList();
                 });
+
+        services.AddArdaComposition();
 
         services.AddHostedService<ArdaDiagnosticBridge>();
 

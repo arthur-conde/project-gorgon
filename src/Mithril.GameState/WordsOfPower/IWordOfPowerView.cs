@@ -23,6 +23,7 @@ namespace Mithril.GameState.WordsOfPower;
 /// composition lives in this view layer (per principle 4 + design notebook
 /// §Worked example 2).</para>
 /// </summary>
+[Obsolete("Use Arda.Composition.IWordOfPowerComposer instead.")]
 public interface IWordOfPowerView
 {
     /// <summary>

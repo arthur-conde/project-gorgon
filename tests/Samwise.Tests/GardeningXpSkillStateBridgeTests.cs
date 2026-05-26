@@ -1,5 +1,6 @@
+using Arda.Abstractions.Logs;
+using Arda.World.Player.Events;
 using FluentAssertions;
-using Mithril.GameState.Skills;
 using Samwise.Parsing;
 using Samwise.State;
 using Xunit;
@@ -7,12 +8,10 @@ using Xunit;
 namespace Samwise.Tests;
 
 /// <summary>
-/// Regression tests for the <see cref="IPlayerSkillState.SubscribeChanges"/>
-/// → <see cref="GardenStateMachine"/> bridge introduced in
-/// <a href="https://github.com/moumantai-gg/mithril/issues/581">#581</a>
-/// (Class A migration from #579 — Samwise stops re-parsing
-/// <c>ProcessUpdateSkill.*type=Gardening</c> and consumes the canonical
-/// skill-state service instead).
+/// Regression tests for the <see cref="SkillUpdated"/> → <see cref="GardenStateMachine"/>
+/// bridge. The Arda <see cref="SkillUpdated"/> event replaces the legacy
+/// <c>IPlayerSkillState.SubscribeChanges</c> channel — Samwise filters to
+/// Gardening-only and projects the harvest-confirmation <see cref="GardeningXp"/>.
 ///
 /// <para>The bridge is exercised through
 /// <see cref="GardenIngestionService.TryProjectGardeningXp"/>, the pure
@@ -24,91 +23,58 @@ public class GardeningXpSkillStateBridgeTests
 {
     private static readonly DateTime T = new(2026, 5, 21, 12, 0, 0, DateTimeKind.Utc);
 
-    private static SkillProgressSnapshot AnySnapshot(int level = 50, long xp = 100) =>
-        new(Level: level, BonusLevels: 0, XpTowardNextLevel: xp, XpNeededForNextLevel: 1000, MaxLevel: 200);
+    private static LogLineMetadata Meta(DateTime ts) =>
+        new(new DateTimeOffset(ts, TimeSpan.Zero), DateTimeOffset.UtcNow, IsReplay: false);
 
     [Fact]
-    public void Gardening_Delta_Projects_GardeningXp_With_Source_Timestamp()
+    public void Gardening_SkillUpdated_Projects_GardeningXp_With_Source_Timestamp()
     {
-        var change = new SkillChange(
+        var evt = new SkillUpdated(
             SkillKey: "Gardening",
-            Previous: AnySnapshot(level: 49),
-            Current: AnySnapshot(level: 50),
+            Raw: 50,
+            Bonus: 0,
+            Xp: 100,
+            Tnl: 1000,
+            Max: 200,
             XpGained: 42,
-            Kind: SkillChangeKind.Delta,
-            Timestamp: T);
+            Metadata: Meta(T));
 
-        var projected = GardenIngestionService.TryProjectGardeningXp(change);
+        var projected = GardenIngestionService.TryProjectGardeningXp(evt);
 
-        projected.Should().NotBeNull("a Gardening Delta is the harvest-confirmation signal");
+        projected.Should().NotBeNull("a Gardening SkillUpdated is the harvest-confirmation signal");
         projected!.Timestamp.Should().Be(T,
             "the prior regex path produced GardeningXp(line.Timestamp); the bridge must preserve it");
     }
 
     [Fact]
-    public void Non_Gardening_Delta_Does_Not_Project()
+    public void Non_Gardening_SkillUpdated_Does_Not_Project()
     {
-        // Every other skill's delta is unrelated to garden harvest commits.
-        var change = new SkillChange(
+        var evt = new SkillUpdated(
             SkillKey: "Survey",
-            Previous: AnySnapshot(level: 49),
-            Current: AnySnapshot(level: 50),
+            Raw: 50,
+            Bonus: 0,
+            Xp: 100,
+            Tnl: 1000,
+            Max: 200,
             XpGained: 42,
-            Kind: SkillChangeKind.Delta,
-            Timestamp: T);
+            Metadata: Meta(T));
 
-        GardenIngestionService.TryProjectGardeningXp(change).Should().BeNull();
+        GardenIngestionService.TryProjectGardeningXp(evt).Should().BeNull();
     }
 
     [Fact]
-    public void Gardening_SnapshotReplace_Does_Not_Project()
+    public void Gardening_SkillUpdated_Is_Case_Sensitive_On_SkillKey()
     {
-        // The pre-#581 regex only matched ProcessUpdateSkill, not the
-        // periodic ProcessLoadSkills re-sync. A snapshot reconcile must
-        // NOT commit a harvest — it would re-fire HandleGardeningXp on
-        // every zone change and burn pending-harvest discriminator state.
-        var change = new SkillChange(
-            SkillKey: "Gardening",
-            Previous: AnySnapshot(level: 49),
-            Current: AnySnapshot(level: 50),
-            XpGained: 0,
-            Kind: SkillChangeKind.SnapshotReplace,
-            Timestamp: T);
-
-        GardenIngestionService.TryProjectGardeningXp(change).Should().BeNull();
-    }
-
-    [Fact]
-    public void Other_Skill_SnapshotReplace_Does_Not_Project()
-    {
-        // Both gates fail; assert combined for completeness.
-        var change = new SkillChange(
-            SkillKey: "FireMagic",
-            Previous: null,
-            Current: AnySnapshot(),
-            XpGained: 0,
-            Kind: SkillChangeKind.SnapshotReplace,
-            Timestamp: T);
-
-        GardenIngestionService.TryProjectGardeningXp(change).Should().BeNull();
-    }
-
-    [Fact]
-    public void Gardening_Delta_Is_Case_Sensitive_On_SkillKey()
-    {
-        // SkillKey is the internal-name key (project-wide convention) —
-        // Ordinal compare. Mis-cased input should not project (the
-        // canonical IPlayerSkillState would never emit a mis-cased key,
-        // but we pin the strict-equality contract here so a future
-        // refactor doesn't silently loosen it).
-        var change = new SkillChange(
+        var evt = new SkillUpdated(
             SkillKey: "gardening",
-            Previous: null,
-            Current: AnySnapshot(),
+            Raw: 50,
+            Bonus: 0,
+            Xp: 100,
+            Tnl: 1000,
+            Max: 200,
             XpGained: 1,
-            Kind: SkillChangeKind.Delta,
-            Timestamp: T);
+            Metadata: Meta(T));
 
-        GardenIngestionService.TryProjectGardeningXp(change).Should().BeNull();
+        GardenIngestionService.TryProjectGardeningXp(evt).Should().BeNull();
     }
 }

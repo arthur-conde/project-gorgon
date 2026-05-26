@@ -1,5 +1,9 @@
+using Arda.Abstractions.Logs;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 
 namespace Legolas.Tests.Services;
 
@@ -9,24 +13,46 @@ namespace Legolas.Tests.Services;
 /// </summary>
 public class CharacterPinAnchorTests
 {
-    private static (CharacterPinAnchor anchor, FakePlayerPinTracker pins,
-        FakeActiveCharacterService chr, List<int> raised) Build(string? name = "Arthas")
+    private static LogLineMetadata Meta(DateTimeOffset? at = null)
     {
-        var pins = new FakePlayerPinTracker();
+        var t = at ?? DateTimeOffset.UtcNow;
+        return new LogLineMetadata(t, t, false);
+    }
+
+    private static (CharacterPinAnchor anchor, TestDomainEventBus bus,
+        FakeMapPinState pinState, FakeActiveCharacterService chr, List<int> raised)
+        Build(string? name = "Arthas")
+    {
+        var bus = new TestDomainEventBus();
+        var pinState = new FakeMapPinState();
         var chr = new FakeActiveCharacterService();
         if (name is not null) chr.SetName(name);
-        var anchor = new CharacterPinAnchor(pins, chr);
+        var anchor = new CharacterPinAnchor(bus, pinState, chr);
         var raised = new List<int>();
         anchor.Changed += () => raised.Add(1);
-        return (anchor, pins, chr, raised);
+        return (anchor, bus, pinState, chr, raised);
+    }
+
+    private static void AddPin(TestDomainEventBus bus, FakeMapPinState state,
+        double x, double z, string label)
+    {
+        state.Add(new MapPinEntry(x, z, label, 0, 0));
+        bus.Publish(new MapPinAdded(x, z, label, 0, 0, Meta()));
+    }
+
+    private static void RemovePin(TestDomainEventBus bus, FakeMapPinState state,
+        double x, double z, string label)
+    {
+        state.Remove(x, z);
+        bus.Publish(new MapPinRemoved(x, z, label, Meta()));
     }
 
     [Fact]
     public void Pin_named_exactly_the_character_is_the_declared_position()
     {
-        var (anchor, pins, _, raised) = Build("Arthas");
+        var (anchor, bus, pinState, _, raised) = Build("Arthas");
 
-        pins.Add(120, -45, "  arthas ");   // trimmed + case-insensitive
+        AddPin(bus, pinState, 120, -45, "  arthas ");   // trimmed + case-insensitive
 
         anchor.Current.Should().NotBeNull();
         anchor.Current!.Value.World.X.Should().Be(120);
@@ -37,9 +63,9 @@ public class CharacterPinAnchorTests
     [Fact]
     public void At_sign_me_sentinel_matches_even_without_a_known_character()
     {
-        var (anchor, pins, _, _) = Build(name: null);
+        var (anchor, bus, pinState, _, _) = Build(name: null);
 
-        pins.Add(7, 8, "@ME");
+        AddPin(bus, pinState, 7, 8, "@ME");
 
         anchor.Current!.Value.World.X.Should().Be(7);
     }
@@ -47,9 +73,9 @@ public class CharacterPinAnchorTests
     [Fact]
     public void A_non_matching_pin_is_ignored()
     {
-        var (anchor, pins, _, raised) = Build("Arthas");
+        var (anchor, bus, pinState, _, raised) = Build("Arthas");
 
-        pins.Add(1, 2, "Iron Vein");
+        AddPin(bus, pinState, 1, 2, "Iron Vein");
 
         anchor.Current.Should().BeNull();
         raised.Should().BeEmpty();
@@ -58,15 +84,14 @@ public class CharacterPinAnchorTests
     [Fact]
     public void Exact_name_match_outranks_the_me_sentinel_on_snapshot_replay()
     {
-        var pins = new FakePlayerPinTracker();
-        pins.SeedExisting(
-            FakePlayerPinTracker.Pin(50, 50, "@me"),
-            FakePlayerPinTracker.Pin(99, 99, "Arthas"));
+        var bus = new TestDomainEventBus();
+        var pinState = new FakeMapPinState();
+        pinState.Add(new MapPinEntry(50, 50, "@me", 0, 0));
+        pinState.Add(new MapPinEntry(99, 99, "Arthas", 0, 0));
         var chr = new FakeActiveCharacterService();
         chr.SetName("Arthas");
 
-        // Subscribe replays the seeded set as a Snapshot.
-        var anchor = new CharacterPinAnchor(pins, chr);
+        var anchor = new CharacterPinAnchor(bus, pinState, chr);
 
         anchor.Current!.Value.World.X.Should().Be(99, "the exact-name pin wins the tie");
     }
@@ -74,26 +99,26 @@ public class CharacterPinAnchorTests
     [Fact]
     public void Removing_the_active_pin_falls_back_then_clears()
     {
-        var (anchor, pins, _, _) = Build("Arthas");
-        var other = pins.Add(10, 10, "@me");
-        var named = pins.Add(20, 20, "Arthas");   // exact-name now active
+        var (anchor, bus, pinState, _, _) = Build("Arthas");
+        AddPin(bus, pinState, 10, 10, "@me");
+        AddPin(bus, pinState, 20, 20, "Arthas");   // exact-name now active
         anchor.Current!.Value.World.X.Should().Be(20);
 
-        pins.Remove(named);                        // falls back to the @me pin
+        RemovePin(bus, pinState, 20, 20, "Arthas");   // falls back to the @me pin
         anchor.Current!.Value.World.X.Should().Be(10);
 
-        pins.Remove(other);                        // nothing left
+        RemovePin(bus, pinState, 10, 10, "@me");      // nothing left
         anchor.Current.Should().BeNull();
     }
 
     [Fact]
     public void Area_change_clears_the_declaration()
     {
-        var (anchor, pins, _, _) = Build("Arthas");
-        pins.Add(3, 4, "Arthas");
+        var (anchor, bus, pinState, _, _) = Build("Arthas");
+        AddPin(bus, pinState, 3, 4, "Arthas");
         anchor.Current.Should().NotBeNull();
 
-        pins.ChangeArea("AreaElsewhere");
+        bus.Publish(new AreaChanged(null, "AreaElsewhere", Meta()));
 
         anchor.Current.Should().BeNull();
     }
@@ -101,8 +126,8 @@ public class CharacterPinAnchorTests
     [Fact]
     public void Character_change_re_evaluates_existing_pins()
     {
-        var (anchor, pins, chr, _) = Build("Arthas");
-        pins.Add(11, 22, "Jaina");        // not me yet
+        var (anchor, bus, pinState, chr, _) = Build("Arthas");
+        AddPin(bus, pinState, 11, 22, "Jaina");        // not me yet
         anchor.Current.Should().BeNull();
 
         chr.SetName("Jaina");             // now it is
@@ -113,9 +138,9 @@ public class CharacterPinAnchorTests
     [Fact]
     public void IsSelfPin_applies_the_same_rule()
     {
-        var (anchor, _, _, _) = Build("Arthas");
-        anchor.IsSelfPin(FakePlayerPinTracker.Pin(0, 0, "arthas")).Should().BeTrue();
-        anchor.IsSelfPin(FakePlayerPinTracker.Pin(0, 0, "@me")).Should().BeTrue();
-        anchor.IsSelfPin(FakePlayerPinTracker.Pin(0, 0, "Bank")).Should().BeFalse();
+        var (anchor, _, _, _, _) = Build("Arthas");
+        anchor.IsSelfPin("arthas").Should().BeTrue();
+        anchor.IsSelfPin("@me").Should().BeTrue();
+        anchor.IsSelfPin("Bank").Should().BeFalse();
     }
 }

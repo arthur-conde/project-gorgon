@@ -1,11 +1,12 @@
+using Arda.Abstractions.Logs;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
-using Mithril.GameState.Areas;
-using Mithril.GameState.Areas.Parsing;
-using Mithril.GameState.Movement;
 
 namespace Legolas.Tests.Services;
 
@@ -21,25 +22,39 @@ public class MotherlodeMeasurementCoordinatorTests
     private static readonly DateTimeOffset T0 =
         new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private static (MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
-        FakePlayerPinTracker pins) Build()
+    private static LogLineMetadata Meta(DateTimeOffset at) => new(at, at, false);
+
+    private static void PublishPosition(TestDomainEventBus bus, double x, double y, double z,
+        PositionSource source, DateTimeOffset at)
+        => bus.Publish(new PlayerPositionChanged(x, y, z, source, Meta(at)));
+
+    private static void PublishPin(TestDomainEventBus bus, double x, double z, string label)
+        => bus.Publish(new MapPinAdded(x, z, label, 0, 0, new LogLineMetadata(null, DateTimeOffset.UtcNow, false)));
+
+    private static void PublishDelete(TestDomainEventBus bus, long id, string internalName, DateTime at)
     {
-        var pos = new FakePlayerPositionTracker();
-        var pins = new FakePlayerPinTracker();
+        var ts = DateTime.SpecifyKind(at, DateTimeKind.Utc);
+        var dto = new DateTimeOffset(ts, TimeSpan.Zero);
+        bus.Publish(new InventoryItemRemoved(id, internalName, Meta(dto)));
+    }
+
+    private static (MotherlodeMeasurementCoordinator coord, TestDomainEventBus bus) Build()
+    {
+        var bus = new TestDomainEventBus();
         var flow = new MotherlodeFlowController(new SessionState());
         var coord = new MotherlodeMeasurementCoordinator(
-            new MultilaterationSolver(), flow, pos, pins);
-        return (coord, pos, pins);
+            new MultilaterationSolver(), flow, bus);
+        return (coord, bus);
     }
 
     private static double D(double x, double z, double tx, double tz) =>
         Math.Sqrt((x - tx) * (x - tx) + (z - tz) * (z - tz));
 
     /// <summary>One spot: push a Spawn fix, fire the use, then the distance.</summary>
-    private static void Measure(MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
+    private static void Measure(MotherlodeMeasurementCoordinator coord, TestDomainEventBus bus,
         double x, double z, int metres, DateTimeOffset at)
     {
-        pos.Push(x, 0, z, PlayerPositionSource.Spawn, at);
+        PublishPosition(bus, x, 0, z, PositionSource.Spawn, at);
         coord.OnUse(at);
         coord.OnDistance(metres, at.AddSeconds(2));
     }
@@ -47,12 +62,12 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Three_located_spots_solve_the_treasure_in_world_space()
     {
-        var (coord, pos, _) = Build();
+        var (coord, bus) = Build();
         (double X, double Z) target = (420, -260);
 
-        Measure(coord, pos, 0, 0, (int)Math.Round(D(0, 0, target.X, target.Z)), T0);
-        Measure(coord, pos, 800, 0, (int)Math.Round(D(800, 0, target.X, target.Z)), T0.AddMinutes(2));
-        Measure(coord, pos, 0, -800, (int)Math.Round(D(0, -800, target.X, target.Z)), T0.AddMinutes(4));
+        Measure(coord, bus, 0, 0, (int)Math.Round(D(0, 0, target.X, target.Z)), T0);
+        Measure(coord, bus, 800, 0, (int)Math.Round(D(800, 0, target.X, target.Z)), T0.AddMinutes(2));
+        Measure(coord, bus, 0, -800, (int)Math.Round(D(0, -800, target.X, target.Z)), T0.AddMinutes(4));
 
         var snap = coord.Snapshot();
         snap.LocationCount.Should().Be(3);
@@ -67,7 +82,7 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Distance_with_no_open_location_is_dropped()
     {
-        var (coord, _, _) = Build();
+        var (coord, _) = Build();
 
         coord.OnDistance(500, T0);
 
@@ -78,8 +93,8 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Distance_outside_the_use_window_is_dropped()
     {
-        var (coord, pos, _) = Build();
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        var (coord, bus) = Build();
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0);
         coord.OnUse(T0);
 
         coord.OnDistance(500, T0.AddMinutes(5));   // far past DistanceWindow
@@ -90,9 +105,9 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Use_with_a_stale_feeder_fix_records_no_position_and_warns()
     {
-        var (coord, pos, _) = Build();
+        var (coord, bus) = Build();
         // Fix is 30 min older than the use → beyond MaxFeederGap.
-        pos.Push(10, 0, 10, PlayerPositionSource.Spawn, T0);
+        PublishPosition(bus, 10, 0, 10, PositionSource.Spawn, T0);
         coord.OnUse(T0.AddMinutes(30));
         coord.OnDistance(500, T0.AddMinutes(30).AddSeconds(2));
 
@@ -105,8 +120,8 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Use_line_name_labels_the_created_slot()
     {
-        var (coord, pos, _) = Build();
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        var (coord, bus) = Build();
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0);
         coord.OnUse(T0, "Kur Mountains Simple Metal Motherlode Map");
         coord.OnDistance(500, T0.AddSeconds(2));
 
@@ -117,13 +132,13 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Multiple_maps_at_one_spot_fan_out_to_independent_slots()
     {
-        var (coord, pos, _) = Build();          // multi-map default
+        var (coord, bus) = Build();          // multi-map default
         (double X, double Z) a = (300, 300);
         (double X, double Z) b = (-150, 480);
 
         void Spot(double x, double z, DateTimeOffset at)
         {
-            pos.Push(x, 0, z, PlayerPositionSource.Spawn, at);
+            PublishPosition(bus, x, 0, z, PositionSource.Spawn, at);
             coord.OnUse(at);                                   // map A
             coord.OnDistance((int)Math.Round(D(x, z, a.X, a.Z)), at.AddSeconds(1));
             coord.OnUse(at.AddSeconds(2));                      // map B, same cluster
@@ -147,13 +162,13 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void A_map_pin_drop_is_an_accepted_position_feeder()
     {
-        var (coord, _, pins) = Build();
+        var (coord, bus) = Build();
         (double X, double Z) target = (100, 100);
         var now = DateTimeOffset.UtcNow;
 
         void PinSpot(double x, double z, DateTimeOffset at)
         {
-            pins.Add(x, z, "spot");                 // feeder #2
+            PublishPin(bus, x, z, "spot");                     // feeder #2
             coord.OnUse(at);
             coord.OnDistance((int)Math.Round(D(x, z, target.X, target.Z)), at.AddSeconds(2));
         }
@@ -171,20 +186,21 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void A_character_named_pin_is_an_accepted_preferred_feeder()
     {
-        var pos = new FakePlayerPositionTracker();
-        var pins = new FakePlayerPinTracker();
+        var bus = new TestDomainEventBus();
+        var mapPinState = new FakeMapPinState();
         var chr = new FakeActiveCharacterService();
         chr.SetName("Arthas");
-        var charPin = new CharacterPinAnchor(pins, chr);
+        var charPin = new CharacterPinAnchor(bus, mapPinState, chr);
         var coord = new MotherlodeMeasurementCoordinator(
             new MultilaterationSolver(), new MotherlodeFlowController(new SessionState()),
-            pos, pins, characterPin: charPin);
+            bus, characterPin: charPin);
 
         (double X, double Z) target = (100, 100);
         var now = DateTimeOffset.UtcNow;
         void PinSpot(double x, double z, DateTimeOffset at)
         {
-            pins.Add(x, z, "Arthas");               // the player's "I am here" pin
+            mapPinState.Add(new MapPinEntry(x, z, "Arthas", 0, 0));
+            bus.Publish(new MapPinAdded(x, z, "Arthas", 0, 0, Meta(at)));
             coord.OnUse(at);
             coord.OnDistance((int)Math.Round(D(x, z, target.X, target.Z)), at.AddSeconds(2));
         }
@@ -203,8 +219,8 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Reset_clears_all_state()
     {
-        var (coord, pos, _) = Build();
-        Measure(coord, pos, 0, 0, 300, T0);
+        var (coord, bus) = Build();
+        Measure(coord, bus, 0, 0, 300, T0);
 
         coord.Reset();
 
@@ -228,24 +244,21 @@ public class MotherlodeMeasurementCoordinatorTests
         (KurGood, "Kur Mountains Good Metal Motherlode Map"),
         ("RawGem_Diamond", "Diamond"));
 
-    private static (MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
-        FakeMotherlodePlayerWorld inv) BuildInv(bool multiMap)
+    private static (MotherlodeMeasurementCoordinator coord, TestDomainEventBus bus) BuildInv(bool multiMap)
     {
-        var pos = new FakePlayerPositionTracker();
-        var pins = new FakePlayerPinTracker();
-        var inv = new FakeMotherlodePlayerWorld();
+        var bus = new TestDomainEventBus();
         var flow = new MotherlodeFlowController(new SessionState());
         var settings = new LegolasSettings { MotherlodeMultiMapMode = multiMap };
         var coord = new MotherlodeMeasurementCoordinator(
-            new MultilaterationSolver(), flow, pos, pins, inv, RefData(), settings);
-        return (coord, pos, inv);
+            new MultilaterationSolver(), flow, bus, RefData(), settings);
+        return (coord, bus);
     }
 
     /// <summary>One spot: Spawn fix, use, then the listed distances in order.</summary>
-    private static void Spot(MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
+    private static void Spot(MotherlodeMeasurementCoordinator coord, TestDomainEventBus bus,
         double x, double z, DateTimeOffset at, params int[] dists)
     {
-        pos.Push(x, 0, z, PlayerPositionSource.Spawn, at);
+        PublishPosition(bus, x, 0, z, PositionSource.Spawn, at);
         coord.OnUse(at);
         var t = at;
         foreach (var d in dists)
@@ -255,8 +268,9 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Holding_stock_creates_no_slots()
     {
-        var (coord, _, inv) = BuildInv(multiMap: true);
-        for (var i = 1; i <= 120; i++) inv.Add(i, KurSimple);   // a fat carried stack
+        var (coord, _) = BuildInv(multiMap: true);
+        // In the post-Arda model the coordinator doesn't react to adds at all.
+        // A fat carried stack is invisible to it.
 
         var snap = coord.Snapshot();
         snap.Surveys.Should().BeEmpty();        // create-on-use: holding ≠ measuring
@@ -266,13 +280,12 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Single_treasure_create_on_use_solves()
     {
-        var (coord, pos, inv) = BuildInv(multiMap: true);
-        inv.Add(100, KurSimple);                                // held — irrelevant
+        var (coord, bus) = BuildInv(multiMap: true);
         (double X, double Z) target = (420, -260);
 
-        Spot(coord, pos, 0, 0, T0, (int)Math.Round(D(0, 0, target.X, target.Z)));
-        Spot(coord, pos, 800, 0, T0.AddMinutes(2), (int)Math.Round(D(800, 0, target.X, target.Z)));
-        Spot(coord, pos, 0, -800, T0.AddMinutes(4), (int)Math.Round(D(0, -800, target.X, target.Z)));
+        Spot(coord, bus, 0, 0, T0, (int)Math.Round(D(0, 0, target.X, target.Z)));
+        Spot(coord, bus, 800, 0, T0.AddMinutes(2), (int)Math.Round(D(800, 0, target.X, target.Z)));
+        Spot(coord, bus, 0, -800, T0.AddMinutes(4), (int)Math.Round(D(0, -800, target.X, target.Z)));
 
         var s = coord.Snapshot().Surveys.Should().ContainSingle().Subject;
         s.SolvedWorld!.Value.X.Should().BeApproximately(target.X, 3.0);
@@ -282,18 +295,16 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Motherlode_map_delete_counts_a_dig_and_retires_next_slot()
     {
-        var (coord, pos, inv) = BuildInv(multiMap: true);
-        inv.Add(1, KurSimple);                                  // register (no slot — Added ignored)
-        inv.Add(2, KurBasic);
+        var (coord, bus) = BuildInv(multiMap: true);
         // Two treasures measured (create-on-use), then the cluster is dug.
-        Spot(coord, pos, 0, 0, T0, 500, 600);
-        Spot(coord, pos, 900, 0, T0.AddMinutes(2), 480, 470);
-        Spot(coord, pos, 0, 900, T0.AddMinutes(4), 450, 460);
+        Spot(coord, bus, 0, 0, T0, 500, 600);
+        Spot(coord, bus, 900, 0, T0.AddMinutes(2), 480, 470);
+        Spot(coord, bus, 0, 900, T0.AddMinutes(4), 450, 460);
 
         coord.Snapshot().Surveys.Count(s => !s.Collected).Should().Be(2);
 
-        inv.Delete(1, T0.AddMinutes(6).UtcDateTime);
-        inv.Delete(2, T0.AddMinutes(6).AddSeconds(5).UtcDateTime);
+        PublishDelete(bus, 1, KurSimple, T0.AddMinutes(6).UtcDateTime);
+        PublishDelete(bus, 2, KurBasic, T0.AddMinutes(6).AddSeconds(5).UtcDateTime);
 
         var snap = coord.Snapshot();
         snap.MapsDug.Should().Be(2);
@@ -303,12 +314,11 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Completing_use_then_delete_discards_the_ephemeral_location()
     {
-        var (coord, pos, inv) = BuildInv(multiMap: true);
-        inv.Add(1, KurSimple);                 // register (no slot)
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        var (coord, bus) = BuildInv(multiMap: true);
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0);
 
         coord.OnUse(T0);                       // opens a location, no distance (completing use)
-        inv.Delete(1, T0.AddSeconds(1).UtcDateTime);
+        PublishDelete(bus, 1, KurSimple, T0.AddSeconds(1).UtcDateTime);
 
         var snap = coord.Snapshot();
         snap.LocationCount.Should().Be(0);     // ephemeral location discarded
@@ -319,9 +329,8 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Non_motherlode_delete_does_not_count_as_a_dig()
     {
-        var (coord, _, inv) = BuildInv(multiMap: true);
-        inv.Add(9, "RawGem_Diamond");
-        inv.Delete(9, DateTime.UtcNow);
+        var (coord, bus) = BuildInv(multiMap: true);
+        PublishDelete(bus, 9, "RawGem_Diamond", DateTime.UtcNow);
 
         var snap = coord.Snapshot();
         snap.Surveys.Should().BeEmpty();
@@ -331,14 +340,12 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Toggle_off_serial_binds_one_active_treasure()
     {
-        var (coord, pos, _) = BuildInv(multiMap: false);
+        var (coord, bus) = BuildInv(multiMap: false);
         (double X, double Z) target = (420, -260);
 
-        // Serial = one read per position (re-read while moving); even with the
-        // toggle off the single active treasure solves across the 3 spots.
-        Spot(coord, pos, 0, 0, T0, (int)Math.Round(D(0, 0, target.X, target.Z)));
-        Spot(coord, pos, 800, 0, T0.AddMinutes(2), (int)Math.Round(D(800, 0, target.X, target.Z)));
-        Spot(coord, pos, 0, -800, T0.AddMinutes(4), (int)Math.Round(D(0, -800, target.X, target.Z)));
+        Spot(coord, bus, 0, 0, T0, (int)Math.Round(D(0, 0, target.X, target.Z)));
+        Spot(coord, bus, 800, 0, T0.AddMinutes(2), (int)Math.Round(D(800, 0, target.X, target.Z)));
+        Spot(coord, bus, 0, -800, T0.AddMinutes(4), (int)Math.Round(D(0, -800, target.X, target.Z)));
 
         var surveys = coord.Snapshot().Surveys;
         surveys.Should().ContainSingle();                       // never fanned out
@@ -349,11 +356,11 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Multi_map_two_maps_bind_by_order_across_spots()
     {
-        var (coord, pos, _) = BuildInv(multiMap: true);
+        var (coord, bus) = BuildInv(multiMap: true);
         (double X, double Z) a = (300, 300);
         (double X, double Z) b = (-150, 480);
 
-        void S(double x, double z, DateTimeOffset at) => Spot(coord, pos, x, z, at,
+        void S(double x, double z, DateTimeOffset at) => Spot(coord, bus, x, z, at,
             (int)Math.Round(D(x, z, a.X, a.Z)),    // k0 → slot 0
             (int)Math.Round(D(x, z, b.X, b.Z)));   // k1 → slot 1
 
@@ -372,23 +379,19 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Measure_then_dig_the_cluster_collects_in_order()
     {
-        // The real multi-map workflow: triangulate the whole stack across all
-        // spots first, *then* walk and dig — completion is post-measurement.
-        var (coord, pos, inv) = BuildInv(multiMap: true);
-        inv.Add(1, KurSimple);                                  // register (no slot)
-        inv.Add(2, KurBasic);
+        var (coord, bus) = BuildInv(multiMap: true);
         (double X, double Z) a = (300, 300);
         (double X, double Z) c = (-150, 480);
 
-        void S(double x, double z, DateTimeOffset at) => Spot(coord, pos, x, z, at,
+        void S(double x, double z, DateTimeOffset at) => Spot(coord, bus, x, z, at,
             (int)Math.Round(D(x, z, a.X, a.Z)), (int)Math.Round(D(x, z, c.X, c.Z)));
 
         S(0, 0, T0);
         S(900, 0, T0.AddMinutes(2));
         S(0, 900, T0.AddMinutes(4));
 
-        inv.Delete(1, T0.AddMinutes(6).UtcDateTime);            // dig both
-        inv.Delete(2, T0.AddMinutes(6).AddSeconds(8).UtcDateTime);
+        PublishDelete(bus, 1, KurSimple, T0.AddMinutes(6).UtcDateTime);            // dig both
+        PublishDelete(bus, 2, KurBasic, T0.AddMinutes(6).AddSeconds(8).UtcDateTime);
 
         var snap = coord.Snapshot();
         snap.MapsDug.Should().Be(2);
@@ -400,11 +403,11 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Spot_count_shortfall_raises_cross_spot_divergence()
     {
-        var (coord, pos, _) = BuildInv(multiMap: true);
+        var (coord, bus) = BuildInv(multiMap: true);
 
-        Spot(coord, pos, 0, 0, T0, 500, 600);                 // spot 1: 2 reads
-        Spot(coord, pos, 900, 0, T0.AddMinutes(2), 480);      // spot 2: 1 read (short!)
-        Spot(coord, pos, 0, 900, T0.AddMinutes(4), 450, 470); // spot 3 (open)
+        Spot(coord, bus, 0, 0, T0, 500, 600);                 // spot 1: 2 reads
+        Spot(coord, bus, 900, 0, T0.AddMinutes(2), 480);      // spot 2: 1 read (short!)
+        Spot(coord, bus, 0, 900, T0.AddMinutes(4), 450, 470); // spot 3 (open)
 
         var snap = coord.Snapshot();
         snap.Guidance.Should().Contain("Spot #2");
@@ -414,10 +417,10 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Final_open_short_batch_does_not_false_positive()
     {
-        var (coord, pos, _) = BuildInv(multiMap: true);
+        var (coord, bus) = BuildInv(multiMap: true);
 
-        Spot(coord, pos, 0, 0, T0, 500, 600);              // spot 1: 2 reads
-        Spot(coord, pos, 900, 0, T0.AddMinutes(2), 480);   // spot 2 still open: 1 read so far
+        Spot(coord, bus, 0, 0, T0, 500, 600);              // spot 1: 2 reads
+        Spot(coord, bus, 900, 0, T0.AddMinutes(2), 480);   // spot 2 still open: 1 read so far
 
         var g = coord.Snapshot().Guidance ?? string.Empty;
         g.Should().NotContain("Spot #");                   // the open batch legitimately trails
@@ -426,10 +429,10 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void ReadsPerLocation_projection_matches_bindings()
     {
-        var (coord, pos, _) = BuildInv(multiMap: true);
+        var (coord, bus) = BuildInv(multiMap: true);
 
-        Spot(coord, pos, 0, 0, T0, 500, 600);
-        Spot(coord, pos, 900, 0, T0.AddMinutes(2), 480, 470);
+        Spot(coord, bus, 0, 0, T0, 500, 600);
+        Spot(coord, bus, 900, 0, T0.AddMinutes(2), 480, 470);
 
         coord.Snapshot().ReadsPerLocation.Should().Equal(2, 2);
     }
@@ -439,14 +442,14 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Slow_same_spot_batch_does_not_split_or_desync()
     {
-        var (coord, pos, _) = Build();
+        var (coord, bus) = Build();
 
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0);
         coord.OnUse(T0);
         coord.OnDistance(900, T0.AddSeconds(2)); // commits the only location
 
         // 45 s later, still standing on the same spot (>30 s time gate).
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0.AddSeconds(45));
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0.AddSeconds(45));
         coord.OnUse(T0.AddSeconds(45));
         coord.OnDistance(905, T0.AddSeconds(47));
 
@@ -456,13 +459,13 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Genuine_move_within_time_gate_splits()
     {
-        var (coord, pos, _) = Build();
+        var (coord, bus) = Build();
 
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0);
         coord.OnUse(T0);
         coord.OnDistance(900, T0.AddSeconds(2));
 
-        pos.Push(500, 0, 0, PlayerPositionSource.Spawn, T0.AddSeconds(45));
+        PublishPosition(bus, 500, 0, 0, PositionSource.Spawn, T0.AddSeconds(45));
         coord.OnUse(T0.AddSeconds(45));
         coord.OnDistance(700, T0.AddSeconds(47));
 
@@ -472,18 +475,18 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Same_spot_merge_uses_frozen_anchor_not_drifting_fix()
     {
-        var (coord, _, pins) = Build();
+        var (coord, bus) = Build();
         var now = DateTimeOffset.UtcNow;
 
-        pins.Add(0, 0, "p");
+        PublishPin(bus, 0, 0, "p");
         coord.OnUse(now);
         coord.OnDistance(100, now.AddSeconds(2));          // anchor frozen at (0,0)
 
-        pins.Add(10, 0, "p");                               // 10 m ≤ 12 → merge
+        PublishPin(bus, 10, 0, "p");                       // 10 m ≤ 12 → merge
         coord.OnUse(now.AddSeconds(45));
         coord.OnDistance(100, now.AddSeconds(47));
 
-        pins.Add(19, 0, "p");                               // 19 m from frozen (0,0) → split
+        PublishPin(bus, 19, 0, "p");                       // 19 m from frozen (0,0) → split
         coord.OnUse(now.AddSeconds(90));
         coord.OnDistance(100, now.AddSeconds(92));
 
@@ -493,7 +496,7 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void No_position_falls_back_to_time_gate()
     {
-        var (coord, _, _) = Build();             // no feeder fix ever pushed
+        var (coord, _) = Build();             // no feeder fix ever pushed
 
         coord.OnUse(T0);
         coord.OnDistance(100, T0.AddSeconds(2)); // fix-less row committed
@@ -508,17 +511,19 @@ public class MotherlodeMeasurementCoordinatorTests
     public void Self_named_pin_outranks_a_generic_pin_in_feeder_confidence()
     {
         var now = DateTimeOffset.UtcNow;
-        var selfPins = new FakePlayerPinTracker();
-        var charPin = new CharacterPinAnchor(selfPins, new FakeActiveCharacterService());
+        var selfBus = new TestDomainEventBus();
+        var selfPinState = new FakeMapPinState();
+        var charPin = new CharacterPinAnchor(selfBus, selfPinState, new FakeActiveCharacterService());
         var selfCoord = new MotherlodeMeasurementCoordinator(
             new MultilaterationSolver(), new MotherlodeFlowController(new SessionState()),
-            new FakePlayerPositionTracker(), selfPins, characterPin: charPin);
-        selfPins.Add(0, 0, CharacterPinAnchor.SelfPinSentinel);
+            selfBus, characterPin: charPin);
+        selfPinState.Add(new MapPinEntry(0, 0, CharacterPinAnchor.SelfPinSentinel, 0, 0));
+        selfBus.Publish(new MapPinAdded(0, 0, CharacterPinAnchor.SelfPinSentinel, 0, 0, Meta(now)));
         selfCoord.OnUse(now);
         selfCoord.OnDistance(100, now.AddSeconds(2));
 
-        var (genCoord, _, genPins) = Build();
-        genPins.Add(0, 0, "somewhere");
+        var (genCoord, genBus) = Build();
+        PublishPin(genBus, 0, 0, "somewhere");
         genCoord.OnUse(now);
         genCoord.OnDistance(100, now.AddSeconds(2));
 
@@ -529,36 +534,33 @@ public class MotherlodeMeasurementCoordinatorTests
         generic.Should().BeApproximately(0.6, 1e-9); // MapPin
     }
 
-    // ---- area scoping (GameState PlayerAreaTracker) ----------------------
+    // ---- area scoping (Arda IAreaState) -----------------------------------
 
-    private static (MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
-        FakeMotherlodePlayerWorld inv, PlayerAreaTracker area) BuildAreaInv()
+    private static (MotherlodeMeasurementCoordinator coord, TestDomainEventBus bus,
+        FakeAreaState area) BuildAreaInv()
     {
-        var pos = new FakePlayerPositionTracker();
-        var pins = new FakePlayerPinTracker();
-        var inv = new FakeMotherlodePlayerWorld();
-        var area = new PlayerAreaTracker(new AreaTransitionParser());
+        var bus = new TestDomainEventBus();
+        var area = new FakeAreaState();
         var flow = new MotherlodeFlowController(new SessionState());
         var coord = new MotherlodeMeasurementCoordinator(
-            new MultilaterationSolver(), flow, pos, pins, inv, RefData(),
-            new LegolasSettings(), null, area);
-        return (coord, pos, inv, area);
+            new MultilaterationSolver(), flow, bus, RefData(),
+            new LegolasSettings(), areaState: area);
+        return (coord, bus, area);
     }
 
     [Fact]
     public void Area_change_clears_measurement_but_keeps_the_dug_count()
     {
-        var (coord, pos, inv, area) = BuildAreaInv();
-        area.Observe("LOADING LEVEL AreaKurMountains", T0.UtcDateTime);
-        inv.Add(1, KurSimple);
+        var (coord, bus, area) = BuildAreaInv();
+        area.CurrentArea = "AreaKurMountains";
 
-        Spot(coord, pos, 0, 0, T0, 500, 600);                  // measurement in area A
-        inv.Delete(1, T0.AddSeconds(30).UtcDateTime);          // a dig → MapsDug = 1
+        Spot(coord, bus, 0, 0, T0, 500, 600);                  // measurement in area A
+        PublishDelete(bus, 1, KurSimple, T0.AddSeconds(30).UtcDateTime);  // a dig → MapsDug = 1
         coord.Snapshot().MapsDug.Should().Be(1);
         coord.Snapshot().LocationCount.Should().BeGreaterThan(0);
 
-        area.Observe("LOADING LEVEL AreaEltibule", T0.AddMinutes(5).UtcDateTime);
-        Spot(coord, pos, 10, 10, T0.AddMinutes(6), 700);       // first use in the new area
+        area.CurrentArea = "AreaEltibule";
+        Spot(coord, bus, 10, 10, T0.AddMinutes(6), 700);       // first use in the new area
 
         var snap = coord.Snapshot();
         snap.MapsDug.Should().Be(1);                           // cumulative stat kept
@@ -571,8 +573,8 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Undo_pops_readings_LIFO_then_clears_can_undo()
     {
-        var (coord, pos, _) = Build();                 // multi-map default
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        var (coord, bus) = Build();                 // multi-map default
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0);
         coord.OnUse(T0);                       coord.OnDistance(500, T0.AddSeconds(1));   // slot 0
         coord.OnUse(T0.AddSeconds(2));         coord.OnDistance(600, T0.AddSeconds(3));   // slot 1
 
@@ -595,16 +597,16 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Undo_rewinds_the_ordinal_so_the_corrected_read_re_takes_the_slot()
     {
-        var (coord, pos, _) = Build();                 // multi-map default
+        var (coord, bus) = Build();                 // multi-map default
 
         // Spot 1 defines a 2-map working set (slots 0, 1).
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0);
         coord.OnUse(T0);               coord.OnDistance(100, T0.AddSeconds(1));   // slot 0
         coord.OnUse(T0.AddSeconds(2)); coord.OnDistance(200, T0.AddSeconds(3));   // slot 1
 
         // Spot 2: accidentally check a map first → garbage binds slot 0 @ row 1.
         var t2 = T0.AddMinutes(2);
-        pos.Push(900, 0, 0, PlayerPositionSource.Spawn, t2);
+        PublishPosition(bus, 900, 0, 0, PositionSource.Spawn, t2);
         coord.OnUse(t2);               coord.OnDistance(9999, t2.AddSeconds(1));
         coord.Snapshot().Surveys[0].DistancesByLocation[1].Should().Be(9999);
 
@@ -624,16 +626,16 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Undo_stack_is_cleared_by_reset_and_area_change()
     {
-        var (coord, pos, inv, area) = BuildAreaInv();
-        area.Observe("LOADING LEVEL AreaKurMountains", T0.UtcDateTime);
-        Spot(coord, pos, 0, 0, T0, 500, 600);
+        var (coord, bus, area) = BuildAreaInv();
+        area.CurrentArea = "AreaKurMountains";
+        Spot(coord, bus, 0, 0, T0, 500, 600);
         coord.Snapshot().CanUndo.Should().BeTrue();
 
-        area.Observe("LOADING LEVEL AreaEltibule", T0.AddMinutes(5).UtcDateTime);
+        area.CurrentArea = "AreaEltibule";
         coord.OnUse(T0.AddMinutes(6));                  // first use in new area clears measurement
         coord.Snapshot().CanUndo.Should().BeFalse();    // stale undo history dropped
 
-        Spot(coord, pos, 0, 0, T0.AddMinutes(7), 700);
+        Spot(coord, bus, 0, 0, T0.AddMinutes(7), 700);
         coord.Snapshot().CanUndo.Should().BeTrue();
         coord.Reset();
         coord.Snapshot().CanUndo.Should().BeFalse();
@@ -642,12 +644,12 @@ public class MotherlodeMeasurementCoordinatorTests
     [Fact]
     public void Same_area_re_observed_does_not_reset()
     {
-        var (coord, pos, _, area) = BuildAreaInv();
-        area.Observe("LOADING LEVEL AreaKurMountains", T0.UtcDateTime);
+        var (coord, bus, area) = BuildAreaInv();
+        area.CurrentArea = "AreaKurMountains";
 
-        Spot(coord, pos, 0, 0, T0, 500);
-        area.Observe("LOADING LEVEL AreaKurMountains", T0.AddMinutes(1).UtcDateTime); // same area
-        Spot(coord, pos, 800, 0, T0.AddMinutes(2), 520);
+        Spot(coord, bus, 0, 0, T0, 500);
+        // same area re-confirmed (no change)
+        Spot(coord, bus, 800, 0, T0.AddMinutes(2), 520);
 
         coord.Snapshot().LocationCount.Should().Be(2);         // not reset
     }

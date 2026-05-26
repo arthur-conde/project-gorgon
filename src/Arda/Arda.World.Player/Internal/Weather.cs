@@ -14,10 +14,15 @@ internal sealed class Weather : IFrameHandler, IWeatherState
     private readonly IDomainEventPublisher _bus;
 
     public string? CurrentWeather { get; private set; }
+    public DateTimeOffset? MeasuredAt { get; private set; }
 
     public Weather(IDomainEventPublisher bus) => _bus = bus;
 
-    internal void Reset() => CurrentWeather = null;
+    internal void Reset()
+    {
+        CurrentWeather = null;
+        MeasuredAt = null;
+    }
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
@@ -35,6 +40,7 @@ internal sealed class Weather : IFrameHandler, IWeatherState
 
         var previous = CurrentWeather;
         CurrentWeather = condition;
+        MeasuredAt = metadata.Timestamp ?? metadata.ReadOn;
         _bus.Publish(new WeatherChanged(previous, condition, metadata));
     }
 }

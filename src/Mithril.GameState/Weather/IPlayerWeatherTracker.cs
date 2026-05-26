@@ -87,6 +87,7 @@ public sealed record WeatherChanged(
 /// is idempotent). Centralising this here means every consumer reads a correct
 /// current-map weather instead of each re-deriving the area gate.</para>
 /// </summary>
+[Obsolete("Use Arda.World.Player.IMapState (weather via CurrentWeather/WeatherMeasuredAt) instead.")]
 public interface IPlayerWeatherTracker
 {
     /// <summary>The map the tracked weather belongs to (the shared

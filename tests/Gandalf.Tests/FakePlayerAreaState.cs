@@ -1,20 +1,15 @@
+using Arda.World.Player;
 using Mithril.GameState.Areas;
 
 namespace Gandalf.Tests;
 
 /// <summary>
-/// Minimal <see cref="IPlayerAreaState"/> test double for the #789-era
-/// consumer migration: holds a <see cref="CurrentArea"/> and a list of
-/// subscribers. <see cref="Subscribe"/> fires the synthetic
-/// <see cref="PlayerAreaChangeKind.Snapshot"/> replay before attaching
-/// (so a late subscriber sees whatever <see cref="SetArea"/> set
-/// pre-subscribe); <see cref="SetArea"/> dispatches a
-/// <see cref="PlayerAreaChangeKind.Changed"/> notification to every
-/// attached handler. Mirrors the production
-/// <see cref="PlayerAreaTracker"/> contract closely enough that consumers
-/// cannot distinguish the test double from the real folder.
+/// Test double that implements both <see cref="IPlayerAreaState"/> (legacy)
+/// and <see cref="IAreaState"/> (Arda). Post-migration consumers inject
+/// <see cref="IAreaState"/>; the legacy interface is retained for any
+/// remaining GameState tests that still need it.
 /// </summary>
-internal sealed class FakePlayerAreaState : IPlayerAreaState
+internal sealed class FakePlayerAreaState : IPlayerAreaState, IAreaState
 {
     private readonly object _lock = new();
     private readonly List<Action<PlayerAreaChanged>> _handlers = new();

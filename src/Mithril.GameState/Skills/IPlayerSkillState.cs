@@ -176,6 +176,7 @@ public sealed class PlayerSkillSnapshot
 /// Elrond's <c>SnapshotPlanInput</c> already adapts the character export — so
 /// <c>Mithril.GameState</c> takes no dependency on <c>Mithril.Leveling</c>.</para>
 /// </summary>
+[Obsolete("Use Arda.World.Player.ISkillState + IDomainEventSubscriber.Subscribe<SkillUpdated/SkillsLoaded> instead.")]
 public interface IPlayerSkillState
 {
     /// <summary>

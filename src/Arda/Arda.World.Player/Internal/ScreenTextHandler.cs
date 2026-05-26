@@ -6,8 +6,9 @@ namespace Arda.World.Player.Internal;
 
 /// <summary>
 /// Discriminating handler for <c>ProcessScreenText</c>.
-/// Emits <see cref="ScreenTextErrorFrame"/> for ErrorMessage lines (Samwise consumer)
-/// and <see cref="ScreenTextObserved"/> for all other categories (Gandalf, Legolas consumers).
+/// Emits <see cref="ScreenTextObserved"/> for ALL categories (Gandalf, Legolas, Samwise consumers).
+/// Additionally emits <see cref="ScreenTextErrorFrame"/> for ErrorMessage lines
+/// (backward-compat marker for Samwise).
 /// </summary>
 internal sealed class ScreenTextHandler(IDomainEventPublisher bus) : IFrameHandler
 {
@@ -17,13 +18,11 @@ internal sealed class ScreenTextHandler(IDomainEventPublisher bus) : IFrameHandl
     {
         if (args.Length == 0) return;
 
-        if (args.Contains(ErrorMarker, StringComparison.Ordinal))
-        {
-            bus.Publish(new ScreenTextErrorFrame(metadata));
-            return;
-        }
+        var isError = args.Contains(ErrorMarker, StringComparison.Ordinal);
 
-        // Non-ErrorMessage categories: extract (Category, "Text")
+        if (isError)
+            bus.Publish(new ScreenTextErrorFrame(metadata));
+
         var tok = new ArgTokenizer(args);
         tok.SkipOpen();
         var categorySpan = tok.NextTokenSpan();

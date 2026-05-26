@@ -25,25 +25,25 @@ public class PlayerTests
     private void DispatchLoadSkills(string skillArgs)
     {
         var line = $"LocalPlayer: ProcessLoadSkills({skillArgs})";
-        _player.OnLoadSkills($"({skillArgs})".AsSpan(), line, Meta());
+        _player.LoadSkillsHandler.Handle($"({skillArgs})".AsSpan(), line, Meta());
     }
 
     private void DispatchUpdateSkill(string skillArgs)
     {
         var line = $"LocalPlayer: ProcessUpdateSkill({skillArgs})";
-        _player.OnUpdateSkill($"({skillArgs})".AsSpan(), line, Meta());
+        _player.UpdateSkillHandler.Handle($"({skillArgs})".AsSpan(), line, Meta());
     }
 
     private void DispatchLoadRecipes(string recipeArgs)
     {
         var line = $"LocalPlayer: ProcessLoadRecipes({recipeArgs})";
-        _player.OnLoadRecipes($"({recipeArgs})".AsSpan(), line, Meta());
+        _player.LoadRecipesHandler.Handle($"({recipeArgs})".AsSpan(), line, Meta());
     }
 
     private void DispatchUpdateRecipe(string recipeArgs)
     {
         var line = $"LocalPlayer: ProcessUpdateRecipe({recipeArgs})";
-        _player.OnUpdateRecipe($"({recipeArgs})".AsSpan(), line, Meta());
+        _player.UpdateRecipeHandler.Handle($"({recipeArgs})".AsSpan(), line, Meta());
     }
 
     // ── LoadSkills ───────────────────────────────────────────────────────

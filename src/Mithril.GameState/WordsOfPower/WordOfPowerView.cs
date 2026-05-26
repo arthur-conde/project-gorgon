@@ -1,29 +1,27 @@
 using System.Text.RegularExpressions;
-using Mithril.GameState.Chat;
+using Arda.Dispatch;
+using Arda.World.Chat.Events;
+using Arda.World.Player.Events;
 using Mithril.GameState.WordsOfPower.Internal;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.WorldSim;
-using Mithril.WorldSim.Chat;
-using Mithril.WorldSim.Player;
 
 namespace Mithril.GameState.WordsOfPower;
 
 /// <summary>
 /// Canonical Words-of-Power surface (#603) — the cross-source view layer that
-/// composes <see cref="IPlayerWorld"/>'s discovery folder with
-/// <see cref="IChatWorld"/>'s player-chat folder. Per the world-simulator
-/// design (principles 3 + 4 — no service spans both sources; cross-source
-/// composition lives in views above the worlds), this view is the place where
-/// discovery records meet spent observations.
+/// composes Player.log discovery events with chat-line observations via the
+/// Arda domain event bus. Per the world-simulator design (principles 3 + 4 —
+/// no service spans both sources; cross-source composition lives in views
+/// above the worlds), this view is the place where discovery records meet
+/// spent observations.
 ///
-/// <para><b>Composition.</b> The view subscribes to typed change events on
-/// both world buses:
+/// <para><b>Composition.</b> The view subscribes to Arda domain events on
+/// <see cref="IDomainEventSubscriber"/>:
 /// <list type="bullet">
-///   <item><see cref="PlayerWordOfPowerDiscovered"/> from
-///   <c>IPlayerWorld.Bus</c>.</item>
-///   <item><see cref="ChatPlayerLineObserved"/> from
-///   <c>IChatWorld.Bus</c>.</item>
+///   <item><see cref="WordOfPowerDiscovered"/> — Player.log discovery.</item>
+///   <item><see cref="PlayerChatLine"/> — chat-side utterance.</item>
 /// </list>
 /// For each chat line, the view runs an uppercase-token regex (length ≥ 4)
 /// and looks each candidate up in the active character's discovery state. A
@@ -36,9 +34,8 @@ namespace Mithril.GameState.WordsOfPower;
 /// discovery folder's <c>wop-discovery.json</c>. Spent state needs disk
 /// because once burned, a code stays Spent forever — without persistence a
 /// Mithril restart would reset every Known→Spent flip we already observed
-/// (chat is live-only per the world-sim's <c>IChatLogStream</c> legacy
-/// contract; the world-sim source replays from the latest banner but does not
-/// retain history across PG re-logins).</para>
+/// (chat is live-only per the Arda ingest pipeline; the source replays from
+/// the latest banner but does not retain history across PG re-logins).</para>
 ///
 /// <para><b>Monotonic Spent — no TTL.</b> Unlike the inventory view, the WoP
 /// view has no <c>PendingCorrelator</c> and no <c>IViewClock</c>: the join is
@@ -62,8 +59,7 @@ public sealed partial class WordOfPowerView : IWordOfPowerView, IDisposable
     [GeneratedRegex(@"\b[A-Z]{4,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex UpperTokenRx();
 
-    private readonly IPlayerWorld _playerWorld;
-    private readonly IChatWorld _chatWorld;
+    private readonly IDomainEventSubscriber _domainBus;
     private readonly IPlayerWordOfPowerDiscoveryState _discoveryState;
     private readonly PerCharacterView<WordOfPowerViewState> _spentView;
     private readonly IDiagnosticsSink? _diag;
@@ -76,14 +72,12 @@ public sealed partial class WordOfPowerView : IWordOfPowerView, IDisposable
     private bool _disposed;
 
     public WordOfPowerView(
-        IPlayerWorld playerWorld,
-        IChatWorld chatWorld,
+        IDomainEventSubscriber domainBus,
         IPlayerWordOfPowerDiscoveryState discoveryState,
         PerCharacterView<WordOfPowerViewState> spentView,
         IDiagnosticsSink? diag = null)
     {
-        _playerWorld = playerWorld ?? throw new ArgumentNullException(nameof(playerWorld));
-        _chatWorld = chatWorld ?? throw new ArgumentNullException(nameof(chatWorld));
+        _domainBus = domainBus ?? throw new ArgumentNullException(nameof(domainBus));
         _discoveryState = discoveryState ?? throw new ArgumentNullException(nameof(discoveryState));
         _spentView = spentView ?? throw new ArgumentNullException(nameof(spentView));
         _diag = diag;
@@ -149,48 +143,49 @@ public sealed partial class WordOfPowerView : IWordOfPowerView, IDisposable
     }
 
     /// <summary>
-    /// Attach to both world buses. Idempotent — the registration hosted
-    /// services call this once during host start; calling it twice is safe.
+    /// Attach to the Arda domain event bus. Idempotent — the registration
+    /// hosted service calls this once during host start; calling it twice is safe.
     /// </summary>
     public void Start()
     {
         if (_started) return;
         _started = true;
 
-        _discoveredSub = _playerWorld.Bus.Subscribe<PlayerWordOfPowerDiscovered>(OnDiscovered);
-        _chatLineSub = _chatWorld.Bus.Subscribe<ChatPlayerLineObserved>(OnChatLine);
+        _discoveredSub = _domainBus.Subscribe<WordOfPowerDiscovered>(OnDiscovered);
+        _chatLineSub = _domainBus.Subscribe<PlayerChatLine>(OnChatLine);
 
         _diag?.Info("GameState.WordsOfPower.View",
-            "WordOfPowerView subscribed to PlayerWorld + ChatWorld typed bus channels");
+            "WordOfPowerView subscribed to Arda domain bus (WordOfPowerDiscovered + PlayerChatLine)");
     }
 
-    // ── PlayerWorld handler ──────────────────────────────────────────────
+    // ── Discovery handler ──────────────────────────────────────────────
 
-    private void OnDiscovered(Frame<PlayerWordOfPowerDiscovered> frame)
+    private void OnDiscovered(WordOfPowerDiscovered evt)
     {
-        var p = frame.Payload;
+        var ts = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
         _bus.Publish(new Frame<WordOfPowerKnowledgeChanged>(
-            frame.Timestamp,
-            new WordOfPowerKnowledgeChanged(p.Code, WordOfPowerKnowledge.Known, p.Timestamp)));
+            ts,
+            new WordOfPowerKnowledgeChanged(evt.Code.ToString(), WordOfPowerKnowledge.Known, ts.UtcDateTime)));
         CodebookChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    // ── ChatWorld handler ────────────────────────────────────────────────
+    // ── Chat handler ────────────────────────────────────────────────────
 
-    private void OnChatLine(Frame<ChatPlayerLineObserved> frame)
+    private void OnChatLine(PlayerChatLine evt)
     {
-        var p = frame.Payload;
-        if (string.IsNullOrEmpty(p.Text)) return;
+        if (string.IsNullOrEmpty(evt.Text)) return;
+
+        var eventTs = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
 
         // Scan candidate tokens; only matches in the discovery state flip
         // state. The match cost is bounded by the small set of distinct
         // uppercase tokens in any one chat line; most chat lines yield zero.
-        foreach (Match tok in UpperTokenRx().Matches(p.Text))
+        foreach (Match tok in UpperTokenRx().Matches(evt.Text))
         {
             var code = tok.Value;
             if (_discoveryState.TryGet(code) is null) continue;
 
-            var ts = p.Timestamp;
+            var ts = eventTs.UtcDateTime;
             bool changed;
             lock (_stateLock)
             {
@@ -217,9 +212,9 @@ public sealed partial class WordOfPowerView : IWordOfPowerView, IDisposable
             if (changed)
             {
                 _diag?.Trace("GameState.WordsOfPower.View",
-                    $"Spent code={code} via chat utterance from speaker='{p.Speaker}' channel='{p.Channel}'");
+                    $"Spent code={code} via chat utterance from speaker='{evt.Speaker}' channel='{evt.Channel}'");
                 _bus.Publish(new Frame<WordOfPowerKnowledgeChanged>(
-                    frame.Timestamp,
+                    eventTs,
                     new WordOfPowerKnowledgeChanged(code, WordOfPowerKnowledge.Spent, ts)));
                 CodebookChanged?.Invoke(this, EventArgs.Empty);
             }

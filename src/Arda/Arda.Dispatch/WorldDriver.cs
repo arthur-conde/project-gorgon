@@ -40,7 +40,7 @@ internal sealed class WorldDriver : IWorldDriver
             }
 
             foreach (var observer in _observers)
-                observer.Observe(line.Metadata);
+                observer.Observe(line.Log, line.Metadata);
 
             var parsed = VerbExtractor.Parse(line.Log.AsSpan());
             _dispatch.Dispatch(parsed, line.Log, line.Metadata);

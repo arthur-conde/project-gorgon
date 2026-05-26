@@ -1,13 +1,11 @@
 using System.IO;
+using Arda.Dispatch;
+using Arda.World.Player;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
-using Mithril.GameState.Areas;
-using Mithril.GameState.Movement;
-using Mithril.GameState.Pins;
-using Mithril.Shared.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf.Dialogs;
@@ -24,7 +22,6 @@ using Legolas.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
-using Mithril.WorldSim.Player;
 
 namespace Legolas;
 
@@ -47,14 +44,6 @@ public sealed class LegolasModule : IMithrilModule
 
         services.AddMithrilVersionedSettings<LegolasSettings>(settingsPath, LegolasSettingsJsonContext.Default.LegolasSettings);
 
-        // Per-character L1 ingestion bookkeeping (#550 PR 3): persists the
-        // PlayerLog Sequence high-water so a Mithril restart resumes from
-        // where the prior session left off rather than re-applying every
-        // already-processed envelope in the session-replay drain.
-        // PlayerLogIngestionService is the sole consumer.
-        services.AddPerCharacterModuleStore<LegolasIngestionState>(
-            "legolas-ingestion",
-            LegolasIngestionStateJsonContext.Default.LegolasIngestionState);
         services.AddSingleton<InventoryGridSettings>(sp =>
             sp.GetRequiredService<LegolasSettings>().InventoryGrid);
         services.AddSingleton<LegolasColors>(sp =>
@@ -62,7 +51,6 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<LegolasBrushes>();
 
         // Core services
-        services.AddSingleton<PlayerLogParser>();
         services.AddSingleton<HeldKarpOptimizer>();
         services.AddSingleton<NearestNeighbourTwoOptOptimizer>();
         services.AddSingleton<IRouteOptimizer>(sp => new AdaptiveRouteOptimizer(
@@ -72,15 +60,9 @@ public sealed class LegolasModule : IMithrilModule
             new MultilaterationSolver(sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
         services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
-        // #460: cold-start pin calibration driven through the map overlay
-        // (not the standalone window). View-agnostic; shared by the wizard
-        // Calibrating step and the map-overlay capture branch.
         services.AddSingleton<PinCalibrationCoordinator>();
 
         // Session + flow controllers + VMs.
-        // Session.MapOpacity / InventoryOpacity hydrate from persisted settings on
-        // start and write back on change — gives slider values that survive a
-        // restart without requiring callers to know about both objects.
         services.AddSingleton<SessionState>(sp =>
         {
             var session = new SessionState();
@@ -104,45 +86,29 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<SurveyFlowController>();
         services.AddSingleton<MotherlodeFlowController>();
 
-        // #488: Motherlode measurement coordinator — correlates the use
-        // gesture + position feeder + ChatLog distance into the solver.
-        // Singleton (subscribes to the GameState trackers in its ctor);
-        // constructed when the ingestion hosted services resolve it.
-        // #497: declared-position resolver (a character-named / "@me" pin).
-        // Singleton; depends only on already-rooted GameState/Shared
-        // singletons. Consumed by the Survey anchor + the Motherlode feeder.
+        // CharacterPinAnchor — declared-position resolver (@me / character-named pin).
+        // Now subscribes to Arda MapPinAdded/MapPinRemoved/AreaChanged events via
+        // IDomainEventSubscriber instead of the legacy IPlayerPinTracker.
         services.AddSingleton<ICharacterPinAnchor>(sp => new CharacterPinAnchor(
-            sp.GetRequiredService<IPlayerPinTracker>(),
+            sp.GetRequiredService<IDomainEventSubscriber>(),
+            sp.GetRequiredService<IMapPinState>(),
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetService<IDiagnosticsSink>()));
 
+        // MotherlodeMeasurementCoordinator — now subscribes to Arda domain
+        // events (PlayerPositionChanged, MapPinAdded, InventoryItemRemoved)
+        // via IDomainEventSubscriber instead of GameState trackers.
         services.AddSingleton<MotherlodeMeasurementCoordinator>(sp =>
             new MotherlodeMeasurementCoordinator(
                 sp.GetRequiredService<IMultilaterationSolver>(),
                 sp.GetRequiredService<MotherlodeFlowController>(),
-                sp.GetRequiredService<IPlayerPositionTracker>(),
-                sp.GetRequiredService<IPlayerPinTracker>(),
-                // #488 dig-signal via Player.log ProcessDeleteItem only — no
-                // chat fusion — so we subscribe to PlayerInventoryRemoved on
-                // the PlayerWorld bus directly (principle 4 single-world-direct,
-                // sibling to ItemCollectionTracker's PlayerInventoryAdded path).
-                // IReferenceDataService resolves the motherlode-map predicate;
-                // LegolasSettings carries the Multi-map mode toggle (read live).
-                sp.GetService<IPlayerWorld>(),
+                sp.GetRequiredService<IDomainEventSubscriber>(),
                 sp.GetService<IReferenceDataService>(),
                 sp.GetRequiredService<LegolasSettings>(),
-                // #497 @me/character-named pin = high-confidence self position.
                 sp.GetService<ICharacterPinAnchor>(),
-                // Shared GameState current-area: a confirmed area change
-                // invalidates the area-local-frame measurement (maps are
-                // area-specific). Same source Gandalf consumes (#789).
-                sp.GetService<IPlayerAreaState>(),
+                sp.GetService<IAreaState>(),
                 sp.GetService<IDiagnosticsSink>()));
 
-        // End-of-run report (text + PNG + JSON + share link). Singleton so the
-        // latest snapshot survives FSM resets and is available for the wizard's
-        // "View last report" button. IActiveCharacterService is optional —
-        // anonymous reports are valid and the report service tolerates a null.
         services.AddSingleton<LegolasReportService>(sp => new LegolasReportService(
             sp.GetRequiredService<SurveyFlowController>(),
             sp.GetRequiredService<SessionState>(),
@@ -153,9 +119,6 @@ public sealed class LegolasModule : IMithrilModule
             sp.GetRequiredService<IReferenceDataService>(),
             sp.GetRequiredService<IIconCacheService>()));
 
-        // Sharing — mithril://legolas/<payload> import target. Opens the same
-        // share dialog the sender used so the receiver gets text + JSON + card
-        // preview + copy/save buttons rather than a stripped-down view.
         services.AddSingleton<ILegolasShareImportTarget>(sp => new LegolasShareImportTarget(
             sp.GetService<LegolasShareCardRenderer>(),
             sp.GetService<LegolasSettings>(),
@@ -176,8 +139,6 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<NudgePadViewModel>();
         services.AddSingleton<CalibrationSessionViewModel>();
 
-        // Panel view (shell-hosted UserControl) — singleton so it keeps scroll/state across tab switches.
-        // The panel directly hosts the wizard; settings live in the per-module settings tab.
         services.AddSingleton<LegolasPanelView>(sp => new LegolasPanelView
         {
             DataContext = sp.GetRequiredService<LegolasWizardViewModel>(),
@@ -187,7 +148,6 @@ public sealed class LegolasModule : IMithrilModule
             DataContext = sp.GetRequiredService<LegolasSettingsViewModel>(),
         });
 
-        // Overlay windows — transient so a user-closed window can be re-created cleanly
         services.AddTransient<MapOverlayView>(sp =>
         {
             var view = new MapOverlayView(
@@ -214,19 +174,14 @@ public sealed class LegolasModule : IMithrilModule
             return view;
         });
 
-        // Foreground-focus tracking (issue #116). Singleton + hosted-service
-        // so OverlayController can read its IsInApp state directly.
         services.AddSingleton<ForegroundFocusGate>();
         services.AddHostedService(sp => sp.GetRequiredService<ForegroundFocusGate>());
-        // Issue #133: swap HotkeyService's gate so registrations track in-app focus.
         services.Replace(ServiceDescriptor.Singleton<IHotkeyGate>(
             sp => sp.GetRequiredService<ForegroundFocusGate>()));
 
-        // Overlay lifecycle
         services.AddHostedService<OverlayController>();
         services.AddHostedService<AutoOverlayCoordinator>();
 
-        // Hotkey commands (shell auto-collects via IEnumerable<IHotkeyCommand>)
         services.AddSingleton<IHotkeyCommand, StartSessionCommand>();
         services.AddSingleton<IHotkeyCommand, MarkCurrentCollectedCommand>();
         services.AddSingleton<IHotkeyCommand, SetSurveyModeCommand>();
@@ -239,7 +194,6 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, ToggleInventoryClickThroughCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleAllOverlaysCommand>();
         services.AddSingleton<IHotkeyCommand, ToggleBearingWedgesCommand>();
-        // Issue #117: 12 pin-nudge commands (4 directions × 3 step tiers)
         services.AddSingleton<IHotkeyCommand, NudgePinUpCommand>();
         services.AddSingleton<IHotkeyCommand, NudgePinUpFastCommand>();
         services.AddSingleton<IHotkeyCommand, NudgePinUpFineCommand>();
@@ -252,32 +206,15 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<IHotkeyCommand, NudgePinRightCommand>();
         services.AddSingleton<IHotkeyCommand, NudgePinRightFastCommand>();
         services.AddSingleton<IHotkeyCommand, NudgePinRightFineCommand>();
-        // #477A: optional bindable mirrors of the guided-calibration panel
-        // controls (no default binding — Legolas convention).
         services.AddSingleton<IHotkeyCommand, ToggleCalibrationPhaseCommand>();
         services.AddSingleton<IHotkeyCommand, ConfirmCalibrationCommand>();
 
-        // Player-log ingestion (#454 / #488 / #604): area→calibration bridge,
-        // absolute ProcessMapFx placement, Motherlode use gesture + distance
-        // readout. Post-#606 this is Legolas's only log-tail subscription —
-        // the chat-log LogIngestionService retired alongside Phase 3 of the
-        // world-sim migration (umbrella #601).
+        // Arda-driven ingestion services (replaces former L1 driver +
+        // IPlayerWorld.Bus subscriptions). Both subscribe eagerly during
+        // StartAsync via IDomainEventSubscriber.
         services.AddHostedService<PlayerLogIngestionService>();
-        // Inventory-add↔Player.log-collect attribution (#606 / #699). Replaces
-        // the chat-side [Status] added/collected pairing the retired
-        // LogIngestionService owned; post-#699 subscribes to IPlayerWorld.Bus
-        // (PlayerInventoryAdded — principle 4 single-world-direct, no
-        // cross-source composition through the view layer) and ProcessScreenText
-        // collect banners parsed by PlayerLogParser. The cross-source
-        // PendingCorrelator retired alongside the IInventoryView dependency;
-        // pairing is now bounded by SurveyFlowController's session lifecycle.
         services.AddHostedService<ItemCollectionTracker>();
 
-        // Diagnostics — frame-time logger + synthetic-load harness. The logger
-        // writes CSV + summary to %LocalAppData%/Mithril/Legolas/perf/. Both
-        // are inert until their hotkey commands fire, so it's safe to leave
-        // registered in production builds — the cost is one zero-allocation
-        // singleton.
         var perfDir = Path.Combine(dir, "perf");
         services.AddSingleton(_ => new FrameTimeLogger(perfDir));
         services.AddSingleton<SurveyPerfHarness>();

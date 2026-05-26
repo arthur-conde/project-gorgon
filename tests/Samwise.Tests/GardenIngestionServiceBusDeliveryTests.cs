@@ -1,14 +1,13 @@
 using System.IO;
+using Arda.Abstractions.Logs;
+using Arda.Dispatch;
+using Arda.World.Player.Events;
 using FluentAssertions;
-using Mithril.GameState.Inventory;
-using Mithril.GameState.Skills;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Logging;
 using Mithril.Shared.Settings;
 using Mithril.GameReports;
-using Mithril.WorldSim;
 using Samwise.Alarms;
 using Samwise.Calibration;
 using Samwise.Parsing;
@@ -18,24 +17,12 @@ using Xunit;
 namespace Samwise.Tests;
 
 /// <summary>
-/// End-to-end bus-delivery guard for <see cref="GardenIngestionService"/>'s
-/// post-#725 migration onto <see cref="IPlayerWorld.Bus"/>'s
-/// <see cref="PlayerInventoryAdded"/> / <see cref="PlayerInventoryRemoved"/>
-/// channels. Constructs the real service against a <see cref="FakePlayerWorld"/>
-/// whose bus is backed by an in-process <see cref="TestEventBus"/>, calls
-/// <c>StartAsync</c> to wire the subscriptions, and publishes synthetic
-/// inventory frames through the bus. The state machine is asserted on the
-/// real GardenStateMachine instance the service holds — proving the bus →
+/// End-to-end delivery guard for <see cref="GardenIngestionService"/>'s
+/// Arda domain-event subscriptions. Constructs the real service against a
+/// <see cref="TestDomainEventBus"/> and publishes synthetic Arda events
+/// through the bus. The state machine is asserted on the real
+/// GardenStateMachine instance the service holds — proving the bus →
 /// handler → state-machine path is intact end-to-end.
-///
-/// <para>Pairs with <c>TwoBarleyRegressionTest.SeedAddItemBeforePlant_StateMachine_ResolvesPlant</c>,
-/// which pins the state-machine ledger property in isolation. The two
-/// together cover both halves of the seed-resolution contract: the input
-/// property (the ledger) and the delivery property (the bus subscription).
-/// A regression that broke <c>Subscribe&lt;PlayerInventoryAdded&gt;</c>,
-/// swapped Added↔Removed by accident, or skipped <c>_state.Apply</c> inside
-/// either handler would only flag this file — the state-machine test would
-/// remain green.</para>
 /// </summary>
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]
@@ -57,14 +44,9 @@ public sealed class GardenIngestionServiceBusDeliveryTests : IDisposable
     }
 
     [Fact]
-    public async Task PlayerInventoryAdded_published_before_plant_resolves_crop_via_bus_subscription()
+    public async Task InventoryItemAdded_published_before_plant_resolves_crop_via_bus_subscription()
     {
-        // ── Arrange: build the real GardenIngestionService against a
-        // FakePlayerWorld whose Bus is the synthetic TestEventBus.
-        var world = new FakePlayerWorld();
-        var driver = new NoopLogStreamDriver();
-        var skillState = new NoopSkillState();
-        var parser = new GardenLogParser();
+        var bus = new TestDomainEventBus();
         var cfg = new InMemoryCropConfig();
         var refData = new BarleyOnlyRefData();
         var active = new FakeActiveCharacterService();
@@ -80,7 +62,7 @@ public sealed class GardenIngestionServiceBusDeliveryTests : IDisposable
         ];
         active.SetActiveCharacter("Hits", "live");
 
-        var sm = new GardenStateMachine(cfg, referenceData: refData, activeChar: active, playerWorld: world);
+        var sm = new GardenStateMachine(cfg, referenceData: refData, activeChar: active);
 
         var store = new PerCharacterStore<GardenCharacterState>(
             _charactersRoot,
@@ -93,14 +75,11 @@ public sealed class GardenIngestionServiceBusDeliveryTests : IDisposable
             Path.Combine(_root, "settings.json"));
         using var autoSaver = new SettingsAutoSaver<SamwiseSettings>(settingsStore, settings);
 
-        var alarms = new AlarmService(sm, settings, new NoopAudioSink(), playerWorld: world);
+        var alarms = new AlarmService(sm, settings, new NoopAudioSink(), bus: bus);
         var calibration = new GrowthCalibrationService(sm, cfg, _root);
 
         var service = new GardenIngestionService(
-            driver: driver,
-            playerWorld: world,
-            skillState: skillState,
-            parser: parser,
+            bus: bus,
             state: sm,
             stateService: stateService,
             alarms: alarms,
@@ -112,56 +91,55 @@ public sealed class GardenIngestionServiceBusDeliveryTests : IDisposable
         await service.StartAsync(cts.Token);
         try
         {
-            world.TestBus.SubscriberCountFor(typeof(PlayerInventoryAdded)).Should().BeGreaterThan(0,
-                "StartAsync must attach the IPlayerWorld.Bus<PlayerInventoryAdded> subscription before returning " +
-                "(Call 1 eager-attach contract); without this the bus-delivery path is silently dead.");
+            bus.SubscriberCountFor<InventoryItemAdded>().Should().BeGreaterThan(0,
+                "StartAsync must attach the IDomainEventSubscriber<InventoryItemAdded> subscription before returning " +
+                "(eager-attach contract); without this the bus-delivery path is silently dead.");
 
-            // ── Act 1: publish the seed Add frame through the bus.
+            // Publish the seed Add event through the Arda bus.
             var seedTs = new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc);
-            world.TestBus.Publish(
-                new DateTimeOffset(seedTs, TimeSpan.Zero),
-                new PlayerInventoryAdded(InstanceId: 86940428L, InternalName: "BarleySeeds", Timestamp: seedTs));
+            bus.Publish(new InventoryItemAdded(
+                InstanceId: 86940428L,
+                InternalName: "BarleySeeds",
+                Metadata: new LogLineMetadata(
+                    new DateTimeOffset(seedTs, TimeSpan.Zero),
+                    DateTimeOffset.UtcNow,
+                    IsReplay: false)));
 
-            // ── Act 2: drive the plant verbs through the state machine
-            // directly. The L1 driver path isn't under test here — the
-            // assertion is that the bus-delivered Add already populated the
-            // id→crop ledger, so when ProcessUpdateItemCode fires its plant-
-            // resolve step the crop type maps via 86940428 → "Barley".
+            // Drive the plant verbs through the Arda bus directly.
             var plantTs = new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc);
-            ApplyParserLine(sm, parser, "LocalPlayer: ProcessSetPetOwner(590342, 588755, PassiveFollow)", plantTs);
-            ApplyParserLine(sm, parser, "LocalPlayer: ProcessUpdateItemCode(86940428, 796683, True)", plantTs);
+            bus.Publish(new SetPetOwnerFrame(
+                EntityId: 590342,
+                Metadata: new LogLineMetadata(
+                    new DateTimeOffset(plantTs, TimeSpan.Zero),
+                    DateTimeOffset.UtcNow,
+                    IsReplay: false)));
 
-            // ── Assert: the bus-delivered Add reached the state machine and
-            // the plant resolved to Barley.
+            bus.Publish(new InventoryItemUpdated(
+                InstanceId: 86940428L,
+                NewStackSize: 1,
+                PreviousStackSize: 2,
+                Metadata: new LogLineMetadata(
+                    new DateTimeOffset(plantTs, TimeSpan.Zero),
+                    DateTimeOffset.UtcNow,
+                    IsReplay: false)));
+
+            // The bus-delivered Add reached the state machine and the plant resolved.
             sm.Snapshot()["Hits"]["590342"].CropType.Should().Be(
                 "Barley",
-                "the PlayerInventoryAdded frame published on IPlayerWorld.Bus must reach the state machine via " +
-                "GardenIngestionService.OnPlayerInventoryAdded → DispatchInventory → _state.Apply(AddItem), " +
+                "the InventoryItemAdded event published on IDomainEventSubscriber must reach the state machine, " +
                 "populating the id→crop ledger so the plant resolves.");
         }
         finally
         {
             await service.StopAsync(CancellationToken.None);
             service.Dispose();
-            driver.Dispose();
         }
     }
 
     [Fact]
-    public async Task PlayerInventoryRemoved_published_after_plant_completes_plant_resolution()
+    public async Task InventoryItemRemoved_published_after_plant_completes_plant_resolution()
     {
-        // The Squash mis-identification path (TwoBarleyRegressionTest.LastSquashSeed_*):
-        // PG emits ProcessDeleteItem instead of ProcessUpdateItemCode when the
-        // last stack is consumed. The bus channel that carries this is
-        // PlayerInventoryRemoved; the handler projects to DeleteItem (same
-        // InstanceId), which triggers the state machine's plant-resolve via
-        // HandleItemIdentified. Without the Removed subscription wiring, the
-        // last-seed plant would land as Unknown. This test pins the
-        // Removed channel end-to-end.
-        var world = new FakePlayerWorld();
-        var driver = new NoopLogStreamDriver();
-        var skillState = new NoopSkillState();
-        var parser = new GardenLogParser();
+        var bus = new TestDomainEventBus();
         var cfg = new InMemoryCropConfig();
         var refData = new BarleyOnlyRefData();
         var active = new FakeActiveCharacterService();
@@ -174,7 +152,7 @@ public sealed class GardenIngestionServiceBusDeliveryTests : IDisposable
         ];
         active.SetActiveCharacter("Emraell", "live");
 
-        var sm = new GardenStateMachine(cfg, referenceData: refData, activeChar: active, playerWorld: world);
+        var sm = new GardenStateMachine(cfg, referenceData: refData, activeChar: active);
 
         var store = new PerCharacterStore<GardenCharacterState>(
             _charactersRoot,
@@ -187,95 +165,58 @@ public sealed class GardenIngestionServiceBusDeliveryTests : IDisposable
             Path.Combine(_root, "settings.json"));
         using var autoSaver = new SettingsAutoSaver<SamwiseSettings>(settingsStore, settings);
 
-        var alarms = new AlarmService(sm, settings, new NoopAudioSink(), playerWorld: world);
+        var alarms = new AlarmService(sm, settings, new NoopAudioSink(), bus: bus);
         var calibration = new GrowthCalibrationService(sm, cfg, _root);
 
         var service = new GardenIngestionService(
-            driver, world, skillState, parser, sm, stateService,
-            alarms, calibration, autoSaver, diag: null);
+            bus, sm, stateService, alarms, calibration, autoSaver, diag: null);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await service.StartAsync(cts.Token);
         try
         {
-            world.TestBus.SubscriberCountFor(typeof(PlayerInventoryRemoved)).Should().BeGreaterThan(0,
-                "StartAsync must attach the IPlayerWorld.Bus<PlayerInventoryRemoved> subscription");
+            bus.SubscriberCountFor<InventoryItemRemoved>().Should().BeGreaterThan(0,
+                "StartAsync must attach the IDomainEventSubscriber<InventoryItemRemoved> subscription");
 
             // Seed the inventory ledger via the bus, then the plant.
             var seedTs = new DateTime(2026, 4, 15, 20, 48, 30, DateTimeKind.Utc);
-            world.TestBus.Publish(
-                new DateTimeOffset(seedTs, TimeSpan.Zero),
-                new PlayerInventoryAdded(InstanceId: 93102594L, InternalName: "BarleySeeds", Timestamp: seedTs));
+            bus.Publish(new InventoryItemAdded(
+                InstanceId: 93102594L,
+                InternalName: "BarleySeeds",
+                Metadata: new LogLineMetadata(
+                    new DateTimeOffset(seedTs, TimeSpan.Zero),
+                    DateTimeOffset.UtcNow,
+                    IsReplay: false)));
 
-            // SetPetOwner fires plant_at = plantTs. Then the last-seed
-            // ProcessDeleteItem arrives via PlayerInventoryRemoved — the
-            // service's handler projects to DeleteItem and HandleItemIdentified
-            // resolves the plant via the prior _itemIdToCrop map.
             var plantTs = new DateTime(2026, 4, 15, 20, 49, 44, DateTimeKind.Utc);
-            ApplyParserLine(sm, parser, "LocalPlayer: ProcessSetPetOwner(803506, 791931, PassiveFollow)", plantTs);
+            bus.Publish(new SetPetOwnerFrame(
+                EntityId: 803506,
+                Metadata: new LogLineMetadata(
+                    new DateTimeOffset(plantTs, TimeSpan.Zero),
+                    DateTimeOffset.UtcNow,
+                    IsReplay: false)));
 
-            world.TestBus.Publish(
-                new DateTimeOffset(plantTs, TimeSpan.Zero),
-                new PlayerInventoryRemoved(InstanceId: 93102594L, InternalName: "BarleySeeds", Timestamp: plantTs));
+            bus.Publish(new InventoryItemRemoved(
+                InstanceId: 93102594L,
+                InternalName: "BarleySeeds",
+                Metadata: new LogLineMetadata(
+                    new DateTimeOffset(plantTs, TimeSpan.Zero),
+                    DateTimeOffset.UtcNow,
+                    IsReplay: false)));
 
             sm.Snapshot()["Emraell"]["803506"].CropType.Should().Be(
                 "Barley",
-                "the PlayerInventoryRemoved frame must reach the state machine via OnPlayerInventoryRemoved " +
+                "the InventoryItemRemoved event must reach the state machine via OnInventoryRemoved " +
                 "→ _state.Apply(DeleteItem), driving plant-resolve from the prior id→crop ledger entry.");
         }
         finally
         {
             await service.StopAsync(CancellationToken.None);
             service.Dispose();
-            driver.Dispose();
         }
     }
 
-    // ── helpers ─────────────────────────────────────────────────────────
-
-    private static void ApplyParserLine(GardenStateMachine sm, GardenLogParser parser, string line, DateTime ts)
-    {
-        var evt = parser.TryParse(line, ts);
-        if (evt is GardenEvent ge) sm.Apply(ge);
-    }
-
-    /// <summary>
-    /// Minimal <see cref="ILogStreamDriver"/> that accepts the service's
-    /// <c>LocalPlayerLogLine</c> subscription but never delivers any
-    /// envelopes. The L1 path isn't under test here — the bus path is.
-    /// </summary>
-    private sealed class NoopLogStreamDriver : ILogStreamDriver, IDisposable
-    {
-        public ILogSubscription Subscribe<T>(
-            Func<LogEnvelope<T>, ValueTask> handler,
-            LogSubscriptionOptions? options = null) where T : class
-            => new NoopSubscription();
-
-        public void Dispose() { }
-
-        private sealed class NoopSubscription : ILogSubscription, IDisposable
-        {
-            public string Id { get; } = $"noop#{Guid.NewGuid():N}";
-            public LogSubscriptionDiagnostics Diagnostics =>
-                new(0, 0, 0, 0, 0, LogSubscriptionState.Healthy);
-            public event EventHandler? StateChanged { add { } remove { } }
-            public void Dispose() { }
-        }
-    }
-
-    /// <summary>
-    /// Minimal <see cref="IPlayerSkillState"/> — never invokes the
-    /// gardening-XP callback. The bridge is unit-tested in
-    /// <c>GardeningXpSkillStateBridgeTests</c>; this fixture just satisfies
-    /// the constructor.
-    /// </summary>
-    private sealed class NoopSkillState : IPlayerSkillState
-    {
-        public PlayerSkillSnapshot Current => PlayerSkillSnapshot.Empty;
-        public IDisposable Subscribe(Action<PlayerSkillSnapshot> handler) => new Noop();
-        public IDisposable SubscribeChanges(Action<SkillChange> handler) => new Noop();
-        private sealed class Noop : IDisposable { public void Dispose() { } }
-    }
+    // ── test infrastructure ─────────────────────────────────────────────
 
     private sealed class NoopAudioSink : IAudioPlaybackSink
     {

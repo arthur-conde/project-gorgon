@@ -12,6 +12,11 @@ namespace Arda.World.Player.Internal;
 /// Args format: <c>(A, shape, color, (x, y, z), "label")</c>
 /// where A is an opaque leading int (invariant 1), y is always 0.00 and skipped.
 /// </para>
+/// <para>
+/// Exposes <see cref="PinAddHandler"/> and <see cref="PinRemoveHandler"/> for verb
+/// registration — the two verbs share the same args format, so a single
+/// <see cref="IFrameHandler.Handle"/> method cannot differentiate them.
+/// </para>
 /// </summary>
 internal sealed class MapPins : IMapPinState
 {
@@ -19,12 +24,16 @@ internal sealed class MapPins : IMapPinState
     private readonly List<MapPinEntry> _pins = [];
 
     public IReadOnlyCollection<MapPinEntry> Pins => _pins;
+    internal IReadOnlyList<MapPinEntry> PinsList => _pins;
 
     public MapPins(IDomainEventPublisher bus) => _bus = bus;
 
+    internal IFrameHandler PinAddHandler => new AddVerb(this);
+    internal IFrameHandler PinRemoveHandler => new RemoveVerb(this);
+
     internal void Reset() => _pins.Clear();
 
-    internal void OnAdd(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnAdd(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
         if (!TryParsePin(args, out var x, out var z, out var label, out var shape, out var color))
             return;
@@ -33,7 +42,7 @@ internal sealed class MapPins : IMapPinState
         _bus.Publish(new MapPinAdded(x, z, label, shape, color, metadata));
     }
 
-    internal void OnRemove(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnRemove(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
         if (!TryParsePin(args, out var x, out var z, out var label, out _, out _))
             return;
@@ -123,5 +132,17 @@ internal sealed class MapPins : IMapPinState
         }
 
         return true;
+    }
+
+    private sealed class AddVerb(MapPins owner) : IFrameHandler
+    {
+        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+            => owner.OnAdd(args, sourceLog, metadata);
+    }
+
+    private sealed class RemoveVerb(MapPins owner) : IFrameHandler
+    {
+        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+            => owner.OnRemove(args, sourceLog, metadata);
     }
 }

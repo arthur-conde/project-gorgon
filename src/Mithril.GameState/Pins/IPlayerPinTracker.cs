@@ -68,6 +68,7 @@ public sealed record PinSetChanged(
 /// coordinate, area transition = swap) means every consumer reads a correct
 /// current set instead of each re-deriving it behind its own arm-gate.</para>
 /// </summary>
+[Obsolete("Use Arda.World.Player.IMapState (pins via Pins property) instead.")]
 public interface IPlayerPinTracker
 {
     /// <summary>The area the tracked set belongs to (the shared

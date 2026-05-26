@@ -35,7 +35,7 @@ public class CalendarTests
         var calendar = CreateCalendar();
         var ts = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
 
-        calendar.Observe(Meta(ts));
+        calendar.Observe("", Meta(ts));
 
         _bus.Published<CalendarTimeAdvanced>().Should().ContainSingle()
             .Which.Now.Should().Be(ts);
@@ -48,8 +48,8 @@ public class CalendarTests
         var ts = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
         var sameSecond = ts.AddMilliseconds(500);
 
-        calendar.Observe(Meta(ts));
-        calendar.Observe(Meta(sameSecond));
+        calendar.Observe("", Meta(ts));
+        calendar.Observe("", Meta(sameSecond));
 
         _bus.Published<CalendarTimeAdvanced>().Should().ContainSingle();
     }
@@ -61,8 +61,8 @@ public class CalendarTests
         var ts1 = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
         var ts2 = ts1.AddSeconds(1);
 
-        calendar.Observe(Meta(ts1));
-        calendar.Observe(Meta(ts2));
+        calendar.Observe("", Meta(ts1));
+        calendar.Observe("", Meta(ts2));
 
         _bus.Published<CalendarTimeAdvanced>().Should().HaveCount(2);
     }
@@ -72,7 +72,7 @@ public class CalendarTests
     {
         var calendar = CreateCalendar();
 
-        calendar.Observe(new LogLineMetadata(null, DateTimeOffset.UtcNow, false));
+        calendar.Observe("", new LogLineMetadata(null, DateTimeOffset.UtcNow, false));
 
         _bus.Published<CalendarTimeAdvanced>().Should().BeEmpty();
         calendar.LastTimestamp.Should().BeNull();
@@ -86,11 +86,11 @@ public class CalendarTests
         var ts1 = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
         var ts2 = ts1.AddSeconds(1);
 
-        calendar.Observe(Meta(ts1));
+        calendar.Observe("", Meta(ts1));
         _bus.Clear();
 
         gameHour = 12;
-        calendar.Observe(Meta(ts2));
+        calendar.Observe("", Meta(ts2));
 
         _bus.Published<TimeOfDayShifted>().Should().ContainSingle()
             .Which.Should().BeEquivalentTo(new
@@ -107,7 +107,7 @@ public class CalendarTests
         var calendar = CreateCalendar(projectToGameHour: _ => 10);
         var ts = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
 
-        calendar.Observe(Meta(ts));
+        calendar.Observe("", Meta(ts));
 
         _bus.Published<TimeOfDayShifted>().Should().ContainSingle()
             .Which.Should().BeEquivalentTo(new
@@ -125,8 +125,8 @@ public class CalendarTests
         var ts1 = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
         var ts2 = ts1.AddSeconds(1);
 
-        calendar.Observe(Meta(ts1));
-        calendar.Observe(Meta(ts2));
+        calendar.Observe("", Meta(ts1));
+        calendar.Observe("", Meta(ts2));
 
         _bus.Published<TimeOfDayShifted>().Should().ContainSingle();
     }
@@ -137,7 +137,7 @@ public class CalendarTests
         var calendar = CreateCalendar(shifts: []);
         var ts = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
 
-        calendar.Observe(Meta(ts));
+        calendar.Observe("", Meta(ts));
 
         _bus.Published<CalendarTimeAdvanced>().Should().ContainSingle();
         _bus.Published<TimeOfDayShifted>().Should().BeEmpty();
@@ -152,10 +152,10 @@ public class CalendarTests
 
         calendar.LastTimestamp.Should().BeNull();
 
-        calendar.Observe(Meta(ts1));
+        calendar.Observe("", Meta(ts1));
         calendar.LastTimestamp.Should().Be(ts1);
 
-        calendar.Observe(Meta(ts2));
+        calendar.Observe("", Meta(ts2));
         calendar.LastTimestamp.Should().Be(ts2);
     }
 
@@ -168,11 +168,11 @@ public class CalendarTests
         calendar.CurrentShift.Should().BeNull();
 
         var ts = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
-        calendar.Observe(Meta(ts));
+        calendar.Observe("", Meta(ts));
         calendar.CurrentShift.Should().Be("morning");
 
         gameHour = 20;
-        calendar.Observe(Meta(ts.AddSeconds(1)));
+        calendar.Observe("", Meta(ts.AddSeconds(1)));
         calendar.CurrentShift.Should().Be("night");
     }
 
@@ -187,7 +187,7 @@ public class CalendarTests
         var calendar = CreateCalendar(projectToGameHour: _ => 3, shifts: shifts);
         var ts = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
 
-        calendar.Observe(Meta(ts));
+        calendar.Observe("", Meta(ts));
 
         _bus.Published<TimeOfDayShifted>().Should().ContainSingle()
             .Which.To.Should().Be("night");
@@ -200,7 +200,7 @@ public class CalendarTests
         var ts = new DateTimeOffset(2026, 5, 20, 12, 0, 0, TimeSpan.Zero);
         var meta = Meta(ts, isReplay: true);
 
-        calendar.Observe(meta);
+        calendar.Observe("", meta);
 
         _bus.Published<CalendarTimeAdvanced>().Should().ContainSingle()
             .Which.Metadata.IsReplay.Should().BeTrue();

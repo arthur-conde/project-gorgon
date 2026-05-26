@@ -3,6 +3,7 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
     <RootNamespace>Mithril.GameState.Tests</RootNamespace>
+    <NoWarn>$(NoWarn);CS0618</NoWarn>
     <!-- ObservableInventoryItems CollectionViewSource tests need System.Windows.Data. -->
     <UseWPF>true</UseWPF>
   </PropertyGroup>

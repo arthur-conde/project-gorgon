@@ -1,4 +1,8 @@
 using System.IO;
+using Arda.Abstractions.Logs;
+using Arda.Dispatch;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
@@ -12,7 +16,7 @@ namespace Gandalf.Tests;
 /// <summary>
 /// Verifies the Quests tab VM only materializes rows the player cares about
 /// (in journal or cooling/done) — not the full ~2,000 repeatable-quest
-/// catalog. Post-#155 this is structural: QuestSource.Catalog IS the active
+/// catalog. Post-migration this is structural: QuestSource.Catalog IS the active
 /// set + keys-with-progress, so the VM doesn't need a relevance predicate.
 /// </summary>
 [Trait("Category", "FileIO")]
@@ -35,7 +39,7 @@ public class QuestTimersViewModelTests : IDisposable
     }
 
     private (QuestTimersViewModel vm, QuestSource src, DerivedTimerProgressService derived,
-             FakePlayerQuestJournalService questSvc, ManualTime time)
+             FakeQuestState questState, TestDomainEventBus bus, ManualTime time)
         Build(params (string Key, Mithril.Reference.Models.Quests.Quest Quest)[] quests)
     {
         var active = new FakeActiveCharacterService();
@@ -49,24 +53,27 @@ public class QuestTimersViewModelTests : IDisposable
         var derived = new DerivedTimerProgressService(derivedView, time);
 
         var refData = new FakeReferenceData(quests);
-        var questSvc = new FakePlayerQuestJournalService();
-        var src = new QuestSource(derived, refData, questSvc, time);
+        var questState = new FakeQuestState();
+        var bus = new TestDomainEventBus();
+        var src = new QuestSource(derived, refData, questState, bus, time);
         var vm = new QuestTimersViewModel(src, derived, time);
-        return (vm, src, derived, questSvc, time);
+        return (vm, src, derived, questState, bus, time);
     }
+
+    private static int ParseQuestId(string cdnKey) =>
+        int.Parse(cdnKey.AsSpan("quest_".Length));
+
+    private static LogLineMetadata Meta(DateTime utc) =>
+        new(new DateTimeOffset(utc, TimeSpan.Zero), ReadOn: DateTimeOffset.UtcNow, IsReplay: false);
 
     [Fact]
     public void Empty_state_does_not_materialize_full_catalog()
     {
-        // Synthesize a ~500-quest reference universe (still 100x larger than
-        // what should ever appear in the VM). Regression guard for the freeze
-        // bug — even with a vast universe, an empty active set + no progress
-        // means an empty catalog → empty VM.
         var quests = Enumerable.Range(0, 500)
-            .Select(i => QuestFactory.Repeatable($"k{i}", $"Q{i}", $"Quest {i}", TimeSpan.FromHours(1)))
+            .Select(i => QuestFactory.Repeatable($"quest_{i}", $"Q{i}", $"Quest {i}", TimeSpan.FromHours(1)))
             .ToArray();
 
-        var (vm, src, derived, _, _) = Build(quests);
+        var (vm, src, derived, _, _, _) = Build(quests);
         try
         {
             src.Catalog.Should().BeEmpty();
@@ -78,15 +85,18 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Pending_quests_show_as_idle_rows()
     {
-        var q1 = QuestFactory.Repeatable("k1", "Q1", "Quest 1", TimeSpan.FromHours(1));
-        var q2 = QuestFactory.Repeatable("k2", "Q2", "Quest 2", TimeSpan.FromHours(1));
-        var q3 = QuestFactory.Repeatable("k3", "Q3", "Quest 3", TimeSpan.FromHours(1));
+        var q1 = QuestFactory.Repeatable("quest_1", "Q1", "Quest 1", TimeSpan.FromHours(1));
+        var q2 = QuestFactory.Repeatable("quest_2", "Q2", "Quest 2", TimeSpan.FromHours(1));
+        var q3 = QuestFactory.Repeatable("quest_3", "Q3", "Quest 3", TimeSpan.FromHours(1));
 
-        var (vm, src, derived, questSvc, time) = Build(q1, q2, q3);
+        var (vm, src, derived, questState, bus, time) = Build(q1, q2, q3);
         try
         {
-            questSvc.RaiseAccepted("Q1", time.GetUtcNow().UtcDateTime);
-            questSvc.RaiseAccepted("Q3", time.GetUtcNow().UtcDateTime);
+            var ts = time.GetUtcNow();
+            questState.Accept(1, ts);
+            questState.Accept(3, ts);
+            bus.Publish(new QuestAccepted(1, Meta(ts.UtcDateTime)));
+            bus.Publish(new QuestAccepted(3, Meta(ts.UtcDateTime)));
 
             vm.Timers.Should().HaveCount(2);
             vm.Timers.Should().OnlyContain(t => t.State == TimerState.Idle);
@@ -98,12 +108,12 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Recently_completed_quest_appears_as_running()
     {
-        var q = QuestFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
-        var (vm, src, derived, questSvc, time) = Build(q);
+        var q = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var (vm, src, derived, questState, bus, time) = Build(q);
         try
         {
-            // StartedAt = now → 1h cooldown still ticking.
-            questSvc.RaiseCompleted("Q1", time.GetUtcNow().UtcDateTime);
+            questState.Complete(1);
+            bus.Publish(new QuestCompleted(1, Meta(time.GetUtcNow().UtcDateTime)));
 
             vm.Timers.Should().HaveCount(1);
             vm.Timers[0].State.Should().Be(TimerState.Running);
@@ -114,12 +124,12 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Quest_completed_long_ago_appears_as_done()
     {
-        var q = QuestFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
-        var (vm, src, derived, questSvc, time) = Build(q);
+        var q = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var (vm, src, derived, questState, bus, time) = Build(q);
         try
         {
-            // StartedAt = 2h ago → 1h cooldown elapsed → Done.
-            questSvc.RaiseCompleted("Q1", time.GetUtcNow().UtcDateTime - TimeSpan.FromHours(2));
+            questState.Complete(1);
+            bus.Publish(new QuestCompleted(1, Meta(time.GetUtcNow().UtcDateTime - TimeSpan.FromHours(2))));
 
             vm.Timers.Should().HaveCount(1);
             vm.Timers[0].State.Should().Be(TimerState.Done);
@@ -130,11 +140,12 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Dismissed_row_disappears_from_visible_set()
     {
-        var q = QuestFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
-        var (vm, src, derived, questSvc, time) = Build(q);
+        var q = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var (vm, src, derived, questState, bus, time) = Build(q);
         try
         {
-            questSvc.RaiseCompleted("Q1", time.GetUtcNow().UtcDateTime);
+            questState.Complete(1);
+            bus.Publish(new QuestCompleted(1, Meta(time.GetUtcNow().UtcDateTime)));
             vm.Timers.Should().HaveCount(1);
 
             derived.Dismiss(QuestSource.Id, QuestSource.QuestKey("Q1"));
@@ -147,28 +158,23 @@ public class QuestTimersViewModelTests : IDisposable
     [Fact]
     public void Re_loading_a_dismissed_quest_re_adds_it_as_pending()
     {
-        var q = QuestFactory.Repeatable("k1", "Q1", "Daily", TimeSpan.FromHours(1));
-        var (vm, src, derived, questSvc, time) = Build(q);
+        var q = QuestFactory.Repeatable("quest_1", "Q1", "Daily", TimeSpan.FromHours(1));
+        var (vm, src, derived, questState, bus, time) = Build(q);
         try
         {
-            questSvc.RaiseCompleted("Q1", time.GetUtcNow().UtcDateTime);
+            questState.Complete(1);
+            bus.Publish(new QuestCompleted(1, Meta(time.GetUtcNow().UtcDateTime)));
             derived.Dismiss(QuestSource.Id, QuestSource.QuestKey("Q1"));
             vm.Timers.Should().BeEmpty();
 
-            questSvc.RaiseAccepted("Q1", time.GetUtcNow().UtcDateTime);
+            questState.Accept(1, time.GetUtcNow());
+            bus.Publish(new QuestAccepted(1, Meta(time.GetUtcNow().UtcDateTime)));
 
             vm.Timers.Should().HaveCount(1);
             vm.Timers[0].State.Should().Be(TimerState.Idle);
         }
         finally { src.Dispose(); derived.Dispose(); }
     }
-
-    // The "Tick does not Refresh on text-only changes" regression test moved
-    // out of this VM with the timer-model redesign — the per-tab tick now
-    // lives in TimerDisplayScheduler. Coverage is preserved via
-    // TimerDisplaySchedulerTests.Slow_tick_does_not_fire_RefreshRequired_for_text_only_changes
-    // and the binder's once-per-batch RefreshRequired guarantee
-    // (TimerSourceBinderTests.RefreshRequired_fires_at_most_once_per_batched_RowsChanged).
 
     private sealed class ManualTime : TimeProvider
     {

@@ -9,4 +9,10 @@ public interface ISessionState
     /// The active character's name, or <c>null</c> if no character is logged in.
     /// </summary>
     string? ActiveCharacter { get; }
+
+    /// <summary>
+    /// Timestamp of the <c>ProcessAddPlayer</c> line that established the session,
+    /// or <c>null</c> if no session has started yet.
+    /// </summary>
+    DateTimeOffset? LoggedInAt { get; }
 }

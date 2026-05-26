@@ -2,7 +2,6 @@ using Mithril.GameState.Areas;
 using Mithril.GameState.Areas.Parsing;
 using Mithril.GameState.Areas.Producers;
 using Mithril.GameState.Celestial;
-using Mithril.GameState.Celestial.Parsing;
 using Mithril.GameState.Chat;
 using Mithril.GameState.Chat.Producers;
 using Mithril.GameState.Effects;
@@ -49,11 +48,11 @@ public static class GameStateServiceCollectionExtensions
         // ISessionAnchor is registered in AddMithrilGameServices as a leaf
         // (SessionAnchor). GameSessionService pushes to it on every parsed
         // banner — see SessionAnchor.cs and GameSessionService.Publish.
-        // Also injects IServerCatalogService (#610) so the per-session
-        // EVENT(Ok): connected URL can be joined against the catalog to
-        // populate GameSession.Server (#611). The catalog is registered
-        // below; both are singletons so order of AddSingleton calls is
-        // irrelevant for resolution.
+        // Subscribes to ChatSessionIdentified via IDomainEventSubscriber
+        // (Arda Phase 3 migration). Server identity resolved by name-match
+        // against IServerCatalogService.All (registered below); both are
+        // singletons so order of AddSingleton calls is irrelevant for
+        // resolution.
         services
             .AddSingleton<GameSessionService>()
             .AddSingleton<IGameSessionService>(sp => sp.GetRequiredService<GameSessionService>())
@@ -118,13 +117,13 @@ public static class GameStateServiceCollectionExtensions
             .AddSingleton<InventoryView>()
             .AddSingleton<IInventoryView>(sp => sp.GetRequiredService<InventoryView>());
 
-        // Shared live player-effects set from Player.log (ProcessAddEffects /
-        // ProcessRemoveEffects / ProcessUpdateEffectName). Foundation for the
-        // Pippin Gourmand lift (food-eaten = effect-add + inventory-delete
-        // fusion), Vampirism sun-damage (active Vampire-family effects gate
-        // sun damage), and Saruman Words-of-Power consumption side
-        // (player-side WoP arrival is the game-state truth). Self-feeding;
-        // consumers inject IPlayerEffectsStateService. See issue #590.
+        // Shared live player-effects set from Arda domain events (EffectsAdded /
+        // EffectsRemoved / EffectNameUpdated). Foundation for the Pippin Gourmand
+        // lift (food-eaten = effect-add + inventory-delete fusion), Vampirism
+        // sun-damage (active Vampire-family effects gate sun damage), and Saruman
+        // Words-of-Power consumption side (player-side WoP arrival is the
+        // game-state truth). Self-feeding; consumers inject
+        // IPlayerEffectsStateService. See issue #590.
         services
             .AddSingleton<PlayerEffectsStateService>()
             .AddSingleton<IPlayerEffectsStateService>(sp => sp.GetRequiredService<PlayerEffectsStateService>())
@@ -214,11 +213,9 @@ public static class GameStateServiceCollectionExtensions
 
         // Player position is shared live game-state (Palantir debug surface,
         // future overlay/positioning consumers). Self-feeding hosted service —
-        // since #556 Phase 3 subscribes via the L1 driver's unified
-        // classified pipe (LocalPlayer ProcessNewPosition + SystemSignal
-        // PlayerAdded). PlayerAreaTracker self-feeds independently
-        // (#556 Phase 2), so no warming dependency from here.
-        services.AddSingleton<PlayerPositionParser>();
+        // subscribes to Arda's PlayerPositionChanged domain event (Phase 3
+        // migration from the L1 driver's unified classified pipe).
+        // PlayerAreaTracker self-feeds independently, so no warming dependency.
         services
             .AddSingleton<PlayerPositionTracker>()
             .AddSingleton<IPlayerPositionTracker>(sp => sp.GetRequiredService<PlayerPositionTracker>())
@@ -229,38 +226,35 @@ public static class GameStateServiceCollectionExtensions
         // verb, so the service owns the full lifecycle (replay = idempotent
         // upsert, area change = swap) — Legolas's calibration consumes the
         // area-scoped set instead of hand-rolling a replay-arming gate.
-        // Subscribes via the L1 driver's unified classified pipe so the
-        // AreaLoading envelope always precedes the pin-burst for that area
-        // (#556 Phase 3).
+        //
+        // Arda migration (Phase 3): subscribes to MapPinAdded, MapPinRemoved,
+        // and AreaChanged domain events via IDomainEventSubscriber. The Arda
+        // dispatch layer preserves source ordering, so the AreaChanged event
+        // always precedes the pin-replay burst for that area.
         services.AddSingleton<MapPinParser>();
         services
             .AddSingleton<PlayerPinTracker>()
             .AddSingleton<IPlayerPinTracker>(sp => sp.GetRequiredService<PlayerPinTracker>())
-            .AddHostedService(sp => sp.GetRequiredService<PlayerPinTracker>());
+            .AddHostedService<PlayerPinTrackerRegistration>();
 
-        // Shared live lunar phase from Player.log (ProcessSetCelestialInfo) —
-        // emitted on login + every phase roll-over. Backs the planner-punted
-        // MoonPhase / FullMoon recipe & quest gates (currently surfaced only
-        // statically by Silmarillion) and the moon-dependent recall cooldowns.
-        // Self-feeding; consumers inject IPlayerCelestialState. See the
-        // ProcessSetCelestialInfo investigation.
-        services.AddSingleton<CelestialLogParser>();
+        // Shared live lunar phase from ProcessSetCelestialInfo — emitted on
+        // login + every phase roll-over. Subscribes to the Arda domain event
+        // bus (CelestialInfoChanged) at construction; no hosted-service pump
+        // needed. Backs the planner-punted MoonPhase / FullMoon recipe & quest
+        // gates and moon-dependent recall cooldowns. Consumers inject
+        // IPlayerCelestialState.
         services
             .AddSingleton<PlayerCelestialStateService>()
-            .AddSingleton<IPlayerCelestialState>(sp => sp.GetRequiredService<PlayerCelestialStateService>())
-            .AddHostedService(sp => sp.GetRequiredService<PlayerCelestialStateService>());
+            .AddSingleton<IPlayerCelestialState>(sp => sp.GetRequiredService<PlayerCelestialStateService>());
 
-        // Shared live weather state from Player.log (ProcessSetWeather). PG's
-        // Vampirism skill makes the player take sun damage, so the ambient
-        // condition is a real game-mechanic input for a future sun-damage
-        // consumer; Palantir is the immediate debug surface. Weather is
-        // per-map (owner-confirmed), so the tracker is area-scoped exactly
-        // like PlayerPinTracker — self-feeding, drops on map change,
-        // idempotent on zone-entry replay. Single parser, single tracker;
-        // consumers inject IPlayerWeatherTracker. The log grammar is not yet
-        // corpus-verified, so it is deliberately kept out of log-patterns.json
-        // until characterised (see WeatherLogParser).
-        services.AddSingleton<WeatherLogParser>();
+        // Shared live weather state driven by Arda domain events
+        // (WeatherChanged + AreaChanged). PG's Vampirism skill makes the
+        // player take sun damage, so the ambient condition is a real
+        // game-mechanic input for a future sun-damage consumer; Palantir is
+        // the immediate debug surface. Weather is per-map
+        // (owner-confirmed), so the tracker is area-scoped exactly like
+        // PlayerPinTracker — drops on map change, idempotent on re-emit.
+        // Consumers inject IPlayerWeatherTracker.
         services
             .AddSingleton<PlayerWeatherTracker>()
             .AddSingleton<IPlayerWeatherTracker>(sp => sp.GetRequiredService<PlayerWeatherTracker>())
@@ -634,6 +628,31 @@ public static class GameStateServiceCollectionExtensions
         public Task StartAsync(CancellationToken cancellationToken)
         {
             _view.Start();
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Hosted service that calls <see cref="PlayerPinTracker.Start"/> at host
+    /// start so the tracker's Arda domain-event subscriptions are in place
+    /// before the trailing <c>WorldMergerStartHostedService</c> (#696 Call 2)
+    /// opens the world drains. Mirrors <see cref="WordOfPowerViewRegistration"/>'s
+    /// shape.
+    /// </summary>
+    private sealed class PlayerPinTrackerRegistration : IHostedService
+    {
+        private readonly PlayerPinTracker _tracker;
+
+        public PlayerPinTrackerRegistration(PlayerPinTracker tracker)
+        {
+            _tracker = tracker;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            _tracker.Start();
             return Task.CompletedTask;
         }
 
