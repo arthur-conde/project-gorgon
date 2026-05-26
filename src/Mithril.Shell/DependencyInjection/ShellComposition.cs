@@ -95,8 +95,32 @@ public static class ShellComposition
             .AddMithrilIngredientSources()
             .AddMithrilShellCommands();
 
-        // Arda pipeline (L0–L3 + L4 composition): the sole log-processing
-        // engine. Uses the game root as log directory (Player.log + ChatLogs/).
+        // L4 composition (singleton factories resolved eagerly by the bootstrap
+        // below). Registered before the Arda drivers so hosted-service startup
+        // order ensures all event subscriptions are wired before replay begins.
+        services.AddArdaComposition(
+            o.CharactersRootDir,
+            recipeKeyResolverFactory: sp =>
+            {
+                var refData = sp.GetRequiredService<IReferenceDataService>();
+                return id =>
+                {
+                    var key = $"recipe_{id}";
+                    return refData.Recipes.TryGetValue(key, out var recipe)
+                        ? recipe.InternalName ?? key
+                        : key;
+                };
+            },
+            serverFallbackFactory: sp =>
+            {
+                var active = sp.GetRequiredService<IActiveCharacterService>();
+                return () => active.ActiveServer;
+            });
+
+        services.AddHostedService<CompositionBootstrap>();
+
+        // Arda pipeline (L0–L3): the sole log-processing engine.
+        // Uses the game root as log directory (Player.log + ChatLogs/).
         services
             .AddArda(new ArdaOptions(o.GameConfig.GameRoot))
             .AddPlayerWorld(
@@ -113,20 +137,6 @@ public static class ShellComposition
                     var catalog = sp.GetRequiredService<IShiftCatalog>();
                     return catalog.Shifts.Select(s => (s.Slug, s.StartHour)).ToList();
                 });
-
-        services.AddArdaComposition(
-            o.CharactersRootDir,
-            recipeKeyResolverFactory: sp =>
-            {
-                var refData = sp.GetRequiredService<IReferenceDataService>();
-                return id =>
-                {
-                    var key = $"recipe_{id}";
-                    return refData.Recipes.TryGetValue(key, out var recipe)
-                        ? recipe.InternalName ?? key
-                        : key;
-                };
-            });
 
         services.AddSingleton<InventoryProjection>();
 

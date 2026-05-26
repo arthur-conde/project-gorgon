@@ -19,10 +19,15 @@ public static class CompositionExtensions
     /// <param name="recipeKeyResolverFactory">Optional factory that builds a
     /// <c>recipeId → InternalName</c> resolver from the service provider.
     /// When <c>null</c>, recipe IDs are formatted as <c>recipe_{id}</c>.</param>
+    /// <param name="serverFallbackFactory">Optional factory that builds a
+    /// server-name resolver used by <see cref="Internal.SessionComposer"/> when the
+    /// chat world hasn't provided a server yet. Typically wired to
+    /// <c>IActiveCharacterService.ActiveServer</c>.</param>
     public static IServiceCollection AddArdaComposition(
         this IServiceCollection services,
         string? charactersRootDir = null,
-        Func<IServiceProvider, Func<int, string?>>? recipeKeyResolverFactory = null)
+        Func<IServiceProvider, Func<int, string?>>? recipeKeyResolverFactory = null,
+        Func<IServiceProvider, Func<string?>>? serverFallbackFactory = null)
     {
         services.AddSingleton(sp =>
         {
@@ -93,7 +98,8 @@ public static class CompositionExtensions
         services.AddSingleton(sp =>
         {
             var bus = sp.GetRequiredService<IDomainEventBus>();
-            return new SessionComposer(bus);
+            var fallback = serverFallbackFactory?.Invoke(sp);
+            return new SessionComposer(bus, fallback);
         });
         services.AddSingleton<ISessionComposer>(sp => sp.GetRequiredService<SessionComposer>());
 

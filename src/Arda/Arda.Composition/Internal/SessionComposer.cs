@@ -13,6 +13,7 @@ namespace Arda.Composition.Internal;
 internal sealed class SessionComposer : ISessionComposer, IDisposable
 {
     private readonly IDomainEventPublisher _bus;
+    private readonly Func<string?>? _serverFallback;
     private IDisposable? _sessionSub;
     private IDisposable? _chatSub;
 
@@ -24,9 +25,10 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
 
     public ComposedSession? Current { get; private set; }
 
-    public SessionComposer(IDomainEventBus bus)
+    public SessionComposer(IDomainEventBus bus, Func<string?>? serverFallback = null)
     {
         _bus = bus;
+        _serverFallback = serverFallback;
         _sessionSub = bus.Subscribe<SessionStarted>(OnSessionStarted);
         _chatSub = bus.Subscribe<ChatSessionIdentified>(OnChatSession);
     }
@@ -54,9 +56,10 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
             return;
 
         var sessionId = $"{_character}:{_loggedInAt:yyyyMMddHHmmss}";
+        var resolvedServer = _hasChatBanner ? _server : _serverFallback?.Invoke();
         var session = new ComposedSession(
             _character,
-            _hasChatBanner ? _server : null,
+            resolvedServer,
             _loggedInAt.Value,
             _timezoneOffset,
             sessionId);

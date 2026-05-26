@@ -202,6 +202,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
     private void OnSessionEstablished(SessionEstablished evt)
     {
         var session = evt.Session;
+
         if (session.CharacterName == _currentCharacter && session.Server == _currentServer)
             return;
 
