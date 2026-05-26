@@ -5,13 +5,16 @@ using Arda.World.Player.Events;
 namespace Arda.World.Player.Internal;
 
 /// <summary>
-/// Tracks NPC interaction context and correlates the gift verb triple
+/// Tracks NPC interaction context, correlates the gift verb triple
 /// (<c>ProcessStartInteraction</c> / <c>ProcessDeleteItem</c> /
-/// <c>ProcessDeltaFavor</c>) to emit <see cref="GiftAccepted"/>.
+/// <c>ProcessDeltaFavor</c>) to emit <see cref="GiftAccepted"/>, and
+/// enriches vendor events with the resolved NPC key and favor tier.
 /// <para>
 /// Registered for <c>ProcessStartInteraction</c> (primary),
-/// <c>ProcessDeleteItem</c> (shared with <see cref="Inventory"/>), and
-/// <c>ProcessDeltaFavor</c> (via <see cref="DeltaFavorHandler"/> adapter).
+/// <c>ProcessDeleteItem</c> (shared with <see cref="Inventory"/>),
+/// <c>ProcessDeltaFavor</c> (via <see cref="DeltaFavorHandler"/> adapter),
+/// <c>ProcessVendorScreen</c> (via <see cref="VendorScreenHandler"/> adapter),
+/// and <c>ProcessVendorAddItem</c> (via <see cref="VendorAddItemHandler"/> adapter).
 /// The game emits delete and favor-delta in either order; the pending FSM
 /// handles both sequences.
 /// </para>
@@ -28,6 +31,9 @@ internal sealed class Npc : INpcState
     public long? ActiveEntityId { get; private set; }
     public double? ActiveFavor { get; private set; }
 
+    private string? _activeVendorNpcKey;
+    private string? _activeVendorFavorTier;
+
     public Npc(IDomainEventPublisher bus, InternPool npcPool)
     {
         _bus = bus;
@@ -35,14 +41,16 @@ internal sealed class Npc : INpcState
     }
 
     /// <summary>
-    /// Clear interaction and pending gift state on area transition or
-    /// character switch.
+    /// Clear interaction, pending gift, and vendor session state on area
+    /// transition or character switch.
     /// </summary>
     internal void Reset()
     {
         ClearInteraction();
         _pendingDelete = null;
         _pendingDelta = null;
+        _activeVendorNpcKey = null;
+        _activeVendorFavorTier = null;
     }
 
     /// <summary>
@@ -53,6 +61,8 @@ internal sealed class Npc : INpcState
     {
         _pendingDelete = null;
         _pendingDelta = null;
+        _activeVendorNpcKey = null;
+        _activeVendorFavorTier = null;
 
         var tok = new ArgTokenizer(args);
         tok.SkipOpen();
@@ -141,6 +151,61 @@ internal sealed class Npc : INpcState
         }
 
         _pendingDelta = (ActiveNpcKey, delta, metadata);
+    }
+
+    /// <summary>
+    /// Capture vendor session context from <c>ProcessVendorScreen</c>. Resolves the
+    /// entity ID against the active interaction to attach the NPC key.
+    /// Args format: <c>(entityId, FavorTier, gold, resetCounter, cap, ...)</c>
+    /// </summary>
+    internal void OnVendorScreen(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    {
+        var tok = new ArgTokenizer(args);
+        tok.SkipOpen();
+
+        var entityId = tok.NextLong();
+        var favorTier = tok.NextTokenSpan().ToString();
+        var remainingGold = tok.NextLong();
+        tok.NextLong(); // resetCounter
+        var goldCap = tok.NextLong();
+
+        string? npcKey = null;
+        if (ActiveEntityId == entityId && ActiveNpcKey is not null)
+            npcKey = ActiveNpcKey;
+
+        _activeVendorNpcKey = npcKey;
+        _activeVendorFavorTier = favorTier;
+
+        _bus.Publish(new VendorScreenOpened(entityId, favorTier, remainingGold, goldCap, npcKey, metadata));
+    }
+
+    /// <summary>
+    /// Enrich a vendor item-sold event with the active vendor session's NPC key
+    /// and favor tier from the preceding <c>ProcessVendorScreen</c>.
+    /// Args format: <c>(price, InternalName(instanceId), bool)</c>
+    /// </summary>
+    internal void OnVendorAddItem(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    {
+        var tok = new ArgTokenizer(args);
+        tok.SkipOpen();
+
+        var price = tok.NextLong();
+
+        var nameAndIdSpan = tok.NextTokenSpan();
+        var parenIdx = nameAndIdSpan.IndexOf('(');
+        if (parenIdx < 0) return;
+
+        var internalName = nameAndIdSpan[..parenIdx].ToString();
+        var idSpan = nameAndIdSpan[(parenIdx + 1)..];
+        var closeIdx = idSpan.IndexOf(')');
+        if (closeIdx > 0)
+            idSpan = idSpan[..closeIdx];
+
+        if (!long.TryParse(idSpan, System.Globalization.CultureInfo.InvariantCulture, out var instanceId))
+            return;
+
+        _bus.Publish(new VendorItemSold(
+            price, internalName, instanceId, _activeVendorNpcKey, _activeVendorFavorTier, metadata));
     }
 
     private void ClearInteraction()

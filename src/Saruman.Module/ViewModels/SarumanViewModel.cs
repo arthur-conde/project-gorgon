@@ -5,31 +5,30 @@ using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Arda.Composition;
 using Saruman.Services;
+using Saruman.State;
 
 namespace Saruman.ViewModels;
 
 /// <summary>
-/// Saruman's words-of-power view-model (#603 — post-codebook-split). Composes
-/// <see cref="IWordOfPowerComposer"/> (cross-source view) with
-/// <see cref="SarumanOverrideService"/> (module-internal user override). The
-/// VM never mutates discovery state — that is canonically owned by the composer —
-/// and never clears the composer's monotonic Spent flag.
+/// Saruman's words-of-power view-model. Composes
+/// <see cref="SarumanCodebookService"/> (codebook with discovery + chat-spend)
+/// with <see cref="SarumanOverrideService"/> (module-internal user override).
+/// The VM never mutates codebook state directly.
 ///
-/// <para>Refresh policy: subscribes to both the view's <c>CodebookChanged</c>
-/// event and the override service's <c>OverridesChanged</c> event;
-/// hops onto the UI dispatcher and rebuilds the row collection in-place to
-/// preserve selection / scroll.</para>
+/// <para>Refresh policy: subscribes to both the codebook's
+/// <c>CodebookChanged</c> event and the override service's
+/// <c>OverridesChanged</c> event; hops onto the UI dispatcher and rebuilds
+/// the row collection in-place to preserve selection / scroll.</para>
 /// </summary>
 public sealed partial class SarumanViewModel : ObservableObject
 {
-    private readonly IWordOfPowerComposer _view;
+    private readonly SarumanCodebookService _codebook;
     private readonly SarumanOverrideService _overrides;
 
-    public SarumanViewModel(IWordOfPowerComposer view, SarumanOverrideService overrides)
+    public SarumanViewModel(SarumanCodebookService codebook, SarumanOverrideService overrides)
     {
-        _view = view;
+        _codebook = codebook;
         _overrides = overrides;
 
         WordsView = CollectionViewSource.GetDefaultView(Words);
@@ -39,7 +38,7 @@ public sealed partial class SarumanViewModel : ObservableObject
         WordsView.SortDescriptions.Add(new SortDescription(nameof(KnownWordRow.Code), ListSortDirection.Ascending));
         WordsView.Filter = FilterPredicate;
 
-        _view.CodebookChanged += (_, _) => Dispatch(Refresh);
+        _codebook.CodebookChanged += (_, _) => Dispatch(Refresh);
         _overrides.OverridesChanged += (_, _) => Dispatch(Refresh);
         Refresh();
     }
@@ -90,8 +89,8 @@ public sealed partial class SarumanViewModel : ObservableObject
 
     private void Refresh()
     {
-        var entries = _view.Words;
-        var byCode = new Dictionary<string, WordOfPowerEntry>(entries.Count, StringComparer.Ordinal);
+        var entries = _codebook.Entries;
+        var byCode = new Dictionary<string, SarumanCodebook.CodebookEntry>(entries.Count, StringComparer.Ordinal);
         foreach (var e in entries.Values) byCode[e.Code] = e;
 
         // Update existing rows in-place so selection/scroll state isn't disturbed.

@@ -1,3 +1,4 @@
+using Arda.World.Player;
 using Mithril.Shared.Reference;
 using Smaug.Domain;
 using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
@@ -34,7 +35,7 @@ public sealed class VendorCatalogService
 {
     private readonly IReferenceDataService _refData;
     private readonly IFavorLookupService? _favorLookup;
-    private readonly VendorSellContext _sellContext;
+    private readonly IPlayerState _playerState;
     private IReadOnlyList<VendorCatalogEntry> _entries = [];
 
     public IReadOnlyList<VendorCatalogEntry> Entries => _entries;
@@ -42,11 +43,11 @@ public sealed class VendorCatalogService
 
     public VendorCatalogService(
         IReferenceDataService refData,
-        VendorSellContext sellContext,
+        IPlayerState playerState,
         IFavorLookupService? favorLookup = null)
     {
         _refData = refData;
-        _sellContext = sellContext;
+        _playerState = playerState;
         _favorLookup = favorLookup;
 
         Rebuild();
@@ -88,8 +89,9 @@ public sealed class VendorCatalogService
                     playerTier = _favorLookup?.GetFavorTier(src.Npc);
                     if (playerTier is not null)
                     {
+                        var civicPride = _playerState.Skills.TryGetValue("CivicPride", out var cp) ? cp.Raw : 0;
                         maxGold = VendorCapResolver.ResolveMaxGold(
-                            storeService, playerTier.Value, itemKeywords, _sellContext.CivicPrideLevel);
+                            storeService, playerTier.Value, itemKeywords, civicPride);
                         acceptable = maxGold is not null && item.Value <= maxGold.Value;
                     }
                 }

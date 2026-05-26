@@ -22,7 +22,6 @@ public class LogPatternCatalogParityTests
         // these are next to the test DLL at runtime.
         TouchAssemblyForType("Samwise.Parsing.GardenLogParser");
         TouchAssemblyForType("Arwen.Parsing.FavorLogParser");
-        TouchAssemblyForType("Smaug.Parsing.VendorLogParser");
         TouchAssemblyForType("Pippin.Parsing.GourmandLogParser");
         TouchAssemblyForType("Legolas.Services.PlayerLogParser");
 

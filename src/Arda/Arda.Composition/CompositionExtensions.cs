@@ -47,13 +47,6 @@ public static class CompositionExtensions
         });
         services.AddSingleton<ISessionComposer>(sp => sp.GetRequiredService<SessionComposer>());
 
-        services.AddSingleton(sp =>
-        {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
-            return new WordOfPowerComposer(bus);
-        });
-        services.AddSingleton<IWordOfPowerComposer>(sp => sp.GetRequiredService<WordOfPowerComposer>());
-
         return services;
     }
 }

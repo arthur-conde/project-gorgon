@@ -17,8 +17,8 @@ namespace Smaug.Tests;
 
 /// <summary>
 /// Post-Arda-migration tests for <see cref="VendorIngestionService"/>.
-/// Verifies the CivicPride on-demand read from <see cref="IPlayerState"/>
-/// and that the four domain event subscriptions work end-to-end.
+/// Events carry enriched NPC key and favor tier from the Arda Npc handler.
+/// Verifies the CivicPride on-demand read from <see cref="IPlayerState"/>.
 /// </summary>
 public sealed class VendorIngestionServiceSkillStateTests
 {
@@ -28,10 +28,6 @@ public sealed class VendorIngestionServiceSkillStateTests
     private static readonly LogLineMetadata LiveMeta =
         new(TestTimestamp, TestTimestamp, IsReplay: false);
 
-    // ============================================================
-    // CivicPride is read on demand from IPlayerState at sell time.
-    // ============================================================
-
     [Fact]
     public async Task CivicPride_ReadOnDemandFromPlayerState()
     {
@@ -39,45 +35,30 @@ public sealed class VendorIngestionServiceSkillStateTests
 
         harness.PlayerState.SetSkill("CivicPride", raw: 15, bonus: 5);
 
-        harness.Bus.Publish(new InteractionStarted(14564, "NPC_Therese", 0, true, LiveMeta));
-        harness.Bus.Publish(new VendorScreenOpened(14564, "Neutral", 3926, 4000, LiveMeta));
-        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, LiveMeta));
+        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, "NPC_Therese", "Neutral", LiveMeta));
 
         harness.Calibration.Data.Observations.Should().HaveCount(1);
         harness.Calibration.Data.Observations[0].CivicPrideLevel.Should().Be(15,
             because: "CivicPride should be read from IPlayerState.Skills[\"CivicPride\"].Raw on demand");
     }
 
-    // ============================================================
-    // When CivicPride is absent from IPlayerState, level defaults to 0.
-    // ============================================================
-
     [Fact]
     public async Task NoCivicPride_DefaultsToZero()
     {
         await using var harness = await TestHarness.StartAsync();
 
-        harness.Bus.Publish(new InteractionStarted(14564, "NPC_Therese", 0, true, LiveMeta));
-        harness.Bus.Publish(new VendorScreenOpened(14564, "Neutral", 3926, 4000, LiveMeta));
-        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, LiveMeta));
+        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, "NPC_Therese", "Neutral", LiveMeta));
 
         harness.Calibration.Data.Observations.Should().HaveCount(1);
         harness.Calibration.Data.Observations[0].CivicPrideLevel.Should().Be(0);
     }
-
-    // ============================================================
-    // InteractionStarted → VendorScreenOpened → VendorItemSold
-    // produces a recorded observation with correct NPC + item data.
-    // ============================================================
 
     [Fact]
     public async Task FullSellSequence_RecordsObservation()
     {
         await using var harness = await TestHarness.StartAsync();
 
-        harness.Bus.Publish(new InteractionStarted(14564, "NPC_Therese", 0, true, LiveMeta));
-        harness.Bus.Publish(new VendorScreenOpened(14564, "Neutral", 3926, 4000, LiveMeta));
-        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, LiveMeta));
+        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, "NPC_Therese", "Neutral", LiveMeta));
 
         harness.Calibration.Data.Observations.Should().HaveCount(1);
         var obs = harness.Calibration.Data.Observations[0];
@@ -87,48 +68,33 @@ public sealed class VendorIngestionServiceSkillStateTests
         obs.FavorTier.Should().Be("Neutral");
     }
 
-    // ============================================================
-    // VendorItemSold without prior context is skipped.
-    // ============================================================
-
     [Fact]
     public async Task SellWithoutContext_IsSkipped()
     {
         await using var harness = await TestHarness.StartAsync();
 
-        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, LiveMeta));
+        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, null, null, LiveMeta));
 
         harness.Calibration.Data.Observations.Should().BeEmpty(
-            because: "a sell without prior InteractionStarted + VendorScreenOpened has no vendor context");
+            because: "a sell without NPC context (null NpcKey) should be dropped");
     }
 
-    // ============================================================
-    // Non-NPC interactions are ignored.
-    // ============================================================
-
     [Fact]
-    public async Task NonNpcInteraction_IsIgnored()
+    public async Task SellWithEmptyNpcKey_IsSkipped()
     {
         await using var harness = await TestHarness.StartAsync();
 
-        harness.Bus.Publish(new InteractionStarted(99, "SomeObject", 0, false, LiveMeta));
-        harness.Bus.Publish(new VendorScreenOpened(99, "Neutral", 3926, 4000, LiveMeta));
-        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, LiveMeta));
+        harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, "", "Neutral", LiveMeta));
 
         harness.Calibration.Data.Observations.Should().BeEmpty(
-            because: "InteractionStarted with IsNpc=false should not register an entity→NPC mapping");
+            because: "a sell with empty NpcKey should be dropped");
     }
-
-    // ============================================================
-    // Test harness
-    // ============================================================
 
     private sealed class TestHarness : IAsyncDisposable
     {
         public VendorIngestionService Service { get; }
         public FakeDomainEventSubscriber Bus { get; }
         public FakePlayerState PlayerState { get; }
-        public VendorSellContext Context { get; }
         public PriceCalibrationService Calibration { get; }
         private readonly string _tempDir;
 
@@ -136,14 +102,12 @@ public sealed class VendorIngestionServiceSkillStateTests
             VendorIngestionService service,
             FakeDomainEventSubscriber bus,
             FakePlayerState playerState,
-            VendorSellContext context,
             PriceCalibrationService calibration,
             string tempDir)
         {
             Service = service;
             Bus = bus;
             PlayerState = playerState;
-            Context = context;
             Calibration = calibration;
             _tempDir = tempDir;
         }
@@ -154,16 +118,14 @@ public sealed class VendorIngestionServiceSkillStateTests
             var refData = new FakeRefData();
             var session = new FakeSessionComposer("char|2026-05-19T20:00:00Z");
             var calibration = new PriceCalibrationService(refData, tempDir, session: session);
-            var context = new VendorSellContext();
             var bus = new FakeDomainEventSubscriber();
             var playerState = new FakePlayerState();
 
-            var service = new VendorIngestionService(
-                bus, calibration, context, playerState);
+            var service = new VendorIngestionService(bus, calibration, playerState);
 
             await service.StartAsync(CancellationToken.None);
 
-            return new TestHarness(service, bus, playerState, context, calibration, tempDir);
+            return new TestHarness(service, bus, playerState, calibration, tempDir);
         }
 
         public async ValueTask DisposeAsync()
@@ -173,10 +135,6 @@ public sealed class VendorIngestionServiceSkillStateTests
             try { System.IO.Directory.Delete(_tempDir, recursive: true); } catch { /* best-effort */ }
         }
     }
-
-    // ============================================================
-    // Test stubs
-    // ============================================================
 
     private sealed class FakeDomainEventSubscriber : IDomainEventSubscriber
     {

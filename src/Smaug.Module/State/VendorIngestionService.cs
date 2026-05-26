@@ -14,11 +14,10 @@ namespace Smaug.State;
 /// for vendor-related activity and feeds recorded sells into
 /// <see cref="PriceCalibrationService"/>.
 ///
-/// <para><b>Arda migration.</b> Replaces the former L1
-/// <c>ILogStreamDriver</c> + <c>VendorLogParser</c> path. Subscriptions
-/// are wired in the constructor so they are in place before the Arda
-/// drivers start pumping. The <see cref="IDomainEventSubscriber"/> fires
-/// synchronously on the driver thread.</para>
+/// <para><b>Vendor context.</b> The Arda <c>Npc</c> handler enriches
+/// <see cref="VendorItemSold"/> with the resolved NPC key and favor tier
+/// from the active vendor session, so this service no longer maintains its
+/// own entity-to-NPC mapping or vendor session state.</para>
 ///
 /// <para><b>Civic Pride via IPlayerState.</b> Instead of subscribing to
 /// <c>IPlayerSkillState</c> snapshots, reads <see cref="IPlayerState.Skills"/>
@@ -35,11 +34,8 @@ namespace Smaug.State;
 public sealed class VendorIngestionService : BackgroundService
 {
     private readonly PriceCalibrationService _calibration;
-    private readonly VendorSellContext _context;
     private readonly IPlayerState _playerState;
     private readonly IDiagnosticsSink? _diag;
-    private readonly IDisposable _interactionSub;
-    private readonly IDisposable _vendorScreenSub;
     private readonly IDisposable _itemSoldSub;
     private readonly IDisposable _goldUpdatedSub;
     private Dispatcher? _dispatcher;
@@ -47,17 +43,13 @@ public sealed class VendorIngestionService : BackgroundService
     public VendorIngestionService(
         IDomainEventSubscriber bus,
         PriceCalibrationService calibration,
-        VendorSellContext context,
         IPlayerState playerState,
         IDiagnosticsSink? diag = null)
     {
         _calibration = calibration;
-        _context = context;
         _playerState = playerState;
         _diag = diag;
 
-        _interactionSub = bus.Subscribe<InteractionStarted>(OnInteractionStarted);
-        _vendorScreenSub = bus.Subscribe<VendorScreenOpened>(OnVendorScreenOpened);
         _itemSoldSub = bus.Subscribe<VendorItemSold>(OnVendorItemSold);
         _goldUpdatedSub = bus.Subscribe<VendorGoldUpdated>(OnVendorGoldUpdated);
     }
@@ -65,7 +57,7 @@ public sealed class VendorIngestionService : BackgroundService
     public override Task StartAsync(CancellationToken cancellationToken)
     {
         _diag?.Info("Smaug",
-            "Subscribing to Arda domain bus for vendor events (InteractionStarted, VendorScreenOpened, VendorItemSold, VendorGoldUpdated)");
+            "Subscribing to Arda domain bus for vendor events (VendorItemSold, VendorGoldUpdated)");
 
         _dispatcher = Application.Current?.Dispatcher;
 
@@ -78,38 +70,11 @@ public sealed class VendorIngestionService : BackgroundService
         catch (OperationCanceledException) { /* expected on host stop */ }
     }
 
-    private void OnInteractionStarted(InteractionStarted e)
-    {
-        if (!e.IsNpc || string.IsNullOrEmpty(e.Name)) return;
-
-        void Apply() => _context.RememberEntity((int)e.EntityId, e.Name);
-
-        if (_dispatcher is null || _dispatcher.CheckAccess())
-            Apply();
-        else
-            _dispatcher.InvokeAsync(Apply);
-    }
-
-    private void OnVendorScreenOpened(VendorScreenOpened e)
-    {
-        void Apply()
-        {
-            _context.OnVendorScreenOpened(e.EntityId, e.FavorTier);
-            _diag?.Trace("Smaug.Parse",
-                $"VendorScreen entity={e.EntityId} npc={_context.ActiveNpcKey ?? "?"} tier={e.FavorTier}");
-        }
-
-        if (_dispatcher is null || _dispatcher.CheckAccess())
-            Apply();
-        else
-            _dispatcher.InvokeAsync(Apply);
-    }
-
     private void OnVendorItemSold(VendorItemSold e)
     {
         void Apply()
         {
-            if (!_context.IsReadyToRecord)
+            if (string.IsNullOrEmpty(e.NpcKey) || string.IsNullOrEmpty(e.FavorTier))
             {
                 _diag?.Trace("Smaug.Parse",
                     $"Sell of {e.InternalName} for {e.Price} skipped — no active vendor context");
@@ -121,10 +86,10 @@ public sealed class VendorIngestionService : BackgroundService
                 civicPride = cp.Raw;
 
             _calibration.RecordObservation(
-                _context.ActiveNpcKey!,
+                e.NpcKey,
                 e.InternalName,
                 e.Price,
-                _context.ActiveFavorTier!,
+                e.FavorTier,
                 civicPride,
                 e.Metadata.Timestamp ?? e.Metadata.ReadOn);
         }
@@ -143,8 +108,6 @@ public sealed class VendorIngestionService : BackgroundService
 
     public override void Dispose()
     {
-        _interactionSub.Dispose();
-        _vendorScreenSub.Dispose();
         _itemSoldSub.Dispose();
         _goldUpdatedSub.Dispose();
         base.Dispose();

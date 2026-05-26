@@ -17,7 +17,7 @@ namespace Smaug.Tests;
 
 /// <summary>
 /// Post-Arda-migration regression tests for <see cref="VendorIngestionService"/>.
-/// Replaces the former L1 driver tests with domain-event-based equivalents.
+/// Events carry enriched NPC key and favor tier from the Arda Npc handler.
 /// </summary>
 public sealed class VendorIngestionServiceL1Tests
 {
@@ -27,36 +27,17 @@ public sealed class VendorIngestionServiceL1Tests
     private static LogLineMetadata Meta(bool isReplay = false) =>
         new(TestTimestamp, TestTimestamp, IsReplay: isReplay);
 
-    // ============================================================
-    // Byte-equivalence — same event sequence, whether replay or live,
-    // produces identical observation state.
-    // ============================================================
-
     [Fact]
     public async Task ByteEquivalence_ReplayAndLive_ProduceSameObservations()
     {
-        // Pass 1 — all events as live.
         var passOne = await RunWith(bus =>
         {
-            bus.Publish(new InteractionStarted(14564, "NPC_Therese", 0, true, Meta()));
-            bus.Publish(new VendorScreenOpened(14564, "Neutral", 3926, 4000, Meta()));
-            bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, Meta()));
+            bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, "NPC_Therese", "Neutral", Meta()));
         });
 
-        // Pass 2 — context events as replay, sale as live.
         var passTwo = await RunWith(bus =>
         {
-            bus.Publish(new InteractionStarted(14564, "NPC_Therese", 0, true, Meta(isReplay: true)));
-            bus.Publish(new VendorScreenOpened(14564, "Neutral", 3926, 4000, Meta(isReplay: true)));
-            bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, Meta()));
-        });
-
-        // Pass 3 — all as replay.
-        var passThree = await RunWith(bus =>
-        {
-            bus.Publish(new InteractionStarted(14564, "NPC_Therese", 0, true, Meta(isReplay: true)));
-            bus.Publish(new VendorScreenOpened(14564, "Neutral", 3926, 4000, Meta(isReplay: true)));
-            bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, Meta(isReplay: true)));
+            bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, "NPC_Therese", "Neutral", Meta(isReplay: true)));
         });
 
         passOne.Should().HaveCount(1);
@@ -67,26 +48,15 @@ public sealed class VendorIngestionServiceL1Tests
 
         passTwo.Should().BeEquivalentTo(passOne,
             because: "the same event sequence, regardless of replay/live metadata, must yield identical sink state");
-        passThree.Should().BeEquivalentTo(passOne,
-            because: "all-replay shape must produce the same observation as all-live");
     }
-
-    // ============================================================
-    // Multiple sells across different NPCs accumulate correctly.
-    // ============================================================
 
     [Fact]
     public async Task MultipleSells_DifferentNpcs_AllRecorded()
     {
         var obs = await RunWith(bus =>
         {
-            bus.Publish(new InteractionStarted(14564, "NPC_Therese", 0, true, Meta()));
-            bus.Publish(new VendorScreenOpened(14564, "Neutral", 3926, 4000, Meta()));
-            bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, Meta()));
-
-            bus.Publish(new InteractionStarted(9999, "NPC_Johen", 0, true, Meta()));
-            bus.Publish(new VendorScreenOpened(9999, "Friendly", 5000, 8000, Meta()));
-            bus.Publish(new VendorItemSold(250, "BottleOfWater", 78177653, Meta()));
+            bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, "NPC_Therese", "Neutral", Meta()));
+            bus.Publish(new VendorItemSold(250, "BottleOfWater", 78177653, "NPC_Johen", "Friendly", Meta()));
         });
 
         obs.Should().HaveCount(2);
@@ -96,9 +66,16 @@ public sealed class VendorIngestionServiceL1Tests
         obs[1].PricePaid.Should().Be(250);
     }
 
-    // ============================================================
-    // Helpers
-    // ============================================================
+    [Fact]
+    public async Task ItemSold_WithoutNpcKey_Skipped()
+    {
+        var obs = await RunWith(bus =>
+        {
+            bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, null, null, Meta()));
+        });
+
+        obs.Should().BeEmpty(because: "events without NPC context should be dropped");
+    }
 
     private static async Task<IReadOnlyList<PriceObservation>> RunWith(Action<FakeDomainEventSubscriber> arrange)
     {
@@ -108,11 +85,10 @@ public sealed class VendorIngestionServiceL1Tests
             var refData = new FakeRefData();
             var session = new FakeSessionComposer("char|2026-05-19T20:00:00Z");
             var calibration = new PriceCalibrationService(refData, dir, session: session);
-            var context = new VendorSellContext();
             var bus = new FakeDomainEventSubscriber();
             var playerState = new FakePlayerState();
 
-            var service = new VendorIngestionService(bus, calibration, context, playerState);
+            var service = new VendorIngestionService(bus, calibration, playerState);
             await service.StartAsync(CancellationToken.None);
 
             arrange(bus);
@@ -127,10 +103,6 @@ public sealed class VendorIngestionServiceL1Tests
             try { System.IO.Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
         }
     }
-
-    // ============================================================
-    // Test stubs
-    // ============================================================
 
     private sealed class FakeDomainEventSubscriber : IDomainEventSubscriber
     {

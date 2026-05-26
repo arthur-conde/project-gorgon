@@ -1,3 +1,4 @@
+using Arda.World.Player;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
@@ -44,7 +45,7 @@ public sealed class SellPlannerService
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeChar;
     private readonly PriceCalibrationService _calibration;
-    private readonly VendorSellContext _sellContext;
+    private readonly IPlayerState _playerState;
     private readonly IFavorLookupService? _favorLookup;
 
     private IReadOnlyList<SellPlannerItem> _ownedItems = [];
@@ -59,13 +60,13 @@ public sealed class SellPlannerService
         IReferenceDataService refData,
         IActiveCharacterService activeChar,
         PriceCalibrationService calibration,
-        VendorSellContext sellContext,
+        IPlayerState playerState,
         IFavorLookupService? favorLookup = null)
     {
         _refData = refData;
         _activeChar = activeChar;
         _calibration = calibration;
-        _sellContext = sellContext;
+        _playerState = playerState;
         _favorLookup = favorLookup;
 
         _activeChar.ActiveCharacterChanged += (_, _) => RebuildOwnedItems();
@@ -112,7 +113,7 @@ public sealed class SellPlannerService
                 npcKey,
                 item.InternalName,
                 estimateTier.ToToken(),
-                _sellContext.CivicPrideLevel);
+                _playerState.Skills.TryGetValue("CivicPride", out var cp) ? cp.Raw : 0);
 
             rows.Add(new SellPlannerVendorRow(
                 NpcKey: npcKey,

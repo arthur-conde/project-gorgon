@@ -43,7 +43,7 @@
       "module": "samwise",
       "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "StartInteractRx" },
       "eventType": "samwise.StartInteraction",
-      "notes": "Same root verb as arwen.FavorLogParser.StartInteractionRx and smaug.VendorLogParser.StartInteractionRx, but constrained to plant targets (\"Summoned*\").",
+      "notes": "Same root verb as arwen.FavorLogParser.StartInteractionRx, but constrained to plant targets (\"Summoned*\").",
       "fields": [
         { "name": "plotId", "group": 1, "type": "string" },
         { "name": "target", "group": 2, "type": "string" }
@@ -116,10 +116,11 @@
       "pattern": "ProcessVendorScreen\\((-?\\d+),\\s*(\\w+),\\s*(-?\\d+),\\s*(\\d+),\\s*(\\d+),",
       "source": "player",
       "module": "smaug",
-      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "VendorScreenRx" },
+      "csharp": null,
       "eventType": "smaug.VendorScreenOpened",
+      "notes": "Retired: now parsed by Arda L3 VendorScreenHandler → Npc.OnVendorScreen. Pattern kept for TS port parity.",
       "fields": [
-        { "name": "entityId", "group": 1, "type": "int" },
+        { "name": "entityId", "group": 1, "type": "long" },
         { "name": "favorTier", "group": 2, "type": "string" },
         { "name": "remainingGold", "group": 3, "type": "long" },
         { "name": "_resetCounter", "group": 4, "type": "long" },
@@ -130,8 +131,9 @@
       "pattern": "ProcessVendorAddItem\\((\\d+),\\s*(\\w+)\\((\\d+)\\),",
       "source": "player",
       "module": "smaug",
-      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "VendorAddItemRx" },
+      "csharp": null,
       "eventType": "smaug.VendorItemSold",
+      "notes": "Retired: now parsed by Arda L3 VendorAddItemHandler → Npc.OnVendorAddItem. Pattern kept for TS port parity.",
       "fields": [
         { "name": "price", "group": 1, "type": "long" },
         { "name": "internalName", "group": 2, "type": "string" },
@@ -142,8 +144,9 @@
       "pattern": "ProcessVendorUpdateAvailableGold\\((\\d+),\\s*(\\d+),\\s*(\\d+)\\)",
       "source": "player",
       "module": "smaug",
-      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "VendorGoldRx" },
+      "csharp": null,
       "eventType": "smaug.VendorGoldUpdated",
+      "notes": "Retired: now parsed by Arda L3 VendorGoldHandler. Pattern kept for TS port parity.",
       "fields": [
         { "name": "remainingGold", "group": 1, "type": "long" },
         { "name": "_resetCounter", "group": 2, "type": "long" },
@@ -154,9 +157,9 @@
       "pattern": "ProcessStartInteraction\\((\\d+),\\s*\\d+,\\s*[\\d.-]+,\\s*\\w+,\\s*\"(NPC_\\w+)\"\\)",
       "source": "player",
       "module": "smaug",
-      "csharp": { "type": "Smaug.Parsing.VendorLogParser", "method": "StartInteractionRx" },
+      "csharp": null,
       "eventType": "smaug.NpcInteractionStarted",
-      "notes": "Same shape as arwen.FavorLogParser.StartInteractionRx — both runtimes can dedupe at parse time if desired.",
+      "notes": "Retired: now parsed by Arda L3 Npc.OnStartInteraction. Pattern kept for TS port parity.",
       "fields": [
         { "name": "entityId", "group": 1, "type": "int" },
         { "name": "npcKey", "group": 2, "type": "string" }

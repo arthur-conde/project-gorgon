@@ -1,3 +1,4 @@
+using Arda.World.Player;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
@@ -42,7 +43,7 @@ public sealed class StorageSellbackService
 {
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeCharSvc;
-    private readonly VendorSellContext _sellContext;
+    private readonly IPlayerState _playerState;
     private readonly IFavorLookupService? _favorLookup;
     private readonly IDiagnosticsSink? _diag;
 
@@ -58,13 +59,13 @@ public sealed class StorageSellbackService
     public StorageSellbackService(
         IReferenceDataService refData,
         IActiveCharacterService activeCharSvc,
-        VendorSellContext sellContext,
+        IPlayerState playerState,
         IFavorLookupService? favorLookup = null,
         IDiagnosticsSink? diag = null)
     {
         _refData = refData;
         _activeCharSvc = activeCharSvc;
-        _sellContext = sellContext;
+        _playerState = playerState;
         _favorLookup = favorLookup;
         _diag = diag;
 
@@ -121,8 +122,9 @@ public sealed class StorageSellbackService
                 bool? acceptable = null;
                 if (playerTier is not null)
                 {
+                    var civicPride = _playerState.Skills.TryGetValue("CivicPride", out var cp) ? cp.Raw : 0;
                     maxGold = VendorCapResolver.ResolveMaxGold(
-                        store, playerTier.Value, ctx.Keywords, _sellContext.CivicPrideLevel);
+                        store, playerTier.Value, ctx.Keywords, civicPride);
                     acceptable = maxGold is not null && ctx.Entry.Value <= maxGold.Value;
                 }
 

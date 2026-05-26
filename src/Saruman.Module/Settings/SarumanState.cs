@@ -4,16 +4,16 @@ using Mithril.Shared.Character;
 namespace Saruman.Settings;
 
 /// <summary>
-/// Per-character Saruman module state (#603 — post-codebook-split). The
-/// codebook itself (discovery records + chat-spent state) is owned by
-/// <see cref="Arda.Composition.IWordOfPowerComposer"/>; this state
-/// holds only the module-internal user-override ledger.
+/// Per-character Saruman module state — user-override ledger. The codebook
+/// itself (discovery records + chat-spent state) is owned by
+/// <see cref="Saruman.State.SarumanCodebookService"/> in a sibling store;
+/// this state holds only manual spent overrides.
 ///
 /// <para><b>One-way Sticky Spent.</b> The user can manually mark a code Spent
 /// for cases where the burn happened during an offline session (the
-/// observability gap accepted by #603). There is no "clear" / "Known"
-/// override — monotonic Spent makes Known-override mechanically meaningless
-/// (a globally-Spent code can't be un-spent by the user toggling a flag).</para>
+/// observability gap). There is no "clear" / "Known" override — monotonic
+/// Spent makes Known-override mechanically meaningless (a globally-Spent code
+/// can't be un-spent by the user toggling a flag).</para>
 /// </summary>
 public sealed class SarumanState : IVersionedState<SarumanState>
 {
@@ -23,10 +23,10 @@ public sealed class SarumanState : IVersionedState<SarumanState>
     /// <summary>
     /// Migrate any pre-#603 saved state into the override-only shape.
     /// Pre-#603 instances carried <c>Codebook</c> + <c>DiscoveryHighWaterSequence</c>;
-    /// both have moved to <see cref="Arda.Composition.IWordOfPowerComposer"/> and are
-    /// not re-imported here — discovery state rebuilds from log replay; chat
-    /// spent state rebuilds from chat replay on first observation per
-    /// (server, character). The override ledger starts empty.
+    /// both have moved to <see cref="Saruman.State.SarumanCodebookService"/>
+    /// and are not re-imported here — discovery state rebuilds from log replay
+    /// and persists in <c>saruman-codebook.json</c>. The override ledger starts
+    /// empty.
     ///
     /// <para>Sets <see cref="ShowPreSplitMigrationHint"/> so the next time
     /// the user opens the Saruman tab they get a one-time banner explaining
@@ -49,8 +49,8 @@ public sealed class SarumanState : IVersionedState<SarumanState>
 
     /// <summary>
     /// Codes the user has manually marked Spent. Composes with
-    /// <see cref="Arda.Composition.IWordOfPowerComposer"/>
-    /// at the VM layer: <c>isSpent = view.IsSpent(code) || overrides.Contains(code)</c>.
+    /// <see cref="Saruman.State.SarumanCodebookService"/>
+    /// at the VM layer: <c>isSpent = entry.LastSpentAt != null || overrides.Contains(code)</c>.
     /// </summary>
     public HashSet<string> SpentOverrides { get; set; } = new(StringComparer.Ordinal);
 

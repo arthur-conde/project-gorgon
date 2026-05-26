@@ -32,7 +32,6 @@ public sealed class SmaugModule : IMithrilModule
 
         services.AddMithrilSettings<SmaugSettings>(settingsPath, SmaugJsonContext.Default.SmaugSettings);
 
-        services.AddSingleton<VendorSellContext>();
         services.AddSingleton<VendorCatalogService>();
         services.AddSingleton<StorageSellbackService>();
         services.AddSingleton<SellPlannerService>();

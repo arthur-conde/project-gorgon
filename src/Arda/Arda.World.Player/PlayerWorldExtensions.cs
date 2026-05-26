@@ -233,9 +233,9 @@ public static class PlayerWorldExtensions
             RegisterHandler(registry, Verbs.ProcessScreenText, new ScreenTextHandler(pub));
             RegisterHandler(registry, Verbs.ProcessErrorMessage, new ErrorMessageHandler(pub));
 
-            // --- Vendor passthrough handlers (Tier 2, primary consumer: Smaug) ---
-            RegisterHandler(registry, Verbs.ProcessVendorScreen, new VendorScreenHandler(pub));
-            RegisterHandler(registry, Verbs.ProcessVendorAddItem, new VendorAddItemHandler(pub));
+            // --- Vendor handlers (routed through Npc for NPC-key enrichment; primary consumer: Smaug) ---
+            RegisterHandler(registry, Verbs.ProcessVendorScreen, new VendorScreenHandler(npc));
+            RegisterHandler(registry, Verbs.ProcessVendorAddItem, new VendorAddItemHandler(npc));
             RegisterHandler(registry, Verbs.ProcessVendorUpdateAvailableGold, new VendorGoldHandler(pub));
 
             // --- Interaction/loot passthrough handlers (Tier 2, primary consumer: Gandalf) ---
