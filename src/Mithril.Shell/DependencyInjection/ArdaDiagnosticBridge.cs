@@ -13,11 +13,11 @@ namespace Mithril.Shell.DependencyInjection;
 /// </summary>
 internal sealed class ArdaDiagnosticBridge : IHostedService
 {
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventSubscriber _bus;
     private readonly IDiagnosticsSink _diag;
     private readonly List<IDisposable> _subscriptions = [];
 
-    public ArdaDiagnosticBridge(IDomainEventBus bus, IDiagnosticsSink diag)
+    public ArdaDiagnosticBridge(IDomainEventSubscriber bus, IDiagnosticsSink diag)
     {
         _bus = bus;
         _diag = diag;

@@ -13,10 +13,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Arda.Abstractions\Arda.Abstractions.csproj" />
+    <ProjectReference Include="..\Arda.Contracts\Arda.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="Arda.Dispatch.Tests" />
+    <InternalsVisibleTo Include="Arda.Composition.Tests" />
     <InternalsVisibleTo Include="Arda.Hosting" />
   </ItemGroup>
 

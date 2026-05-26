@@ -15,14 +15,14 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class Npc : INpcState
 {
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _bus;
     private readonly InternPool _npcPool;
 
     public string? ActiveNpcKey { get; private set; }
     public long? ActiveEntityId { get; private set; }
     public double? ActiveFavor { get; private set; }
 
-    public Npc(IDomainEventBus bus, InternPool npcPool)
+    public Npc(IDomainEventPublisher bus, InternPool npcPool)
     {
         _bus = bus;
         _npcPool = npcPool;

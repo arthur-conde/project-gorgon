@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Arda.Dispatch\Arda.Dispatch.csproj" />
     <ProjectReference Include="..\Arda.Hosting\Arda.Hosting.csproj" />
   </ItemGroup>

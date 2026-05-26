@@ -17,12 +17,22 @@ internal sealed class StateResetHandler : IFrameHandler
     private readonly Inventory _inventory;
     private readonly Player _player;
     private readonly Npc _npc;
+    private readonly Weather _weather;
+    private readonly Session _session;
+    private readonly Celestial _celestial;
+    private readonly MapPins _mapPins;
 
-    public StateResetHandler(Inventory inventory, Player player, Npc npc)
+    public StateResetHandler(
+        Inventory inventory, Player player, Npc npc,
+        Weather weather, Session session, Celestial celestial, MapPins mapPins)
     {
         _inventory = inventory;
         _player = player;
         _npc = npc;
+        _weather = weather;
+        _session = session;
+        _celestial = celestial;
+        _mapPins = mapPins;
     }
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
@@ -32,11 +42,17 @@ internal sealed class StateResetHandler : IFrameHandler
             _inventory.Reset();
             _player.Reset();
             _npc.Reset();
+            _weather.Reset();
+            _session.Reset();
+            _celestial.Reset();
+            _mapPins.Reset();
         }
         else
         {
-            // Area transition: only Npc needs clearing (stale interaction context)
+            // Area transition: Npc, weather, and map pins are per-area
             _npc.Reset();
+            _weather.Reset();
+            _mapPins.Reset();
         }
     }
 }

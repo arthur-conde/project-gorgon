@@ -11,9 +11,9 @@ namespace Arda.World.Chat.Internal;
 /// </summary>
 internal sealed class ChatLine : IFrameHandler
 {
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _bus;
 
-    public ChatLine(IDomainEventBus bus) => _bus = bus;
+    public ChatLine(IDomainEventPublisher bus) => _bus = bus;
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {

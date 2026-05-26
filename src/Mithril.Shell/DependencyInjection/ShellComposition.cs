@@ -119,13 +119,20 @@ public static class ShellComposition
         // Uses the game root as log directory (Player.log + ChatLogs/).
         services
             .AddArda(new ArdaOptions(o.GameConfig.GameRoot))
-            .AddPlayerWorld(sp =>
-            {
-                var refData = sp.GetRequiredService<IReferenceDataService>();
-                var keys = refData.ItemsByInternalName.Keys;
-                var identity = keys.ToFrozenDictionary(k => k, k => k, StringComparer.Ordinal);
-                return new Arda.Dispatch.InternPool(identity);
-            });
+            .AddPlayerWorld(
+                itemPoolFactory: sp =>
+                {
+                    var refData = sp.GetRequiredService<IReferenceDataService>();
+                    var keys = refData.ItemsByInternalName.Keys;
+                    var identity = keys.ToFrozenDictionary(k => k, k => k, StringComparer.Ordinal);
+                    return new Arda.Dispatch.InternPool(identity);
+                },
+                projectToGameHourFactory: _ => at => GameClock.Project(at).Hour,
+                shiftsFactory: sp =>
+                {
+                    var catalog = sp.GetRequiredService<IShiftCatalog>();
+                    return catalog.Shifts.Select(s => (s.Slug, s.StartHour)).ToList();
+                });
 
         services.AddHostedService<ArdaDiagnosticBridge>();
 

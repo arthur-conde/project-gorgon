@@ -13,6 +13,7 @@ public sealed class ArdaBuilder
 {
     private readonly IServiceCollection _services;
     private readonly List<Action<IServiceProvider, Dictionary<string, List<IFrameHandler>>>> _registrations = [];
+    private readonly List<Func<IServiceProvider, ILineObserver>> _observerFactories = [];
 
     internal ArdaBuilder(IServiceCollection services)
     {
@@ -53,6 +54,20 @@ public sealed class ArdaBuilder
         });
         return this;
     }
+
+    /// <summary>
+    /// Register an <see cref="ILineObserver"/> that will be called for every
+    /// log line before verb dispatch. The observer type must also be registered
+    /// in the DI container (typically as a singleton).
+    /// </summary>
+    public ArdaBuilder AddLineObserver<T>() where T : class, ILineObserver
+    {
+        _observerFactories.Add(sp => sp.GetRequiredService<T>());
+        return this;
+    }
+
+    internal IReadOnlyList<ILineObserver> BuildLineObservers(IServiceProvider sp) =>
+        _observerFactories.Select(f => f(sp)).ToList();
 
     internal DispatchTable BuildDispatchTable(IServiceProvider sp)
     {

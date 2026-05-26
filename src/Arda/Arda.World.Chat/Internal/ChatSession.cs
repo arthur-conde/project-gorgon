@@ -18,13 +18,13 @@ internal sealed class ChatSession : IFrameHandler, IChatSessionState
     private const string ServerMarker = ". Server ";
     private const string TzMarker = ". Timezone Offset ";
 
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _bus;
 
     public string? Character { get; private set; }
     public string? Server { get; private set; }
     public TimeSpan? TimezoneOffset { get; private set; }
 
-    public ChatSession(IDomainEventBus bus) => _bus = bus;
+    public ChatSession(IDomainEventPublisher bus) => _bus = bus;
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {

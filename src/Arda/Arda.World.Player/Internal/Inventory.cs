@@ -12,12 +12,12 @@ namespace Arda.World.Player.Internal;
 internal sealed class Inventory : IInventoryState
 {
     private readonly Dictionary<long, InventoryEntry> _items = [];
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _bus;
     private readonly InternPool _itemPool;
 
     public IReadOnlyDictionary<long, InventoryEntry> Items => _items;
 
-    public Inventory(IDomainEventBus bus, InternPool itemPool)
+    public Inventory(IDomainEventPublisher bus, InternPool itemPool)
     {
         _bus = bus;
         _itemPool = itemPool;

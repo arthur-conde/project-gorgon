@@ -32,6 +32,8 @@
   <Folder Name="/src/Arda/">
     <Project Path="src/Arda/Arda.Abstractions/Arda.Abstractions.csproj" />
     <Project Path="src/Arda/Arda.Ingest/Arda.Ingest.csproj" />
+    <Project Path="src/Arda/Arda.Composition/Arda.Composition.csproj" />
+    <Project Path="src/Arda/Arda.Contracts/Arda.Contracts.csproj" />
     <Project Path="src/Arda/Arda.Dispatch/Arda.Dispatch.csproj" />
     <Project Path="src/Arda/Arda.Hosting/Arda.Hosting.csproj" />
     <Project Path="src/Arda/Arda.World.Player/Arda.World.Player.csproj" />
@@ -62,6 +64,7 @@
     <Project Path="tests/Silmarillion.Tests/Silmarillion.Tests.csproj" />
     <Project Path="tests/Smaug.Tests/Smaug.Tests.csproj" />
     <Project Path="tests/Arda.Ingest.Tests/Arda.Ingest.Tests.csproj" />
+    <Project Path="tests/Arda.Composition.Tests/Arda.Composition.Tests.csproj" />
     <Project Path="tests/Arda.Dispatch.Tests/Arda.Dispatch.Tests.csproj" />
     <Project Path="tests/Arda.Hosting.Tests/Arda.Hosting.Tests.csproj" />
     <Project Path="tests/Arda.World.Player.Tests/Arda.World.Player.Tests.csproj" />

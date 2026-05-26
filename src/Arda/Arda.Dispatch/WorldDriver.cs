@@ -13,12 +13,18 @@ internal sealed class WorldDriver : IWorldDriver
     private readonly ILogLineSource _source;
     private readonly DispatchTable _dispatch;
     private readonly Action? _onLiveTransition;
+    private readonly IReadOnlyList<ILineObserver> _observers;
 
-    public WorldDriver(ILogLineSource source, DispatchTable dispatch, Action? onLiveTransition = null)
+    public WorldDriver(
+        ILogLineSource source,
+        DispatchTable dispatch,
+        Action? onLiveTransition = null,
+        IReadOnlyList<ILineObserver>? observers = null)
     {
         _source = source;
         _dispatch = dispatch;
         _onLiveTransition = onLiveTransition;
+        _observers = observers ?? [];
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -32,6 +38,9 @@ internal sealed class WorldDriver : IWorldDriver
                 liveSignalled = true;
                 _onLiveTransition!();
             }
+
+            foreach (var observer in _observers)
+                observer.Observe(line.Metadata);
 
             var parsed = VerbExtractor.Parse(line.Log.AsSpan());
             _dispatch.Dispatch(parsed, line.Log, line.Metadata);

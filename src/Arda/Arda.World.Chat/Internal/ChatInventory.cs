@@ -20,9 +20,9 @@ internal sealed class ChatInventory : IFrameHandler
     private const string Prefix = "[Status] ";
     private const string Suffix = " added to inventory.";
 
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _bus;
 
-    public ChatInventory(IDomainEventBus bus) => _bus = bus;
+    public ChatInventory(IDomainEventPublisher bus) => _bus = bus;
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {

@@ -22,6 +22,45 @@ public static class Verbs
     public const string ProcessUpdateRecipe = "ProcessUpdateRecipe";
     public const string ProcessStartInteraction = "ProcessStartInteraction";
 
+    // Session / identity
+    public const string ProcessAddPlayer = "ProcessAddPlayer";
+
+    // Weather
+    public const string ProcessSetWeather = "ProcessSetWeather";
+
+    // Celestial
+    public const string ProcessSetCelestialInfo = "ProcessSetCelestialInfo";
+
+    // Map pins
+    public const string ProcessMapPinAdd = "ProcessMapPinAdd";
+    public const string ProcessMapPinRemove = "ProcessMapPinRemove";
+
+    // Effects
+    public const string ProcessAddEffects = "ProcessAddEffects";
+    public const string ProcessRemoveEffects = "ProcessRemoveEffects";
+
+    // Garden verbs (Tier 2 passthrough, primary consumer: Samwise)
+    public const string ProcessUpdateDescription = "ProcessUpdateDescription";
+    public const string ProcessSetPetOwner = "ProcessSetPetOwner";
+    public const string ProcessScreenText = "ProcessScreenText";
+    public const string ProcessErrorMessage = "ProcessErrorMessage";
+
+    // Vendor verbs (Tier 2 passthrough, primary consumer: Smaug)
+    public const string ProcessVendorScreen = "ProcessVendorScreen";
+    public const string ProcessVendorAddItem = "ProcessVendorAddItem";
+    public const string ProcessVendorUpdateAvailableGold = "ProcessVendorUpdateAvailableGold";
+
+    // Favor verb (Tier 2 passthrough, primary consumer: Arwen via GiftCorrelator)
+    public const string ProcessDeltaFavor = "ProcessDeltaFavor";
+
+    // Interaction/loot verbs (Tier 2 passthrough, primary consumer: Gandalf)
+    public const string ProcessEndInteraction = "ProcessEndInteraction";
+    public const string ProcessDoDelayLoop = "ProcessDoDelayLoop";
+    public const string ProcessWaitInteraction = "ProcessWaitInteraction";
+
+    // Book verb (multi-consumer: Pippin, Saruman/GameState, generic)
+    public const string ProcessBook = "ProcessBook";
+
     // Chat log synthetic verbs
     /// <summary>Synthetic verb for <c>**** Logged In As &lt;char&gt;. Server &lt;server&gt;. ...</c></summary>
     public const string ChatLoginBanner = "CHAT_LOGIN_BANNER";

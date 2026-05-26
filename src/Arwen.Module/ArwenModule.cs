@@ -1,6 +1,5 @@
 using System.IO;
 using Arwen.Domain;
-using Arwen.Parsing;
 using Arwen.State;
 using Arwen.ViewModels;
 using Arwen.Views;
@@ -54,7 +53,6 @@ public sealed class ArwenModule : IMithrilModule
             sp.GetRequiredService<ArwenSettings>(),
             sp.GetService<IDiagnosticsSink>()));
 
-        services.AddSingleton<FavorLogParser>();
         services.AddSingleton<FavorStateService>();
         services.AddSingleton<IFavorLookupService>(sp => sp.GetRequiredService<FavorStateService>());
         services.AddSingleton<GiftIndex>(sp =>

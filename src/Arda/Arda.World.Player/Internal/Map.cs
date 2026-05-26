@@ -20,7 +20,7 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class Map : IFrameHandler, IAreaState
 {
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _bus;
     private readonly InternPool _areaPool;
     private string? _pendingArea;
 
@@ -28,7 +28,7 @@ internal sealed class Map : IFrameHandler, IAreaState
 
     internal string? PendingArea => _pendingArea;
 
-    public Map(IDomainEventBus bus, InternPool areaPool)
+    public Map(IDomainEventPublisher bus, InternPool areaPool)
     {
         _bus = bus;
         _areaPool = areaPool;

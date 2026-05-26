@@ -12,7 +12,7 @@ namespace Arda.World.Player;
 public static class PlayerWorldExtensions
 {
     /// <summary>
-    /// Add Player-world state handlers (Map, Inventory, Player, Npc; future: Calendar).
+    /// Add Player-world state handlers (Map, Inventory, Player, Npc, Calendar).
     /// </summary>
     /// <param name="builder">The Arda builder from <c>AddArda()</c>.</param>
     /// <param name="itemPoolFactory">
@@ -26,10 +26,21 @@ public static class PlayerWorldExtensions
     /// is seeded from reference data skill keys. When null, an empty pool is used
     /// (miss-cache handles the ~100 skill keys after first encounter).
     /// </param>
+    /// <param name="projectToGameHourFactory">
+    /// Optional factory for the game-hour projection function. In production, wired to
+    /// <c>at => GameClock.Project(at).Hour</c>. When null, defaults to a constant 0.
+    /// </param>
+    /// <param name="shiftsFactory">
+    /// Optional factory for the shift definition list (slug, startHour tuples in
+    /// StartHour order). In production, sourced from <c>IShiftCatalog.Shifts</c>.
+    /// When null, defaults to an empty list (no shift events emitted).
+    /// </param>
     public static ArdaBuilder AddPlayerWorld(
         this ArdaBuilder builder,
         Func<IServiceProvider, InternPool>? itemPoolFactory = null,
-        Func<IServiceProvider, InternPool>? skillPoolFactory = null)
+        Func<IServiceProvider, InternPool>? skillPoolFactory = null,
+        Func<IServiceProvider, Func<DateTimeOffset, int>>? projectToGameHourFactory = null,
+        Func<IServiceProvider, IReadOnlyList<(string Slug, int StartHour)>>? shiftsFactory = null)
     {
         // --- Map handler ---
         // Area keys are few (~50) and stable; miss-cache-only interning is acceptable.
@@ -38,7 +49,7 @@ public static class PlayerWorldExtensions
 
         builder.Services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
             return new Map(bus, areaPool);
         });
         builder.Services.AddSingleton<IAreaState>(sp => sp.GetRequiredService<Map>());
@@ -46,7 +57,7 @@ public static class PlayerWorldExtensions
         // --- Inventory handler ---
         builder.Services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
             var itemPool = itemPoolFactory?.Invoke(sp)
                 ?? new InternPool(FrozenDictionary<string, string>.Empty);
             return new Inventory(bus, itemPool);
@@ -56,7 +67,7 @@ public static class PlayerWorldExtensions
         // --- Player handler (skills + recipes) ---
         builder.Services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
             var skillPool = skillPoolFactory?.Invoke(sp)
                 ?? new InternPool(FrozenDictionary<string, string>.Empty);
             return new Internal.Player(bus, skillPool);
@@ -69,10 +80,75 @@ public static class PlayerWorldExtensions
 
         builder.Services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
             return new Npc(bus, npcPool);
         });
         builder.Services.AddSingleton<INpcState>(sp => sp.GetRequiredService<Npc>());
+
+        // --- Gift correlator (fuses GiftAttempted + DeltaFavorReceived → GiftAccepted) ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventBus>();
+            return new GiftCorrelator(bus);
+        });
+
+        // --- Weather handler ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new Weather(bus);
+        });
+        builder.Services.AddSingleton<IWeatherState>(sp => sp.GetRequiredService<Weather>());
+
+        // --- Session handler ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new Session(bus);
+        });
+        builder.Services.AddSingleton<ISessionState>(sp => sp.GetRequiredService<Session>());
+
+        // --- Celestial handler ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new Celestial(bus);
+        });
+        builder.Services.AddSingleton<ICelestialState>(sp => sp.GetRequiredService<Celestial>());
+
+        // --- Map pins handler ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new MapPins(bus);
+        });
+        builder.Services.AddSingleton<IMapPinState>(sp => sp.GetRequiredService<MapPins>());
+
+        // --- Effects handler ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new Effects(bus);
+        });
+
+        // --- Quest handler ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            return new Quest(bus);
+        });
+
+        // --- Calendar handler (line observer — sees every timestamp) ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            var projectToGameHour = projectToGameHourFactory?.Invoke(sp)
+                ?? (Func<DateTimeOffset, int>)(_ => 0);
+            var shifts = shiftsFactory?.Invoke(sp) ?? [];
+            return new Calendar(bus, projectToGameHour, shifts);
+        });
+        builder.Services.AddSingleton<ICalendarState>(sp => sp.GetRequiredService<Calendar>());
+        builder.AddLineObserver<Calendar>();
 
         // --- Dispatch table wiring ---
         builder.ConfigureHandlers((sp, registry) =>
@@ -84,11 +160,18 @@ public static class PlayerWorldExtensions
             var inventory = sp.GetRequiredService<Inventory>();
             var player = sp.GetRequiredService<Internal.Player>();
             var npc = sp.GetRequiredService<Npc>();
+            var weather = sp.GetRequiredService<Weather>();
+            var session = sp.GetRequiredService<Session>();
+            var celestial = sp.GetRequiredService<Celestial>();
+            var mapPins = sp.GetRequiredService<MapPins>();
+            var effects = sp.GetRequiredService<Effects>();
+            var quest = sp.GetRequiredService<Quest>();
 
             // Order matters: Map must run before StateResetHandler for LOADING_LEVEL.
             // Map clears CurrentArea; StateResetHandler then resets downstream state.
             // DispatchTable preserves insertion order within a verb's handler list.
-            RegisterHandler(registry, Verbs.LoadingLevel, new StateResetHandler(inventory, player, npc));
+            RegisterHandler(registry, Verbs.LoadingLevel,
+                new StateResetHandler(inventory, player, npc, weather, session, celestial, mapPins));
 
             RegisterHandler(registry, Verbs.ProcessAddItem, new AddItemHandler(inventory));
             RegisterHandler(registry, Verbs.ProcessDeleteItem, new DeleteItemHandler(inventory));
@@ -101,6 +184,45 @@ public static class PlayerWorldExtensions
 
             RegisterHandler(registry, Verbs.ProcessStartInteraction, new StartInteractionHandler(npc));
             RegisterHandler(registry, Verbs.ProcessDeleteItem, new NpcDeleteItemHandler(npc));
+
+            // --- DeltaFavor handler (drives gift correlation) ---
+            var pub = sp.GetRequiredService<IDomainEventPublisher>();
+            RegisterHandler(registry, Verbs.ProcessDeltaFavor, new DeltaFavorHandler(npc, pub));
+
+            // Force GiftCorrelator resolution to activate its subscriptions
+            sp.GetRequiredService<GiftCorrelator>();
+
+            // --- Tier 1 state handlers (multi-consumer) ---
+            RegisterHandler(registry, Verbs.ProcessSetWeather, weather);
+            RegisterHandler(registry, Verbs.ProcessAddPlayer, session);
+            RegisterHandler(registry, Verbs.ProcessSetCelestialInfo, celestial);
+
+            RegisterHandler(registry, Verbs.ProcessMapPinAdd, new MapPinAddHandler(mapPins));
+            RegisterHandler(registry, Verbs.ProcessMapPinRemove, new MapPinRemoveHandler(mapPins));
+
+            RegisterHandler(registry, Verbs.ProcessAddEffects, new AddEffectsHandler(effects));
+            RegisterHandler(registry, Verbs.ProcessRemoveEffects, new RemoveEffectsHandler(effects));
+
+            RegisterHandler(registry, Verbs.ProcessBook, quest);
+
+            // --- Garden passthrough handlers (Tier 2, single consumer: Samwise) ---
+            RegisterHandler(registry, Verbs.ProcessUpdateDescription, new UpdateDescriptionHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessSetPetOwner, new SetPetOwnerHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessScreenText, new ScreenTextHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessErrorMessage, new ErrorMessageHandler(pub));
+
+            // --- Vendor passthrough handlers (Tier 2, primary consumer: Smaug) ---
+            RegisterHandler(registry, Verbs.ProcessVendorScreen, new VendorScreenHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessVendorAddItem, new VendorAddItemHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessVendorUpdateAvailableGold, new VendorGoldHandler(pub));
+
+            // --- Interaction/loot passthrough handlers (Tier 2, primary consumer: Gandalf) ---
+            RegisterHandler(registry, Verbs.ProcessEndInteraction, new EndInteractionHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessDoDelayLoop, new DelayLoopHandler(pub));
+            RegisterHandler(registry, Verbs.ProcessWaitInteraction, new WaitInteractionHandler(pub));
+
+            // --- Book handler (multi-consumer: Pippin, Saruman/GameState, generic) ---
+            RegisterHandler(registry, Verbs.ProcessBook, new ProcessBookHandler(pub));
         });
 
         return builder;

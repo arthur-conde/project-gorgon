@@ -10,14 +10,16 @@ namespace Arda.Hosting.Internal;
 internal sealed class PlayerWorldService(
     PlayerLogSource source,
     DispatchTable dispatchTable,
-    ReplayProgress progress) : BackgroundService
+    ReplayProgress progress,
+    IReadOnlyList<ILineObserver> lineObservers) : BackgroundService
 {
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var driver = new WorldDriver(
             source,
             dispatchTable,
-            onLiveTransition: () => progress.MarkComplete(ReplayProgress.SourceFamily.Player));
+            onLiveTransition: () => progress.MarkComplete(ReplayProgress.SourceFamily.Player),
+            observers: lineObservers);
 
         return driver.RunAsync(stoppingToken);
     }

@@ -14,13 +14,13 @@ internal sealed class Player : IPlayerState
 {
     private readonly Dictionary<string, SkillEntry> _skills = new(StringComparer.Ordinal);
     private readonly Dictionary<int, RecipeEntry> _recipes = [];
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _bus;
     private readonly InternPool _skillPool;
 
     public IReadOnlyDictionary<string, SkillEntry> Skills => _skills;
     public IReadOnlyDictionary<int, RecipeEntry> Recipes => _recipes;
 
-    public Player(IDomainEventBus bus, InternPool skillPool)
+    public Player(IDomainEventPublisher bus, InternPool skillPool)
     {
         _bus = bus;
         _skillPool = skillPool;

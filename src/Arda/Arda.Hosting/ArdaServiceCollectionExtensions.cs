@@ -39,6 +39,8 @@ public static class ArdaServiceCollectionExtensions
         // Event bus (shared across both driver families)
         services.AddSingleton<DomainEventBus>();
         services.AddSingleton<IDomainEventBus>(sp => sp.GetRequiredService<DomainEventBus>());
+        services.AddSingleton<IDomainEventSubscriber>(sp => sp.GetRequiredService<DomainEventBus>());
+        services.AddSingleton<IDomainEventPublisher>(sp => sp.GetRequiredService<DomainEventBus>());
 
         // Replay progress (shared, bindable from WPF splash)
         services.AddSingleton<ReplayProgress>();
@@ -53,6 +55,11 @@ public static class ArdaServiceCollectionExtensions
         // DispatchTable is registered as a deferred singleton — the builder
         // collects handler registrations and builds the table on first resolve.
         services.AddSingleton(sp => builder.BuildDispatchTable(sp));
+
+        // Line observers are deferred the same way — world extensions call
+        // AddLineObserver<T>() on the builder, and the list is resolved at
+        // first inject into PlayerWorldService.
+        services.AddSingleton<IReadOnlyList<ILineObserver>>(sp => builder.BuildLineObservers(sp));
 
         return builder;
     }

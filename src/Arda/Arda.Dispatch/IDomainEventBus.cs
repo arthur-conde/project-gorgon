@@ -1,19 +1,11 @@
 namespace Arda.Dispatch;
 
 /// <summary>
-/// Typed publish-subscribe bus for domain events emitted by L3 handlers.
-/// Replaces the legacy <c>IWorldEventBus</c> / <c>Frame&lt;T&gt;</c> pattern.
-/// <para>
-/// Events are value-type structs carrying their own <see cref="Arda.Abstractions.Logs.LogLineMetadata"/>
-/// field — no wrapper envelope needed. Dispatch is synchronous within the
-/// publishing handler's tick, so subscribers execute inline on the driver thread.
-/// </para>
+/// Composite bus interface combining <see cref="IDomainEventSubscriber"/> and
+/// <see cref="IDomainEventPublisher"/>. Internal Arda components that need both
+/// pub and sub (e.g. correlators) depend on this. Modules and external consumers
+/// should depend on <see cref="IDomainEventSubscriber"/> only; handlers should
+/// depend on <see cref="IDomainEventPublisher"/> only.
 /// </summary>
-public interface IDomainEventBus
-{
-    /// <summary>Subscribe to domain events of type <typeparamref name="T"/>.</summary>
-    IDisposable Subscribe<T>(Action<T> handler) where T : struct;
+public interface IDomainEventBus : IDomainEventSubscriber, IDomainEventPublisher;
 
-    /// <summary>Emit a domain event (called by frame handlers / state machines).</summary>
-    void Publish<T>(T domainEvent) where T : struct;
-}

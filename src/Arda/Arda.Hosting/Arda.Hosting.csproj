@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Arda.Abstractions\Arda.Abstractions.csproj" />
+    <ProjectReference Include="..\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Arda.Dispatch\Arda.Dispatch.csproj" />
     <ProjectReference Include="..\Arda.Ingest\Arda.Ingest.csproj" />
   </ItemGroup>

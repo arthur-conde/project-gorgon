@@ -17,7 +17,7 @@ public static class ChatWorldExtensions
     {
         builder.Services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
             return new ChatSession(bus);
         });
         builder.Services.AddSingleton<IChatSessionState>(sp => sp.GetRequiredService<ChatSession>());
@@ -27,7 +27,7 @@ public static class ChatWorldExtensions
             var session = sp.GetRequiredService<ChatSession>();
             RegisterHandler(registry, Verbs.ChatLoginBanner, session);
 
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
             RegisterHandler(registry, Verbs.StatusInventory, new ChatInventory(bus));
             RegisterHandler(registry, Verbs.ChatPlayerLine, new ChatLine(bus));
         });
