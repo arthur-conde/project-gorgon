@@ -1,31 +1,33 @@
 using System.Text.Json.Serialization;
-using Mithril.Shared.Character;
 
 namespace Saruman.State;
 
 /// <summary>
-/// Per-character Word-of-Power codebook. Unified store holding both discovery
+/// Server-scoped Word-of-Power codebook. Unified store holding both discovery
 /// records (from Player.log replay) and monotonic spent state (from chat
-/// utterance scanning). Persists to <c>saruman-codebook.json</c> via
-/// <see cref="PerCharacterView{T}"/>.
+/// utterance scanning). Persists to a single file at
+/// <c>%LocalAppData%/Mithril/Saruman/codebook.json</c>.
+///
+/// <para>WoPs are server-scoped (any character on the same server shares
+/// the codebook), so each entry carries a <see cref="CodebookEntry.Server"/>
+/// tag. The service filters by active server at query time.</para>
 ///
 /// <para><b>Monotonic Spent.</b> Once <see cref="CodebookEntry.LastSpentAt"/>
 /// is set, it is never cleared by the service. The user-override ledger in
 /// <see cref="Settings.SarumanState.SpentOverrides"/> provides a separate
 /// manual-mark path for offline burns.</para>
 /// </summary>
-public sealed class SarumanCodebook : IVersionedState<SarumanCodebook>
+public sealed class SarumanCodebook
 {
-    public const int Version = 1;
-    public static int CurrentVersion => Version;
-    public static SarumanCodebook Migrate(SarumanCodebook loaded) => loaded;
+    public const int CurrentVersion = 1;
 
-    public int SchemaVersion { get; set; } = Version;
+    public int SchemaVersion { get; set; } = CurrentVersion;
 
-    public Dictionary<string, CodebookEntry> Entries { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<CodebookEntry> Entries { get; set; } = [];
 
     public sealed class CodebookEntry
     {
+        public required string Server { get; set; }
         public required string Code { get; set; }
         public required string Effect { get; set; }
         public string? Description { get; set; }

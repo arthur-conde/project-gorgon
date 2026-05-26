@@ -28,19 +28,21 @@ public sealed class SarumanModule : IMithrilModule
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var legacySarumanDir = Path.Combine(localApp, "Mithril", "Saruman");
         var charactersRootDir = Path.Combine(localApp, "Mithril", "characters");
+        var codebookPath = Path.Combine(localApp, "Mithril", "Saruman", "codebook.json");
 
         // Per-character override ledger (saruman.json)
         services.AddSingleton<ILegacyMigration<SarumanState>>(_ =>
             new SarumanLegacyMigration(legacySarumanDir, SarumanJsonContext.Default.SarumanState));
         services.AddPerCharacterModuleStore<SarumanState>(Id, SarumanJsonContext.Default.SarumanState);
 
-        // Per-character codebook (saruman-codebook.json) — discovery + chat-spent
-        services.AddSingleton<ILegacyMigration<SarumanCodebook>>(_ =>
-            new SarumanCodebookLegacyMigration(charactersRootDir));
-        services.AddPerCharacterStore<SarumanCodebook>(
-            "saruman-codebook.json", SarumanCodebookJsonContext.Default.SarumanCodebook);
+        // Server-scoped codebook (single file) — discovery + chat-spent
+        services.AddSingleton(sp => new SarumanCodebookService(
+            codebookPath,
+            sp.GetRequiredService<Arda.Composition.ISessionComposer>(),
+            sp.GetRequiredService<Arda.Dispatch.IDomainEventSubscriber>()));
 
-        services.AddSingleton<SarumanCodebookService>();
+        services.AddSingleton(sp => new SarumanCodebookLegacyMigration(charactersRootDir));
+        services.AddHostedService<SarumanCodebookLegacyMigrationHost>();
         services.AddSingleton<SarumanOverrideService>();
 
         services.AddSingleton<SarumanViewModel>();

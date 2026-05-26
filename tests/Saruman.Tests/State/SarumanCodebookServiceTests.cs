@@ -1,10 +1,11 @@
 using System.IO;
+using System.Text.Json;
 using Arda.Abstractions.Logs;
+using Arda.Composition;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
 using FluentAssertions;
-using Mithril.Shared.Character;
 using Saruman.State;
 using Xunit;
 
@@ -13,32 +14,27 @@ namespace Saruman.Tests.State;
 [Collection("FileIO")]
 public sealed class SarumanCodebookServiceTests : IDisposable
 {
-    private readonly string _root;
-    private readonly FakeActiveCharacterService _active;
+    private readonly string _dir;
+    private readonly string _filePath;
+    private readonly FakeSessionComposer _session;
     private readonly TestDomainEventBus _bus;
-    private readonly PerCharacterStore<SarumanCodebook> _store;
-    private readonly PerCharacterView<SarumanCodebook> _view;
     private readonly SarumanCodebookService _service;
 
     private static readonly DateTimeOffset BaseTime = new(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
 
     public SarumanCodebookServiceTests()
     {
-        _root = Mithril.TestSupport.TestPaths.CreateTempDir("saruman-codebook");
-        _active = new FakeActiveCharacterService();
+        _dir = Mithril.TestSupport.TestPaths.CreateTempDir("saruman-codebook");
+        _filePath = Path.Combine(_dir, "codebook.json");
+        _session = new FakeSessionComposer("Kwatoxi");
         _bus = new TestDomainEventBus();
-        _store = new PerCharacterStore<SarumanCodebook>(
-            _root, "saruman-codebook.json", SarumanCodebookJsonContext.Default.SarumanCodebook);
-        _view = new PerCharacterView<SarumanCodebook>(_active, _store);
-        _active.SetActiveCharacter("Arthur", "Kwatoxi");
-        _service = new SarumanCodebookService(_view, _bus);
+        _service = new SarumanCodebookService(_filePath, _session, _bus);
     }
 
     public void Dispose()
     {
         _service.Dispose();
-        _view.Dispose();
-        try { Directory.Delete(_root, recursive: true); } catch { }
+        try { Directory.Delete(_dir, recursive: true); } catch { }
     }
 
     [Fact]
@@ -51,11 +47,13 @@ public sealed class SarumanCodebookServiceTests : IDisposable
         entry.Effect.Should().Be("Fast Swimmer");
         entry.Description.Should().Be("Swim faster!");
         entry.LastSpentAt.Should().BeNull();
+        entry.Server.Should().Be("Kwatoxi");
 
         // Verify persistence: reload from disk
-        var reloaded = _store.Load("Arthur", "Kwatoxi");
-        reloaded.Entries.Should().ContainKey("CHUCKMRYJ");
-        reloaded.Entries["CHUCKMRYJ"].Effect.Should().Be("Fast Swimmer");
+        File.Exists(_filePath).Should().BeTrue();
+        using var stream = File.OpenRead(_filePath);
+        var reloaded = JsonSerializer.Deserialize(stream, SarumanCodebookJsonContext.Default.SarumanCodebook)!;
+        reloaded.Entries.Should().Contain(e => e.Code == "CHUCKMRYJ" && e.Effect == "Fast Swimmer");
     }
 
     [Fact]
@@ -125,18 +123,29 @@ public sealed class SarumanCodebookServiceTests : IDisposable
         Discover("PERSIST", "Effect", "");
         Chat("Arthur", "[Global] Arthur: PERSIST");
 
-        var reloaded = _store.Load("Arthur", "Kwatoxi");
-        reloaded.Entries["PERSIST"].LastSpentAt.Should().NotBeNull();
+        using var stream = File.OpenRead(_filePath);
+        var reloaded = JsonSerializer.Deserialize(stream, SarumanCodebookJsonContext.Default.SarumanCodebook)!;
+        reloaded.Entries.Should().Contain(e => e.Code == "PERSIST" && e.LastSpentAt != null);
     }
 
     [Fact]
-    public void CharacterSwitch_LoadsSeparateCodebook()
+    public void DifferentServer_EntriesNotVisible()
     {
-        Discover("CHARCODE", "Effect", "");
+        Discover("SERVERCODE", "Effect", "");
+        _service.Entries.Should().ContainKey("SERVERCODE");
 
-        _active.SetActiveCharacter("Bilbo", "Kwatoxi");
+        _session.SetServer("OtherServer");
 
-        _service.Entries.Should().NotContainKey("CHARCODE");
+        _service.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NoServer_EntriesEmpty()
+    {
+        Discover("NOSERVER", "Effect", "");
+        _session.Clear();
+
+        _service.Entries.Should().BeEmpty();
     }
 
     [Fact]
@@ -150,6 +159,22 @@ public sealed class SarumanCodebookServiceTests : IDisposable
 
         Chat("Arthur", "[Global] Arthur: TESTCODE");
         events.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void SeedFromLegacy_AddsEntries_SkipsDuplicates()
+    {
+        Discover("EXISTING", "Effect", "");
+
+        _service.SeedFromLegacy(
+        [
+            new SarumanCodebook.CodebookEntry { Server = "Kwatoxi", Code = "EXISTING", Effect = "Dup", DiscoveredAt = BaseTime },
+            new SarumanCodebook.CodebookEntry { Server = "Kwatoxi", Code = "NEWCODE", Effect = "New", DiscoveredAt = BaseTime },
+        ]);
+
+        _service.Entries.Should().HaveCount(2);
+        _service.Entries["EXISTING"].Effect.Should().Be("Effect");
+        _service.Entries["NEWCODE"].Effect.Should().Be("New");
     }
 
     private void Discover(string code, string effect, string desc)
@@ -173,6 +198,20 @@ public sealed class SarumanCodebookServiceTests : IDisposable
             channel, speaker, text,
             new LogLineMetadata(BaseTime.AddSeconds(1), BaseTime.AddSeconds(1), IsReplay: false)));
     }
+}
+
+internal sealed class FakeSessionComposer : ISessionComposer
+{
+    private string? _server;
+
+    public FakeSessionComposer(string server) => _server = server;
+
+    public ComposedSession? Current => _server is not null
+        ? new ComposedSession("Arthur", _server, DateTimeOffset.UtcNow, TimeSpan.Zero, "test-session")
+        : null;
+
+    public void SetServer(string server) => _server = server;
+    public void Clear() => _server = null;
 }
 
 internal sealed class TestDomainEventBus : IDomainEventSubscriber

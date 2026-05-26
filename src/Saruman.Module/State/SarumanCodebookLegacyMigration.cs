@@ -1,25 +1,21 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Mithril.Shared.Character;
+using Microsoft.Extensions.Hosting;
 
 namespace Saruman.State;
 
 /// <summary>
 /// Recovers the Word-of-Power codebook from legacy per-character data.
-/// Two source formats are checked in priority order:
+/// Scans all character directories for v1 <c>saruman.json</c> files (which
+/// embedded the codebook) or the intermediate <c>wop-discovery.json</c> +
+/// <c>wop-spent.json</c> split. Extracts the server name from the directory
+/// slug (<c>{character}_{server}</c>).
 ///
-/// <list type="number">
-///   <item><b>V1 saruman.json</b> — the pre-#603 format that embedded the codebook
-///   directly in <c>saruman.json</c> as a <c>codebook</c> field.</item>
-///   <item><b>wop-discovery.json + wop-spent.json</b> — the intermediate #603 split
-///   format (may never have been created for users who jumped straight from pre-#603
-///   to post-Arda).</item>
-/// </list>
-///
-/// <para>On successful migration the store deletes the source file(s).</para>
+/// <para>Results are seeded into <see cref="SarumanCodebookService"/> at startup
+/// via <see cref="SarumanCodebookLegacyMigrationHost"/>.</para>
 /// </summary>
-public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCodebook>
+public sealed class SarumanCodebookLegacyMigration
 {
     private readonly string _charactersRootDir;
 
@@ -28,71 +24,83 @@ public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCod
         _charactersRootDir = charactersRootDir;
     }
 
-    public bool TryMigrate(string character, string server, out SarumanCodebook migrated, out string legacyPath)
+    /// <summary>
+    /// Scan all character directories and return any recoverable codebook entries.
+    /// </summary>
+    public List<SarumanCodebook.CodebookEntry> RecoverAll()
     {
-        migrated = new SarumanCodebook();
-        legacyPath = "";
+        var entries = new List<SarumanCodebook.CodebookEntry>();
 
-        var slug = PerCharacterStore<SarumanCodebook>.Slug(character, server);
+        if (!Directory.Exists(_charactersRootDir))
+            return entries;
 
-        // Strategy 1: V1 saruman.json with embedded codebook field
-        if (TryMigrateFromV1Saruman(slug, out migrated, out legacyPath))
-            return true;
-
-        // Strategy 2: Intermediate wop-discovery.json + wop-spent.json split
-        if (TryMigrateFromSplitFiles(slug, out migrated, out legacyPath))
-            return true;
-
-        return false;
-    }
-
-    private bool TryMigrateFromV1Saruman(string slug, out SarumanCodebook migrated, out string legacyPath)
-    {
-        migrated = new SarumanCodebook();
-        legacyPath = "";
-
-        var path = Path.Combine(_charactersRootDir, slug, "saruman.json");
-        var v1State = TryReadV1Saruman(path);
-        if (v1State?.Codebook is null || v1State.Codebook.Count == 0)
-            return false;
-
-        foreach (var (code, entry) in v1State.Codebook)
+        foreach (var charDir in Directory.EnumerateDirectories(_charactersRootDir))
         {
-            DateTimeOffset? lastSpent = null;
-            if (entry.State == 1 && entry.SpentAt is not null)
-                lastSpent = entry.SpentAt.Value;
+            var slug = Path.GetFileName(charDir);
+            var server = ExtractServer(slug);
+            if (server is null) continue;
 
-            migrated.Entries[code] = new SarumanCodebook.CodebookEntry
-            {
-                Code = entry.Code ?? code,
-                Effect = entry.EffectName ?? "",
-                Description = entry.Description,
-                DiscoveredAt = entry.FirstDiscoveredAt,
-                LastSpentAt = lastSpent,
-            };
+            if (TryRecoverFromV1(charDir, server, entries))
+                continue;
+
+            TryRecoverFromSplitFiles(charDir, server, entries);
         }
 
-        // Don't offer saruman.json for cleanup — PerCharacterStore<SarumanState> still uses it.
+        return entries;
+    }
+
+    /// <summary>
+    /// Directory slug format is <c>{character}_{server}</c>. Server is the
+    /// portion after the last underscore.
+    /// </summary>
+    private static string? ExtractServer(string slug)
+    {
+        var idx = slug.LastIndexOf('_');
+        return idx > 0 ? slug[(idx + 1)..] : null;
+    }
+
+    private static bool TryRecoverFromV1(string charDir, string server, List<SarumanCodebook.CodebookEntry> entries)
+    {
+        var path = Path.Combine(charDir, "saruman.json");
+        var v1 = TryReadV1Saruman(path);
+        if (v1?.Codebook is null || v1.Codebook.Count == 0)
+            return false;
+
+        foreach (var (code, record) in v1.Codebook)
+        {
+            DateTimeOffset? lastSpent = null;
+            if (record.State == 1 && record.SpentAt is not null)
+                lastSpent = record.SpentAt.Value;
+
+            entries.Add(new SarumanCodebook.CodebookEntry
+            {
+                Server = server,
+                Code = record.Code ?? code,
+                Effect = record.EffectName ?? "",
+                Description = record.Description,
+                DiscoveredAt = record.FirstDiscoveredAt,
+                LastSpentAt = lastSpent,
+            });
+        }
+
         return true;
     }
 
-    private bool TryMigrateFromSplitFiles(string slug, out SarumanCodebook migrated, out string legacyPath)
+    private static void TryRecoverFromSplitFiles(string charDir, string server, List<SarumanCodebook.CodebookEntry> entries)
     {
-        migrated = new SarumanCodebook();
-        legacyPath = "";
-
-        var charDir = Path.Combine(_charactersRootDir, slug);
         var discoveryPath = Path.Combine(charDir, "wop-discovery.json");
         var spentPath = Path.Combine(charDir, "wop-spent.json");
 
         if (!File.Exists(discoveryPath) && !File.Exists(spentPath))
-            return false;
+            return;
 
         var discoveries = TryReadDiscovery(discoveryPath);
         var spent = TryReadSpent(spentPath);
 
         if (discoveries is null && spent is null)
-            return false;
+            return;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         if (discoveries is not null)
         {
@@ -102,14 +110,16 @@ public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCod
                 if (spent is not null && spent.SpentAt.TryGetValue(code, out var spentAt) && spentAt != default)
                     lastSpent = new DateTimeOffset(spentAt, TimeSpan.Zero);
 
-                migrated.Entries[code] = new SarumanCodebook.CodebookEntry
+                entries.Add(new SarumanCodebook.CodebookEntry
                 {
+                    Server = server,
                     Code = code,
                     Effect = record.EffectName ?? "",
                     Description = record.Description,
                     DiscoveredAt = record.DiscoveredAt,
                     LastSpentAt = lastSpent,
-                };
+                });
+                seen.Add(code);
             }
         }
 
@@ -117,25 +127,23 @@ public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCod
         {
             foreach (var (code, spentAt) in spent.SpentAt)
             {
-                if (migrated.Entries.ContainsKey(code)) continue;
-                migrated.Entries[code] = new SarumanCodebook.CodebookEntry
+                if (seen.Contains(code)) continue;
+                entries.Add(new SarumanCodebook.CodebookEntry
                 {
+                    Server = server,
                     Code = code,
                     Effect = "(unknown)",
                     Description = null,
                     DiscoveredAt = new DateTimeOffset(spentAt, TimeSpan.Zero),
                     LastSpentAt = new DateTimeOffset(spentAt, TimeSpan.Zero),
-                };
+                });
             }
         }
-
-        legacyPath = discoveryPath;
-        return true;
     }
 
-    private static LegacyV1SarumanState? TryReadV1Saruman(string? path)
+    private static LegacyV1SarumanState? TryReadV1Saruman(string path)
     {
-        if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
+        if (!File.Exists(path)) return null;
         try
         {
             using var stream = File.OpenRead(path);
@@ -166,6 +174,23 @@ public sealed class SarumanCodebookLegacyMigration : ILegacyMigration<SarumanCod
             return JsonSerializer.Deserialize(stream, LegacySpentJsonContext.Default.LegacySpentState);
         }
         catch { return null; }
+    }
+}
+
+/// <summary>
+/// Runs the legacy codebook migration once at startup and seeds recovered
+/// entries into <see cref="SarumanCodebookService"/>.
+/// </summary>
+public sealed class SarumanCodebookLegacyMigrationHost(
+    SarumanCodebookLegacyMigration migration,
+    SarumanCodebookService codebookService) : BackgroundService
+{
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        var entries = migration.RecoverAll();
+        if (entries.Count > 0)
+            codebookService.SeedFromLegacy(entries);
+        return Task.CompletedTask;
     }
 }
 
