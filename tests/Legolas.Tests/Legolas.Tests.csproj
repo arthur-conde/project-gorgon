@@ -18,8 +18,5 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Legolas.Module\Legolas.Module.csproj" />
-    <ProjectReference Include="..\..\src\Mithril.GameState\Mithril.GameState.csproj" />
-    <ProjectReference Include="..\..\src\Mithril.WorldSim.Core\Mithril.WorldSim.Core.csproj" />
-    <ProjectReference Include="..\..\src\Mithril.WorldSim.Player\Mithril.WorldSim.Player.csproj" />
   </ItemGroup>
 </Project>

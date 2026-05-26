@@ -9,13 +9,8 @@ namespace Mithril.Shared.Logging;
 /// state).
 ///
 /// <para>The concrete implementation is the leaf class <see cref="SessionAnchor"/>
-/// in <c>Mithril.Shared</c> — kept here rather than in <c>Mithril.GameState</c>
-/// so <see cref="PlayerLogClock"/> and <c>PlayerLogStream</c>
-/// (also Mithril.Shared) can depend on it without inverting the project
-/// graph or forming a DI cycle. <c>GameSessionService</c> in
-/// <c>Mithril.GameState.Sessions</c> consumes the same concrete anchor and
-/// calls <see cref="SessionAnchor.SetLoggedInUtc(DateTime)"/> on every parsed
-/// banner — pushing state in rather than implementing the interface itself.</para>
+/// in <c>Mithril.Shared</c>. <see cref="PlayerLogClock"/> and
+/// <c>PlayerLogStream</c> depend on it for date-anchoring.</para>
 /// </summary>
 public interface ISessionAnchor
 {

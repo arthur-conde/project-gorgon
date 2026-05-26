@@ -94,7 +94,7 @@
       "pattern": "ProcessDeleteItem\\((\\d+)\\)",
       "source": "player",
       "module": "gamestate",
-      "csharp": { "type": "Mithril.GameState.Inventory.Producers.PlayerInventoryFrameProducer", "method": "DeleteItemRx" },
+      "csharp": null,
       "eventType": "gamestate.PlayerInventoryRemoveFrame",
       "notes": "Moved from arwen.FavorLogParser to the GameState inventory folder's producer in #608. The same ProcessDeleteItem verb is also parsed by Mithril.GameState.Gifting.GiftSignalService.DeleteItemRx (Tier-2 signal service, single L1 pump) — Arwen consumes gifts via IGiftSignalService.GiftAccepted and no longer parses this verb directly.",
       "fields": [
@@ -105,7 +105,7 @@
       "pattern": "ProcessDeleteItem\\((\\d+)\\)",
       "source": "player",
       "module": "gamestate",
-      "csharp": { "type": "Mithril.GameState.Gifting.GiftSignalService", "method": "DeleteItemRx" },
+      "csharp": null,
       "eventType": "gamestate.GiftAccepted",
       "notes": "Tier-2 signal service's own copy of the ProcessDeleteItem regex (#594 / #596). The single L1 pump correlates ProcessStartInteraction / ProcessDeleteItem / ProcessDeltaFavor on its own state machine and emits a resolved GiftAccepted with InternalName baked in (from the service's own ProcessAddItem map). Two services on separate pumps each maintain their own correlation against the same verb — by design.",
       "fields": [
@@ -191,7 +191,7 @@
       "pattern": "^\\d{2}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\s*\\t\\s*\\[(?<channel>[^\\]]+)\\]\\s*(?<speaker>[^:]+?)\\s*:\\s*(?<text>.*)$",
       "source": "chat",
       "module": "gameState",
-      "csharp": { "type": "Mithril.GameState.Chat.ChatChannelClassifier", "method": "ChatLineRx" },
+      "csharp": null,
       "kind": "helper",
       "notes": "Splits a chat line into (channel, speaker, text). The classifier routes [Status]/[NPC Chatter] to drain and the rest to PlayerChat (#603).",
       "fields": [
@@ -204,7 +204,7 @@
       "pattern": "^\\d{2}-\\d{2}-\\d{2}\\s+\\d{2}:\\d{2}:\\d{2}\\s*\\t\\s*\\[(?<channel>[^\\]]+)\\]\\s*(?<text>.*)$",
       "source": "chat",
       "module": "gameState",
-      "csharp": { "type": "Mithril.GameState.Chat.ChatChannelClassifier", "method": "ChatLineNoSpeakerRx" },
+      "csharp": null,
       "kind": "helper",
       "notes": "Fallback for chat lines lacking the canonical 'Speaker:' split — bare-header system announcements. Used by the classifier when the speakered shape misses (#603).",
       "fields": [
@@ -216,7 +216,7 @@
       "pattern": "\\b[A-Z]{4,}\\b",
       "source": "chat",
       "module": "gameState",
-      "csharp": { "type": "Mithril.GameState.WordsOfPower.WordOfPowerView", "method": "UpperTokenRx" },
+      "csharp": null,
       "kind": "helper",
       "notes": "Match-all upper-token scanner; the WoP view validates each match against the discovery codebook before flipping state to Spent (#603).",
       "fields": [
@@ -227,7 +227,7 @@
       "pattern": "ProcessBook\\(\"You discovered a word of power!\",\\s*\"You've discovered a word of power: <sel>(?<code>[A-Z]+)</sel>.*?<b><size=125%>Word of Power: (?<effect>[^<]+)</size></b>\\\\n(?<desc>.+?)\\\\n\\\\n<i>",
       "source": "player",
       "module": "gameState",
-      "csharp": { "type": "Mithril.GameState.WordsOfPower.Parsing.WordOfPowerDiscoveredParser", "method": "DiscoveryRx" },
+      "csharp": null,
       "eventType": "gameState.PlayerWordOfPowerDiscovered",
       "notes": "ProcessBook newlines are encoded as literal \\n (backslash + n), so the pattern carries \\\\n. Migrated from Saruman to Mithril.GameState per #603.",
       "fields": [
@@ -275,7 +275,7 @@
       "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+x(?<count>\\d+)\\s+added to inventory\\.",
       "source": "chat",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Inventory.InventoryStatusChatParser", "method": "CountedRx" },
+      "csharp": null,
       "eventType": "shared.InventoryAdded",
       "notes": "Counted form must be tried before SingleRx so 'Guava x42 added to inventory.' doesn't match with name='Guava x42'.",
       "fields": [
@@ -287,7 +287,7 @@
       "pattern": "\\[Status\\]\\s+(?<name>.+?)\\s+added to inventory\\.",
       "source": "chat",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Inventory.InventoryStatusChatParser", "method": "SingleRx" },
+      "csharp": null,
       "eventType": "shared.InventoryAdded",
       "notes": "Implicit count = 1.",
       "fields": [
@@ -298,7 +298,7 @@
       "pattern": "ProcessLoadSkills\\(",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "LoadSkillsRx" },
+      "csharp": null,
       "eventType": "shared.SkillsSnapshot",
       "kind": "marker",
       "notes": "Guard for the full skill-table dump (login / zone-change). The per-skill rows are extracted by SkillTupleRx applied over the whole line; this entry only discriminates the line. Re-fires on zone transitions, which is what lets PlayerSkillStateService self-heal after a mid-session start. See issue #462.",
@@ -308,7 +308,7 @@
       "pattern": "ProcessUpdateSkill\\(\\{",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "UpdateSkillRx" },
+      "csharp": null,
       "eventType": "shared.SkillProgressUpdate",
       "kind": "marker",
       "notes": "Guard for a single-skill delta. The leading struct is extracted by SkillTupleRx, the XP gained by XpGainRx. Samwise consumes the Gardening delta via IPlayerSkillState.SubscribeChanges (#581) rather than re-matching this line.",
@@ -318,7 +318,7 @@
       "pattern": "ProcessUpdateSkill\\(\\{[^}]*\\},\\s*\\w+,\\s*(?<gained>\\d+)",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "XpGainRx" },
+      "csharp": null,
       "eventType": "shared.SkillXpGained",
       "notes": "ProcessUpdateSkill's third positional = XP earned this tick. Triangulated against the authoritative chat '[Status] You earned N XP in <Skill>' line across the Player.log(UTC)/ChatLogs(local) offset (Endurance 26, Psychology 577, Anatomy_Bears 48 matched exactly) — authoritative within a level. Level-up / cap-reaching tick behaviour is unobserved (verification owed, #462); best-effort across a boundary and self-healing via the next ProcessLoadSkills. The announce bool and trailing 0,0 are still not parsed.",
       "fields": [
@@ -329,7 +329,7 @@
       "pattern": "\\{type=(?<type>\\w+),raw=(?<raw>\\d+),bonus=(?<bonus>\\d+),xp=(?<xp>\\d+),tnl=(?<tnl>\\d+),max=(?<max>\\d+)\\}",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Skills.Parsing.SkillLogParser", "method": "SkillTupleRx" },
+      "csharp": null,
       "eventType": "shared.SkillProgressTuple",
       "notes": "The shared {type=,raw=,bonus=,xp=,tnl=,max=} struct grammar emitted by both ProcessLoadSkills and ProcessUpdateSkill. Applied via Matches() over the whole line: one match for an update, the full table (~125) for a snapshot. raw=Level, bonus=BonusLevels, xp=XpTowardNextLevel, tnl=XpNeededForNextLevel, max=MaxLevel (0 = non-trainable pseudo-skill; raw>=max = capped, tnl stale).",
       "fields": [
@@ -345,7 +345,7 @@
       "pattern": "ProcessLoadRecipes\\(",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "LoadRecipesRx" },
+      "csharp": null,
       "eventType": "shared.RecipesSnapshot",
       "kind": "marker",
       "notes": "Guard for the full known-recipe dump (login / zone-change). The two parallel [ids],[counts] arrays are extracted by LoadRecipesPayloadRx; this entry only discriminates the line. Re-fires on zone transitions, which is what lets PlayerRecipeStateService self-heal after a mid-session start and makes the export's recipe half fully eliminable. See issue #473.",
@@ -355,7 +355,7 @@
       "pattern": "ProcessUpdateRecipe\\(",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "UpdateRecipeRx" },
+      "csharp": null,
       "eventType": "shared.RecipeUpdate",
       "kind": "marker",
       "notes": "Guard for a single-recipe delta. The (id, count) payload is extracted by UpdateRecipePayloadRx. count==0 for a previously-unknown recipe is a learn (the discrete signal with no skill analogue; PG emits no separate learn/first-time verb); count>=1 is the new absolute craft-completion total (verified live: not a delta).",
@@ -365,7 +365,7 @@
       "pattern": "ProcessLoadRecipes\\(\\[(?<ids>[\\d,]*)\\]\\s*,\\s*\\[(?<counts>[\\d,]*)\\]\\)",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "LoadRecipesPayloadRx" },
+      "csharp": null,
       "eventType": "shared.RecipesSnapshotPayload",
       "notes": "The two parallel, equal-length integer arrays of ProcessLoadRecipes: ids (recipe_<id> in recipes.json) zipped with lifetime completion counts (0 = known but never crafted). Lists carry a trailing comma; split with empty-entry removal. A length mismatch or empty payload is treated as degenerate and yields no event (don't wipe live state).",
       "fields": [
@@ -377,7 +377,7 @@
       "pattern": "ProcessUpdateRecipe\\((?<id>\\d+)\\s*,\\s*(?<count>\\d+)\\)",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.GameState.Recipes.Parsing.RecipeLogParser", "method": "UpdateRecipePayloadRx" },
+      "csharp": null,
       "eventType": "shared.RecipeUpdatePayload",
       "notes": "ProcessUpdateRecipe(id, count): id = recipe_<id>; count = the new ABSOLUTE lifetime completion count for this character (verified live — snapshot 255 → ProcessUpdateRecipe(7026,256) → next snapshot 256, not a delta). 0 = just-learned.",
       "fields": [

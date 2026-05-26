@@ -60,6 +60,24 @@ Modules are discovered at runtime via reflection from the `modules/` folder (`Sh
 
 This table is purpose-only and non-exhaustive (Silmarillion and Celebrimbor also ship). **Before proposing or building work for a module, read [docs/module-charters.md](docs/module-charters.md)** — it records each module's responsibility *boundaries* (what it explicitly does **not** own, and why). A data-availability gap is not a feature unless it serves the module's charter.
 
+### Arda Pipeline (sole log-processing engine)
+
+Arda is a deterministic log-replay and live world-state tracking engine organised in five layers:
+
+| Layer | Project(s) | Responsibility |
+|---|---|---|
+| L0 | `Arda.Ingest` | Tails `Player.log` + `ChatLogs/*.log` via `ILogLineSource` |
+| L1 | `Arda.Ingest` | Span-based zero-alloc line parsing, string interning |
+| L2 | `Arda.Dispatch` | `VerbExtractor` + `FrozenDictionary` dispatch table |
+| L3 | `Arda.World.Player`, `Arda.World.Chat` | Stateful `IFrameHandler` implementations; emit domain events via `IDomainEventBus` |
+| L4 | `Arda.Composition` | Cross-source composers (session fusion, inventory correlation, word-of-power) |
+
+`Arda.Hosting` bootstraps the pipeline and exposes `ArdaOptions` for DI. `Arda.Contracts` holds the public domain events, state interfaces (`ISessionState`, `IAreaState`, `IPlayerState`, `IChatSessionState`), and subscriber/publisher contracts (`IDomainEventSubscriber`, `IDomainEventPublisher`).
+
+Modules consume Arda via `IDomainEventSubscriber` and the read-only state interfaces — they never reference the internal handler or dispatch types.
+
+> **Legacy L0/L1 pipeline.** `IPlayerLogStream`, `IChatLogStream`, `ILogStreamDriver`, and `LogStreamAttentionSource` still exist in `Mithril.Shared` for the subscription-health badge. Follow-on work will retire them once Arda exposes equivalent health signaling.
+
 ### Shell Bootstrap (Program.cs)
 
 Single-instance mutex guard &rarr; game root detection &rarr; settings load &rarr; `IHost` build &rarr; eager module gates opened &rarr; WPF `App.Run()`. Second-instance attempts raise the existing window via `EventWaitHandle`.
@@ -79,7 +97,7 @@ DI is composed via extension methods in `Mithril.Shared/DependencyInjection/Serv
 
 - **MVVM with CommunityToolkit.Mvvm** source generators (`[ObservableProperty]`, `[RelayCommand]`)
 - **Settings classes** implement `INotifyPropertyChanged` with source-generated JSON serialization contexts (not reflection)
-- **Log parsing**: implement `ILogParser.TryParse(string line, DateTime timestamp)` returning a `LogEvent?`; state machines consume events from `IPlayerLogStream`/`IChatLogStream`
+- **Log parsing**: Arda L3 handlers implement `IFrameHandler.Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)` with span-based zero-alloc parsing and emit domain events via `IDomainEventPublisher`. Module-level consumers subscribe via `IDomainEventSubscriber`
 - **HostedServices** for background work; gated behind `ModuleGate.WaitAsync()` for lazy modules
 - **WPF resources** shared via `Mithril.Shared.Wpf/Resources.xaml`; icons from MahApps Lucide icon pack
 - **Before editing any `*.xaml` or writing a new view, read [docs/wpf-gotchas.md](docs/wpf-gotchas.md)** — catalogues runtime-only WPF traps (hit-testing, null-leak templates, binding-mode defaults, `ItemContainerStyle` rules, etc.) that build green + tests green but break the UI silently.

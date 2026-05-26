@@ -2,7 +2,7 @@ using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using System.IO;
 using FluentAssertions;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
 using Mithril.Shared.Reference;
 using Smaug.Domain;
 using Xunit;
@@ -19,7 +19,7 @@ public sealed class PriceCalibrationReplayTests
         try { Directory.Delete(dir, recursive: true); } catch { /* best-effort */ }
     }
 
-    private static PriceCalibrationService BuildService(string dataDir, FakeSession? session = null) =>
+    private static PriceCalibrationService BuildService(string dataDir, FakeSessionComposer? session = null) =>
         new(refData: new FakeRefData(), dataDir, session: session);
 
     private static DateTimeOffset Ts(int hour, int min) =>
@@ -31,7 +31,7 @@ public sealed class PriceCalibrationReplayTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("smaug_test");
         try
         {
-            var session = new FakeSession("char|2026-05-11T12:25:04Z");
+            var session = new FakeSessionComposer("char|2026-05-11T12:25:04Z");
             var svc = BuildService(dir, session);
 
             // Live ingestion of one sell, then replay of the same (Mithril
@@ -56,7 +56,7 @@ public sealed class PriceCalibrationReplayTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("smaug_test");
         try
         {
-            var session = new FakeSession("char|2026-05-11T12:25:04Z");
+            var session = new FakeSessionComposer("char|2026-05-11T12:25:04Z");
             var svc = BuildService(dir, session);
 
             svc.RecordObservation("NPC_Therese", "BottleOfWater", 100, "Neutral", 0, Ts(13, 0));
@@ -78,7 +78,7 @@ public sealed class PriceCalibrationReplayTests
         var dir = Mithril.TestSupport.TestPaths.CreateTempDir("smaug_test");
         try
         {
-            var session = new FakeSession("char|2026-05-11T12:25:04Z");
+            var session = new FakeSessionComposer("char|2026-05-11T12:25:04Z");
             var ts = Ts(13, 0);
 
             var first = BuildService(dir, session);
@@ -134,23 +134,16 @@ public sealed class PriceCalibrationReplayTests
         }
     }
 
-    private sealed class FakeSession : IGameSessionService
+    private sealed class FakeSessionComposer : ISessionComposer
     {
-        public GameSession? Current { get; private set; }
-        public event EventHandler<GameSession>? SessionStarted;
-        public FakeSession(string sessionId) { Set(sessionId); }
+        public ComposedSession? Current { get; private set; }
+        public FakeSessionComposer(string sessionId) { Set(sessionId); }
         public void Set(string sessionId)
         {
-            Current = new GameSession(sessionId, "char",
-                new DateTime(2026, 5, 11, 12, 25, 4, DateTimeKind.Utc), TimeSpan.Zero);
-            SessionStarted?.Invoke(this, Current);
+            Current = new ComposedSession("char", null,
+                new DateTimeOffset(2026, 5, 11, 12, 25, 4, TimeSpan.Zero),
+                TimeSpan.Zero, sessionId);
         }
-        public IDisposable Subscribe(Action<GameSession> handler)
-        {
-            if (Current is not null) handler(Current);
-            return new Sub();
-        }
-        private sealed class Sub : IDisposable { public void Dispose() { } }
     }
 
     private sealed class FakeRefData : IReferenceDataService

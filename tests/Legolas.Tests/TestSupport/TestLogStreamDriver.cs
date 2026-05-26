@@ -17,11 +17,9 @@ namespace Legolas.Tests.TestSupport;
 /// what <c>PlayerLogIngestionService</c> consumes; other pipes throw on
 /// subscribe so a misrouted test fails loud rather than hangs silently.</para>
 ///
-/// <para>Modelled on the archetype-A
-/// <c>Mithril.GameState.Tests.TestSupport.TestLogStreamDriver</c>; kept
-/// local to Legolas.Tests rather than linked across because the next
-/// archetype-B migration will add per-consumer needs (idempotence policy
-/// per #549, fault SM thresholds) that diverge from the GameState shape.
+/// <para>Kept local to Legolas.Tests because per-consumer needs
+/// (idempotence policy per #549, fault SM thresholds) diverge from a
+/// shared abstraction.
 /// One file per consumer test suite is cheaper than one shared abstraction
 /// per knob.</para>
 /// </summary>

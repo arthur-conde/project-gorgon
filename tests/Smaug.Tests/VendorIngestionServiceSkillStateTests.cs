@@ -3,7 +3,7 @@ using Arda.Dispatch;
 using Arda.World.Player;
 using Arda.World.Player.Events;
 using FluentAssertions;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
@@ -152,7 +152,7 @@ public sealed class VendorIngestionServiceSkillStateTests
         {
             var tempDir = Mithril.TestSupport.TestPaths.CreateTempDir("smaug_arda_test");
             var refData = new FakeRefData();
-            var session = new FakeSession("char|2026-05-19T20:00:00Z");
+            var session = new FakeSessionComposer("char|2026-05-19T20:00:00Z");
             var calibration = new PriceCalibrationService(refData, tempDir, session: session);
             var context = new VendorSellContext();
             var bus = new FakeDomainEventSubscriber();
@@ -218,22 +218,15 @@ public sealed class VendorIngestionServiceSkillStateTests
             _skills[name] = new ArdaSkillEntry(raw, bonus, 0, 0, 0);
     }
 
-    private sealed class FakeSession : IGameSessionService
+    private sealed class FakeSessionComposer : ISessionComposer
     {
-        public GameSession? Current { get; private set; }
-        public event EventHandler<GameSession>? SessionStarted;
-        public FakeSession(string sessionId)
+        public ComposedSession? Current { get; }
+        public FakeSessionComposer(string sessionId)
         {
-            Current = new GameSession(sessionId, "char",
-                new DateTime(2026, 5, 19, 20, 0, 0, DateTimeKind.Utc), TimeSpan.Zero);
+            Current = new ComposedSession("char", null,
+                new DateTimeOffset(2026, 5, 19, 20, 0, 0, TimeSpan.Zero),
+                TimeSpan.Zero, sessionId);
         }
-        public IDisposable Subscribe(Action<GameSession> handler)
-        {
-            if (Current is not null) handler(Current);
-            return new NoopDisposable();
-        }
-        private sealed class NoopDisposable : IDisposable { public void Dispose() { } }
-        private void RaiseUnused() => SessionStarted?.Invoke(this, Current!);
     }
 
     private sealed class FakeRefData : IReferenceDataService

@@ -6,7 +6,6 @@ using System.Windows;
 using System.Windows.Interop;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
-using Mithril.GameState.DependencyInjection;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics.Performance;
 using Mithril.Shared.Game;

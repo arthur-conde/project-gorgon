@@ -1,21 +1,30 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
     <IsPackable>false</IsPackable>
-    <RootNamespace>Smaug.Tests</RootNamespace>
-    <NoWarn>$(NoWarn);CS0618</NoWarn>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
+
   <ItemGroup>
+    <PackageReference Include="FluentAssertions" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
-    <PackageReference Include="FluentAssertions" />
   </ItemGroup>
+
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Arda\Arda.Inventory\Arda.Inventory.csproj" />
     <ProjectReference Include="..\..\src\Arda\Arda.Contracts\Arda.Contracts.csproj" />
-    <ProjectReference Include="..\..\src\Arda\Arda.Composition\Arda.Composition.csproj" />
-    <ProjectReference Include="..\..\src\Smaug.Module\Smaug.Module.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.GameReports\Mithril.GameReports.csproj" />
+    <ProjectReference Include="..\..\src\Mithril.Reference\Mithril.Reference.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\TestSupport\FakeReferenceData.cs"
+             Link="TestSupport\FakeReferenceData.cs" />
+  </ItemGroup>
+
 </Project>

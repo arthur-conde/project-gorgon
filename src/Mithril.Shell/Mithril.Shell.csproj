@@ -32,13 +32,6 @@
       <_Parameter1>MithrilUpdateChannel</_Parameter1>
       <_Parameter2>$(MithrilUpdateChannel)</_Parameter2>
     </AssemblyAttribute>
-    <!--
-      Friend assembly: #696 Call 2 merger-lifecycle tests call the internal
-      AddWorldMergerStart() extension to compose partial stacks with a live
-      merger. Picked over a parallel AddWorldMergerStartForTesting() extension
-      so production and test composition share the same code path and can't
-      drift silently. Issue #696 ratification (docs/world-simulator.md §Call 2).
-    -->
     <InternalsVisibleTo Include="Mithril.Shell.Tests" />
   </ItemGroup>
   <ItemGroup>
@@ -66,6 +59,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Arda\Arda.Composition\Arda.Composition.csproj" />
+    <ProjectReference Include="..\Arda\Arda.Inventory\Arda.Inventory.csproj" />
     <ProjectReference Include="..\Arda\Arda.World.Player\Arda.World.Player.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <!-- Foundation-layer assembly for character export reports (storage/vault
@@ -76,12 +70,6 @@
          module loader to resolve. -->
     <ProjectReference Include="..\Mithril.GameReports\Mithril.GameReports.csproj" />
     <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
-    <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
-    <!-- World-sim shells: Player (#616) was already referenced; Chat (#617) is
-         the new sibling, referenced explicitly per the "shell must
-         ProjectReference new shared libs" discipline so its DLL lands in
-         the app base dir for the reflection module loader to resolve. -->
-    <ProjectReference Include="..\Mithril.WorldSim.Chat\Mithril.WorldSim.Chat.csproj" />
     <!-- Shared leveling/planning libs. The shell must reference these so their
          DLLs land in the app base dir for the reflection module loader to resolve:
          modules not <ProjectReference>'d here (Celebrimbor) are copied as
