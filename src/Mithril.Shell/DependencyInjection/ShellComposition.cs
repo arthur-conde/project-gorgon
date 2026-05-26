@@ -114,7 +114,19 @@ public static class ShellComposition
                     return catalog.Shifts.Select(s => (s.Slug, s.StartHour)).ToList();
                 });
 
-        services.AddArdaComposition(o.CharactersRootDir);
+        services.AddArdaComposition(
+            o.CharactersRootDir,
+            recipeKeyResolverFactory: sp =>
+            {
+                var refData = sp.GetRequiredService<IReferenceDataService>();
+                return id =>
+                {
+                    var key = $"recipe_{id}";
+                    return refData.Recipes.TryGetValue(key, out var recipe)
+                        ? recipe.InternalName ?? key
+                        : key;
+                };
+            });
 
         services.AddSingleton<InventoryProjection>();
 
