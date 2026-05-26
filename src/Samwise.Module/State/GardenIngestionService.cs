@@ -1,5 +1,5 @@
 using System.Windows;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player.Events;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Settings;

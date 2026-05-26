@@ -2,6 +2,7 @@ using System.IO;
 using System.Text.Json;
 using Arda.Abstractions.Logs;
 using Arda.Composition;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
@@ -207,6 +208,10 @@ internal sealed class FakeSessionComposer : ISessionComposer
     public ComposedSession? Current => _server is not null
         ? new ComposedSession("Arthur", _server, DateTimeOffset.UtcNow, TimeSpan.Zero, "test-session")
         : null;
+
+#pragma warning disable CS0067
+    public event Action? StateChanged;
+#pragma warning restore CS0067
 
     public void SetServer(string server) => _server = server;
     public void Clear() => _server = null;

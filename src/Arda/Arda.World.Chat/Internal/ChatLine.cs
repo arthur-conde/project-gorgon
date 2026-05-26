@@ -1,4 +1,5 @@
 using Arda.Abstractions.Logs;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 
@@ -6,8 +7,9 @@ namespace Arda.World.Chat.Internal;
 
 /// <summary>
 /// Handles <c>CHAT_PLAYER_LINE</c> — parses <c>[Channel] Speaker: text</c> into
-/// its components. Tier 2 passthrough: no state retained, just re-emits as a
-/// typed domain event for downstream subscribers.
+/// its components. Channel and Speaker are interned (Tier 1); Text is a
+/// zero-copy <see cref="ReadOnlyMemory{T}"/> slice of <paramref name="sourceLog"/>
+/// (Tier 2).
 /// </summary>
 internal sealed class ChatLine : IFrameHandler
 {
@@ -17,7 +19,6 @@ internal sealed class ChatLine : IFrameHandler
 
     public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
-        // args is the full line: "[Trade] Emraell: WTS something"
         if (args.Length < 3 || args[0] != '[')
             return;
 
@@ -27,22 +28,23 @@ internal sealed class ChatLine : IFrameHandler
 
         var channel = args[1..closeBracket];
 
-        // After "] " is "Speaker: text"
         var afterChannel = args[(closeBracket + 1)..];
-        if (afterChannel.Length > 0 && afterChannel[0] == ' ')
-            afterChannel = afterChannel[1..];
+        int skipSpace = afterChannel.Length > 0 && afterChannel[0] == ' ' ? 1 : 0;
+        afterChannel = afterChannel[skipSpace..];
 
         var colonSpace = afterChannel.IndexOf(": ");
         if (colonSpace <= 0)
             return;
 
-        var speaker = afterChannel[..colonSpace];
-        var text = afterChannel[(colonSpace + 2)..];
+        if (!sourceLog.AsSpan().Overlaps(args, out int argsOffset))
+            return;
+
+        int textStart = argsOffset + closeBracket + 1 + skipSpace + colonSpace + 2;
 
         _bus.Publish(new PlayerChatLine(
-            channel.ToString(),
-            speaker.ToString(),
-            text.ToString(),
+            string.Intern(channel.ToString()),
+            string.Intern(afterChannel[..colonSpace].ToString()),
+            sourceLog.AsMemory(textStart),
             metadata));
     }
 }

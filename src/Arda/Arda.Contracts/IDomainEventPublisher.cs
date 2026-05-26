@@ -1,4 +1,4 @@
-namespace Arda.Dispatch;
+namespace Arda.Contracts;
 
 /// <summary>
 /// Write-only view of the domain event bus. Internal Arda handlers use this

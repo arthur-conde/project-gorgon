@@ -1,6 +1,6 @@
 using System.IO;
 using Arda.Abstractions.Logs;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player.Events;
 using FluentAssertions;
 using Mithril.Shared.Audio;

@@ -42,7 +42,7 @@ public sealed class PriceCalibrationReplayTests
 
             svc.Data.Observations.Should().HaveCount(1,
                 "second call has the same session + log-line timestamp → key collision");
-            svc.Data.Observations[0].SessionId.Should().Be(session.Current!.SessionId);
+            svc.Data.Observations[0].SessionId.Should().Be(session.Current!.Value.SessionId);
         }
         finally
         {
@@ -137,6 +137,9 @@ public sealed class PriceCalibrationReplayTests
     private sealed class FakeSessionComposer : ISessionComposer
     {
         public ComposedSession? Current { get; private set; }
+#pragma warning disable CS0067
+        public event Action? StateChanged;
+#pragma warning restore CS0067
         public FakeSessionComposer(string sessionId) { Set(sessionId); }
         public void Set(string sessionId)
         {

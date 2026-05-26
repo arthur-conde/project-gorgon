@@ -7,7 +7,7 @@ namespace Arda.World.Player;
 /// Consumers needing change notifications subscribe to the corresponding domain
 /// events (<see cref="AreaChanged"/>, <see cref="PlayerPositionChanged"/>,
 /// <see cref="WeatherChanged"/>, <see cref="MapPinAdded"/>, <see cref="MapPinRemoved"/>)
-/// via <see cref="Arda.Dispatch.IDomainEventSubscriber"/>.
+/// via <see cref="Arda.Contracts.IDomainEventSubscriber"/>.
 /// </summary>
 public interface IMapState
 {

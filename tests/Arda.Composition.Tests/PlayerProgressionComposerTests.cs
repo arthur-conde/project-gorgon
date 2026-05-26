@@ -1,6 +1,7 @@
 using Arda.Abstractions.Logs;
 using Arda.Composition.Events;
 using Arda.Composition.Internal;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Player;
 using Arda.World.Player.Events;
@@ -233,7 +234,7 @@ public class PlayerProgressionComposerTests : IDisposable
 
         var session = new ComposedSession("Alice", "TestServer",
             T0.AddMinutes(5), TimeSpan.Zero, "Alice:20260526120500");
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0.AddMinutes(5))));
 
         _composer.Skills.Should().NotBeEmpty("skills are not cleared on session — live data persists");
     }
@@ -243,7 +244,7 @@ public class PlayerProgressionComposerTests : IDisposable
     {
         var session = new ComposedSession("Alice", "TestServer",
             T0, TimeSpan.Zero, "Alice:20260526120000");
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
         _playerState.SetSkills(new Dictionary<string, SkillEntry>
         {
@@ -254,7 +255,7 @@ public class PlayerProgressionComposerTests : IDisposable
         var changeCount = 0;
         _composer.StateChanged += () => changeCount++;
 
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
         changeCount.Should().Be(0, "same session does not trigger reload");
     }
@@ -264,14 +265,14 @@ public class PlayerProgressionComposerTests : IDisposable
     {
         var session1 = new ComposedSession("Alice", "TestServer",
             T0, TimeSpan.Zero, "Alice:20260526120000");
-        _bus.Publish(new SessionEstablished(session1));
+        _bus.Publish(new SessionEstablished(session1, Meta(T0)));
 
         var fired = false;
         _composer.StateChanged += () => fired = true;
 
         var session2 = new ComposedSession("Bob", "TestServer",
             T0.AddMinutes(10), TimeSpan.Zero, "Bob:20260526121000");
-        _bus.Publish(new SessionEstablished(session2));
+        _bus.Publish(new SessionEstablished(session2, Meta(T0.AddMinutes(10))));
 
         fired.Should().BeTrue();
     }
@@ -294,7 +295,7 @@ public class PlayerProgressionComposerTests : IDisposable
             {
                 var session = new ComposedSession("Alice", "Server1",
                     T0, TimeSpan.Zero, "Alice:20260526120000");
-                _bus.Publish(new SessionEstablished(session));
+                _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
                 _playerState.SetSkills(new Dictionary<string, SkillEntry>
                 {
@@ -317,7 +318,7 @@ public class PlayerProgressionComposerTests : IDisposable
 
             var session2 = new ComposedSession("Alice", "Server1",
                 T0.AddHours(1), TimeSpan.Zero, "Alice:20260526130000");
-            _bus.Publish(new SessionEstablished(session2));
+            _bus.Publish(new SessionEstablished(session2, Meta(T0.AddHours(1))));
 
             composer2.Skills.Should().ContainKey("Gardening");
             composer2.Skills["Gardening"].Level.Should().Be(62);
@@ -348,7 +349,7 @@ public class PlayerProgressionComposerTests : IDisposable
             {
                 var session = new ComposedSession("Alice", "Server1",
                     T0, TimeSpan.Zero, "Alice:20260526120000");
-                _bus.Publish(new SessionEstablished(session));
+                _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
                 _playerState.SetSkills(new Dictionary<string, SkillEntry>
                 {
@@ -371,7 +372,7 @@ public class PlayerProgressionComposerTests : IDisposable
 
             var session2 = new ComposedSession("Alice", "Server1",
                 T0.AddHours(1).AddSeconds(1), TimeSpan.Zero, "Alice:20260526130001");
-            _bus.Publish(new SessionEstablished(session2));
+            _bus.Publish(new SessionEstablished(session2, Meta(T0.AddHours(1).AddSeconds(1))));
 
             composer2.Skills.Should().HaveCount(2, "persisted Tanning should be merged");
             composer2.Skills["Gardening"].Level.Should().Be(63, "live value wins");

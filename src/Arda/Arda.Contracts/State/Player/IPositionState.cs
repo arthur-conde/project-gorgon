@@ -5,7 +5,7 @@ namespace Arda.World.Player;
 /// per-area frame: X/Z ground plane, Y elevation, signed. <c>null</c> before the
 /// first <c>ProcessNewPosition</c> or <c>ProcessAddPlayer</c> of the session.
 /// Consumers needing live change notifications subscribe to
-/// <see cref="Events.PlayerPositionChanged"/> via <see cref="Arda.Dispatch.IDomainEventSubscriber"/>.
+/// <see cref="Events.PlayerPositionChanged"/> via <see cref="Arda.Contracts.IDomainEventSubscriber"/>.
 /// </summary>
 public interface IPositionState
 {

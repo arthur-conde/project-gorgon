@@ -14,7 +14,7 @@ namespace Gandalf.Tests.Services;
 /// <summary>
 /// Regression tests for the Arda-native <see cref="LootIngestionService"/>.
 /// The service subscribes to domain events via
-/// <see cref="Arda.Dispatch.IDomainEventSubscriber"/> and routes them into
+/// <see cref="Arda.Contracts.IDomainEventSubscriber"/> and routes them into
 /// <see cref="LootBracketTracker"/> (chest discrimination) and
 /// <see cref="LootSource"/> (boss-kill auto-discovery via retained parsers).
 /// </summary>

@@ -48,7 +48,7 @@ public sealed class SamwiseModule : IMithrilModule
             sp.GetRequiredService<GardenStateMachine>(),
             sp.GetRequiredService<SamwiseSettings>(),
             sp.GetRequiredService<Mithril.Shared.Audio.IAudioPlaybackSink>(),
-            bus: sp.GetService<Arda.Dispatch.IDomainEventSubscriber>()));
+            bus: sp.GetService<Arda.Contracts.IDomainEventSubscriber>()));
 
         // Global preferences stay app-wide.
         services.AddMithrilSettings<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings);

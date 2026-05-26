@@ -1,5 +1,5 @@
 using Arda.Abstractions.Logs;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
 using FluentAssertions;

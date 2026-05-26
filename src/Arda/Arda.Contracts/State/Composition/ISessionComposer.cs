@@ -5,7 +5,7 @@ namespace Arda.Composition;
 /// <see cref="Arda.World.Player.Events.SessionStarted"/> (player log) +
 /// <see cref="Arda.World.Chat.Events.ChatSessionIdentified"/> (chat log).
 /// </summary>
-public sealed record ComposedSession(
+public readonly record struct ComposedSession(
     string CharacterName,
     string? Server,
     DateTimeOffset LoggedInAt,
@@ -20,4 +20,7 @@ public interface ISessionComposer
 {
     /// <summary>Current session, or <c>null</c> before first login is observed.</summary>
     ComposedSession? Current { get; }
+
+    /// <summary>Fires after any mutation (session established or updated).</summary>
+    event Action? StateChanged;
 }

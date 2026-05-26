@@ -1,5 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
 using Gandalf.Domain;

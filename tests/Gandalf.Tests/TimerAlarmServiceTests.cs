@@ -15,7 +15,7 @@ namespace Gandalf.Tests;
 /// Acceptance tests for <see cref="TimerAlarmService"/> mode-gating.
 /// Post-Arda, the replay gate uses <c>_isReplaying</c> tracked via
 /// <see cref="CalendarTimeAdvanced"/> events on the
-/// <see cref="Arda.Dispatch.IDomainEventSubscriber"/> bus.
+/// <see cref="Arda.Contracts.IDomainEventSubscriber"/> bus.
 /// </summary>
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]

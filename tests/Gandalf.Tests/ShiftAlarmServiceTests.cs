@@ -12,7 +12,7 @@ namespace Gandalf.Tests;
 /// <summary>
 /// Coverage for <see cref="ShiftAlarmService"/> (Arda migration).
 /// The service subscribes to <see cref="TimeOfDayShifted"/> domain events
-/// via <see cref="Arda.Dispatch.IDomainEventSubscriber"/>; the test
+/// via <see cref="Arda.Contracts.IDomainEventSubscriber"/>; the test
 /// fixture pushes synthetic shifts through the test hook directly.
 /// </summary>
 public class ShiftAlarmServiceTests

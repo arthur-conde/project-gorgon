@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
 using Gandalf.Domain;

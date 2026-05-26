@@ -1,4 +1,4 @@
-namespace Arda.Dispatch;
+namespace Arda.Contracts;
 
 /// <summary>
 /// Read-only view of the domain event bus. Modules and external consumers

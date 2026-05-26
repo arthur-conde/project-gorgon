@@ -14,7 +14,7 @@ namespace Gandalf.Tests;
 /// <summary>
 /// Acceptance coverage for <see cref="TimerExpirationDriver"/> (Arda migration).
 /// The driver subscribes to <see cref="CalendarTimeAdvanced"/> domain events via
-/// <see cref="Arda.Dispatch.IDomainEventSubscriber"/> and forwards each event's
+/// <see cref="Arda.Contracts.IDomainEventSubscriber"/> and forwards each event's
 /// <see cref="CalendarTimeAdvanced.Now"/> into
 /// <see cref="TimerProgressService.CheckExpirations(DateTimeOffset)"/>.
 /// </summary>

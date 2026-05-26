@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;

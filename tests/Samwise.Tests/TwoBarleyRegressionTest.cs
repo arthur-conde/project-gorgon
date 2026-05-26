@@ -12,32 +12,34 @@ namespace Samwise.Tests;
 
 /// <summary>
 /// End-to-end regression for the original bug report. Replays the literal
-/// Player.log lines from 20:48:30–20:50:24 through the real parser and the
-/// real state machine; asserts that both simultaneous Barley plants identify
-/// as Barley (the old code reported one as Squash).
+/// Player.log lines from 20:48:30–20:50:24 through the state machine;
+/// asserts that both simultaneous Barley plants identify as Barley (the old
+/// code reported one as Squash).
 /// </summary>
-public class TwoBarleyRegressionTest
+public partial class TwoBarleyRegressionTest
 {
-    private static readonly Regex AddItemRx = new(@"ProcessAddItem\((\w+)\((\d+)\)", RegexOptions.CultureInvariant);
-    private static readonly Regex DeleteItemRx = new(@"ProcessDeleteItem\((\d+)\)", RegexOptions.CultureInvariant);
+    [GeneratedRegex(@"ProcessAddItem\((\w+)\((\d+)\)", RegexOptions.CultureInvariant)]
+    private static partial Regex AddItemRx();
+    [GeneratedRegex(@"ProcessDeleteItem\((\d+)\)", RegexOptions.CultureInvariant)]
+    private static partial Regex DeleteItemRx();
+    [GeneratedRegex(@"ProcessSetPetOwner\((\d+),", RegexOptions.CultureInvariant)]
+    private static partial Regex SetPetOwnerRx();
+    [GeneratedRegex(@"Download appearance loop @(\w+)\(scale=([\d.]+)\)", RegexOptions.CultureInvariant)]
+    private static partial Regex AppearanceRx();
+    [GeneratedRegex(@"ProcessUpdateDescription\((\d+),\s*""([^""]+)"",\s*""([^""]*)"",\s*""([^""]+)"",\s*\w+,\s*""\w+\(Scale=([\d.]+)\)"",\s*\d+\)", RegexOptions.CultureInvariant)]
+    private static partial Regex UpdateDescRx();
+    [GeneratedRegex(@"ProcessUpdateItemCode\((\d+)", RegexOptions.CultureInvariant)]
+    private static partial Regex UpdateItemCodeRx();
 
-    /// <summary>
-    /// Mirror of <c>GardenIngestionService</c>'s log handling: parser-emitted
-    /// events go straight in; ProcessAddItem/ProcessDeleteItem are sourced via
-    /// <c>IPlayerWorld.Bus</c>'s <c>PlayerInventoryAdded</c> /
-    /// <c>PlayerInventoryRemoved</c> change events in production (post-#725),
-    /// so we simulate the same id+InternalName projection here.
-    /// </summary>
-    private static void Feed(GardenStateMachine sm, GardenLogParser parser, string line, DateTime ts)
+    private static void Feed(GardenStateMachine sm, string line, DateTime ts)
     {
-        var evt = parser.TryParse(line, ts);
-        if (evt is GardenEvent ge) { sm.Apply(ge); return; }
-
-        var add = AddItemRx.Match(line);
-        if (add.Success) { sm.Apply(new AddItem(ts, add.Groups[2].Value, add.Groups[1].Value)); return; }
-
-        var del = DeleteItemRx.Match(line);
-        if (del.Success) sm.Apply(new DeleteItem(ts, del.Groups[1].Value));
+        Match m;
+        if ((m = SetPetOwnerRx().Match(line)).Success) { sm.Apply(new SetPetOwner(ts, m.Groups[1].Value)); return; }
+        if ((m = AppearanceRx().Match(line)).Success) { sm.Apply(new AppearanceLoop(ts, m.Groups[1].Value, double.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture))); return; }
+        if ((m = UpdateDescRx().Match(line)).Success) { sm.Apply(new UpdateDescription(ts, m.Groups[1].Value, m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value, double.Parse(m.Groups[5].Value, System.Globalization.CultureInfo.InvariantCulture))); return; }
+        if ((m = UpdateItemCodeRx().Match(line)).Success) { sm.Apply(new UpdateItemCode(ts, m.Groups[1].Value)); return; }
+        if ((m = AddItemRx().Match(line)).Success) { sm.Apply(new AddItem(ts, m.Groups[2].Value, m.Groups[1].Value)); return; }
+        if ((m = DeleteItemRx().Match(line)).Success) { sm.Apply(new DeleteItem(ts, m.Groups[1].Value)); return; }
     }
 
     [Fact]
@@ -47,7 +49,6 @@ public class TwoBarleyRegressionTest
         // Plot 803506 was planted as the player's last Squash seedling; the
         // game emits ProcessDeleteItem (not UpdateItemCode) when the stack
         // reaches zero. Without DeleteItem handling the plot stays "Unknown".
-        var parser = new GardenLogParser();
         var cfg = new InMemoryCropConfigStore();
         var ac = new FakeActiveCharacterService();
         ac.SetActiveCharacter("Emraell", "");
@@ -64,7 +65,7 @@ public class TwoBarleyRegressionTest
         };
 
         foreach (var (line, ts) in logLines)
-            Feed(sm, parser, line, ts);
+            Feed(sm, line, ts);
 
         sm.Snapshot()["Emraell"]["803506"].CropType.Should().Be("Squash");
     }
@@ -72,14 +73,12 @@ public class TwoBarleyRegressionTest
     [Fact]
     public void TwoSimultaneousBarleyPlants_BothIdentifyCorrectly()
     {
-        var parser = new GardenLogParser();
         var cfg = new InMemoryCropConfigStore();
         var refData = new BarleyOnlyReferenceData();
         var ac = new FakeActiveCharacterService();
         ac.SetActiveCharacter("Hits", "");
         var sm = new GardenStateMachine(cfg, referenceData: refData, activeChar: ac);
 
-        // Real Player.log slice covering the seed AddItem + the two plants.
         var logLines = new[]
         {
             ("[18:38:42] LocalPlayer: ProcessAddPlayer(123, 999, \"PlayerModelDescriptor\", \"Hits\", 0)", new DateTime(2026, 4, 15, 18, 38, 42, DateTimeKind.Utc)),
@@ -96,7 +95,7 @@ public class TwoBarleyRegressionTest
         };
 
         foreach (var (line, ts) in logLines)
-            Feed(sm, parser, line, ts);
+            Feed(sm, line, ts);
 
         var plots = sm.Snapshot()["Hits"];
         plots.Should().ContainKey("590342");
@@ -115,7 +114,6 @@ public class TwoBarleyRegressionTest
         // GardenStateMachine input property (the in-memory ledger semantics),
         // NOT the bus-delivery path; see GardenIngestionServiceBusDeliveryTests
         // for the consumer-side bus integration guard added under #725.
-        var parser = new GardenLogParser();
         var cfg = new InMemoryCropConfigStore();
         var ac = new FakeActiveCharacterService();
         ac.SetActiveCharacter("Hits", "");
@@ -126,9 +124,9 @@ public class TwoBarleyRegressionTest
             ItemId: "86940428",
             ItemName: "BarleySeeds"));
 
-        Feed(sm, parser, "[20:50:22] LocalPlayer: ProcessSetPetOwner(590342, 588755, PassiveFollow)",
+        Feed(sm, "[20:50:22] LocalPlayer: ProcessSetPetOwner(590342, 588755, PassiveFollow)",
             new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc));
-        Feed(sm, parser, "[20:50:22] LocalPlayer: ProcessUpdateItemCode(86940428, 796683, True)",
+        Feed(sm, "[20:50:22] LocalPlayer: ProcessUpdateItemCode(86940428, 796683, True)",
             new DateTime(2026, 4, 15, 20, 50, 22, DateTimeKind.Utc));
 
         sm.Snapshot()["Hits"]["590342"].CropType

@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
-using Arda.Dispatch;
+using Arda.Contracts;
 
 using Arwen.Domain;
 using Mithril.Shared.Character;

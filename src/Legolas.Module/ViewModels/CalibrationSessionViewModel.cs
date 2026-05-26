@@ -4,7 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Services;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player.Events;
 using Mithril.Shared.Reference;
 

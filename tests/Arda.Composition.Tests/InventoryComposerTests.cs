@@ -1,6 +1,7 @@
 using Arda.Abstractions.Logs;
 using Arda.Composition.Events;
 using Arda.Composition.Internal;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;

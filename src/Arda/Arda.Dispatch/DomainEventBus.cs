@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Arda.Contracts;
 using Microsoft.Extensions.Logging;
 
 namespace Arda.Dispatch;

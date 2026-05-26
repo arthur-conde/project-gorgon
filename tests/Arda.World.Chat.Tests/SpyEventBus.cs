@@ -1,3 +1,4 @@
+using Arda.Contracts;
 using Arda.Dispatch;
 
 namespace Arda.World.Chat.Tests;

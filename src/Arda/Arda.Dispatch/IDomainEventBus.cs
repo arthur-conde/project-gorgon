@@ -1,3 +1,5 @@
+using Arda.Contracts;
+
 namespace Arda.Dispatch;
 
 /// <summary>

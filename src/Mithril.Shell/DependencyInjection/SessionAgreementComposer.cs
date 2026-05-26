@@ -1,4 +1,4 @@
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
 using Mithril.Shared.Diagnostics;

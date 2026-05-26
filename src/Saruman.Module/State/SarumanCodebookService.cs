@@ -2,7 +2,7 @@ using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Arda.Composition;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
 
@@ -120,12 +120,13 @@ public sealed partial class SarumanCodebookService : IDisposable
 
     private void OnChatLine(PlayerChatLine evt)
     {
-        if (string.IsNullOrEmpty(evt.Text)) return;
+        if (evt.Text.IsEmpty) return;
 
         var server = _session.Current?.Server;
         if (server is null) return;
 
-        foreach (Match tok in UpperTokenRx().Matches(evt.Text))
+        var textString = evt.Text.ToString();
+        foreach (Match tok in UpperTokenRx().Matches(textString))
         {
             var code = tok.Value;
             bool changed;

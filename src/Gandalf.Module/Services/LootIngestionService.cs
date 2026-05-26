@@ -1,4 +1,4 @@
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player.Events;
 using Gandalf.Parsing;
 using Microsoft.Extensions.Hosting;

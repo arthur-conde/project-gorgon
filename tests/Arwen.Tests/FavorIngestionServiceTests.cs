@@ -1,5 +1,6 @@
 using System.IO;
 using Arda.Abstractions.Logs;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Player.Events;
 using Arwen.Domain;

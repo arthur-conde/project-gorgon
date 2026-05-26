@@ -1,6 +1,7 @@
 using Arda.Abstractions.Logs;
 using Arda.Composition.Events;
 using Arda.Composition.Internal;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Player.Events;
 using FluentAssertions;
@@ -208,7 +209,7 @@ public class NpcStateComposerTests : IDisposable
 
         var session = new ComposedSession("Alice", "TestServer",
             T0.AddMinutes(5), TimeSpan.Zero, "Alice:20260526120500");
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0.AddMinutes(5))));
 
         _composer.Npcs.Should().BeEmpty("no store means state is cleared on session switch");
     }
@@ -218,14 +219,14 @@ public class NpcStateComposerTests : IDisposable
     {
         var session = new ComposedSession("Alice", "TestServer",
             T0, TimeSpan.Zero, "Alice:20260526120000");
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
         _bus.Publish(new InteractionStarted(12307, "NPC_Marna", 100, true, Meta(T0.AddSeconds(1))));
 
         var changeCount = 0;
         _composer.StateChanged += () => changeCount++;
 
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
         changeCount.Should().Be(0, "same session does not trigger reload");
     }
@@ -235,14 +236,14 @@ public class NpcStateComposerTests : IDisposable
     {
         var session1 = new ComposedSession("Alice", "TestServer",
             T0, TimeSpan.Zero, "Alice:20260526120000");
-        _bus.Publish(new SessionEstablished(session1));
+        _bus.Publish(new SessionEstablished(session1, Meta(T0)));
 
         var fired = false;
         _composer.StateChanged += () => fired = true;
 
         var session2 = new ComposedSession("Bob", "TestServer",
             T0.AddMinutes(10), TimeSpan.Zero, "Bob:20260526121000");
-        _bus.Publish(new SessionEstablished(session2));
+        _bus.Publish(new SessionEstablished(session2, Meta(T0.AddMinutes(10))));
 
         fired.Should().BeTrue();
     }
@@ -264,7 +265,7 @@ public class NpcStateComposerTests : IDisposable
             {
                 var session = new ComposedSession("Alice", "Server1",
                     T0, TimeSpan.Zero, "Alice:20260526120000");
-                _bus.Publish(new SessionEstablished(session));
+                _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
                 _bus.Publish(new InteractionStarted(12307, "NPC_Marna", 2847.3, true, Meta(T0.AddSeconds(1))));
                 _bus.Publish(new VendorScreenOpened(
@@ -275,7 +276,7 @@ public class NpcStateComposerTests : IDisposable
 
             var session2 = new ComposedSession("Alice", "Server1",
                 T0.AddHours(1), TimeSpan.Zero, "Alice:20260526130000");
-            _bus.Publish(new SessionEstablished(session2));
+            _bus.Publish(new SessionEstablished(session2, Meta(T0.AddHours(1))));
 
             composer2.Npcs.Should().ContainKey("NPC_Marna");
             composer2.Npcs["NPC_Marna"].AbsoluteFavor.Should().Be(2847.3);
@@ -306,12 +307,12 @@ public class NpcStateComposerTests : IDisposable
 
             var aliceSession = new ComposedSession("Alice", "Server1",
                 T0, TimeSpan.Zero, "Alice:20260526120000");
-            _bus.Publish(new SessionEstablished(aliceSession));
+            _bus.Publish(new SessionEstablished(aliceSession, Meta(T0)));
             _bus.Publish(new InteractionStarted(12307, "NPC_Marna", 100, true, Meta(T0.AddSeconds(1))));
 
             var bobSession = new ComposedSession("Bob", "Server1",
                 T0.AddMinutes(10), TimeSpan.Zero, "Bob:20260526121000");
-            _bus.Publish(new SessionEstablished(bobSession));
+            _bus.Publish(new SessionEstablished(bobSession, Meta(T0.AddMinutes(10))));
 
             composer.Npcs.Should().BeEmpty("Bob has no NPC data yet");
 
@@ -319,7 +320,7 @@ public class NpcStateComposerTests : IDisposable
             composer.Npcs.Should().ContainKey("NPC_Johen");
             composer.Npcs.Should().NotContainKey("NPC_Marna");
 
-            _bus.Publish(new SessionEstablished(aliceSession));
+            _bus.Publish(new SessionEstablished(aliceSession, Meta(T0)));
             composer.Npcs.Should().ContainKey("NPC_Marna");
             composer.Npcs["NPC_Marna"].AbsoluteFavor.Should().Be(100);
         }
@@ -347,7 +348,7 @@ public class NpcStateComposerTests : IDisposable
             {
                 var session = new ComposedSession("Alice", "Server1",
                     T0, TimeSpan.Zero, "Alice:20260526120000");
-                _bus.Publish(new SessionEstablished(session));
+                _bus.Publish(new SessionEstablished(session, Meta(T0)));
                 _bus.Publish(new InteractionStarted(12307, "NPC_Marna", 100, true, Meta(T0.AddSeconds(1))));
                 _bus.Publish(new InteractionStarted(5000, "NPC_Tadion", 200, true, Meta(T0.AddSeconds(2))));
             }
@@ -355,7 +356,7 @@ public class NpcStateComposerTests : IDisposable
             using var composer2 = new NpcStateComposer(_bus, store);
             var session2 = new ComposedSession("Alice", "Server1",
                 T0.AddHours(1), TimeSpan.Zero, "Alice:20260526130000");
-            _bus.Publish(new SessionEstablished(session2));
+            _bus.Publish(new SessionEstablished(session2, Meta(T0.AddHours(1))));
 
             composer2.Npcs.Should().HaveCount(2);
             composer2.Npcs.Should().ContainKey("NPC_Marna");

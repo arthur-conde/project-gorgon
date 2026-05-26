@@ -20,7 +20,6 @@ public class LogPatternCatalogParityTests
         // Force-load every module assembly that hosts a parser referenced by
         // the catalog. Project references in Mithril.Shared.Tests.csproj guarantee
         // these are next to the test DLL at runtime.
-        TouchAssemblyForType("Samwise.Parsing.GardenLogParser");
         TouchAssemblyForType("Arwen.Parsing.FavorLogParser");
         TouchAssemblyForType("Pippin.Parsing.GourmandLogParser");
         TouchAssemblyForType("Legolas.Services.PlayerLogParser");

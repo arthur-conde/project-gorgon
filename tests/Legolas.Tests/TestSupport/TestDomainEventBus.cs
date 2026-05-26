@@ -1,4 +1,4 @@
-using Arda.Dispatch;
+using Arda.Contracts;
 
 namespace Legolas.Tests.TestSupport;
 

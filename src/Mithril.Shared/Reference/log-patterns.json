@@ -6,8 +6,9 @@
       "pattern": "ProcessSetPetOwner\\((\\d+),",
       "source": "player",
       "module": "samwise",
-      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "SetPetOwnerRx" },
+      "csharp": null,
       "eventType": "samwise.SetPetOwner",
+      "notes": "Retired: now parsed by Arda L3 SetPetOwnerHandler. Pattern kept for TS port parity.",
       "fields": [
         { "name": "entityId", "group": 1, "type": "string" }
       ]
@@ -16,8 +17,9 @@
       "pattern": "Download appearance loop @(\\w+)\\(scale=([\\d.]+)\\)",
       "source": "player",
       "module": "samwise",
-      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "AppearanceRx" },
+      "csharp": null,
       "eventType": "samwise.AppearanceLoop",
+      "notes": "Retired: now parsed by Arda L3 AppearanceObserver. Pattern kept for TS port parity.",
       "fields": [
         { "name": "modelName", "group": 1, "type": "string" },
         { "name": "scale", "group": 2, "type": "double" }
@@ -27,8 +29,9 @@
       "pattern": "ProcessUpdateDescription\\((\\d+),\\s*\"([^\"]+)\",\\s*\"([^\"]+)\",\\s*\"([^\"]+)\",\\s*\\w+,\\s*\"\\w+\\(Scale=([\\d.]+)\\)\",\\s*\\d+\\)",
       "source": "player",
       "module": "samwise",
-      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "UpdateDescRx" },
+      "csharp": null,
       "eventType": "samwise.UpdateDescription",
+      "notes": "Retired: now parsed by Arda L3 UpdateDescriptionHandler. Pattern kept for TS port parity.",
       "fields": [
         { "name": "plotId", "group": 1, "type": "string" },
         { "name": "title", "group": 2, "type": "string" },
@@ -41,9 +44,9 @@
       "pattern": "ProcessStartInteraction\\((\\d+),\\s*\\d+,\\s*[\\d.-]+,\\s*\\w+,\\s*\"(Summoned\\w+)\"\\)",
       "source": "player",
       "module": "samwise",
-      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "StartInteractRx" },
+      "csharp": null,
       "eventType": "samwise.StartInteraction",
-      "notes": "Same root verb as arwen.FavorLogParser.StartInteractionRx, but constrained to plant targets (\"Summoned*\").",
+      "notes": "Retired: now parsed by Arda L3 StartInteractionHandler. Same root verb as arwen.FavorLogParser.StartInteractionRx, but constrained to plant targets (\"Summoned*\"). Pattern kept for TS port parity.",
       "fields": [
         { "name": "plotId", "group": 1, "type": "string" },
         { "name": "target", "group": 2, "type": "string" }
@@ -53,8 +56,9 @@
       "pattern": "ProcessUpdateItemCode\\((\\d+)",
       "source": "player",
       "module": "samwise",
-      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "UpdateItemCodeRx" },
+      "csharp": null,
       "eventType": "samwise.UpdateItemCode",
+      "notes": "Retired: now parsed by Arda L3 UpdateItemCodeHandler. Pattern kept for TS port parity.",
       "fields": [
         { "name": "itemId", "group": 1, "type": "string" }
       ]
@@ -63,17 +67,19 @@
       "pattern": "ProcessScreenText.*ErrorMessage",
       "source": "player",
       "module": "samwise",
-      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "ScreenTextErrorRx" },
+      "csharp": null,
       "eventType": "samwise.ScreenTextError",
       "kind": "marker",
+      "notes": "Retired: now parsed by Arda L3 ScreenTextHandler. Pattern kept for TS port parity.",
       "fields": []
     },
     "samwise.GardenLogParser.PlantingCapRx": {
       "pattern": "ProcessErrorMessage\\(ItemUnusable,\\s*\"([^\"]+?) can't be used: You already have the maximum of that type of plant growing\"",
       "source": "player",
       "module": "samwise",
-      "csharp": { "type": "Samwise.Parsing.GardenLogParser", "method": "PlantingCapRx" },
+      "csharp": null,
       "eventType": "samwise.PlantingCapReached",
+      "notes": "Retired: now parsed by Arda L3 ErrorMessageHandler. Pattern kept for TS port parity.",
       "fields": [
         { "name": "seedDisplayName", "group": 1, "type": "string" }
       ]

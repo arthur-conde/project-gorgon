@@ -1,4 +1,5 @@
 using Arda.Composition.Events;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Logging;
@@ -84,7 +85,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 LastSeenAt: now);
         }
 
-        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey]));
+        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
         StateChanged?.Invoke();
     }
 
@@ -123,7 +124,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 LastSeenAt: now);
         }
 
-        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey]));
+        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
         StateChanged?.Invoke();
     }
 
@@ -160,7 +161,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 LastSeenAt: now);
         }
 
-        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey]));
+        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
         StateChanged?.Invoke();
     }
 
@@ -193,7 +194,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 LastSeenAt: now);
         }
 
-        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey]));
+        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
         StateChanged?.Invoke();
     }
 

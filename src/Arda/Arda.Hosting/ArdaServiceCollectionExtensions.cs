@@ -1,3 +1,4 @@
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.Hosting.Internal;
 using Arda.Ingest.Coordinator;

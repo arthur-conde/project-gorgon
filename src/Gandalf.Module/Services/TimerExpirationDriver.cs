@@ -1,4 +1,4 @@
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Diagnostics;

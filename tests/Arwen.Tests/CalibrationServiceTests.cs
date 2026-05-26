@@ -1301,7 +1301,7 @@ public sealed class CalibrationServiceTests
             svc.Data.Observations.Should().HaveCount(1,
                 "second triplet is a replay — session id + instance id collide on the key");
             var obs = svc.Data.Observations[0];
-            obs.SessionId.Should().Be(session.Current!.SessionId);
+            obs.SessionId.Should().Be(session.Current!.Value.SessionId);
             obs.InstanceId.Should().Be(12345);
             obs.Timestamp.Should().Be(ts);
         }
@@ -1445,6 +1445,9 @@ public sealed class CalibrationServiceTests
     private sealed class FakeSession : ISessionComposer
     {
         public ComposedSession? Current { get; private set; }
+#pragma warning disable CS0067
+        public event Action? StateChanged;
+#pragma warning restore CS0067
         public FakeSession(string sessionId)
         {
             Set(sessionId);

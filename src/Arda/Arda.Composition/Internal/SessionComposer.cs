@@ -1,3 +1,5 @@
+using Arda.Abstractions.Logs;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
@@ -22,8 +24,10 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
     private string? _server;
     private TimeSpan _timezoneOffset;
     private bool _hasChatBanner;
+    private LogLineMetadata _lastMetadata;
 
     public ComposedSession? Current { get; private set; }
+    public event Action? StateChanged;
 
     public SessionComposer(IDomainEventBus bus, Func<string?>? serverFallback = null)
     {
@@ -37,6 +41,7 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
     {
         _character = evt.CharacterName;
         _loggedInAt = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
+        _lastMetadata = evt.Metadata;
         TryBuild();
     }
 
@@ -45,6 +50,7 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
         _server = evt.Server;
         _timezoneOffset = evt.TimezoneOffset;
         _hasChatBanner = true;
+        _lastMetadata = evt.Metadata;
         if (_character is null)
             _character = evt.Character;
         TryBuild();
@@ -65,7 +71,8 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
             sessionId);
 
         Current = session;
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, _lastMetadata));
+        StateChanged?.Invoke();
     }
 
     public void Dispose()

@@ -1,6 +1,7 @@
 using Arda.Abstractions.Logs;
 using Arda.Composition.Events;
 using Arda.Composition.Internal;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
@@ -164,7 +165,7 @@ public class InventoryAccumulatorTests : IDisposable
 
         var session = new ComposedSession("Alice", "TestServer",
             T0.AddMinutes(5), TimeSpan.Zero, "Alice:20260526120500");
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0.AddMinutes(5))));
 
         _composer.Items.Should().BeEmpty("no store means fresh start on character switch");
     }
@@ -174,11 +175,11 @@ public class InventoryAccumulatorTests : IDisposable
     {
         var session = new ComposedSession("Alice", "TestServer",
             T0, TimeSpan.Zero, "Alice:20260526120000");
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
         _bus.Publish(new InventoryItemAdded(100, "item_sword", Meta(T0.AddSeconds(1))));
 
-        _bus.Publish(new SessionEstablished(session));
+        _bus.Publish(new SessionEstablished(session, Meta(T0)));
 
         _composer.Items.Should().ContainKey(100);
     }

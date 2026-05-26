@@ -10,7 +10,7 @@ public readonly record struct QuestEntry(int QuestId, DateTimeOffset AddedAt);
 /// resets on character switch. Consumers needing change notifications
 /// subscribe to <see cref="Events.QuestAccepted"/>,
 /// <see cref="Events.QuestCompleted"/>, or <see cref="Events.QuestsLoaded"/>
-/// via <see cref="Arda.Dispatch.IDomainEventSubscriber"/>.
+/// via <see cref="Arda.Contracts.IDomainEventSubscriber"/>.
 /// </summary>
 public interface IQuestState
 {

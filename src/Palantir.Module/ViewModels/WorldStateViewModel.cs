@@ -1,6 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
 using CommunityToolkit.Mvvm.ComponentModel;

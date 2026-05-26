@@ -1,5 +1,5 @@
 using Arda.Abstractions.Logs;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
 using FluentAssertions;
@@ -182,6 +182,9 @@ public sealed class VendorIngestionServiceSkillStateTests
     private sealed class FakeSessionComposer : ISessionComposer
     {
         public ComposedSession? Current { get; }
+#pragma warning disable CS0067
+        public event Action? StateChanged;
+#pragma warning restore CS0067
         public FakeSessionComposer(string sessionId)
         {
             Current = new ComposedSession("char", null,

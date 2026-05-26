@@ -1,6 +1,6 @@
 using System.Windows;
 using System.Windows.Threading;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player.Events;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Wpf;

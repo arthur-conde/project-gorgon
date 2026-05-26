@@ -24,7 +24,7 @@ public readonly record struct SkillSnapshot(
 /// <see cref="IPlayerState"/> with timestamped atomic snapshots.
 /// Consumers needing change notifications subscribe to
 /// <see cref="Events.SkillUpdated"/> or <see cref="Events.SkillsLoaded"/>
-/// via <see cref="Arda.Dispatch.IDomainEventSubscriber"/>.
+/// via <see cref="Arda.Contracts.IDomainEventSubscriber"/>.
 /// </summary>
 public interface ISkillState
 {

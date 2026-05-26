@@ -13,7 +13,7 @@ namespace Legolas.Tests.Services;
 
 /// <summary>
 /// Post-Arda migration: the service subscribes to structured domain events via
-/// <see cref="Arda.Dispatch.IDomainEventSubscriber"/> instead of the former L1
+/// <see cref="Arda.Contracts.IDomainEventSubscriber"/> instead of the former L1
 /// driver. Tests publish Arda events through a <see cref="TestDomainEventBus"/>
 /// and assert the handler's UI-bound state mutations.
 /// </summary>

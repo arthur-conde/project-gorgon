@@ -1,5 +1,5 @@
 using System.IO;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;

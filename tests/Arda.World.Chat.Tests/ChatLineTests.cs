@@ -1,4 +1,5 @@
 using Arda.Abstractions.Logs;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Chat.Internal;
@@ -29,7 +30,7 @@ public class ChatLineTests
         var evt = _bus.Published<PlayerChatLine>().Should().ContainSingle().Which;
         evt.Channel.Should().Be("Trade");
         evt.Speaker.Should().Be("Emraell");
-        evt.Text.Should().Be("WTS something");
+        evt.Text.ToString().Should().Be("WTS something");
     }
 
     [Fact]
@@ -41,7 +42,7 @@ public class ChatLineTests
         var evt = _bus.Published<PlayerChatLine>().Should().ContainSingle().Which;
         evt.Channel.Should().Be("Global");
         evt.Speaker.Should().Be("SomePlayer");
-        evt.Text.Should().Be("hi everyone");
+        evt.Text.ToString().Should().Be("hi everyone");
     }
 
     [Fact]
@@ -52,7 +53,7 @@ public class ChatLineTests
 
         var evt = _bus.Published<PlayerChatLine>().Should().ContainSingle().Which;
         evt.Speaker.Should().Be("Leader");
-        evt.Text.Should().Be("Meetup at 8:00 PM: bring food");
+        evt.Text.ToString().Should().Be("Meetup at 8:00 PM: bring food");
     }
 
     [Fact]

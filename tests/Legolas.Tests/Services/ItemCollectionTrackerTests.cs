@@ -14,7 +14,7 @@ namespace Legolas.Tests.Services;
 
 /// <summary>
 /// Post-Arda migration: the tracker subscribes to <see cref="InventoryItemAdded"/>
-/// and <see cref="ScreenTextObserved"/> via <see cref="Arda.Dispatch.IDomainEventSubscriber"/>.
+/// and <see cref="ScreenTextObserved"/> via <see cref="Arda.Contracts.IDomainEventSubscriber"/>.
 /// Tests publish events through a <see cref="TestDomainEventBus"/>.
 /// </summary>
 public sealed class ItemCollectionTrackerTests

@@ -1,5 +1,5 @@
 using System.IO;
-using Arda.Dispatch;
+using Arda.Contracts;
 using Arda.World.Player;
 using Gandalf.Domain;
 using Gandalf.Parsing;
@@ -124,7 +124,7 @@ public sealed class GandalfModule : IMithrilModule
             sp.GetRequiredService<DerivedTimerProgressService>(),
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetRequiredService<Arda.World.Player.IQuestState>(),
-            sp.GetRequiredService<Arda.Dispatch.IDomainEventSubscriber>(),
+            sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
             time: null,
             calendarState: sp.GetService<ICalendarState>()));
         services.AddSingleton<QuestTimersViewModel>();
