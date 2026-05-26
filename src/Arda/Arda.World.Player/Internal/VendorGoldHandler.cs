@@ -16,9 +16,9 @@ internal sealed class VendorGoldHandler(IDomainEventPublisher bus) : IFrameHandl
         tok.SkipOpen();
 
         var remainingGold = tok.NextLong();
-        tok.NextLong(); // resetCounter — not consumed downstream
+        var goldResetsAt = DateTimeOffset.FromUnixTimeMilliseconds(tok.NextLong());
         var goldCap = tok.NextLong();
 
-        bus.Publish(new VendorGoldUpdated(remainingGold, goldCap, metadata));
+        bus.Publish(new VendorGoldUpdated(remainingGold, goldCap, goldResetsAt, metadata));
     }
 }

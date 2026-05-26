@@ -8,4 +8,5 @@ namespace Arda.World.Player.Events;
 public readonly record struct VendorGoldUpdated(
     long RemainingGold,
     long GoldCap,
+    DateTimeOffset GoldResetsAt,
     LogLineMetadata Metadata);

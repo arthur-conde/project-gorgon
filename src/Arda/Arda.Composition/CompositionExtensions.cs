@@ -72,6 +72,26 @@ public static class CompositionExtensions
         services.AddSingleton(sp =>
         {
             var bus = sp.GetRequiredService<IDomainEventBus>();
+            var loggerFactory = sp.GetService<ILoggerFactory>();
+
+            PerCharacterStore<NpcStateSnapshot>? npcStore = null;
+            if (!string.IsNullOrEmpty(charactersRootDir))
+            {
+                npcStore = new PerCharacterStore<NpcStateSnapshot>(
+                    charactersRootDir,
+                    "npc-state.json",
+                    NpcStateSnapshotJsonContext.Default.NpcStateSnapshot,
+                    logger: loggerFactory?.CreateLogger("PerCharacterStore<NpcStateSnapshot>"));
+            }
+
+            return new NpcStateComposer(bus, npcStore,
+                loggerFactory?.CreateLogger("NpcStateComposer"));
+        });
+        services.AddSingleton<INpcStateTracker>(sp => sp.GetRequiredService<NpcStateComposer>());
+
+        services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventBus>();
             return new SessionComposer(bus);
         });
         services.AddSingleton<ISessionComposer>(sp => sp.GetRequiredService<SessionComposer>());

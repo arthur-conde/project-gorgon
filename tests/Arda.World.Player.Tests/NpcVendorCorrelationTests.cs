@@ -38,7 +38,7 @@ public class NpcVendorCorrelationTests
     }
 
     private void OpenVendorScreen(long entityId, string favorTier, long gold = 3926, long cap = 4000) =>
-        _npc.OnVendorScreen($"({entityId}, {favorTier}, {gold}, 3, {cap})".AsSpan(), "", Meta());
+        _npc.OnVendorScreen($"({entityId}, {favorTier}, {gold}, 1779404053485, {cap})".AsSpan(), "", Meta());
 
     private void SellItem(long price, string internalName, long instanceId) =>
         _npc.OnVendorAddItem($"({price}, {internalName}({instanceId}), True)".AsSpan(), "", Meta());

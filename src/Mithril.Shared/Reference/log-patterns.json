@@ -123,7 +123,7 @@
         { "name": "entityId", "group": 1, "type": "long" },
         { "name": "favorTier", "group": 2, "type": "string" },
         { "name": "remainingGold", "group": 3, "type": "long" },
-        { "name": "_resetCounter", "group": 4, "type": "long" },
+        { "name": "goldResetsAtMs", "group": 4, "type": "long", "notes": "Unix timestamp in milliseconds; when vendor gold next resets (~24h cycle)" },
         { "name": "goldCap", "group": 5, "type": "long" }
       ]
     },
@@ -149,7 +149,7 @@
       "notes": "Retired: now parsed by Arda L3 VendorGoldHandler. Pattern kept for TS port parity.",
       "fields": [
         { "name": "remainingGold", "group": 1, "type": "long" },
-        { "name": "_resetCounter", "group": 2, "type": "long" },
+        { "name": "goldResetsAtMs", "group": 2, "type": "long", "notes": "Unix timestamp in milliseconds; when vendor gold next resets (~24h cycle)" },
         { "name": "goldCap", "group": 3, "type": "long" }
       ]
     },

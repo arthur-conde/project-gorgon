@@ -166,7 +166,7 @@ internal sealed class Npc : INpcState
         var entityId = tok.NextLong();
         var favorTier = tok.NextTokenSpan().ToString();
         var remainingGold = tok.NextLong();
-        tok.NextLong(); // resetCounter
+        var goldResetsAt = DateTimeOffset.FromUnixTimeMilliseconds(tok.NextLong());
         var goldCap = tok.NextLong();
 
         string? npcKey = null;
@@ -176,7 +176,7 @@ internal sealed class Npc : INpcState
         _activeVendorNpcKey = npcKey;
         _activeVendorFavorTier = favorTier;
 
-        _bus.Publish(new VendorScreenOpened(entityId, favorTier, remainingGold, goldCap, npcKey, metadata));
+        _bus.Publish(new VendorScreenOpened(entityId, favorTier, remainingGold, goldCap, goldResetsAt, npcKey, metadata));
     }
 
     /// <summary>

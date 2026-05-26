@@ -37,7 +37,7 @@ public class VendorPassthroughTests
     public void VendorScreen_ParsesAllFields()
     {
         var handler = new VendorScreenHandler(_npc);
-        var args = "(-162, Comfortable, 5000, 3, 10000, \"desc\", [], stuff)";
+        var args = "(-162, Comfortable, 5000, 1779404053485, 10000, \"desc\", [], stuff)";
 
         handler.Handle(args.AsSpan(), "", Meta());
 
@@ -46,6 +46,7 @@ public class VendorPassthroughTests
         e.FavorTier.Should().Be("Comfortable");
         e.RemainingGold.Should().Be(5000);
         e.GoldCap.Should().Be(10000);
+        e.GoldResetsAt.Should().Be(DateTimeOffset.FromUnixTimeMilliseconds(1779404053485));
         e.NpcKey.Should().BeNull(because: "no prior interaction was armed");
     }
 
@@ -55,7 +56,7 @@ public class VendorPassthroughTests
         ArmNpcInteraction("NPC_Therese", entityId: 14564);
 
         var handler = new VendorScreenHandler(_npc);
-        handler.Handle("(14564, Neutral, 3926, 3, 4000)".AsSpan(), "", Meta());
+        handler.Handle("(14564, Neutral, 3926, 1779404053485, 4000)".AsSpan(), "", Meta());
 
         var e = _bus.Published<VendorScreenOpened>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(14564);
@@ -69,7 +70,7 @@ public class VendorPassthroughTests
         ArmNpcInteraction("NPC_Therese", entityId: 14564);
 
         var handler = new VendorScreenHandler(_npc);
-        handler.Handle("(99999, Neutral, 3926, 3, 4000)".AsSpan(), "", Meta());
+        handler.Handle("(99999, Neutral, 3926, 1779404053485, 4000)".AsSpan(), "", Meta());
 
         var e = _bus.Published<VendorScreenOpened>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(99999);
@@ -80,7 +81,7 @@ public class VendorPassthroughTests
     public void VendorScreen_NegativeEntityId()
     {
         var handler = new VendorScreenHandler(_npc);
-        var args = "(-999, Neutral, 0, 0, 5000)";
+        var args = "(-999, Neutral, 0, 1779404053485, 5000)";
 
         handler.Handle(args.AsSpan(), "", Meta());
 
@@ -113,7 +114,7 @@ public class VendorPassthroughTests
     public void VendorAddItem_WithVendorSession_EnrichesNpcKeyAndFavorTier()
     {
         ArmNpcInteraction("NPC_Johen", entityId: 9999);
-        _npc.OnVendorScreen("(9999, Friendly, 5000, 3, 8000)".AsSpan(), "", Meta());
+        _npc.OnVendorScreen("(9999, Friendly, 5000, 1779404053485, 8000)".AsSpan(), "", Meta());
         _bus.Clear();
 
         var handler = new VendorAddItemHandler(_npc);
@@ -155,16 +156,17 @@ public class VendorPassthroughTests
     // ── VendorGoldHandler (unchanged passthrough) ─────────────────────────
 
     [Fact]
-    public void VendorGold_ParsesGoldAndCap()
+    public void VendorGold_ParsesGoldCapAndResetsAt()
     {
         var handler = new VendorGoldHandler(_bus);
-        var args = "(4500, 3, 10000)";
+        var args = "(4500, 1779404053485, 10000)";
 
         handler.Handle(args.AsSpan(), "", Meta());
 
         var e = _bus.Published<VendorGoldUpdated>().Should().ContainSingle().Which;
         e.RemainingGold.Should().Be(4500);
         e.GoldCap.Should().Be(10000);
+        e.GoldResetsAt.Should().Be(DateTimeOffset.FromUnixTimeMilliseconds(1779404053485));
     }
 
     [Fact]
@@ -178,6 +180,7 @@ public class VendorPassthroughTests
         var e = _bus.Published<VendorGoldUpdated>().Should().ContainSingle().Which;
         e.RemainingGold.Should().Be(0);
         e.GoldCap.Should().Be(0);
+        e.GoldResetsAt.Should().Be(DateTimeOffset.UnixEpoch);
     }
 
     // ── SpyBus ─────────────────────────────────────────────────────────

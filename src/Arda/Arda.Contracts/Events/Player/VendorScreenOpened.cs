@@ -12,5 +12,6 @@ public readonly record struct VendorScreenOpened(
     string FavorTier,
     long RemainingGold,
     long GoldCap,
+    DateTimeOffset GoldResetsAt,
     string? NpcKey,
     LogLineMetadata Metadata);
