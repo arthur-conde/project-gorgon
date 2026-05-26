@@ -1,7 +1,7 @@
 using System.Collections.Frozen;
 using Arda.Composition;
 using Arda.Hosting;
-using Arda.Inventory;
+using Arda.Wpf;
 using Arda.World.Player;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
@@ -114,12 +114,9 @@ public static class ShellComposition
                     return catalog.Shifts.Select(s => (s.Slug, s.StartHour)).ToList();
                 });
 
-        services.AddArdaComposition();
+        services.AddArdaComposition(o.CharactersRootDir);
 
-        services.AddPerCharacterStore<InventoryLedgerState>(
-            "inventory-ledger.json",
-            InventoryLedgerStateJsonContext.Default.InventoryLedgerState);
-        services.AddSingleton<InventoryLedger>();
+        services.AddSingleton<InventoryProjection>();
 
         services.AddHostedService<ArdaDiagnosticBridge>();
 

@@ -101,20 +101,18 @@ public class NpcTests
         _npc.ActiveNpcKey.Should().BeNull();
     }
 
-    // ── Gift correlation ────────────────────────────────────────────────
+    // ── Gift pending state (delete without favor) ────────────────────────
 
     [Fact]
-    public void DeleteItemDuringNpcInteraction_EmitsGiftAttempted()
+    public void DeleteItemDuringNpcInteraction_SetsPending_NoImmediateEvent()
     {
         DispatchInteraction("12307, 7, 2405.813, True, \"NPC_Joe\"");
         _bus.Clear();
 
         DispatchDeleteItem(84741837);
 
-        var evt = _bus.Published<GiftAttempted>().Should().ContainSingle().Which;
-        evt.EntityId.Should().Be(12307);
-        evt.NpcKey.Should().Be("NPC_Joe");
-        evt.ItemInstanceId.Should().Be(84741837);
+        _bus.Published<GiftAccepted>().Should().BeEmpty(
+            "a delete alone sets pending state; GiftAccepted requires a correlated DeltaFavor");
     }
 
     [Fact]
@@ -122,7 +120,7 @@ public class NpcTests
     {
         DispatchDeleteItem(84741837);
 
-        _bus.Published<GiftAttempted>().Should().BeEmpty();
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
     [Fact]
@@ -133,21 +131,7 @@ public class NpcTests
 
         DispatchDeleteItem(84741837);
 
-        _bus.Published<GiftAttempted>().Should().BeEmpty();
-    }
-
-    [Fact]
-    public void MultipleDeletesDuringInteraction_EmitsMultipleGifts()
-    {
-        DispatchInteraction("12307, 7, 2405.813, True, \"NPC_Joe\"");
-        _bus.Clear();
-
-        DispatchDeleteItem(111);
-        DispatchDeleteItem(222);
-
-        _bus.Published<GiftAttempted>().Should().HaveCount(2);
-        _bus.Published<GiftAttempted>()[0].ItemInstanceId.Should().Be(111);
-        _bus.Published<GiftAttempted>()[1].ItemInstanceId.Should().Be(222);
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
     // ── Interning ───────────────────────────────────────────────────────

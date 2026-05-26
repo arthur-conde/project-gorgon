@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Arda.Dispatch\Arda.Dispatch.csproj" />
+    <ProjectReference Include="..\..\Mithril.Persistence\Mithril.Persistence.csproj" />
   </ItemGroup>
 
   <ItemGroup>

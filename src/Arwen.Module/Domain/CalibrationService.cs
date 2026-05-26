@@ -6,7 +6,6 @@ using Mithril.Reference.Models.Items;
 using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
 using Arda.Composition;
-using Arda.World.Player;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 
@@ -20,7 +19,8 @@ public sealed record EstimateResult(double Value, string Tier, int SampleCount);
 /// and computes per-NPC / per-item / per-signature category rates.
 ///
 /// Gift detection sequence:
-/// 1. <see cref="IInventoryState"/> maintains the canonical instanceId → InternalName map
+/// 1. <see cref="IInventoryAccumulatorState"/> maintains the canonical instanceId → InternalName map
+///    (soft-deletes retained, so post-removal lookups succeed)
 /// 2. ProcessStartInteraction(NPC_Key) → set active NPC context
 /// 3. ProcessDeleteItem(instanceId) → item removed while talking to NPC → pending gift
 /// 4. ProcessDeltaFavor(NPC_Key, delta) → favor gained → correlate with pending gift
@@ -41,7 +41,7 @@ public sealed class CalibrationService
 
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
-    private readonly IInventoryState _inventory;
+    private readonly IInventoryAccumulatorState _inventory;
     private readonly ISessionComposer? _session;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
@@ -104,7 +104,7 @@ public sealed class CalibrationService
     public CalibrationService(
         IReferenceDataService refData,
         GiftIndex giftIndex,
-        IInventoryState inventory,
+        IInventoryAccumulatorState inventory,
         string dataDir,
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,
@@ -202,37 +202,39 @@ public sealed class CalibrationService
     }
 
     /// <summary>
-    /// Production gift-detection entry point (#608, iteration 2). Consumed by
+    /// Production gift-detection entry point. Consumed by
     /// <see cref="State.FavorIngestionService"/>'s
-    /// <see cref="Arda.World.Player.Events.GiftAccepted"/> handler — the Arda gift
-    /// correlator resolves the <c>ProcessStartInteraction</c> /
-    /// <c>ProcessDeleteItem</c> / <c>ProcessDeltaFavor</c> verb triple on its
-    /// own single L1 subscription (with its own <c>ProcessAddItem</c> map)
-    /// and emits a fully-resolved <see cref="GiftAccepted"/>. By the time
-    /// this method fires, the <c>InternalName</c> is resolved, the NPC key
-    /// is known, and the favor delta is paired — no cross-pump
-    /// <c>TryResolve</c> peek, no FSM ordering dependency on cross-source
-    /// arrival.
+    /// <see cref="Arda.World.Player.Events.GiftAccepted"/> handler — the Arda Npc
+    /// handler correlates the <c>ProcessStartInteraction</c> /
+    /// <c>ProcessDeleteItem</c> / <c>ProcessDeltaFavor</c> verb triple at L3
+    /// dispatch and emits <see cref="GiftAccepted"/>.
     ///
-    /// <para>Goes directly to <see cref="RecordObservation"/>. The legacy
-    /// <see cref="OnStartInteraction(string)"/> /
+    /// <para>Resolves <c>ItemInternalName</c> from <see cref="IInventoryAccumulatorState"/>.
+    /// The accumulator retains soft-deleted entries, so post-removal lookups succeed
+    /// even when the game's delete verb fires before the favor delta.</para>
+    ///
+    /// <para>The legacy <see cref="OnStartInteraction(string)"/> /
     /// <see cref="OnItemDeleted(long)"/> /
-    /// <see cref="OnDeltaFavor(string, double)"/> FSM overloads remain — they
-    /// were never on the production path; existing unit tests drive them
-    /// directly to exercise the FSM transitions and verify
-    /// <see cref="RecordObservation"/> integration.</para>
+    /// <see cref="OnDeltaFavor(string, double)"/> FSM overloads remain for
+    /// existing unit tests.</para>
     /// </summary>
     public void OnGiftAccepted(
         string npcKey,
         long itemInstanceId,
-        string itemInternalName,
         double deltaFavor,
         DateTimeOffset timestamp)
     {
         if (string.IsNullOrEmpty(npcKey)) return;
-        if (string.IsNullOrEmpty(itemInternalName)) return;
         if (deltaFavor <= 0) return;
-        RecordObservation(npcKey, itemInstanceId, itemInternalName, deltaFavor, timestamp);
+
+        if (!_inventory.Items.TryGetValue(itemInstanceId, out var entry))
+        {
+            _diag?.Trace("Arwen.Calibration",
+                $"GiftAccepted for instance {itemInstanceId} — item not in accumulator.");
+            return;
+        }
+
+        RecordObservation(npcKey, itemInstanceId, entry.InternalName, deltaFavor, timestamp);
     }
 
     public void OnDeltaFavor(string npcKey, double delta)

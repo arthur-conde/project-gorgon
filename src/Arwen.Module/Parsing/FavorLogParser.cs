@@ -10,11 +10,10 @@ public sealed record FavorUpdate(DateTime Timestamp, string NpcKey, double Absol
 /// <summary>
 /// Parses Player.log lines for the <c>ProcessStartInteraction</c>
 /// (→ <see cref="FavorUpdate"/>) verb that drives Arwen's
-/// <c>ArwenFavorState</c> snapshot. The gift-detection FSM that
-/// historically consumed <c>ProcessDeltaFavor</c> is lifted into
-/// Arda's <see cref="Arda.World.Player.Events.GiftAccepted"/> domain event
-/// (emitted by the gift correlator), which owns its own verb subscription
-/// and resolves <c>ProcessDeleteItem</c> + <c>ProcessDeltaFavor</c> inline.
+/// <c>ArwenFavorState</c> snapshot. Gift detection is handled by the Arda
+/// Npc handler's internal FSM, which correlates <c>ProcessDeleteItem</c> +
+/// <c>ProcessDeltaFavor</c> at L3 dispatch and emits
+/// <see cref="Arda.World.Player.Events.GiftAccepted"/>.
 ///
 /// <para>Active-character tracking lives in <c>ActiveCharacterLogSynchronizer</c> —
 /// this parser does not handle <c>ProcessAddPlayer</c>.</para>

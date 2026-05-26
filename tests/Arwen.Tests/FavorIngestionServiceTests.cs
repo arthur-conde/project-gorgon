@@ -60,8 +60,9 @@ public sealed class FavorIngestionServiceTests : IDisposable
         using (passLive = NewFixture("Pass1"))
         {
             await passLive.StartAsync();
+            passLive.Inventory.Add(7001, "Moonstone");
             passLive.Bus.Publish(new InteractionStarted(42, "NPC_Sanja", 100.0, IsNpc: true, meta));
-            passLive.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, "Moonstone", 30.0, meta));
+            passLive.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, 30.0, meta));
             await passLive.StopAsync();
         }
 
@@ -70,9 +71,10 @@ public sealed class FavorIngestionServiceTests : IDisposable
         using (passSplit = NewFixture("Pass2"))
         {
             await passSplit.StartAsync();
+            passSplit.Inventory.Add(7001, "Moonstone");
             var replayMeta = new LogLineMetadata(giftedAt, giftedAt, IsReplay: true);
             passSplit.Bus.Publish(new InteractionStarted(42, "NPC_Sanja", 100.0, IsNpc: true, replayMeta));
-            passSplit.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, "Moonstone", 30.0, replayMeta));
+            passSplit.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, 30.0, replayMeta));
             await passSplit.StopAsync();
         }
 
@@ -108,8 +110,9 @@ public sealed class FavorIngestionServiceTests : IDisposable
         await fixture.StartAsync();
 
         // First pass — observation lands.
+        fixture.Inventory.Add(7001, "Moonstone");
         fixture.Bus.Publish(new InteractionStarted(42, "NPC_Sanja", 100.0, IsNpc: true, meta));
-        fixture.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, "Moonstone", 30.0, meta));
+        fixture.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, 30.0, meta));
 
         fixture.Calibration.Data.Observations.Should().HaveCount(1);
         var afterFirst = fixture.Calibration.Data.Observations[0];
@@ -117,7 +120,7 @@ public sealed class FavorIngestionServiceTests : IDisposable
         // Second pass — same events, same log-line timestamps. Calibration's
         // ObservationKey dedup must drop the replay.
         fixture.Bus.Publish(new InteractionStarted(42, "NPC_Sanja", 100.0, IsNpc: true, meta));
-        fixture.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, "Moonstone", 30.0, meta));
+        fixture.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, 30.0, meta));
 
         fixture.Calibration.Data.Observations.Should().HaveCount(1);
         var afterSecond = fixture.Calibration.Data.Observations[0];
@@ -200,7 +203,8 @@ public sealed class FavorIngestionServiceTests : IDisposable
         using var fixture = NewFixture("GiftRoute");
         await fixture.StartAsync();
 
-        fixture.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, "Moonstone", 30.0, meta));
+        fixture.Inventory.Add(7001, "Moonstone");
+        fixture.Bus.Publish(new ArdaGiftAccepted(42, "NPC_Sanja", 7001, 30.0, meta));
 
         fixture.Calibration.Data.Observations.Should().HaveCount(1,
             "the Arda GiftAccepted event should route through to CalibrationService");
@@ -243,6 +247,7 @@ public sealed class FavorIngestionServiceTests : IDisposable
     private sealed class FavorIngestionFixture : IDisposable
     {
         public TestDomainEventBus Bus { get; }
+        public FakeInventory Inventory { get; }
         public CalibrationService Calibration { get; }
         public ArwenFavorState FavorState { get; }
         public FavorIngestionService Service { get; }
@@ -256,10 +261,10 @@ public sealed class FavorIngestionServiceTests : IDisposable
             var refData = BuildRefData();
             var index = new GiftIndex();
             index.Build(refData.Items, refData.Npcs);
-            var inv = new FakeInventory();
+            Inventory = new FakeInventory();
             var dataDir = Path.Combine(arwenDir, passName);
             Directory.CreateDirectory(dataDir);
-            Calibration = new CalibrationService(refData, index, inv, dataDir);
+            Calibration = new CalibrationService(refData, index, Inventory, dataDir);
 
             var active = new FakeActiveCharacterService
             {

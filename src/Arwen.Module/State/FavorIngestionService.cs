@@ -18,33 +18,13 @@ namespace Arwen.State;
 /// <list type="bullet">
 ///   <item><b><see cref="InteractionStarted"/></b> — drives the per-character
 ///   exact-favor snapshot (parsed from <c>ProcessStartInteraction</c> by the
-///   Arda world driver). Replaces the former L1 LocalPlayer pipe +
-///   <c>FavorLogParser</c> path.</item>
-///   <item><b><see cref="ArdaGiftAccepted"/></b> — the Arda-layer lift of the
-///   gift-detection FSM. The correlator resolves the
-///   <c>ProcessStartInteraction</c> / <c>ProcessDeleteItem</c> /
-///   <c>ProcessDeltaFavor</c> verb triple and emits a fully-resolved
-///   <see cref="ArdaGiftAccepted"/> with the <c>InternalName</c> baked in.
-///   Replaces the former <c>IGiftSignalService</c> subscription
-///   (legacy GameState layer, now removed).</item>
+///   Arda Npc handler).</item>
+///   <item><b><see cref="ArdaGiftAccepted"/></b> — emitted by the Npc handler's
+///   internal FSM which correlates the <c>ProcessStartInteraction</c> /
+///   <c>ProcessDeleteItem</c> / <c>ProcessDeltaFavor</c> verb triple at L3
+///   dispatch. Does not carry <c>ItemInternalName</c> — name resolution is
+///   deferred to the inventory ledger (retained-entry lookups).</item>
 /// </list>
-///
-/// <para><b>Subscription timing.</b> Both subscriptions are wired in the
-/// constructor so they are in place before the Arda drivers start pumping.
-/// The <see cref="IDomainEventSubscriber"/> is synchronous — all events fire inline
-/// on the driver thread during <see cref="ExecuteAsync"/>.</para>
-///
-/// <para><b>Idempotence policy.</b> <em>None</em> from either source's
-/// perspective. <see cref="CalibrationService"/> owns per-key dedup at the
-/// sink layer via its <c>_observationKeys</c> HashSet keyed
-/// <c>SessionId|InstanceId|NpcKey|Item|Delta|Timestamp:O</c>;
-/// <see cref="ArwenFavorState.SetExactFavor"/> is an idempotent last-write-wins
-/// upsert.</para>
-///
-/// <para><b>Threading.</b> The Arda bus fires synchronously on the driver
-/// thread. In WPF contexts we marshal onto the dispatcher so state mutations
-/// stay on the UI thread; in test/headless contexts where
-/// <see cref="Application.Current"/> is null we run inline.</para>
 /// </summary>
 public sealed class FavorIngestionService : BackgroundService
 {
@@ -121,7 +101,7 @@ public sealed class FavorIngestionService : BackgroundService
         var ts = gift.Metadata.Timestamp ?? gift.Metadata.ReadOn;
 
         void Dispatch() => _calibration.OnGiftAccepted(
-            gift.NpcKey, gift.ItemInstanceId, gift.ItemInternalName, gift.DeltaFavor, ts);
+            gift.NpcKey, gift.ItemInstanceId, gift.DeltaFavor, ts);
 
         if (_dispatcher is null || _dispatcher.CheckAccess())
             Dispatch();

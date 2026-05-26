@@ -86,13 +86,6 @@ public static class PlayerWorldExtensions
         });
         builder.Services.AddSingleton<INpcState>(sp => sp.GetRequiredService<Npc>());
 
-        // --- Gift correlator (fuses GiftAttempted + DeltaFavorReceived → GiftAccepted) ---
-        builder.Services.AddSingleton(sp =>
-        {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
-            return new GiftCorrelator(bus);
-        });
-
         // --- Weather handler ---
         builder.Services.AddSingleton(sp =>
         {
@@ -212,12 +205,9 @@ public static class PlayerWorldExtensions
             RegisterHandler(registry, Verbs.ProcessStartInteraction, new StartInteractionHandler(npc));
             RegisterHandler(registry, Verbs.ProcessDeleteItem, new NpcDeleteItemHandler(npc));
 
-            // --- DeltaFavor handler (drives gift correlation) ---
-            var pub = sp.GetRequiredService<IDomainEventPublisher>();
-            RegisterHandler(registry, Verbs.ProcessDeltaFavor, new DeltaFavorHandler(npc, pub));
+            RegisterHandler(registry, Verbs.ProcessDeltaFavor, new DeltaFavorHandler(npc));
 
-            // Force GiftCorrelator resolution to activate its subscriptions
-            sp.GetRequiredService<GiftCorrelator>();
+            var pub = sp.GetRequiredService<IDomainEventPublisher>();
 
             // --- Tier 1 state handlers (multi-consumer) ---
             RegisterHandler(registry, Verbs.ProcessSetWeather, weather);

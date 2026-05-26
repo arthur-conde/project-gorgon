@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Arda.Abstractions.Logs;
 using Arda.Dispatch;
 using Arda.World.Player.Events;
@@ -7,50 +8,58 @@ using Xunit;
 
 namespace Arda.World.Player.Tests;
 
-public class GiftCorrelatorTests : IDisposable
+/// <summary>
+/// Tests the gift correlation FSM inside <see cref="Npc"/>. The FSM pairs
+/// <c>ProcessDeleteItem</c> and <c>ProcessDeltaFavor</c> (in either order)
+/// to emit <see cref="GiftAccepted"/>. Replaces the former
+/// <c>GiftCorrelatorTests</c> which drove the same logic through a
+/// separate bus subscriber.
+/// </summary>
+public class NpcGiftCorrelationTests
 {
-    private readonly LiveTestBus _bus = new();
-    private readonly GiftCorrelator _correlator;
-    private readonly List<GiftAccepted> _accepted = [];
+    private readonly SpyBus _bus = new();
+    private readonly Npc _npc;
 
-    public GiftCorrelatorTests()
+    public NpcGiftCorrelationTests()
     {
-        _correlator = new GiftCorrelator(_bus);
-        _bus.Subscribe<GiftAccepted>(e => _accepted.Add(e));
+        var pool = new InternPool(FrozenDictionary<string, string>.Empty);
+        _npc = new Npc(_bus, pool);
     }
-
-    public void Dispose() => _correlator.Dispose();
 
     private static LogLineMetadata Meta() =>
         new(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, false);
 
-    private void AddItem(long instanceId, string internalName) =>
-        _bus.Publish(new InventoryItemAdded(instanceId, internalName, Meta()));
+    private void ArmNpcInteraction(string npcKey, long entityId = 12307)
+    {
+        _npc.OnStartInteraction(
+            $"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(),
+            $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")",
+            Meta());
+        _bus.Clear();
+    }
 
-    private void GiftAttempt(long entityId, string npcKey, long instanceId) =>
-        _bus.Publish(new GiftAttempted(entityId, npcKey, instanceId, Meta()));
+    private void DeleteItem(long instanceId) =>
+        _npc.OnDeleteItem($"({instanceId})".AsSpan(),
+            $"LocalPlayer: ProcessDeleteItem({instanceId})", Meta());
 
     private void DeltaFavor(string npcKey, double delta) =>
-        _bus.Publish(new DeltaFavorReceived(npcKey, delta, Meta()));
-
-    private void StartInteraction(long entityId, string name, double favor, bool isNpc) =>
-        _bus.Publish(new InteractionStarted(entityId, name, favor, isNpc, Meta()));
+        _npc.OnDeltaFavor($"(12307, \"{npcKey}\", {delta}, True)".AsSpan(),
+            $"LocalPlayer: ProcessDeltaFavor(12307, \"{npcKey}\", {delta}, True)", Meta());
 
     // ── Delete-first correlation ─────────────────────────────────────────
 
     [Fact]
     public void DeleteFirst_ThenDelta_EmitsGiftAccepted()
     {
-        AddItem(100, "Item_Apple");
-        GiftAttempt(12307, "NPC_Joe", 100);
+        ArmNpcInteraction("NPC_Joe");
+        DeleteItem(100);
         DeltaFavor("NPC_Joe", 25.5);
 
-        _accepted.Should().ContainSingle().Which.Should().BeEquivalentTo(new
+        _bus.Published<GiftAccepted>().Should().ContainSingle().Which.Should().BeEquivalentTo(new
         {
             EntityId = 12307L,
             NpcKey = "NPC_Joe",
             ItemInstanceId = 100L,
-            ItemInternalName = "Item_Apple",
             DeltaFavor = 25.5
         });
     }
@@ -60,16 +69,15 @@ public class GiftCorrelatorTests : IDisposable
     [Fact]
     public void DeltaFirst_ThenDelete_EmitsGiftAccepted()
     {
-        AddItem(200, "Item_Sword");
-        DeltaFavor("NPC_Way", 10.0);
-        GiftAttempt(8887, "NPC_Way", 200);
+        ArmNpcInteraction("NPC_Joe");
+        DeltaFavor("NPC_Joe", 10.0);
+        DeleteItem(200);
 
-        _accepted.Should().ContainSingle().Which.Should().BeEquivalentTo(new
+        _bus.Published<GiftAccepted>().Should().ContainSingle().Which.Should().BeEquivalentTo(new
         {
-            EntityId = 8887L,
-            NpcKey = "NPC_Way",
+            EntityId = 12307L,
+            NpcKey = "NPC_Joe",
             ItemInstanceId = 200L,
-            ItemInternalName = "Item_Sword",
             DeltaFavor = 10.0
         });
     }
@@ -79,36 +87,25 @@ public class GiftCorrelatorTests : IDisposable
     [Fact]
     public void NewInteraction_ClearsPendingDelete()
     {
-        AddItem(300, "Item_Gem");
-        GiftAttempt(12307, "NPC_Joe", 300);
+        ArmNpcInteraction("NPC_Joe");
+        DeleteItem(300);
 
-        StartInteraction(9999, "NPC_Other", 0, true);
+        ArmNpcInteraction("NPC_Other", 9999);
         DeltaFavor("NPC_Joe", 5.0);
 
-        _accepted.Should().BeEmpty();
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
     [Fact]
     public void NewInteraction_ClearsPendingDelta()
     {
-        AddItem(400, "Item_Ring");
+        ArmNpcInteraction("NPC_Joe");
         DeltaFavor("NPC_Joe", 15.0);
 
-        StartInteraction(9999, "NPC_Other", 0, true);
-        GiftAttempt(12307, "NPC_Joe", 400);
+        ArmNpcInteraction("NPC_Other", 9999);
+        DeleteItem(400);
 
-        _accepted.Should().BeEmpty();
-    }
-
-    // ── Unresolved instanceId ────────────────────────────────────────────
-
-    [Fact]
-    public void UnresolvedInstanceId_NoGiftAccepted()
-    {
-        GiftAttempt(12307, "NPC_Joe", 999);
-        DeltaFavor("NPC_Joe", 25.0);
-
-        _accepted.Should().BeEmpty();
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
     // ── NPC key mismatch ─────────────────────────────────────────────────
@@ -116,21 +113,24 @@ public class GiftCorrelatorTests : IDisposable
     [Fact]
     public void DeltaWithWrongNpcKey_NoCorrelation()
     {
-        AddItem(500, "Item_Potion");
-        GiftAttempt(12307, "NPC_Joe", 500);
+        ArmNpcInteraction("NPC_Joe");
+        DeleteItem(500);
         DeltaFavor("NPC_Other", 25.0);
 
-        _accepted.Should().BeEmpty();
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
     [Fact]
     public void DeleteWithWrongNpcKey_NoCorrelation()
     {
-        AddItem(600, "Item_Shield");
+        ArmNpcInteraction("NPC_Joe");
         DeltaFavor("NPC_Joe", 25.0);
-        GiftAttempt(12307, "NPC_Other", 600);
 
-        _accepted.Should().BeEmpty();
+        // Switch to a different NPC, then delete — pending delta was for NPC_Joe
+        ArmNpcInteraction("NPC_Other", 8887);
+        DeleteItem(600);
+
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
     // ── Sequential gifts ─────────────────────────────────────────────────
@@ -138,85 +138,109 @@ public class GiftCorrelatorTests : IDisposable
     [Fact]
     public void MultipleGiftsInSequence_AllEmitted()
     {
-        AddItem(700, "Item_Gem");
-        AddItem(701, "Item_Ore");
+        ArmNpcInteraction("NPC_Joe");
 
-        GiftAttempt(12307, "NPC_Joe", 700);
+        DeleteItem(700);
         DeltaFavor("NPC_Joe", 10.0);
 
-        GiftAttempt(12307, "NPC_Joe", 701);
+        DeleteItem(701);
         DeltaFavor("NPC_Joe", 20.0);
 
-        _accepted.Should().HaveCount(2);
-        _accepted[0].ItemInternalName.Should().Be("Item_Gem");
-        _accepted[0].DeltaFavor.Should().Be(10.0);
-        _accepted[1].ItemInternalName.Should().Be("Item_Ore");
-        _accepted[1].DeltaFavor.Should().Be(20.0);
+        _bus.Published<GiftAccepted>().Should().HaveCount(2);
+        _bus.Published<GiftAccepted>()[0].ItemInstanceId.Should().Be(700);
+        _bus.Published<GiftAccepted>()[0].DeltaFavor.Should().Be(10.0);
+        _bus.Published<GiftAccepted>()[1].ItemInstanceId.Should().Be(701);
+        _bus.Published<GiftAccepted>()[1].DeltaFavor.Should().Be(20.0);
     }
 
-    // ── Dispose stops subscriptions ──────────────────────────────────────
+    // ── No active interaction ────────────────────────────────────────────
 
     [Fact]
-    public void Dispose_StopsSubscriptions()
+    public void DeleteWithoutActiveInteraction_NoPending()
     {
-        AddItem(800, "Item_Staff");
-        _correlator.Dispose();
+        DeleteItem(999);
+        DeltaFavor("NPC_Joe", 25.0);
 
-        GiftAttempt(12307, "NPC_Joe", 800);
-        DeltaFavor("NPC_Joe", 30.0);
-
-        _accepted.Should().BeEmpty();
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
-
-    // ── Instance map retains after deletion ──────────────────────────────
 
     [Fact]
-    public void InstanceMapRetains_AfterGiftCorrelation()
+    public void DeltaWithoutActiveInteraction_NoPending()
     {
-        AddItem(900, "Item_Bow");
-        GiftAttempt(12307, "NPC_Joe", 900);
-        DeltaFavor("NPC_Joe", 5.0);
+        DeltaFavor("NPC_Joe", 25.0);
+        DeleteItem(999);
 
-        _accepted.Should().ContainSingle();
-
-        // Same instanceId re-gifted (re-acquired then gifted again)
-        GiftAttempt(12307, "NPC_Joe", 900);
-        DeltaFavor("NPC_Joe", 5.0);
-
-        _accepted.Should().HaveCount(2);
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
-    // ── LiveTestBus ──────────────────────────────────────────────────────
+    // ── Non-positive delta ───────────────────────────────────────────────
 
-    private sealed class LiveTestBus : IDomainEventBus
+    [Fact]
+    public void ZeroDelta_NoCorrelation()
     {
-        private readonly Dictionary<Type, object> _subscriptions = [];
+        ArmNpcInteraction("NPC_Joe");
+        DeleteItem(100);
+        DeltaFavor("NPC_Joe", 0);
+
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void NegativeDelta_NoCorrelation()
+    {
+        ArmNpcInteraction("NPC_Joe");
+        DeleteItem(100);
+        DeltaFavor("NPC_Joe", -5.0);
+
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
+    }
+
+    // ── Reset clears pending ─────────────────────────────────────────────
+
+    [Fact]
+    public void Reset_ClearsPendingDelete()
+    {
+        ArmNpcInteraction("NPC_Joe");
+        DeleteItem(100);
+        _npc.Reset();
+
+        ArmNpcInteraction("NPC_Joe");
+        DeltaFavor("NPC_Joe", 25.0);
+
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
+    }
+
+    // ── SpyBus ───────────────────────────────────────────────────────────
+
+    private sealed class SpyBus : IDomainEventBus
+    {
+        private readonly Dictionary<Type, List<object>> _published = [];
 
         public IDisposable Subscribe<T>(Action<T> handler) where T : struct
-        {
-            if (!_subscriptions.TryGetValue(typeof(T), out var obj))
-            {
-                obj = new List<Action<T>>();
-                _subscriptions[typeof(T)] = obj;
-            }
-            var list = (List<Action<T>>)obj;
-            list.Add(handler);
-            return new Unsubscriber<T>(list, handler);
-        }
+            => new NoopDisposable();
 
         public void Publish<T>(T domainEvent) where T : struct
         {
-            if (_subscriptions.TryGetValue(typeof(T), out var obj))
+            if (!_published.TryGetValue(typeof(T), out var list))
             {
-                var snapshot = ((List<Action<T>>)obj).ToArray();
-                foreach (var handler in snapshot)
-                    handler(domainEvent);
+                list = [];
+                _published[typeof(T)] = list;
             }
+            list.Add(domainEvent);
         }
 
-        private sealed class Unsubscriber<T>(List<Action<T>> list, Action<T> handler) : IDisposable
+        public List<T> Published<T>() where T : struct
         {
-            public void Dispose() => list.Remove(handler);
+            if (_published.TryGetValue(typeof(T), out var list))
+                return list.Cast<T>().ToList();
+            return [];
+        }
+
+        public void Clear() => _published.Clear();
+
+        private sealed class NoopDisposable : IDisposable
+        {
+            public void Dispose() { }
         }
     }
 }

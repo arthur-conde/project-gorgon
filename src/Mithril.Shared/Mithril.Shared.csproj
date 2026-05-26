@@ -5,6 +5,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Mithril.Persistence\Mithril.Persistence.csproj" />
     <ProjectReference Include="..\Mithril.Reference\Mithril.Reference.csproj" />
     <ProjectReference Include="..\Mithril.GameReports\Mithril.GameReports.csproj" />
   </ItemGroup>

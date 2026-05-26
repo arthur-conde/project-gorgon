@@ -59,7 +59,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Arda\Arda.Composition\Arda.Composition.csproj" />
-    <ProjectReference Include="..\Arda\Arda.Inventory\Arda.Inventory.csproj" />
+    <ProjectReference Include="..\Arda\Arda.Wpf\Arda.Wpf.csproj" />
     <ProjectReference Include="..\Arda\Arda.World.Player\Arda.World.Player.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <!-- Foundation-layer assembly for character export reports (storage/vault

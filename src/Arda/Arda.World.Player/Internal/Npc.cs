@@ -5,18 +5,24 @@ using Arda.World.Player.Events;
 namespace Arda.World.Player.Internal;
 
 /// <summary>
-/// Tracks NPC interaction context. Emits <see cref="InteractionStarted"/> for all
-/// interaction targets (NPCs, chests, plants) and <see cref="GiftAttempted"/> when
-/// an item deletion occurs during an active NPC interaction.
+/// Tracks NPC interaction context and correlates the gift verb triple
+/// (<c>ProcessStartInteraction</c> / <c>ProcessDeleteItem</c> /
+/// <c>ProcessDeltaFavor</c>) to emit <see cref="GiftAccepted"/>.
 /// <para>
-/// Registered for <c>ProcessStartInteraction</c> (as primary handler) and
-/// <c>ProcessDeleteItem</c> (shared with <see cref="Inventory"/>) for gift correlation.
+/// Registered for <c>ProcessStartInteraction</c> (primary),
+/// <c>ProcessDeleteItem</c> (shared with <see cref="Inventory"/>), and
+/// <c>ProcessDeltaFavor</c> (via <see cref="DeltaFavorHandler"/> adapter).
+/// The game emits delete and favor-delta in either order; the pending FSM
+/// handles both sequences.
 /// </para>
 /// </summary>
 internal sealed class Npc : INpcState
 {
     private readonly IDomainEventPublisher _bus;
     private readonly InternPool _npcPool;
+
+    private (long EntityId, string NpcKey, long ItemInstanceId, LogLineMetadata Metadata)? _pendingDelete;
+    private (string NpcKey, double Delta, LogLineMetadata Metadata)? _pendingDelta;
 
     public string? ActiveNpcKey { get; private set; }
     public long? ActiveEntityId { get; private set; }
@@ -29,10 +35,15 @@ internal sealed class Npc : INpcState
     }
 
     /// <summary>
-    /// Clear interaction context on area transition or character switch.
-    /// Prevents stale <see cref="GiftAttempted"/> emissions in the new zone.
+    /// Clear interaction and pending gift state on area transition or
+    /// character switch.
     /// </summary>
-    internal void Reset() => ClearInteraction();
+    internal void Reset()
+    {
+        ClearInteraction();
+        _pendingDelete = null;
+        _pendingDelta = null;
+    }
 
     /// <summary>
     /// Args format: <c>(entityId, arg2, favor, isNpc, "Name")</c>
@@ -40,6 +51,9 @@ internal sealed class Npc : INpcState
     /// </summary>
     internal void OnStartInteraction(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
     {
+        _pendingDelete = null;
+        _pendingDelta = null;
+
         var tok = new ArgTokenizer(args);
         tok.SkipOpen();
 
@@ -67,6 +81,8 @@ internal sealed class Npc : INpcState
 
     /// <summary>
     /// Correlate item deletion during active NPC interaction as a gift attempt.
+    /// If a pending favor delta already arrived, emit <see cref="GiftAccepted"/>
+    /// immediately; otherwise stash the delete as pending.
     /// Args format: <c>(instanceId)</c>
     /// </summary>
     internal void OnDeleteItem(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
@@ -81,7 +97,50 @@ internal sealed class Npc : INpcState
         if (!long.TryParse(inner, out var instanceId))
             return;
 
-        _bus.Publish(new GiftAttempted(ActiveEntityId.Value, ActiveNpcKey, instanceId, metadata));
+        if (_pendingDelta is { } delta && delta.NpcKey == ActiveNpcKey)
+        {
+            _pendingDelta = null;
+            _bus.Publish(new GiftAccepted(
+                ActiveEntityId.Value, ActiveNpcKey, instanceId, delta.Delta, delta.Metadata));
+            return;
+        }
+
+        _pendingDelete = (ActiveEntityId.Value, ActiveNpcKey, instanceId, metadata);
+    }
+
+    /// <summary>
+    /// Correlate a positive favor delta during active NPC interaction. If a
+    /// pending item deletion already arrived, emit <see cref="GiftAccepted"/>
+    /// immediately; otherwise stash the delta as pending.
+    /// Args format: <c>(entityId, "NPC_Key", delta, bool)</c>
+    /// </summary>
+    internal void OnDeltaFavor(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    {
+        var tok = new ArgTokenizer(args);
+        tok.SkipOpen();
+
+        tok.NextLong(); // entityId — already tracked
+        var npcKey = tok.NextQuotedSpan();
+        var delta = tok.NextDouble();
+
+        if (delta <= 0)
+            return;
+
+        if (ActiveNpcKey is null)
+            return;
+
+        if (!npcKey.SequenceEqual(ActiveNpcKey))
+            return;
+
+        if (_pendingDelete is { } pending && pending.NpcKey == ActiveNpcKey)
+        {
+            _pendingDelete = null;
+            _bus.Publish(new GiftAccepted(
+                pending.EntityId, pending.NpcKey, pending.ItemInstanceId, delta, metadata));
+            return;
+        }
+
+        _pendingDelta = (ActiveNpcKey, delta, metadata);
     }
 
     private void ClearInteraction()

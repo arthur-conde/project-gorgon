@@ -2,17 +2,15 @@
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
-    <RootNamespace>Arda.Inventory</RootNamespace>
+    <RootNamespace>Arda.Wpf</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Arda.Contracts\Arda.Contracts.csproj" />
-    <ProjectReference Include="..\..\Mithril.Shared\Mithril.Shared.csproj" />
-    <ProjectReference Include="..\..\Mithril.GameReports\Mithril.GameReports.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Arda.Inventory.Tests" />
+    <InternalsVisibleTo Include="Arda.Wpf.Tests" />
   </ItemGroup>
 </Project>

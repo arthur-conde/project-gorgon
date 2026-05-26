@@ -1,7 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Settings;
 
 namespace Mithril.Shared.Character;
@@ -34,14 +34,14 @@ public sealed class PerCharacterStore<T>
     private readonly string _fileName;
     private readonly JsonTypeInfo<T> _typeInfo;
     private readonly ILegacyMigration<T>? _legacy;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public PerCharacterStore(
         string rootDir,
         string fileName,
         JsonTypeInfo<T> typeInfo,
         ILegacyMigration<T>? legacy = null,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         if (string.IsNullOrEmpty(rootDir)) throw new ArgumentException("rootDir required", nameof(rootDir));
         if (string.IsNullOrEmpty(fileName)) throw new ArgumentException("fileName required", nameof(fileName));
@@ -49,7 +49,7 @@ public sealed class PerCharacterStore<T>
         _fileName = fileName;
         _typeInfo = typeInfo ?? throw new ArgumentNullException(nameof(typeInfo));
         _legacy = legacy;
-        _diag = diag;
+        _logger = logger;
     }
 
     /// <summary>Sanitized <c>{character}_{server}</c> used as the directory name.</summary>
@@ -78,8 +78,9 @@ public sealed class PerCharacterStore<T>
             migrated.SchemaVersion = T.CurrentVersion;
             AtomicJsonWriter.Write(path, migrated, _typeInfo);
             CleanupLegacy(legacyPath);
-            _diag?.Info("PerCharacterStore",
-                $"Migrated {typeof(T).Name} for {character} ({server}) from {legacyPath} → {path}");
+            _logger?.LogInformation(
+                "Migrated {TypeName} for {Character} ({Server}) from {LegacyPath} → {NewPath}",
+                typeof(T).Name, character, server, legacyPath, path);
             return migrated;
         }
 
@@ -101,8 +102,9 @@ public sealed class PerCharacterStore<T>
             migrated.SchemaVersion = T.CurrentVersion;
             await AtomicJsonWriter.WriteAsync(path, migrated, _typeInfo, ct).ConfigureAwait(false);
             CleanupLegacy(legacyPath);
-            _diag?.Info("PerCharacterStore",
-                $"Migrated {typeof(T).Name} for {character} ({server}) from {legacyPath} → {path}");
+            _logger?.LogInformation(
+                "Migrated {TypeName} for {Character} ({Server}) from {LegacyPath} → {NewPath}",
+                typeof(T).Name, character, server, legacyPath, path);
             return migrated;
         }
 
@@ -160,7 +162,7 @@ public sealed class PerCharacterStore<T>
         }
         catch (Exception ex)
         {
-            _diag?.Warn("PerCharacterStore", $"Legacy cleanup failed for {legacyPath}: {ex.Message}");
+            _logger?.LogWarning(ex, "Legacy cleanup failed for {LegacyPath}", legacyPath);
         }
     }
 

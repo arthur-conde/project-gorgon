@@ -55,7 +55,7 @@ public static class Verbs
     public const string ProcessVendorAddItem = "ProcessVendorAddItem";
     public const string ProcessVendorUpdateAvailableGold = "ProcessVendorUpdateAvailableGold";
 
-    // Favor verb (Tier 2 passthrough, primary consumer: Arwen via GiftCorrelator)
+    // Favor verb (dispatched to Npc handler for gift correlation)
     public const string ProcessDeltaFavor = "ProcessDeltaFavor";
 
     // Position

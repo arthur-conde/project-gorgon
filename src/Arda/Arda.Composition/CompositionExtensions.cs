@@ -1,6 +1,8 @@
 using Arda.Composition.Internal;
 using Arda.Dispatch;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Mithril.Shared.Character;
 
 namespace Arda.Composition;
 
@@ -10,13 +12,33 @@ public static class CompositionExtensions
     /// Register the Arda composition pipeline (L4 cross-source composers).
     /// Call after both <c>AddPlayerWorld()</c> and <c>AddChatWorld()</c>.
     /// </summary>
-    public static IServiceCollection AddArdaComposition(this IServiceCollection services)
+    /// <param name="services">Service collection.</param>
+    /// <param name="charactersRootDir">Root directory for per-character state files.
+    /// When <c>null</c>, the inventory accumulator runs without persistence.</param>
+    public static IServiceCollection AddArdaComposition(
+        this IServiceCollection services,
+        string? charactersRootDir = null)
     {
         services.AddSingleton(sp =>
         {
             var bus = sp.GetRequiredService<IDomainEventBus>();
-            return new InventoryComposer(bus);
+            var loggerFactory = sp.GetService<ILoggerFactory>();
+
+            PerCharacterStore<AccumulatorSnapshot>? store = null;
+            if (!string.IsNullOrEmpty(charactersRootDir))
+            {
+                store = new PerCharacterStore<AccumulatorSnapshot>(
+                    charactersRootDir,
+                    "inventory-accumulator.json",
+                    AccumulatorSnapshotJsonContext.Default.AccumulatorSnapshot,
+                    logger: loggerFactory?.CreateLogger("PerCharacterStore<AccumulatorSnapshot>"));
+            }
+
+            return new InventoryComposer(bus, store,
+                loggerFactory?.CreateLogger("InventoryComposer"));
         });
+        services.AddSingleton<IInventoryAccumulatorState>(sp =>
+            sp.GetRequiredService<InventoryComposer>());
 
         services.AddSingleton(sp =>
         {

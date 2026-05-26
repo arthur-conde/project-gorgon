@@ -8,6 +8,12 @@ using Xunit;
 
 namespace Arda.World.Player.Tests;
 
+/// <summary>
+/// Verifies that <see cref="DeltaFavorHandler"/> is a thin adapter routing
+/// <c>ProcessDeltaFavor</c> to <see cref="Npc.OnDeltaFavor"/>. Filtering
+/// (positive delta, active NPC, key match) is verified at the Npc level;
+/// this test confirms the dispatch wiring works end-to-end.
+/// </summary>
 public class DeltaFavorHandlerTests
 {
     private readonly SpyBus _bus = new();
@@ -18,7 +24,7 @@ public class DeltaFavorHandlerTests
     {
         var pool = new InternPool(FrozenDictionary<string, string>.Empty);
         _npc = new Npc(_bus, pool);
-        _handler = new DeltaFavorHandler(_npc, _bus);
+        _handler = new DeltaFavorHandler(_npc);
     }
 
     private static LogLineMetadata Meta() =>
@@ -38,66 +44,27 @@ public class DeltaFavorHandlerTests
         _handler.Handle(args.AsSpan(), line, Meta());
     }
 
-    // ── Happy path ───────────────────────────────────────────────────────
-
     [Fact]
-    public void PositiveDelta_DuringNpcInteraction_EmitsDeltaFavorReceived()
+    public void RoutesToNpc_DeleteFirstCorrelation()
     {
         ArmNpcInteraction("NPC_Joe");
         _bus.Clear();
 
+        _npc.OnDeleteItem("(100)".AsSpan(), "LocalPlayer: ProcessDeleteItem(100)", Meta());
         Dispatch("(12307, \"NPC_Joe\", 25.5, True)");
 
-        var evt = _bus.Published<DeltaFavorReceived>().Should().ContainSingle().Which;
+        var evt = _bus.Published<GiftAccepted>().Should().ContainSingle().Which;
         evt.NpcKey.Should().Be("NPC_Joe");
-        evt.Delta.Should().Be(25.5);
-    }
-
-    // ── Negative/zero delta ──────────────────────────────────────────────
-
-    [Fact]
-    public void ZeroDelta_NoEmission()
-    {
-        ArmNpcInteraction("NPC_Joe");
-        _bus.Clear();
-
-        Dispatch("(12307, \"NPC_Joe\", 0, True)");
-
-        _bus.Published<DeltaFavorReceived>().Should().BeEmpty();
+        evt.ItemInstanceId.Should().Be(100);
+        evt.DeltaFavor.Should().Be(25.5);
     }
 
     [Fact]
-    public void NegativeDelta_NoEmission()
-    {
-        ArmNpcInteraction("NPC_Joe");
-        _bus.Clear();
-
-        Dispatch("(12307, \"NPC_Joe\", -10.5, True)");
-
-        _bus.Published<DeltaFavorReceived>().Should().BeEmpty();
-    }
-
-    // ── No active NPC interaction ────────────────────────────────────────
-
-    [Fact]
-    public void NoActiveInteraction_NoEmission()
+    public void NoActiveInteraction_NoEvent()
     {
         Dispatch("(12307, \"NPC_Joe\", 25.5, True)");
 
-        _bus.Published<DeltaFavorReceived>().Should().BeEmpty();
-    }
-
-    // ── NPC key mismatch ─────────────────────────────────────────────────
-
-    [Fact]
-    public void NpcKeyMismatch_NoEmission()
-    {
-        ArmNpcInteraction("NPC_Joe");
-        _bus.Clear();
-
-        Dispatch("(12307, \"NPC_Other\", 25.5, True)");
-
-        _bus.Published<DeltaFavorReceived>().Should().BeEmpty();
+        _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
     // ── SpyBus ───────────────────────────────────────────────────────────

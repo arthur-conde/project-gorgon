@@ -20,23 +20,16 @@ namespace Mithril.Shared.Settings;
 /// move) on any of those exceptions, with a generous backoff. Happy-path callers
 /// pay nothing.</para>
 /// </remarks>
-internal static class AtomicFile
+public static class AtomicFile
 {
-    // 0, 50, 100, 200, 400, 800, 1600ms — total worst-case wait ~3.15s.
-    // Generous tail to absorb Defender quarantine-then-restore cycles observed on
-    // GitHub Actions windows-latest runners.
     private static readonly int[] BackoffMs = [0, 50, 100, 200, 400, 800, 1600];
 
-    /// <summary>Write <paramref name="payload"/> to a sibling <c>.tmp</c> and rename
+    /// <summary>Write <paramref name="payload"/> to a sibling <c>.partial</c> and rename
     /// over <paramref name="destination"/>, retrying the whole sequence on
     /// AV/indexer-induced sharing violations or scratch-file deletions.</summary>
     public static void WriteAllBytesAtomic(string destination, byte[] payload)
     {
         EnsureDirectory(destination);
-        // Avoid the `.tmp` extension — it triggers Defender ATR heuristics on Windows
-        // that scan-and-quarantine "ransomware-shaped" temp files in user paths.
-        // `.partial` is uncommon enough to slip past those rules while still being
-        // descriptive to a human inspecting the directory mid-write.
         var tmp = destination + ".partial";
 
         for (var attempt = 0; attempt < BackoffMs.Length; attempt++)
@@ -51,7 +44,6 @@ internal static class AtomicFile
             }
             catch (Exception ex) when (IsTransient(ex) && attempt < BackoffMs.Length - 1)
             {
-                // Fall through to next attempt — re-create the tmp from scratch.
             }
         }
     }
@@ -60,10 +52,6 @@ internal static class AtomicFile
     public static async Task WriteAllBytesAtomicAsync(string destination, byte[] payload, CancellationToken ct = default)
     {
         EnsureDirectory(destination);
-        // Avoid the `.tmp` extension — it triggers Defender ATR heuristics on Windows
-        // that scan-and-quarantine "ransomware-shaped" temp files in user paths.
-        // `.partial` is uncommon enough to slip past those rules while still being
-        // descriptive to a human inspecting the directory mid-write.
         var tmp = destination + ".partial";
 
         for (var attempt = 0; attempt < BackoffMs.Length; attempt++)
@@ -78,7 +66,6 @@ internal static class AtomicFile
             }
             catch (Exception ex) when (IsTransient(ex) && attempt < BackoffMs.Length - 1)
             {
-                // Fall through.
             }
         }
     }
@@ -112,11 +99,6 @@ internal static class AtomicFile
         || ex is FileNotFoundException
         || ex is IOException;
 
-    // On Windows, Defender / Search indexer can quarantine or delete the destination
-    // *after* File.Move returns success. Without this check the loss is silent —
-    // callers only discover it later when they try to read the file back, and the
-    // exception surfaces far from the actual write site. Throwing here surfaces the
-    // eviction at the point it happened, and lets the retry loop re-write the file.
     private static void VerifyLanded(string destination)
     {
         if (!File.Exists(destination))

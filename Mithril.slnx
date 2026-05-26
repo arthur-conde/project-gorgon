@@ -11,6 +11,7 @@
     <Project Path="src/Mithril.Planning/Mithril.Planning.csproj" />
     <Project Path="src/Mithril.Reference/Mithril.Reference.csproj" />
     <Project Path="src/Mithril.Shared.Wpf/Mithril.Shared.Wpf.csproj" />
+    <Project Path="src/Mithril.Persistence/Mithril.Persistence.csproj" />
     <Project Path="src/Mithril.Shared/Mithril.Shared.csproj" />
     <Project Path="src/Mithril.Shell/Mithril.Shell.csproj" />
     <Project Path="src/Palantir.Module/Palantir.Module.csproj" />
@@ -34,7 +35,7 @@
     <Project Path="src/Arda/Arda.Hosting/Arda.Hosting.csproj" />
     <Project Path="src/Arda/Arda.World.Player/Arda.World.Player.csproj" />
     <Project Path="src/Arda/Arda.World.Chat/Arda.World.Chat.csproj" />
-    <Project Path="src/Arda/Arda.Inventory/Arda.Inventory.csproj" />
+    <Project Path="src/Arda/Arda.Wpf/Arda.Wpf.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Arwen.Tests/Arwen.Tests.csproj" />
@@ -63,6 +64,6 @@
     <Project Path="tests/Arda.Hosting.Tests/Arda.Hosting.Tests.csproj" />
     <Project Path="tests/Arda.World.Player.Tests/Arda.World.Player.Tests.csproj" />
     <Project Path="tests/Arda.World.Chat.Tests/Arda.World.Chat.Tests.csproj" />
-    <Project Path="tests/Arda.Inventory.Tests/Arda.Inventory.Tests.csproj" />
+    <Project Path="tests/Arda.Wpf.Tests/Arda.Wpf.Tests.csproj" />
   </Folder>
 </Solution>

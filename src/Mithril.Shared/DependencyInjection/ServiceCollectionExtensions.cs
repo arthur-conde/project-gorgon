@@ -235,7 +235,8 @@ public static class ServiceCollectionExtensions
             fileName,
             typeInfo,
             sp.GetService<ILegacyMigration<T>>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                ?.CreateLogger($"PerCharacterStore<{typeof(T).Name}>")));
         services.AddSingleton(sp => new PerCharacterView<T>(
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetRequiredService<PerCharacterStore<T>>()));

@@ -7,7 +7,6 @@ using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Arda.Composition;
-using Arda.World.Player;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -69,7 +68,7 @@ public sealed class ArwenModule : IMithrilModule
             return new CalibrationService(
                 sp.GetRequiredService<IReferenceDataService>(),
                 sp.GetRequiredService<GiftIndex>(),
-                sp.GetRequiredService<IInventoryState>(),
+                sp.GetRequiredService<IInventoryAccumulatorState>(),
                 Path.Combine(localApp, "Mithril", "Arwen"),
                 sp.GetService<ICommunityCalibrationService>(),
                 settings.Calibration,
