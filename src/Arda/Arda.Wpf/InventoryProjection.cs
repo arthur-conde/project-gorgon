@@ -33,6 +33,9 @@ public sealed class InventoryProjection : IDisposable
             _dispatcher.InvokeAsync(Refresh, DispatcherPriority.Background);
     }
 
+    /// <summary>Force a full re-sync from the accumulator state.</summary>
+    public void ForceRefresh() => Refresh();
+
     private void Refresh()
     {
         var source = _state.Items;

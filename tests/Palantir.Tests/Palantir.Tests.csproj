@@ -14,6 +14,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Palantir.Module\Palantir.Module.csproj" />
     <ProjectReference Include="..\..\src\Arda\Arda.Contracts\Arda.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\Arda\Arda.Wpf\Arda.Wpf.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Shared\Mithril.Shared.csproj" />
   </ItemGroup>
 </Project>

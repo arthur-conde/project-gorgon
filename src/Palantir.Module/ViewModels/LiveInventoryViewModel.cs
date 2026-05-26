@@ -1,7 +1,6 @@
 using System.Collections.ObjectModel;
-using Arda.Dispatch;
-using Arda.World.Player;
-using Arda.World.Player.Events;
+using Arda.Composition;
+using Arda.Wpf;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Reference;
@@ -9,100 +8,67 @@ using Mithril.Shared.Reference;
 namespace Palantir.ViewModels;
 
 /// <summary>
-/// Developer / debug surface over <see cref="IInventoryState.Items"/>. Shows
-/// a snapshot of the player's bag inventory, refreshed via domain events
-/// (<see cref="InventoryItemAdded"/>, <see cref="InventoryItemRemoved"/>,
-/// <see cref="InventoryItemUpdated"/>).
-///
-/// <para>Unlike the previous <c>IInventoryView</c>-backed implementation that
-/// relied on an <c>IReadOnlyObservableCollection</c> with
-/// <c>EnableCollectionSynchronization</c>, this version maintains its own
-/// <see cref="ObservableCollection{T}"/> populated from the state dictionary
-/// and refreshed on every inventory event. The inventory is small enough that
-/// a full refresh is cheap and keeps the code simple for this debug surface.</para>
+/// Developer / debug surface over <see cref="IInventoryAccumulatorState"/>. Shows
+/// items from the L4 inventory accumulator (which retains soft-deleted entries) via
+/// <see cref="InventoryProjection"/> — a WPF-thread-aware projection that keeps an
+/// <see cref="ObservableCollection{T}"/> of <see cref="InventoryItemModel"/> in sync
+/// with accumulator state changes.
 /// </summary>
 public sealed partial class LiveInventoryViewModel : ObservableObject, IDisposable
 {
-    private readonly IInventoryState _inventory;
+    private readonly InventoryProjection _projection;
     private readonly IReferenceDataService? _refData;
-    private readonly Action<Action> _dispatch;
-
-    private IDisposable? _addedSub;
-    private IDisposable? _removedSub;
-    private IDisposable? _updatedSub;
 
     [ObservableProperty] private int _liveCount;
+    [ObservableProperty] private int _deletedCount;
+    [ObservableProperty] private bool _showDeleted;
     [ObservableProperty] private string _queryText = "";
 
-    /// <summary>
-    /// The bindable collection backing the grid. Rebuilt from
-    /// <see cref="IInventoryState.Items"/> on every inventory event.
-    /// </summary>
-    public ObservableCollection<InventoryRow> Items { get; } = [];
+    public ObservableCollection<InventoryItemModel> Items => _projection.Items;
 
-    /// <summary>Reference-data accessor surfaced for the icon/name converter
-    /// referenced by the XAML cells — null in tests / when bundled data hasn't
-    /// loaded.</summary>
     public IReferenceDataService? ReferenceData => _refData;
 
     public LiveInventoryViewModel(
-        IInventoryState inventory,
-        IDomainEventSubscriber bus,
+        IInventoryAccumulatorState accumulator,
         IReferenceDataService? refData = null)
-        : this(inventory, bus, refData, dispatch: null)
+        : this(new InventoryProjection(accumulator), refData)
     { }
 
     /// <summary>
-    /// Test-friendly ctor: inject a synchronous dispatcher so unit tests
-    /// don't need an STA Application running.
+    /// Test-friendly ctor: inject a pre-built projection (avoids needing WPF dispatcher).
     /// </summary>
-    public LiveInventoryViewModel(
-        IInventoryState inventory,
-        IDomainEventSubscriber bus,
-        IReferenceDataService? refData,
-        Action<Action>? dispatch)
+    internal LiveInventoryViewModel(
+        InventoryProjection projection,
+        IReferenceDataService? refData)
     {
-        _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
+        _projection = projection;
         _refData = refData;
-        _dispatch = dispatch ?? DefaultDispatch;
 
-        RefreshFromState();
-
-        _addedSub = bus.Subscribe<InventoryItemAdded>(_ => _dispatch(RefreshFromState));
-        _removedSub = bus.Subscribe<InventoryItemRemoved>(_ => _dispatch(RefreshFromState));
-        _updatedSub = bus.Subscribe<InventoryItemUpdated>(_ => _dispatch(RefreshFromState));
+        _projection.Items.CollectionChanged += (_, _) => UpdateCounts();
+        UpdateCounts();
     }
 
-    [RelayCommand]
-    private void Refresh() => _dispatch(RefreshFromState);
+    partial void OnShowDeletedChanged(bool value) => OnPropertyChanged(nameof(ShowDeleted));
 
-    private void RefreshFromState()
+    [RelayCommand]
+    private void Refresh() => _projection.ForceRefresh();
+
+    private void UpdateCounts()
     {
-        Items.Clear();
-        foreach (var (id, entry) in _inventory.Items)
-            Items.Add(new InventoryRow(id, entry.InternalName, entry.StackSize));
-        LiveCount = Items.Count;
+        var items = _projection.Items;
+        var live = 0;
+        var deleted = 0;
+        foreach (var item in items)
+        {
+            if (item.IsRemoved) deleted++;
+            else live++;
+        }
+        LiveCount = live;
+        DeletedCount = deleted;
     }
 
     public void Dispose()
     {
-        _addedSub?.Dispose();
-        _addedSub = null;
-        _removedSub?.Dispose();
-        _removedSub = null;
-        _updatedSub?.Dispose();
-        _updatedSub = null;
-    }
-
-    private static void DefaultDispatch(Action action)
-    {
-        var d = System.Windows.Application.Current?.Dispatcher;
-        if (d is null || d.CheckAccess()) action();
-        else d.InvokeAsync(action);
+        _projection.Dispose();
     }
 }
-
-/// <summary>
-/// Presentation row for the inventory debug grid.
-/// </summary>
-public sealed record InventoryRow(long InstanceId, string InternalName, int StackSize);

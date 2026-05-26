@@ -1,6 +1,5 @@
-using Arda.Abstractions.Logs;
-using Arda.World.Player;
-using Arda.World.Player.Events;
+using Arda.Composition;
+using Arda.Wpf;
 using FluentAssertions;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
@@ -12,36 +11,35 @@ namespace Palantir.Tests;
 
 /// <summary>
 /// Tests for the Arda-backed <see cref="LiveInventoryViewModel"/>. The VM
-/// shows a snapshot from <see cref="IInventoryState.Items"/> and refreshes on
-/// inventory domain events via <see cref="WorldStateViewModelTests.FakeBus"/>.
+/// shows items from <see cref="IInventoryAccumulatorState"/> via
+/// <see cref="InventoryProjection"/>.
 /// </summary>
 public sealed class LiveInventoryViewModelTests
 {
-    private static LogLineMetadata Meta()
-        => new(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, IsReplay: false);
-
     [Fact]
     public void Seed_from_state_populates_items_and_count()
     {
-        var state = new FakeInventoryState(new Dictionary<long, InventoryEntry>
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
         {
-            [1] = new("Moonstone", 1),
-            [2] = new("Guava", 4),
+            [1] = MakeItem("Moonstone", 1),
+            [2] = MakeItem("Guava", 4),
         });
-        using var vm = NewVm(state, out _);
+        using var vm = NewVm(state);
 
         vm.Items.Should().HaveCount(2);
         vm.LiveCount.Should().Be(2);
     }
 
     [Fact]
-    public void InventoryItemAdded_event_refreshes_items()
+    public void StateChanged_adds_new_items()
     {
-        var state = new FakeInventoryState();
-        using var vm = NewVm(state, out var bus);
+        var state = new FakeAccumulatorState();
+        using var vm = NewVm(state);
 
-        state.SetItems(new Dictionary<long, InventoryEntry> { [1] = new("Moonstone", 1) });
-        bus.Fire(new InventoryItemAdded(1, "Moonstone", Meta()));
+        state.SetItems(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1)
+        });
 
         vm.Items.Should().ContainSingle();
         vm.Items.Single().InternalName.Should().Be("Moonstone");
@@ -49,18 +47,20 @@ public sealed class LiveInventoryViewModelTests
     }
 
     [Fact]
-    public void InventoryItemRemoved_event_refreshes_items()
+    public void StateChanged_removes_evicted_items()
     {
-        var state = new FakeInventoryState(new Dictionary<long, InventoryEntry>
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
         {
-            [1] = new("Moonstone", 1),
-            [2] = new("Guava", 4),
+            [1] = MakeItem("Moonstone", 1),
+            [2] = MakeItem("Guava", 4),
         });
-        using var vm = NewVm(state, out var bus);
+        using var vm = NewVm(state);
         vm.Items.Should().HaveCount(2);
 
-        state.SetItems(new Dictionary<long, InventoryEntry> { [2] = new("Guava", 4) });
-        bus.Fire(new InventoryItemRemoved(1, "Moonstone", Meta()));
+        state.SetItems(new Dictionary<long, AccumulatedItem>
+        {
+            [2] = MakeItem("Guava", 4)
+        });
 
         vm.Items.Should().ContainSingle();
         vm.Items.Single().InternalName.Should().Be("Guava");
@@ -68,29 +68,49 @@ public sealed class LiveInventoryViewModelTests
     }
 
     [Fact]
-    public void InventoryItemUpdated_event_refreshes_items_with_new_stack()
+    public void StateChanged_updates_stack_size()
     {
-        var state = new FakeInventoryState(new Dictionary<long, InventoryEntry>
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
         {
-            [1] = new("Guava", 4),
+            [1] = MakeItem("Guava", 4),
         });
-        using var vm = NewVm(state, out var bus);
+        using var vm = NewVm(state);
         vm.Items.Single().StackSize.Should().Be(4);
 
-        state.SetItems(new Dictionary<long, InventoryEntry> { [1] = new("Guava", 8) });
-        bus.Fire(new InventoryItemUpdated(1, 8, 4, Meta()));
+        state.SetItems(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Guava", 8)
+        });
 
         vm.Items.Single().StackSize.Should().Be(8);
     }
 
     [Fact]
+    public void Soft_deleted_items_tracked_separately()
+    {
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1),
+            [2] = MakeItem("Guava", 4, isRemoved: true),
+        });
+        using var vm = NewVm(state);
+
+        vm.Items.Should().HaveCount(2);
+        vm.LiveCount.Should().Be(1);
+        vm.DeletedCount.Should().Be(1);
+    }
+
+    [Fact]
     public void RefreshCommand_reloads_from_state()
     {
-        var state = new FakeInventoryState();
-        using var vm = NewVm(state, out _);
+        var state = new FakeAccumulatorState();
+        using var vm = NewVm(state);
         vm.Items.Should().BeEmpty();
 
-        state.SetItems(new Dictionary<long, InventoryEntry> { [1] = new("Moonstone", 1) });
+        state.MutateWithoutNotify(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1)
+        });
         vm.RefreshCommand.Execute(null);
 
         vm.Items.Should().ContainSingle();
@@ -101,7 +121,7 @@ public sealed class LiveInventoryViewModelTests
     {
         var refData = new FakeRefData(
             new Item { Id = 0, Name = "Moonstone Crystal", InternalName = "Moonstone", MaxStackSize = 100, IconId = 4242, Keywords = [] });
-        using var vm = NewVm(new FakeInventoryState(), out _, refData);
+        using var vm = NewVm(new FakeAccumulatorState(), refData);
 
         vm.ReferenceData.Should().BeSameAs(refData);
         vm.ReferenceData!.ItemsByInternalName["Moonstone"].IconId.Should().Be(4242);
@@ -110,42 +130,57 @@ public sealed class LiveInventoryViewModelTests
     [Fact]
     public void Dispose_stops_observing_events()
     {
-        var state = new FakeInventoryState(new Dictionary<long, InventoryEntry>
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
         {
-            [1] = new("Moonstone", 1),
+            [1] = MakeItem("Moonstone", 1),
         });
-        var vm = NewVm(state, out var bus);
+        var vm = NewVm(state);
         vm.LiveCount.Should().Be(1);
 
         vm.Dispose();
-        state.SetItems(new Dictionary<long, InventoryEntry>
+
+        state.SetItems(new Dictionary<long, AccumulatedItem>
         {
-            [1] = new("Moonstone", 1),
-            [2] = new("Guava", 4),
+            [1] = MakeItem("Moonstone", 1),
+            [2] = MakeItem("Guava", 4),
         });
-        bus.Fire(new InventoryItemAdded(2, "Guava", Meta()));
 
         vm.LiveCount.Should().Be(1, "the disposed VM must stop refreshing on events");
     }
 
+    // --- Helpers ---------------------------------------------------------------
+
+    private static AccumulatedItem MakeItem(string name, int stack, bool isRemoved = false) =>
+        new(name, null, stack, null, isRemoved,
+            isRemoved ? DateTimeOffset.UtcNow : null,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
     private static LiveInventoryViewModel NewVm(
-        FakeInventoryState state, out WorldStateViewModelTests.FakeBus bus,
-        IReferenceDataService? refData = null)
+        FakeAccumulatorState state, IReferenceDataService? refData = null)
     {
-        bus = new WorldStateViewModelTests.FakeBus();
-        return new LiveInventoryViewModel(state, bus, refData, dispatch: a => a());
+        return new LiveInventoryViewModel(state, refData);
     }
 
-    // --- Fakes --------------------------------------------------------------
+    // --- Fakes -----------------------------------------------------------------
 
-    private sealed class FakeInventoryState : IInventoryState
+    private sealed class FakeAccumulatorState : IInventoryAccumulatorState
     {
-        public IReadOnlyDictionary<long, InventoryEntry> Items { get; private set; }
+        private Dictionary<long, AccumulatedItem> _items;
 
-        public FakeInventoryState(Dictionary<long, InventoryEntry>? items = null)
-            => Items = items ?? new Dictionary<long, InventoryEntry>();
+        public IReadOnlyDictionary<long, AccumulatedItem> Items => _items;
+        public event Action? StateChanged;
 
-        public void SetItems(Dictionary<long, InventoryEntry> items) => Items = items;
+        public FakeAccumulatorState(Dictionary<long, AccumulatedItem>? items = null)
+            => _items = items ?? new Dictionary<long, AccumulatedItem>();
+
+        public void SetItems(Dictionary<long, AccumulatedItem> items)
+        {
+            _items = items;
+            StateChanged?.Invoke();
+        }
+
+        public void MutateWithoutNotify(Dictionary<long, AccumulatedItem> items)
+            => _items = items;
     }
 
     private sealed class FakeRefData : IReferenceDataService

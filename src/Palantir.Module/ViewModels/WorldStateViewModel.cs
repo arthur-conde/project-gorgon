@@ -57,7 +57,6 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
 
     [ObservableProperty] private bool _hasWeather;
     [ObservableProperty] private string _weatherConditionText = "(weather unknown for this map)";
-    [ObservableProperty] private string _weatherFlagText = "—";
     [ObservableProperty] private string _weatherObservedAtText = "—";
 
     /// <summary>The current area's pins as presentation rows. Mutated only
@@ -269,14 +268,26 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
 /// State debug list — formatting lives here, not in the XAML.
 /// </summary>
 /// <param name="Label">The pin label.</param>
-/// <param name="Appearance">Shape and color as raw ints (Arda drops the enums).</param>
+/// <param name="Appearance">Friendly shape+color description (e.g. "red dot").</param>
 /// <param name="Coords">Signed engine-unit ground-plane coordinate.</param>
 /// <param name="Detail">Raw shape/color values — debug-surface extra.</param>
 public sealed record MapPinRow(string Label, string Appearance, string Coords, string Detail)
 {
     public static MapPinRow From(MapPinEntry p) => new(
         string.IsNullOrEmpty(p.Label) ? "Unnamed pin" : p.Label,
-        $"shape={p.Shape} color={p.Color}",
+        FormatAppearance(p.Shape, p.Color),
         string.Format(CultureInfo.InvariantCulture, "X {0:0.00}   Z {1:0.00}", p.X, p.Z),
         $"Color {p.Color} · Shape {p.Shape}");
+
+    private static string FormatAppearance(int shape, int color)
+    {
+        var c = color switch
+        {
+            0 => "white", 1 => "red", 2 => "orange", 3 => "yellow",
+            4 => "green", 5 => "cyan", 6 => "blue", 7 => "purple",
+            8 => "pink", 9 => "black", _ => ""
+        };
+        var s = shape switch { 0 => "dot", 1 => "square", _ => "pin" };
+        return string.IsNullOrEmpty(c) ? s : $"{c} {s}";
+    }
 }

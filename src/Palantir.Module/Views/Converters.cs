@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Windows;
 using System.Windows.Data;
+using System.Windows.Markup;
 using Mithril.Shared.Reference;
 
 namespace Palantir.Views;
@@ -57,4 +59,20 @@ public sealed class InventoryIconIdConverter : IMultiValueConverter
 
     public object[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Inline converter: <c>true</c> → "Deleted", <c>false</c> → "Live".
+/// Used as a markup extension so it can be referenced directly in a binding
+/// without a resource dictionary entry.
+/// </summary>
+public sealed class RemovedStateConverter : MarkupExtension, IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? "Deleted" : "Live";
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+
+    public override object ProvideValue(IServiceProvider serviceProvider) => this;
 }
