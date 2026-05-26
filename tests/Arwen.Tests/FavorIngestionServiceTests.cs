@@ -192,8 +192,7 @@ public sealed class FavorIngestionServiceTests : IDisposable
     [Fact]
     public async Task Gift_event_routes_to_calibration_service()
     {
-        // Verify the Arda GiftAccepted → legacy GiftAccepted adapter
-        // correctly routes to CalibrationService.OnGiftAccepted.
+        // Verify Arda GiftAccepted routes to CalibrationService.
 
         var giftedAt = new DateTimeOffset(2026, 5, 19, 10, 30, 00, TimeSpan.Zero);
         var meta = new LogLineMetadata(giftedAt, giftedAt, IsReplay: false);

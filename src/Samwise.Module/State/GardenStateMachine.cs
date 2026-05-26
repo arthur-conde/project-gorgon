@@ -1,8 +1,7 @@
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
+using Arda.World.Player;
 using Samwise.Config;
 using Samwise.Parsing;
 
@@ -27,7 +26,7 @@ public sealed class GardenStateMachine
 
     private readonly ICropConfigStore _config;
     private readonly TimeProvider _time;
-    private readonly IWorldClock? _worldClock;
+    private readonly ICalendarState? _calendarState;
     private readonly IDiagnosticsSink? _diag;
     private readonly Alarms.SamwiseSettings? _settings;
     private readonly IReferenceDataService? _referenceData;
@@ -59,11 +58,11 @@ public sealed class GardenStateMachine
         Alarms.SamwiseSettings? settings = null,
         IReferenceDataService? referenceData = null,
         IActiveCharacterService? activeChar = null,
-        IPlayerWorld? playerWorld = null)
+        ICalendarState? calendarState = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
-        _worldClock = playerWorld?.Clock;
+        _calendarState = calendarState;
         _diag = diag;
         _settings = settings;
         _referenceData = referenceData;
@@ -549,7 +548,7 @@ public sealed class GardenStateMachine
         // produces identical pruning regardless of real attach time (#609).
         // Pre-frame the clock returns DateTimeOffset.MinValue → no plot
         // appears withered, which is the safe conservative fallback.
-        var now = _worldClock?.Now ?? _time.GetUtcNow();
+        var now = _calendarState?.LastTimestamp ?? _time.GetUtcNow();
         var removed = 0;
         foreach (var plots in _plotsByChar.Values)
         {
@@ -607,7 +606,7 @@ public sealed class GardenStateMachine
         // State-decision gate: read PlayerWorld's clock (#609). Pre-frame
         // (MinValue) the diff is negative → returns false, which is the
         // safe conservative fallback (alarm still fires).
-        var age = (_worldClock?.Now ?? _time.GetUtcNow()) - plot.PlantedAt;
+        var age = (_calendarState?.LastTimestamp ?? _time.GetUtcNow()) - plot.PlantedAt;
         return age > ExpectedEntityLifetime(plot);
     }
 }

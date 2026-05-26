@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
+using Arda.World.Player.Events;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Legolas.Domain;
 
@@ -108,7 +109,7 @@ public sealed partial class SessionState : ObservableObject
     // #476: Survey's player-position GPS. Distinct from the Motherlode-only
     // PlayerPosition above so the two modes can't cross-contaminate (Motherlode
     // writes a manual click; Survey writes a projected world coord). This is
-    // the IPlayerPositionTracker world coordinate projected through the current
+    // the Arda IPositionState world coordinate projected through the current
     // area's calibration — set by MapOverlayViewModel, null when no tracker fix
     // or no calibrated area. Sparse by nature (zone-in / teleport only): goes
     // stale as the player walks the route, which is why MeasuredAt/Source ride
@@ -122,7 +123,7 @@ public sealed partial class SessionState : ObservableObject
     // (zone-in / teleport) — a new fix is authoritative again.
     [ObservableProperty] private PixelPoint? _surveyPlayerPixel;
     [ObservableProperty] private DateTimeOffset? _surveyPlayerMeasuredAt;
-    [ObservableProperty] private Mithril.GameState.Movement.PlayerPositionSource? _surveyPlayerSource;
+    [ObservableProperty] private PositionSource? _surveyPlayerSource;
     [ObservableProperty] private bool _surveyPlayerIsManual;
 
     // #497: the manual anchor is sourced from a character-named (or "@me")

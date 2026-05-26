@@ -37,8 +37,8 @@ public sealed class FavorLogParserTests
     {
         // Post-#608 the parser no longer consumes ProcessDeleteItem — the
         // gift-detection FSM is lifted into
-        // Mithril.GameState.Gifting.IGiftSignalService (Tier-2 signal service),
-        // which owns its own L1 subscription and parses this verb there.
+        // Arda's gift correlator, which owns its own subscription and
+        // resolves this verb there.
         // The parser must skip these lines without emitting any event.
         var line = "[18:17:59] LocalPlayer: ProcessDeleteItem(98931165)";
         _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();
@@ -49,7 +49,7 @@ public sealed class FavorLogParserTests
     {
         // Post-#691 the parser no longer consumes ProcessDeltaFavor — the
         // gift-detection FSM owns the verb-triple correlation on its own L1
-        // pump inside IGiftSignalService. The parser must skip these lines
+        // pump inside the Arda gift correlator. The parser must skip these lines
         // without emitting any event.
         var line = "[18:14:21] LocalPlayer: ProcessDeltaFavor(0, \"NPC_Fainor\", 23, True)";
         _parser.TryParse(line, DateTime.UtcNow).Should().BeNull();

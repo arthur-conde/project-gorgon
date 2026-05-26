@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
-using Mithril.GameState.Pins;
+using Arda.World.Player;
 
 namespace Legolas.ViewModels;
 
@@ -20,7 +20,7 @@ namespace Legolas.ViewModels;
 /// <para>#113 Layer 1: each solved slot is phrased relative to the nearest
 /// recognizable reference — the player's own measured spots
 /// (<see cref="MotherlodeStatus.Locations"/>), their current-area map pins
-/// (<see cref="IPlayerPinTracker"/>), and the area landmark/NPC gazetteer
+/// (<see cref="IMapPinState"/>), and the area landmark/NPC gazetteer
 /// (<see cref="IAreaCalibrationService.CurrentAreaReferences"/>) — because raw
 /// engine-unit coordinates are unactionable in a game with no coordinate
 /// readout. Both reference feeders are optional: absent (or area-mismatched)
@@ -31,25 +31,25 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     private readonly MotherlodeMeasurementCoordinator _coordinator;
     private readonly IRouteOptimizer _optimizer;
     private readonly MotherlodeFlowController _flow;
-    private readonly IPlayerPinTracker? _pinTracker;
+    private readonly IMapPinState? _pinState;
     private readonly IAreaCalibrationService? _areaCalibration;
     private readonly LegolasSettings? _settings;
 
-    private static readonly IReadOnlyList<MapPin> NoPins = Array.Empty<MapPin>();
+    private static readonly IReadOnlyCollection<MapPinEntry> NoPins = Array.Empty<MapPinEntry>();
     private static readonly IReadOnlyList<CalibrationReference> NoReferences = Array.Empty<CalibrationReference>();
 
     public MotherlodeViewModel(
         MotherlodeMeasurementCoordinator coordinator,
         IRouteOptimizer optimizer,
         MotherlodeFlowController flow,
-        IPlayerPinTracker? pinTracker = null,
+        IMapPinState? pinState = null,
         IAreaCalibrationService? areaCalibration = null,
         LegolasSettings? settings = null)
     {
         _coordinator = coordinator;
         _optimizer = optimizer;
         _flow = flow;
-        _pinTracker = pinTracker;
+        _pinState = pinState;
         _areaCalibration = areaCalibration;
         _settings = settings;
         _coordinator.Changed += OnCoordinatorChanged;
@@ -145,7 +145,7 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     private void Rebuild()
     {
         var snap = _coordinator.Snapshot();
-        var pins = _pinTracker?.CurrentAreaPins ?? NoPins;
+        var pins = _pinState?.Pins ?? NoPins;
         var gazetteer = _areaCalibration?.CurrentAreaReferences ?? NoReferences;
 
         // "Next up" = the lowest route-ordered uncollected slot (fallback: list

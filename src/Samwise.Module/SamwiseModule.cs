@@ -43,7 +43,7 @@ public sealed class SamwiseModule : IMithrilModule
             settings: sp.GetRequiredService<SamwiseSettings>(),
             referenceData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             activeChar: sp.GetService<Mithril.Shared.Character.IActiveCharacterService>(),
-            playerWorld: sp.GetService<Mithril.WorldSim.Player.IPlayerWorld>()));
+            calendarState: sp.GetService<Arda.World.Player.ICalendarState>()));
         services.AddSingleton<AlarmService>(sp => new AlarmService(
             sp.GetRequiredService<GardenStateMachine>(),
             sp.GetRequiredService<SamwiseSettings>(),

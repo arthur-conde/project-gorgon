@@ -1,55 +1,40 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
+using Arda.Dispatch;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Mithril.GameState.Areas;
-using Mithril.GameState.Celestial;
-using Mithril.GameState.Movement;
-using Mithril.GameState.Pins;
-using Mithril.GameState.Weather;
 using Mithril.Shared.Reference;
 
 namespace Palantir.ViewModels;
 
 /// <summary>
-/// Debug surface over <b>Mithril.GameState</b>'s live map + position state:
-/// the current area (<see cref="PlayerAreaTracker"/>) resolved through
-/// <c>areas.json</c> (<see cref="IReferenceDataService.Areas"/>) to its
-/// friendly names, the player's last-known <see cref="PlayerPosition"/>
-/// (coords + the UTC instant it was measured) from
-/// <see cref="IPlayerPositionTracker"/>, and the area-scoped player map-pin
-/// set from <see cref="IPlayerPinTracker"/>, and the per-map ambient weather
-/// from <see cref="IPlayerWeatherTracker"/>.
+/// Debug surface over Arda's live world state: position, area, map pins,
+/// celestial (moon phase), and weather. State is read from Arda state
+/// interfaces (<see cref="IPositionState"/>, <see cref="IAreaState"/>, etc.)
+/// and kept current via domain event subscriptions through
+/// <see cref="IDomainEventSubscriber"/>.
 ///
-/// <para>Position is event-driven (sparse — teleport / zone-in only). The
-/// area tracker exposes no change event, so it is re-read on every position
-/// update (area changes coincide with the teleport that emits a position)
-/// and on the manual <see cref="RefreshCommand"/>.</para>
-///
-/// <para>Pins are push-driven: <see cref="IPlayerPinTracker.Subscribe"/>
-/// replays the current set synchronously then delivers add / remove / area
-/// swap live (PG bulk-replays the set on every login / zone, idempotently).
-/// All tracker subscriptions fire on the GameState ingestion thread, so
-/// every handler marshals through <see cref="_dispatch"/> before touching
-/// bound state.</para>
-///
-/// <para>The lunar phase (<see cref="IPlayerCelestialState"/>) is push-driven
-/// too — replayed on subscribe, then delivered live on every phase
-/// roll-over.</para>
+/// <para>All event handlers fire on the Arda dispatch thread, so every handler
+/// marshals through <see cref="_dispatch"/> before touching bound state.</para>
 /// </summary>
 public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
 {
-    private readonly IPlayerPositionTracker _positionTracker;
-    private readonly PlayerAreaTracker _areaTracker;
-    private readonly IPlayerPinTracker _pinTracker;
-    private readonly IPlayerCelestialState _celestial;
-    private readonly IPlayerWeatherTracker _weatherTracker;
+    private readonly IPositionState _position;
+    private readonly IAreaState _area;
+    private readonly IMapPinState _pinState;
+    private readonly ICelestialState _celestial;
+    private readonly IWeatherState _weather;
     private readonly IReferenceDataService? _refData;
     private readonly Action<Action> _dispatch;
-    private IDisposable? _subscription;
-    private IDisposable? _pinSubscription;
-    private IDisposable? _celestialSubscription;
-    private IDisposable? _weatherSubscription;
+
+    private IDisposable? _positionSub;
+    private IDisposable? _areaSub;
+    private IDisposable? _pinAddedSub;
+    private IDisposable? _pinRemovedSub;
+    private IDisposable? _celestialSub;
+    private IDisposable? _weatherSub;
 
     [ObservableProperty] private string _areaKey = "(unknown)";
     [ObservableProperty] private string _areaFriendlyName = "(area not yet known)";
@@ -76,17 +61,18 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _weatherObservedAtText = "—";
 
     /// <summary>The current area's pins as presentation rows. Mutated only
-    /// on the dispatched (UI) thread — see <see cref="OnPins"/>.</summary>
+    /// on the dispatched (UI) thread.</summary>
     public ObservableCollection<MapPinRow> Pins { get; } = [];
 
     public WorldStateViewModel(
-        IPlayerPositionTracker positionTracker,
-        PlayerAreaTracker areaTracker,
-        IPlayerPinTracker pinTracker,
-        IPlayerCelestialState celestial,
-        IPlayerWeatherTracker weatherTracker,
+        IPositionState position,
+        IAreaState area,
+        IMapPinState pins,
+        ICelestialState celestial,
+        IWeatherState weather,
+        IDomainEventSubscriber bus,
         IReferenceDataService? refData = null)
-        : this(positionTracker, areaTracker, pinTracker, celestial, weatherTracker, refData, dispatch: null)
+        : this(position, area, pins, celestial, weather, bus, refData, dispatch: null)
     { }
 
     /// <summary>
@@ -94,123 +80,121 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
     /// don't need an STA Application running.
     /// </summary>
     public WorldStateViewModel(
-        IPlayerPositionTracker positionTracker,
-        PlayerAreaTracker areaTracker,
-        IPlayerPinTracker pinTracker,
-        IPlayerCelestialState celestial,
-        IPlayerWeatherTracker weatherTracker,
+        IPositionState position,
+        IAreaState area,
+        IMapPinState pins,
+        ICelestialState celestial,
+        IWeatherState weather,
+        IDomainEventSubscriber bus,
         IReferenceDataService? refData,
         Action<Action>? dispatch)
     {
-        _positionTracker = positionTracker;
-        _areaTracker = areaTracker;
-        _pinTracker = pinTracker;
+        _position = position;
+        _area = area;
+        _pinState = pins;
         _celestial = celestial;
-        _weatherTracker = weatherTracker;
+        _weather = weather;
         _refData = refData;
         _dispatch = dispatch ?? DefaultDispatch;
 
-        RefreshArea();
-        // Replay-on-subscribe seeds position / the pin set / the phase /
-        // weather if already known.
-        _subscription = _positionTracker.Subscribe(OnPosition);
-        _pinSubscription = _pinTracker.Subscribe(OnPins);
-        _celestialSubscription = _celestial.Subscribe(OnCelestial);
-        _weatherSubscription = _weatherTracker.Subscribe(OnWeather);
+        SeedFromState();
+
+        _positionSub = bus.Subscribe<PlayerPositionChanged>(OnPosition);
+        _areaSub = bus.Subscribe<AreaChanged>(OnAreaChanged);
+        _pinAddedSub = bus.Subscribe<MapPinAdded>(OnPinAdded);
+        _pinRemovedSub = bus.Subscribe<MapPinRemoved>(OnPinRemoved);
+        _celestialSub = bus.Subscribe<CelestialInfoChanged>(OnCelestial);
+        _weatherSub = bus.Subscribe<WeatherChanged>(OnWeather);
     }
 
-    private void OnPosition(PlayerPosition p) => _dispatch(() =>
+    /// <summary>
+    /// Reads current state from the Arda state interfaces to seed the UI
+    /// (replay may already have run before the VM is constructed).
+    /// </summary>
+    private void SeedFromState()
+    {
+        RefreshArea();
+
+        if (_position.X is not null)
+        {
+            HasPosition = true;
+            PositionText = FormatPosition(_position.X.Value, _position.Y ?? 0, _position.Z ?? 0);
+        }
+
+        RefreshPins();
+
+        if (_celestial.Phase != MoonPhase.Unknown || _celestial.CurrentPhaseRaw is not null)
+        {
+            HasMoonPhase = true;
+            MoonPhaseText = _celestial.DisplayName ?? "(unknown phase)";
+            MoonPhaseRawText = _celestial.Phase == MoonPhase.Unknown
+                ? $"{_celestial.CurrentPhaseRaw} (unrecognised token)"
+                : _celestial.CurrentPhaseRaw ?? "—";
+            MoonMeasuredAtText = FormatTimestamp(_celestial.MeasuredAt);
+        }
+
+        if (_weather.CurrentWeather is { } w)
+        {
+            HasWeather = true;
+            WeatherConditionText = w;
+        }
+    }
+
+    private void OnPosition(PlayerPositionChanged e) => _dispatch(() =>
     {
         HasPosition = true;
-        PositionText = string.Format(
-            CultureInfo.InvariantCulture, "X {0:0.00}   Y {1:0.00}   Z {2:0.00}", p.X, p.Y, p.Z);
-        MeasuredAtText = p.MeasuredAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture);
-        PositionSourceText = p.Source switch
+        PositionText = FormatPosition(e.X, e.Y, e.Z);
+        MeasuredAtText = FormatTimestamp(e.Metadata.Timestamp);
+        PositionSourceText = e.Source switch
         {
-            PlayerPositionSource.Spawn => "Spawn / zone-in (ProcessAddPlayer)",
-            PlayerPositionSource.Movement => "Movement / teleport (ProcessNewPosition)",
-            _ => p.Source.ToString(),
+            PositionSource.Spawn => "Spawn / zone-in (ProcessAddPlayer)",
+            PositionSource.Movement => "Movement / teleport (ProcessNewPosition)",
+            _ => e.Source.ToString(),
         };
-        // A new position implies a possible zone change — re-resolve the area.
         RefreshArea();
     });
 
-    /// <summary>
-    /// Rebuild the pin list from the post-change snapshot. The set is tiny
-    /// (a handful per area) and replay-on-login is idempotent at the tracker,
-    /// so a clear-and-refill is simpler than diffing and correct for every
-    /// <see cref="PinSetChange"/> kind (Snapshot / Added / Removed /
-    /// AreaChanged). <see cref="PinSetChanged.Pins"/> is an immutable
-    /// snapshot — safe to read off the ingestion thread before dispatching.
-    /// </summary>
-    private void OnPins(PinSetChanged change)
-    {
-        var rows = change.Pins.Select(MapPinRow.From).ToArray();
-        // A Snapshot replay reflects the existing set, not a fresh
-        // observation — keep the "—" placeholder until a real change lands.
-        var stamp = change.Kind == PinSetChange.Snapshot
-            ? null
-            : change.ObservedAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture);
+    private void OnAreaChanged(AreaChanged e) => _dispatch(RefreshArea);
 
-        _dispatch(() =>
-        {
-            Pins.Clear();
-            foreach (var r in rows) Pins.Add(r);
-            PinCount = rows.Length;
-            HasPins = rows.Length > 0;
-            if (stamp is not null) PinsObservedAtText = stamp;
-        });
-    }
-
-    /// <summary>
-    /// Surface the current lunar phase. <see cref="CelestialInfo"/> is an
-    /// immutable record — safe to read off the ingestion thread before
-    /// dispatching. The raw token is shown alongside the friendly name so an
-    /// unrecognised / future phase token is still inspectable on this debug
-    /// surface.
-    /// </summary>
-    private void OnCelestial(CelestialInfo c) => _dispatch(() =>
+    private void OnPinAdded(MapPinAdded e) => _dispatch(() =>
     {
-        HasMoonPhase = true;
-        MoonPhaseText = c.DisplayName;
-        MoonPhaseRawText = c.Phase == MoonPhase.Unknown
-            ? $"{c.RawPhase} (unrecognised token)"
-            : c.RawPhase;
-        MoonMeasuredAtText = c.MeasuredAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture);
+        PinsObservedAtText = FormatTimestamp(e.Metadata.Timestamp);
+        RefreshPins();
     });
 
-    /// <summary>
-    /// Project the current map's weather. <see cref="WeatherChanged.State"/>
-    /// is <c>null</c> for an <see cref="WeatherChangeKind.AreaChanged"/> reset
-    /// (or a pre-known Snapshot) — surfaced as "weather unknown for this map",
-    /// deliberately distinct from a known clear sky (the Vampirism-relevant
-    /// distinction). Stamping mirrors <see cref="OnPins"/>: a Snapshot replay
-    /// reflects existing state, not a fresh observation, so the "—" placeholder
-    /// is kept until a real change lands; a map change resets it.
-    /// </summary>
-    private void OnWeather(WeatherChanged change)
+    private void OnPinRemoved(MapPinRemoved e) => _dispatch(() =>
     {
-        var state = change.State;
-        var stamp = state is null || change.Kind == WeatherChangeKind.Snapshot
-            ? null
-            : change.ObservedAt.UtcDateTime.ToString("u", CultureInfo.InvariantCulture);
+        PinsObservedAtText = FormatTimestamp(e.Metadata.Timestamp);
+        RefreshPins();
+    });
 
-        _dispatch(() =>
-        {
-            HasWeather = state is not null;
-            WeatherConditionText = state?.Condition ?? "(weather unknown for this map)";
-            WeatherFlagText = state is null ? "—" : (state.Flag ? "True" : "False");
-            if (stamp is not null) WeatherObservedAtText = stamp;
-            else if (change.Kind == WeatherChangeKind.AreaChanged) WeatherObservedAtText = "—";
-        });
-    }
+    private void OnCelestial(CelestialInfoChanged e) => _dispatch(() =>
+    {
+        HasMoonPhase = true;
+        MoonPhaseText = e.DisplayName;
+        MoonPhaseRawText = e.Phase == MoonPhase.Unknown
+            ? $"{e.RawPhase} (unrecognised token)"
+            : e.RawPhase;
+        MoonMeasuredAtText = FormatTimestamp(e.Metadata.Timestamp);
+    });
+
+    private void OnWeather(WeatherChanged e) => _dispatch(() =>
+    {
+        HasWeather = e.Current is not null;
+        WeatherConditionText = e.Current ?? "(weather unknown for this map)";
+        WeatherObservedAtText = FormatTimestamp(e.Metadata.Timestamp);
+    });
 
     [RelayCommand]
-    private void Refresh() => _dispatch(RefreshArea);
+    private void Refresh() => _dispatch(() =>
+    {
+        RefreshArea();
+        RefreshPins();
+    });
 
     private void RefreshArea()
     {
-        var key = _areaTracker.CurrentArea;
+        var key = _area.CurrentArea;
         if (string.IsNullOrEmpty(key))
         {
             AreaKey = "(none)";
@@ -231,24 +215,46 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
         }
         else
         {
-            // Key known but areas.json hasn't loaded it (offline / stale bundle).
             AreaFriendlyName = key;
             AreaShortName = "";
             AreaResolved = false;
         }
     }
 
+    /// <summary>
+    /// Rebuilds the pin list from <see cref="IMapPinState.Pins"/>. The set is
+    /// tiny (a handful per area), so clear-and-refill is simpler than diffing.
+    /// </summary>
+    private void RefreshPins()
+    {
+        Pins.Clear();
+        foreach (var pin in _pinState.Pins)
+            Pins.Add(MapPinRow.From(pin));
+        PinCount = Pins.Count;
+        HasPins = Pins.Count > 0;
+    }
+
     public void Dispose()
     {
-        _subscription?.Dispose();
-        _subscription = null;
-        _pinSubscription?.Dispose();
-        _pinSubscription = null;
-        _celestialSubscription?.Dispose();
-        _celestialSubscription = null;
-        _weatherSubscription?.Dispose();
-        _weatherSubscription = null;
+        _positionSub?.Dispose();
+        _positionSub = null;
+        _areaSub?.Dispose();
+        _areaSub = null;
+        _pinAddedSub?.Dispose();
+        _pinAddedSub = null;
+        _pinRemovedSub?.Dispose();
+        _pinRemovedSub = null;
+        _celestialSub?.Dispose();
+        _celestialSub = null;
+        _weatherSub?.Dispose();
+        _weatherSub = null;
     }
+
+    private static string FormatPosition(double x, double y, double z) =>
+        string.Format(CultureInfo.InvariantCulture, "X {0:0.00}   Y {1:0.00}   Z {2:0.00}", x, y, z);
+
+    private static string FormatTimestamp(DateTimeOffset? ts) =>
+        ts?.UtcDateTime.ToString("u", CultureInfo.InvariantCulture) ?? "—";
 
     private static void DefaultDispatch(Action action)
     {
@@ -259,21 +265,18 @@ public sealed partial class WorldStateViewModel : ObservableObject, IDisposable
 }
 
 /// <summary>
-/// Presentation-only projection of a <see cref="MapPin"/> for the World
+/// Presentation-only projection of a <see cref="MapPinEntry"/> for the World
 /// State debug list — formatting lives here, not in the XAML.
 /// </summary>
-/// <param name="Label">The pin label, or "Unnamed pin" for blank labels
-/// (<see cref="MapPin.DisplayName"/>).</param>
-/// <param name="Appearance">Human appearance phrase, e.g. "red dot"
-/// (<see cref="MapPin.Appearance"/>).</param>
-/// <param name="Coords">Signed engine-unit ground-plane coordinate, formatted
-/// to match the POSITION row (Y is intentionally dropped for pins).</param>
-/// <param name="Detail">Raw enum names — debug-surface extra.</param>
+/// <param name="Label">The pin label.</param>
+/// <param name="Appearance">Shape and color as raw ints (Arda drops the enums).</param>
+/// <param name="Coords">Signed engine-unit ground-plane coordinate.</param>
+/// <param name="Detail">Raw shape/color values — debug-surface extra.</param>
 public sealed record MapPinRow(string Label, string Appearance, string Coords, string Detail)
 {
-    public static MapPinRow From(MapPin p) => new(
-        p.DisplayName,
-        p.Appearance,
+    public static MapPinRow From(MapPinEntry p) => new(
+        string.IsNullOrEmpty(p.Label) ? "Unnamed pin" : p.Label,
+        $"shape={p.Shape} color={p.Color}",
         string.Format(CultureInfo.InvariantCulture, "X {0:0.00}   Z {1:0.00}", p.X, p.Z),
-        $"{p.Color} · {p.Shape}");
+        $"Color {p.Color} · Shape {p.Shape}");
 }

@@ -2,7 +2,6 @@ using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
-using Legolas.Tests;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
 
@@ -52,7 +51,7 @@ public class LegolasWizardViewModelTests
 
     private static (LegolasWizardViewModel wizard, SessionState session, SurveyFlowController surveyFlow,
         MotherlodeFlowController motherlodeFlow, LegolasSettings settings) BuildSut(
-        FakeAreaCalib? calib = null, FakePlayerPinTracker? pins = null)
+        FakeAreaCalib? calib = null, FakeMapPinState? pins = null)
     {
         var session = new SessionState();
         var settings = new LegolasSettings();
@@ -63,9 +62,9 @@ public class LegolasWizardViewModelTests
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
         var areaCalib = calib ?? new FakeAreaCalib();
-        var pinTracker = pins ?? new FakePlayerPinTracker();
-        var pinCal = new PinCalibrationCoordinator(areaCalib, pinTracker, settings);
+        var pinState = pins ?? new FakeMapPinState();
         var bus = new TestDomainEventBus();
+        var pinCal = new PinCalibrationCoordinator(areaCalib, pinState, bus, settings);
         var coordinator = new MotherlodeMeasurementCoordinator(
             new MultilaterationSolver(), motherlodeFlow, bus);
         var motherlode = new MotherlodeViewModel(coordinator, optimizer, motherlodeFlow);
@@ -514,7 +513,7 @@ public class LegolasWizardViewModelTests
     public void Confirming_a_pre_pick_calibration_lands_on_PickMode_calibrated()
     {
         var calib = new FakeAreaCalib { Calibrated = false };
-        var pins = new FakePlayerPinTracker();
+        var pins = new FakeMapPinState();
         var (wizard, _, _, _, _) = BuildSut(calib, pins);
 
         wizard.CalibrateThisAreaCommand.Execute(null);
@@ -538,7 +537,7 @@ public class LegolasWizardViewModelTests
     public void ConfirmCalibration_persists_and_leaves_the_gate()
     {
         var calib = new FakeAreaCalib { Calibrated = false };
-        var pins = new FakePlayerPinTracker();
+        var pins = new FakeMapPinState();
         var (wizard, _, _, _, _) = BuildSut(calib, pins);
         wizard.PickSurveyModeCommand.Execute(null);
 
@@ -594,7 +593,7 @@ public class LegolasWizardViewModelTests
     public void Recalibrate_defers_the_delete_until_a_new_fit_is_saved()
     {
         var calib = new FakeAreaCalib { Calibrated = true };
-        var pins = new FakePlayerPinTracker();
+        var pins = new FakeMapPinState();
         var (wizard, _, _, _, _) = BuildSut(calib, pins);
         wizard.PickSurveyModeCommand.Execute(null);
         wizard.CurrentStep.Should().Be(WizardStep.Listening);

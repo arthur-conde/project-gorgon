@@ -2,12 +2,14 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
+using Arda.Dispatch;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
-using Mithril.GameState.Movement;
 
 namespace Legolas.ViewModels;
 
@@ -20,15 +22,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private readonly SurveyFlowController _surveyFlow;
     private readonly LegolasBrushes _brushes;
     private readonly PinCalibrationCoordinator? _pinCal;
-    private readonly IPlayerPositionTracker? _positionTracker;
+    private readonly IPositionState? _positionState;
     private readonly IAreaCalibrationService? _areaCalibration;
     private readonly MotherlodeMeasurementCoordinator? _motherlode;
     private readonly ICharacterPinAnchor? _characterPin;
 
+    // Cached latest position event — IPositionState has X/Y/Z but no timestamp/source.
+    private TrackerFix? _latestTrackerFix;
+
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPlayerPositionTracker? positionTracker = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null)
     {
         _session = session;
         _projector = projector;
@@ -37,7 +42,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _brushes = brushes;
         _settings = settings;
         _pinCal = pinCalibration;
-        _positionTracker = positionTracker;
+        _positionState = positionState;
         _areaCalibration = areaCalibration;
         _motherlode = motherlode;
         _characterPin = characterPin;
@@ -176,13 +181,21 @@ public sealed partial class MapOverlayViewModel : ObservableObject
 
         // #476: Survey player-GPS. The tracker fix and the area calibration
         // are two independent inputs to the same projection — either changing
-        // re-resolves the anchor. Subscribe replays Current synchronously, so
-        // a fix already seen at startup is picked up immediately; the
-        // calibration Changed event covers the (common) case where the area's
-        // calibration is applied after the overlay VM is constructed.
-        if (_positionTracker is not null && _areaCalibration is not null)
+        // re-resolves the anchor. The Arda bus subscription delivers live
+        // events; we seed from IPositionState if a fix already exists at
+        // startup. The calibration Changed event covers the (common) case
+        // where the area's calibration is applied after the overlay VM is
+        // constructed.
+        if (_positionState is not null && _areaCalibration is not null)
         {
-            _positionTracker.Subscribe(_ => PostToUi(() => RefreshSurveyPlayerAnchor(fromTrackerFix: true)));
+            if (_positionState.X is { } px && _positionState.Z is { } pz)
+                _latestTrackerFix = new TrackerFix(px, _positionState.Y ?? 0, pz, DateTimeOffset.UtcNow, PositionSource.Spawn);
+            bus?.Subscribe<PlayerPositionChanged>(evt =>
+            {
+                var at = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
+                _latestTrackerFix = new TrackerFix(evt.X, evt.Y, evt.Z, at, evt.Source);
+                PostToUi(() => RefreshSurveyPlayerAnchor(fromTrackerFix: true));
+            });
             _areaCalibration.Changed += (_, _) => PostToUi(() => RefreshSurveyPlayerAnchor(fromTrackerFix: false));
             RefreshSurveyPlayerAnchor(fromTrackerFix: false);
         }
@@ -237,7 +250,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private void RefreshSurveyPlayerAnchor(bool fromTrackerFix)
     {
         var res = ResolveSurveyAnchor(
-            _positionTracker?.Current,
+            _latestTrackerFix,
             _characterPin?.Current,
             _areaCalibration?.CurrentCalibration,
             fromTrackerFix,
@@ -273,7 +286,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// Returns <c>null</c> to mean "leave the current anchor as-is".
     /// </summary>
     public static SurveyAnchorResolution? ResolveSurveyAnchor(
-        PlayerPosition? tracker,
+        TrackerFix? tracker,
         CharacterPinFix? pin,
         AreaCalibration? cal,
         bool fromTrackerFix,
@@ -864,9 +877,9 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     /// the sparse fixes, which is the honest signal that the player has likely
     /// walked away from it.
     /// </summary>
-    public static string FormatAnchorStatus(DateTimeOffset measuredAt, PlayerPositionSource source, DateTimeOffset now)
+    public static string FormatAnchorStatus(DateTimeOffset measuredAt, PositionSource source, DateTimeOffset now)
     {
-        var kind = source == PlayerPositionSource.Spawn ? "zone-in" : "teleport";
+        var kind = source == PositionSource.Spawn ? "zone-in" : "teleport";
         return $"You — {kind}, {AgoText(measuredAt, now)}";
     }
 
@@ -1108,7 +1121,7 @@ public sealed record CorrectionArgs(SurveyItemViewModel Survey, PixelPoint NewPi
 public readonly record struct SurveyAnchorResolution(
     PixelPoint? Pixel,
     DateTimeOffset? MeasuredAt,
-    PlayerPositionSource? Source,
+    PositionSource? Source,
     bool IsManual,
     bool IsPinned)
 {

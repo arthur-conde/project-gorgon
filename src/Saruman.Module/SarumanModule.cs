@@ -28,8 +28,8 @@ public sealed class SarumanModule : IMithrilModule
         var legacySarumanDir = Path.Combine(localApp, "Mithril", "Saruman");
 
         // Per-character module store for the override ledger only — the
-        // codebook itself (discovery + chat-spent state) lives in
-        // Mithril.GameState.WordsOfPower as a folder + view pair (#603).
+        // codebook itself (discovery + chat-spent state) is owned by
+        // Arda.Composition's IWordOfPowerComposer.
         services.AddSingleton<ILegacyMigration<SarumanState>>(_ =>
             new SarumanLegacyMigration(legacySarumanDir, SarumanJsonContext.Default.SarumanState));
         services.AddPerCharacterModuleStore<SarumanState>(Id, SarumanJsonContext.Default.SarumanState);

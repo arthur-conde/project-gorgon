@@ -5,17 +5,17 @@ using System.Windows;
 using System.Windows.Data;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Mithril.GameState.WordsOfPower;
+using Arda.Composition;
 using Saruman.Services;
 
 namespace Saruman.ViewModels;
 
 /// <summary>
 /// Saruman's words-of-power view-model (#603 — post-codebook-split). Composes
-/// <see cref="IWordOfPowerView"/> (cross-source view) with
+/// <see cref="IWordOfPowerComposer"/> (cross-source view) with
 /// <see cref="SarumanOverrideService"/> (module-internal user override). The
-/// VM never mutates discovery state — that is canonically owned by the view —
-/// and never clears the view's monotonic Spent flag.
+/// VM never mutates discovery state — that is canonically owned by the composer —
+/// and never clears the composer's monotonic Spent flag.
 ///
 /// <para>Refresh policy: subscribes to both the view's <c>CodebookChanged</c>
 /// event and the override service's <c>OverridesChanged</c> event;
@@ -24,10 +24,10 @@ namespace Saruman.ViewModels;
 /// </summary>
 public sealed partial class SarumanViewModel : ObservableObject
 {
-    private readonly IWordOfPowerView _view;
+    private readonly IWordOfPowerComposer _view;
     private readonly SarumanOverrideService _overrides;
 
-    public SarumanViewModel(IWordOfPowerView view, SarumanOverrideService overrides)
+    public SarumanViewModel(IWordOfPowerComposer view, SarumanOverrideService overrides)
     {
         _view = view;
         _overrides = overrides;
@@ -90,9 +90,9 @@ public sealed partial class SarumanViewModel : ObservableObject
 
     private void Refresh()
     {
-        var entries = _view.Entries;
+        var entries = _view.Words;
         var byCode = new Dictionary<string, WordOfPowerEntry>(entries.Count, StringComparer.Ordinal);
-        foreach (var e in entries) byCode[e.Code] = e;
+        foreach (var e in entries.Values) byCode[e.Code] = e;
 
         // Update existing rows in-place so selection/scroll state isn't disturbed.
         for (var i = Words.Count - 1; i >= 0; i--)

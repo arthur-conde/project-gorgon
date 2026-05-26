@@ -15,6 +15,8 @@ internal sealed class WordOfPowerComposer : IWordOfPowerComposer, IDisposable
 
     public IReadOnlyDictionary<string, WordOfPowerEntry> Words => _words;
 
+    public event EventHandler? CodebookChanged;
+
     public WordOfPowerComposer(IDomainEventBus bus)
     {
         _discoverSub = bus.Subscribe<WordOfPowerDiscovered>(OnDiscovered);
@@ -28,6 +30,7 @@ internal sealed class WordOfPowerComposer : IWordOfPowerComposer, IDisposable
         var ts = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
 
         _words[code] = new WordOfPowerEntry(code, effect, desc, ts, IsSpent: false);
+        CodebookChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Dispose()

@@ -60,7 +60,13 @@ public sealed class LegolasModule : IMithrilModule
             new MultilaterationSolver(sp.GetService<IDiagnosticsSink>()));
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
         services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
-        services.AddSingleton<PinCalibrationCoordinator>();
+        services.AddSingleton<PinCalibrationCoordinator>(sp =>
+            new PinCalibrationCoordinator(
+                sp.GetRequiredService<IAreaCalibrationService>(),
+                sp.GetRequiredService<IMapPinState>(),
+                sp.GetRequiredService<IDomainEventSubscriber>(),
+                sp.GetRequiredService<LegolasSettings>(),
+                sp.GetService<SessionState>()));
 
         // Session + flow controllers + VMs.
         services.AddSingleton<SessionState>(sp =>
@@ -133,7 +139,20 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<LegolasSettingsViewModel>();
         services.AddSingleton<ControlPanelViewModel>();
         services.AddSingleton<InventoryOverlayViewModel>();
-        services.AddSingleton<MapOverlayViewModel>();
+        services.AddSingleton<MapOverlayViewModel>(sp =>
+            new MapOverlayViewModel(
+                sp.GetRequiredService<SessionState>(),
+                sp.GetRequiredService<ICoordinateProjector>(),
+                sp.GetRequiredService<IRouteOptimizer>(),
+                sp.GetRequiredService<SurveyFlowController>(),
+                sp.GetRequiredService<LegolasBrushes>(),
+                sp.GetRequiredService<LegolasSettings>(),
+                sp.GetService<PinCalibrationCoordinator>(),
+                sp.GetService<IPositionState>(),
+                sp.GetService<IDomainEventSubscriber>(),
+                sp.GetService<IAreaCalibrationService>(),
+                sp.GetService<MotherlodeMeasurementCoordinator>(),
+                sp.GetService<ICharacterPinAnchor>()));
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();

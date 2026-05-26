@@ -9,7 +9,6 @@ using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 using ArdaGiftAccepted = Arda.World.Player.Events.GiftAccepted;
-using LegacyGiftAccepted = Mithril.GameState.Gifting.GiftAccepted;
 
 namespace Arwen.State;
 
@@ -26,8 +25,8 @@ namespace Arwen.State;
 ///   <c>ProcessStartInteraction</c> / <c>ProcessDeleteItem</c> /
 ///   <c>ProcessDeltaFavor</c> verb triple and emits a fully-resolved
 ///   <see cref="ArdaGiftAccepted"/> with the <c>InternalName</c> baked in.
-///   Replaces the former <c>IGiftSignalService</c> React-channel
-///   subscription.</item>
+///   Replaces the former <c>IGiftSignalService</c> subscription
+///   (legacy GameState layer, now removed).</item>
 /// </list>
 ///
 /// <para><b>Subscription timing.</b> Both subscriptions are wired in the
@@ -119,15 +118,10 @@ public sealed class FavorIngestionService : BackgroundService
 
     private void OnArdaGiftAccepted(ArdaGiftAccepted gift)
     {
-        var legacyGift = new LegacyGiftAccepted(
-            NpcKey: gift.NpcKey,
-            ItemInstanceId: gift.ItemInstanceId,
-            ItemInternalName: gift.ItemInternalName,
-            DeltaFavor: gift.DeltaFavor,
-            Timestamp: gift.Metadata.Timestamp ?? gift.Metadata.ReadOn,
-            InteractionStartedAt: DateTimeOffset.MinValue);
+        var ts = gift.Metadata.Timestamp ?? gift.Metadata.ReadOn;
 
-        void Dispatch() => _calibration.OnGiftAccepted(legacyGift);
+        void Dispatch() => _calibration.OnGiftAccepted(
+            gift.NpcKey, gift.ItemInstanceId, gift.ItemInternalName, gift.DeltaFavor, ts);
 
         if (_dispatcher is null || _dispatcher.CheckAccess())
             Dispatch();

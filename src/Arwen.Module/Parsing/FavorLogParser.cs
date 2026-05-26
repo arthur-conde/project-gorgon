@@ -12,9 +12,9 @@ public sealed record FavorUpdate(DateTime Timestamp, string NpcKey, double Absol
 /// (→ <see cref="FavorUpdate"/>) verb that drives Arwen's
 /// <c>ArwenFavorState</c> snapshot. The gift-detection FSM that
 /// historically consumed <c>ProcessDeltaFavor</c> is lifted into
-/// <c>Mithril.GameState.Gifting.IGiftSignalService</c> (Tier-2 signal
-/// service), which owns its own <c>LocalPlayerLogLine</c> subscription
-/// and parses that verb (plus <c>ProcessDeleteItem</c>) on its own pump.
+/// Arda's <see cref="Arda.World.Player.Events.GiftAccepted"/> domain event
+/// (emitted by the gift correlator), which owns its own verb subscription
+/// and resolves <c>ProcessDeleteItem</c> + <c>ProcessDeltaFavor</c> inline.
 ///
 /// <para>Active-character tracking lives in <c>ActiveCharacterLogSynchronizer</c> —
 /// this parser does not handle <c>ProcessAddPlayer</c>.</para>

@@ -34,7 +34,7 @@ public sealed class GiftObservation
 
     /// <summary>
     /// PG session identity at the moment the gift was observed, sourced from the
-    /// login banner via <c>IGameSessionService</c>. Combined with
+    /// login banner via <see cref="Arda.Composition.ISessionComposer"/>. Combined with
     /// <see cref="InstanceId"/> it forms the dedup key that lets log-replay-on-
     /// relaunch short-circuit without writing a second copy of the same gift.
     /// Empty for legacy (pre-v4) observations migrated forward — they keep their

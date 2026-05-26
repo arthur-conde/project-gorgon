@@ -6,8 +6,8 @@ using Arwen.Views;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
-using Mithril.GameState.Inventory;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
+using Arda.World.Player;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -69,14 +69,14 @@ public sealed class ArwenModule : IMithrilModule
             return new CalibrationService(
                 sp.GetRequiredService<IReferenceDataService>(),
                 sp.GetRequiredService<GiftIndex>(),
-                sp.GetRequiredService<IInventoryView>(),
+                sp.GetRequiredService<IInventoryState>(),
                 Path.Combine(localApp, "Mithril", "Arwen"),
                 sp.GetService<ICommunityCalibrationService>(),
                 settings.Calibration,
                 sp.GetService<IDiagnosticsSink>(),
                 pendingTtl: settings.PendingObservationTtl,
                 dispatch: UiDispatch,
-                session: sp.GetService<IGameSessionService>());
+                session: sp.GetService<ISessionComposer>());
         });
         services.AddSingleton<IAttentionSource, ArwenAttentionSource>();
 

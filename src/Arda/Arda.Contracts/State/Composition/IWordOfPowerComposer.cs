@@ -20,4 +20,7 @@ public interface IWordOfPowerComposer
 {
     /// <summary>All discovered words of power for the active character.</summary>
     IReadOnlyDictionary<string, WordOfPowerEntry> Words { get; }
+
+    /// <summary>Raised when the codebook changes (word discovered or spent-state flipped).</summary>
+    event EventHandler? CodebookChanged;
 }

@@ -5,9 +5,8 @@ using System.Text.Json;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Collections;
 using Mithril.Shared.Diagnostics;
-using Mithril.GameState.Gifting;
-using Mithril.GameState.Inventory;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
+using Arda.World.Player;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 
@@ -21,7 +20,7 @@ public sealed record EstimateResult(double Value, string Tier, int SampleCount);
 /// and computes per-NPC / per-item / per-signature category rates.
 ///
 /// Gift detection sequence:
-/// 1. <see cref="IInventoryView"/> maintains the canonical instanceId → InternalName map
+/// 1. <see cref="IInventoryState"/> maintains the canonical instanceId → InternalName map
 /// 2. ProcessStartInteraction(NPC_Key) → set active NPC context
 /// 3. ProcessDeleteItem(instanceId) → item removed while talking to NPC → pending gift
 /// 4. ProcessDeltaFavor(NPC_Key, delta) → favor gained → correlate with pending gift
@@ -42,8 +41,8 @@ public sealed class CalibrationService
 
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
-    private readonly IInventoryView _inventory;
-    private readonly IGameSessionService? _session;
+    private readonly IInventoryState _inventory;
+    private readonly ISessionComposer? _session;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
@@ -105,7 +104,7 @@ public sealed class CalibrationService
     public CalibrationService(
         IReferenceDataService refData,
         GiftIndex giftIndex,
-        IInventoryView inventory,
+        IInventoryState inventory,
         string dataDir,
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,
@@ -113,7 +112,7 @@ public sealed class CalibrationService
         TimeSpan? pendingTtl = null,
         Action<Action>? dispatch = null,
         TimeProvider? time = null,
-        IGameSessionService? session = null)
+        ISessionComposer? session = null)
     {
         _refData = refData;
         _giftIndex = giftIndex;
@@ -184,11 +183,12 @@ public sealed class CalibrationService
     public void OnItemDeleted(long instanceId, DateTimeOffset timestamp)
     {
         if (_activeNpcKey is null) return;
-        if (!_inventory.TryResolve(instanceId, out var internalName))
+        if (!_inventory.Items.TryGetValue(instanceId, out var entry))
         {
             _diag?.Trace("Arwen.Calibration", $"Delete id={instanceId} unresolved while talking to {_activeNpcKey}");
             return;
         }
+        var internalName = entry.InternalName;
 
         if (_pendingDelta is var (npcKey, delta, deltaTs))
         {
@@ -204,8 +204,8 @@ public sealed class CalibrationService
     /// <summary>
     /// Production gift-detection entry point (#608, iteration 2). Consumed by
     /// <see cref="State.FavorIngestionService"/>'s
-    /// <see cref="IGiftSignalService.Subscribe"/> handler — the Tier-2 signal
-    /// service correlates the <c>ProcessStartInteraction</c> /
+    /// <see cref="Arda.World.Player.Events.GiftAccepted"/> handler — the Arda gift
+    /// correlator resolves the <c>ProcessStartInteraction</c> /
     /// <c>ProcessDeleteItem</c> / <c>ProcessDeltaFavor</c> verb triple on its
     /// own single L1 subscription (with its own <c>ProcessAddItem</c> map)
     /// and emits a fully-resolved <see cref="GiftAccepted"/>. By the time
@@ -222,17 +222,17 @@ public sealed class CalibrationService
     /// directly to exercise the FSM transitions and verify
     /// <see cref="RecordObservation"/> integration.</para>
     /// </summary>
-    public void OnGiftAccepted(GiftAccepted gift)
+    public void OnGiftAccepted(
+        string npcKey,
+        long itemInstanceId,
+        string itemInternalName,
+        double deltaFavor,
+        DateTimeOffset timestamp)
     {
-        if (string.IsNullOrEmpty(gift.NpcKey)) return;
-        if (string.IsNullOrEmpty(gift.ItemInternalName)) return;
-        if (gift.DeltaFavor <= 0) return;
-        RecordObservation(
-            gift.NpcKey,
-            gift.ItemInstanceId,
-            gift.ItemInternalName,
-            gift.DeltaFavor,
-            gift.Timestamp);
+        if (string.IsNullOrEmpty(npcKey)) return;
+        if (string.IsNullOrEmpty(itemInternalName)) return;
+        if (deltaFavor <= 0) return;
+        RecordObservation(npcKey, itemInstanceId, itemInternalName, deltaFavor, timestamp);
     }
 
     public void OnDeltaFavor(string npcKey, double delta)
@@ -279,9 +279,9 @@ public sealed class CalibrationService
         {
             quantity = 1;
         }
-        else if (_inventory.TryGetStackSize(instanceId, out var trackedSize) && trackedSize > 0)
+        else if (_inventory.Items.TryGetValue(instanceId, out var invEntry) && invEntry.StackSize > 0)
         {
-            quantity = trackedSize;
+            quantity = invEntry.StackSize;
         }
         else
         {

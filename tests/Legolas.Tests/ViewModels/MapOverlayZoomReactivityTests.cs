@@ -27,7 +27,7 @@ public class MapOverlayZoomReactivityTests
         var cal = new FakeAreaCalibrationService();
         if (seedCal is not null) cal.SetCalibration(seedCal);
         var map = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes,
-            settings, pinCalibration: null, positionTracker: null, areaCalibration: cal);
+            settings, pinCalibration: null, positionState: null, bus: null, areaCalibration: cal);
         return (map, cal, session);
     }
 
@@ -162,7 +162,7 @@ public class MapOverlayZoomReactivityTests
         var brushes = new LegolasBrushes(settings);
         var cal = new FakeAreaCalibrationService();
         var map2 = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes,
-            settings, pinCalibration: null, positionTracker: null, areaCalibration: cal);
+            settings, pinCalibration: null, positionState: null, bus: null, areaCalibration: cal);
 
         map2.IsZoomFieldVisible.Should().BeFalse("ClickThroughMap=true hides the overlay strip");
     }

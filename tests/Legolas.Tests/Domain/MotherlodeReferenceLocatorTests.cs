@@ -1,8 +1,6 @@
+using Arda.World.Player;
 using FluentAssertions;
 using Legolas.Domain;
-using MapPin = Mithril.GameState.Pins.MapPin;
-using PinShape = Mithril.GameState.Pins.PinShape;
-using PinColor = Mithril.GameState.Pins.PinColor;
 
 namespace Legolas.Tests.Domain;
 
@@ -11,14 +9,14 @@ public class MotherlodeReferenceLocatorTests
     private static MotherlodePositionSample Spot(double x, double z, double conf = 1.0) =>
         new(new WorldCoord(x, 0, z), MotherlodePositionSource.LogPosition, conf, DateTimeOffset.UnixEpoch);
 
-    private static MapPin Pin(double x, double z, string label) =>
-        new(x, z, label, PinShape.Unknown, PinColor.Unknown, 1);
+    private static MapPinEntry Pin(double x, double z, string label) =>
+        new(x, z, label, 0, 0);
 
     private static CalibrationReference Ref(double x, double z, string name) =>
         new(name, "NPC", new WorldCoord(x, 0, z));
 
     private static readonly IReadOnlyList<MotherlodePositionSample> NoSpots = Array.Empty<MotherlodePositionSample>();
-    private static readonly IReadOnlyList<MapPin> NoPins = Array.Empty<MapPin>();
+    private static readonly IReadOnlyList<MapPinEntry> NoPins = Array.Empty<MapPinEntry>();
     private static readonly IReadOnlyList<CalibrationReference> NoGaz = Array.Empty<CalibrationReference>();
 
     [Fact]

@@ -32,7 +32,7 @@
             <TextBlock TextWrapping="Wrap" Foreground="#AAFFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}"
                        Margin="0,0,0,16">
-                Live Mithril.GameState projection: the current area resolved
+                Live Arda world-state projection: the current area resolved
                 through areas.json, the player's last-known position from
                 Player.log ProcessNewPosition, and the area-scoped map-pin
                 set. Position is sparse — it only updates on teleport /
@@ -219,14 +219,6 @@
                         <TextBlock HorizontalAlignment="Right"
                                    Text="{Binding WeatherConditionText}"
                                    Foreground="#FFFFFFFF" FontWeight="SemiBold"/>
-                    </DockPanel>
-                    <DockPanel Margin="0,0,0,6">
-                        <TextBlock DockPanel.Dock="Left" Text="Flag (raw, unverified)"
-                                   Foreground="#88FFFFFF" VerticalAlignment="Center"/>
-                        <TextBlock HorizontalAlignment="Right"
-                                   Text="{Binding WeatherFlagText}"
-                                   FontFamily="{DynamicResource AppMonoFontFamily}"
-                                   Foreground="#88FFFFFF"/>
                     </DockPanel>
                     <DockPanel>
                         <TextBlock DockPanel.Dock="Left" Text="Last change (UTC)"

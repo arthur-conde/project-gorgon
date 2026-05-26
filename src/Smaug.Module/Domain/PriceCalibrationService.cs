@@ -1,7 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -35,7 +35,7 @@ public sealed class PriceCalibrationService
     public const int CommunityWireSchemaVersion = 1;
 
     private readonly IReferenceDataService _refData;
-    private readonly IGameSessionService? _session;
+    private readonly ISessionComposer? _session;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
     private readonly IDiagnosticsSink? _diag;
@@ -62,7 +62,7 @@ public sealed class PriceCalibrationService
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,
         IDiagnosticsSink? diag = null,
-        IGameSessionService? session = null)
+        ISessionComposer? session = null)
     {
         _refData = refData;
         _session = session;

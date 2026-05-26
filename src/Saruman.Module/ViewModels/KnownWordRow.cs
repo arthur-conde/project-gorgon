@@ -1,24 +1,24 @@
+using Arda.Composition;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Mithril.GameState.WordsOfPower;
 
 namespace Saruman.ViewModels;
 
 /// <summary>
 /// VM row for a single Word-of-Power code (#603 — post-codebook-split). Wraps
-/// a <see cref="WordOfPowerEntry"/> from the cross-source view and composes
+/// a <see cref="WordOfPowerEntry"/> from the cross-source composer and composes
 /// the Saruman module-internal override flag — UI Spent state is
-/// <c>view.IsSpent OR override.IsSpent</c>.
+/// <c>composer.IsSpent OR override.IsSpent</c>.
 /// </summary>
 public sealed partial class KnownWordRow : ObservableObject
 {
     public KnownWordRow(WordOfPowerEntry e, bool userOverrideSpent)
     {
         Code = e.Code;
-        FirstDiscoveredAt = e.DiscoveredAt;
-        _effectName = e.EffectName;
-        _description = e.Description;
-        _viewSpent = e.State == WordOfPowerKnowledge.Spent;
-        _spentAt = e.LastSpentAt;
+        FirstDiscoveredAt = e.DiscoveredAt.DateTime;
+        _effectName = e.Effect;
+        _description = e.Description ?? "";
+        _viewSpent = e.IsSpent;
+        _spentAt = null;
         _userOverrideSpent = userOverrideSpent;
     }
 
@@ -54,10 +54,9 @@ public sealed partial class KnownWordRow : ObservableObject
 
     public void UpdateFrom(WordOfPowerEntry e, bool userOverrideSpent)
     {
-        EffectName = e.EffectName;
-        Description = e.Description;
-        ViewSpent = e.State == WordOfPowerKnowledge.Spent;
-        SpentAt = e.LastSpentAt;
+        EffectName = e.Effect;
+        Description = e.Description ?? "";
+        ViewSpent = e.IsSpent;
         UserOverrideSpent = userOverrideSpent;
     }
 }

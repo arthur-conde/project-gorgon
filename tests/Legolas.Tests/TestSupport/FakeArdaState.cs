@@ -25,10 +25,22 @@ internal sealed class FakeMapPinState : IMapPinState
 
     public void Add(MapPinEntry pin) => _pins.Add(pin);
 
+    public void Add(double x, double z, string label = "") => _pins.Add(new MapPinEntry(x, z, label, 0, 0));
+
     public void Remove(double x, double z)
     {
         _pins.RemoveAll(p => p.X == x && p.Z == z);
     }
 
     public void Clear() => _pins.Clear();
+
+    /// <summary>Pre-seed the pin state (replaces the old FakePlayerPinTracker.SeedExisting).</summary>
+    public void SeedExisting(params MapPinEntry[] pins)
+    {
+        _pins.Clear();
+        _pins.AddRange(pins);
+    }
+
+    public static MapPinEntry Pin(double x, double z, string label = "", int shape = 0, int color = 0) =>
+        new(x, z, label, shape, color);
 }

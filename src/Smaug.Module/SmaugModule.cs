@@ -1,5 +1,5 @@
 using System.IO;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
@@ -42,7 +42,7 @@ public sealed class SmaugModule : IMithrilModule
             sp.GetService<ICommunityCalibrationService>(),
             sp.GetRequiredService<SmaugSettings>().Calibration,
             sp.GetService<IDiagnosticsSink>(),
-            sp.GetService<IGameSessionService>()));
+            sp.GetService<ISessionComposer>()));
 
         services.AddSingleton<VendorCatalogViewModel>();
         services.AddSingleton<VendorShopViewModel>();

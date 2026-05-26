@@ -1,4 +1,4 @@
-using Mithril.GameState.Pins;
+using Arda.World.Player;
 
 namespace Legolas.Domain;
 
@@ -75,7 +75,7 @@ public static class MotherlodeReferenceLocator
     public static MotherlodeBearing? Nearest(
         WorldCoord solved,
         IReadOnlyList<MotherlodePositionSample> measuredSpots,
-        IReadOnlyList<MapPin> pins,
+        IReadOnlyCollection<MapPinEntry> pins,
         IReadOnlyList<CalibrationReference> gazetteer)
     {
         MotherlodeBearing? best = null;
@@ -106,7 +106,7 @@ public static class MotherlodeReferenceLocator
         foreach (var p in pins)
         {
             var name = string.IsNullOrWhiteSpace(p.Label)
-                ? $"your {p.Appearance} pin"
+                ? $"your {p.Appearance()} pin"
                 : $"\"{p.Label}\"";
             Consider(p.X, p.Z, name, MotherlodeReferenceTier.MapPin);
         }

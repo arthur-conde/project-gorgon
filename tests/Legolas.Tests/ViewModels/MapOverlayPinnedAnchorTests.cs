@@ -7,7 +7,6 @@ using Legolas.Flow;
 using Legolas.Services;
 using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
-using Mithril.GameState.Movement;
 
 namespace Legolas.Tests.ViewModels;
 
@@ -30,7 +29,7 @@ public class MapOverlayPinnedAnchorTests
         IsReplay: false);
 
     private static (SessionState session, MapOverlayViewModel map,
-        FakePlayerPositionTracker tracker, TestDomainEventBus bus,
+        FakePositionState posState, TestDomainEventBus bus,
         FakeMapPinState pinState, FakeActiveCharacterService chr, FakeAreaCalibrationService areaCal)
         BuildSut(bool calibrated)
     {
@@ -40,7 +39,7 @@ public class MapOverlayPinnedAnchorTests
         var surveyFlow = new SurveyFlowController(session, settings);
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
-        var tracker = new FakePlayerPositionTracker();
+        var posState = new FakePositionState();
         var bus = new TestDomainEventBus();
         var pinState = new FakeMapPinState();
         var chr = new FakeActiveCharacterService();
@@ -53,9 +52,9 @@ public class MapOverlayPinnedAnchorTests
             session, projector, new AdaptiveRouteOptimizer(
                 new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer()),
             surveyFlow, brushes, settings,
-            pinCalibration: null, positionTracker: tracker, areaCalibration: areaCal,
+            pinCalibration: null, positionState: posState, bus: bus, areaCalibration: areaCal,
             motherlode: null, characterPin: charPin);
-        return (session, map, tracker, bus, pinState, chr, areaCal);
+        return (session, map, posState, bus, pinState, chr, areaCal);
     }
 
     [Fact]
@@ -87,9 +86,9 @@ public class MapOverlayPinnedAnchorTests
     [Fact]
     public void The_pin_beats_a_stale_tracker_fix()
     {
-        var (session, _, tracker, bus, pinState, _, _) = BuildSut(calibrated: true);
-        tracker.Push(999, 0, 999, PlayerPositionSource.Spawn,
-            DateTimeOffset.UtcNow.AddHours(-1));
+        var (session, _, _, bus, pinState, _, _) = BuildSut(calibrated: true);
+        var staleMeta = Meta with { Timestamp = DateTimeOffset.UtcNow.AddHours(-1) };
+        bus.Publish(new PlayerPositionChanged(999, 0, 999, PositionSource.Spawn, staleMeta));
 
         bus.Publish(new MapPinAdded(40, -25, "Arthas", 0, 0, Meta));
         pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
@@ -101,13 +100,13 @@ public class MapOverlayPinnedAnchorTests
     [Fact]
     public void A_genuinely_newer_tracker_fix_supersedes_the_pin()
     {
-        var (session, _, tracker, bus, pinState, _, _) = BuildSut(calibrated: true);
+        var (session, _, _, bus, pinState, _, _) = BuildSut(calibrated: true);
         bus.Publish(new MapPinAdded(40, -25, "Arthas", 0, 0, Meta));
         pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
         session.SurveyPlayerIsPinned.Should().BeTrue();
 
-        tracker.Push(7, 0, 8, PlayerPositionSource.Movement,
-            DateTimeOffset.UtcNow.AddMinutes(5));
+        var newerMeta = Meta with { Timestamp = DateTimeOffset.UtcNow.AddMinutes(5) };
+        bus.Publish(new PlayerPositionChanged(7, 0, 8, PositionSource.Movement, newerMeta));
 
         session.SurveyPlayerIsPinned.Should().BeFalse();
         session.SurveyPlayerIsManual.Should().BeFalse();
@@ -117,8 +116,9 @@ public class MapOverlayPinnedAnchorTests
     [Fact]
     public void Removing_the_pin_falls_back_to_the_auto_fix()
     {
-        var (session, _, tracker, bus, pinState, _, _) = BuildSut(calibrated: true);
-        tracker.Push(7, 0, 8, PlayerPositionSource.Spawn, DateTimeOffset.UtcNow.AddHours(-1));
+        var (session, _, _, bus, pinState, _, _) = BuildSut(calibrated: true);
+        var oldMeta = Meta with { Timestamp = DateTimeOffset.UtcNow.AddHours(-1) };
+        bus.Publish(new PlayerPositionChanged(7, 0, 8, PositionSource.Spawn, oldMeta));
         bus.Publish(new MapPinAdded(40, -25, "Arthas", 0, 0, Meta));
         pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
         session.SurveyPlayerIsPinned.Should().BeTrue();

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
 using Mithril.Shared.Reference;
 using Xunit;
@@ -20,7 +21,7 @@ public class NudgePadViewModelTests
     private static PixelPoint Project(double x, double z) => new(100 + 2 * x, 100 - 2 * z);
 
     private static (NudgePadViewModel pad, SessionState session, PinCalibrationCoordinator cal,
-        FakePlayerPinTracker pins) Build()
+        FakeMapPinState pins) Build()
     {
         var session = new SessionState { Mode = SessionMode.Survey };
         var settings = new LegolasSettings();
@@ -28,8 +29,9 @@ public class NudgePadViewModelTests
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
-        var pins = new FakePlayerPinTracker();
-        var cal = new PinCalibrationCoordinator(new FakeCalib(), pins, settings);
+        var pins = new FakeMapPinState();
+        var bus = new TestDomainEventBus();
+        var cal = new PinCalibrationCoordinator(new FakeCalib(), pins, bus, settings);
         var map = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes, settings, cal);
         var pad = new NudgePadViewModel(session, map, settings);
         return (pad, session, cal, pins);
@@ -48,9 +50,9 @@ public class NudgePadViewModelTests
     {
         var (pad, _, cal, pins) = Build();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         cal.Arm(); // ≥3 pins → Pair phase
 
         bool raised = false;

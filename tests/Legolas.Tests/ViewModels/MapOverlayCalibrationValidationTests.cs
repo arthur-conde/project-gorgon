@@ -30,7 +30,7 @@ public class MapOverlayCalibrationValidationTests
         var brushes = new LegolasBrushes(settings);
         var cal = new FakeAreaCalibrationService();
         var map = new MapOverlayViewModel(session, projector, optimizer, surveyFlow, brushes,
-            settings, pinCalibration: null, positionTracker: null, areaCalibration: cal);
+            settings, pinCalibration: null, positionState: null, bus: null, areaCalibration: cal);
         return (map, cal, session);
     }
 

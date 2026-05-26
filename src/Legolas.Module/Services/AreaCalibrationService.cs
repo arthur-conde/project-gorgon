@@ -37,13 +37,11 @@ public interface IAreaCalibrationService
     event EventHandler? Changed;
 
     /// <summary>
-    /// Set the current area by internal key. The Player.log-driven
-    /// <c>PlayerLogIngestionService.OnAreaChanged</c> bridge calls this
-    /// whenever <see cref="Mithril.GameState.Areas.IPlayerAreaState"/> emits a
-    /// new <see cref="Mithril.GameState.Areas.PlayerAreaChanged"/> notification
-    /// (#605 — the prior chat <c>Entering Area:</c> banner path is gone;
-    /// <c>IPlayerAreaState</c> is the authoritative source). Also used by the
-    /// manual area-picker UI.
+    /// Set the current area by internal key. The Arda-driven
+    /// <c>PlayerLogIngestionService</c> calls this when it receives an
+    /// <c>AreaChanged</c> domain event (#605 — the prior chat
+    /// <c>Entering Area:</c> banner path is gone; Arda's <c>IAreaState</c> is
+    /// the authoritative source). Also used by the manual area-picker UI.
     /// </summary>
     void SelectArea(string areaKey);
 
@@ -71,26 +69,25 @@ public interface IAreaCalibrationService
     /// <summary>Raised for each <see cref="NoteSurvey"/> — the test-mode hook.</summary>
     event EventHandler<CalibrationSurveyObservation>? SurveyObserved;
 
-    // Pin ingestion is no longer Legolas-owned: the map-pin lifecycle is the
-    // GameState-tier IPlayerPinTracker (#468), which both calibration
-    // consumers subscribe to directly. The old NotePinAdded/PinAdded relay
-    // (#454) was removed with that promotion.
+    // Pin ingestion is no longer Legolas-owned: the map-pin lifecycle is
+    // handled by the Arda pipeline (MapPinAdded/MapPinRemoved domain events),
+    // which calibration consumers subscribe to directly. The old
+    // NotePinAdded/PinAdded relay (#454) was removed with that promotion.
 }
 
 /// <summary>
 /// Owns the per-area calibration lifecycle: area-key handoff (from the
-/// <see cref="Mithril.GameState.Areas.IPlayerAreaState"/>-driven
-/// <c>PlayerLogIngestionService.OnAreaChanged</c> bridge or the manual
-/// area-picker UI) &#8594; apply persisted <see cref="AreaCalibration"/> on entry,
-/// and the solve/persist path the calibration window drives. Reference points
+/// Arda <c>AreaChanged</c> domain event bridge in
+/// <c>PlayerLogIngestionService</c> or the manual area-picker UI) &#8594;
+/// apply persisted <see cref="AreaCalibration"/> on entry, and the
+/// solve/persist path the calibration window drives. Reference points
 /// come from <see cref="IReferenceDataService"/> (landmarks + NPCs with a
 /// parseable <c>Pos</c>), which is the same engine-unit world frame the game
 /// positions the player in (verified 2026-05-18).
 ///
 /// <para>The chat-log <c>Entering Area:</c> banner path was retired in #605 —
-/// per #531, <see cref="Mithril.GameState.Areas.IPlayerAreaState"/> already
-/// exposes the same signal authoritatively from Player.log's
-/// <c>LOADING LEVEL</c> line.</para>
+/// per #531, Arda's <c>IAreaState</c> already exposes the same signal
+/// authoritatively from Player.log's <c>LOADING LEVEL</c> line.</para>
 /// </summary>
 public sealed class AreaCalibrationService : IAreaCalibrationService
 {

@@ -2,10 +2,12 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
+using Arda.Dispatch;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Legolas.Domain;
 using Legolas.ViewModels;
-using Mithril.GameState.Pins;
 
 namespace Legolas.Services;
 
@@ -71,10 +73,9 @@ public sealed partial class CalibrationMarker : ObservableObject
 /// <summary>
 /// View-agnostic driver for the <b>guided two-phase correctable</b> cold-start
 /// pin calibration done through the survey map overlay (#460 → #477 Part A).
-/// Consumes the GameState-tier <see cref="IPlayerPinTracker"/> (#468) — the
-/// authoritative, area-scoped, replay-deduped player pin set — and feeds
-/// click-paired <c>(WorldCoord ↔ PixelPoint)</c> placements to
-/// <see cref="IAreaCalibrationService.CalibrateCurrentArea"/>.
+/// Consumes Arda's <see cref="IMapPinState"/> — the authoritative, area-scoped
+/// player pin set — and feeds click-paired <c>(WorldCoord ↔ PixelPoint)</c>
+/// placements to <see cref="IAreaCalibrationService.CalibrateCurrentArea"/>.
 ///
 /// <para><b>The flow.</b> One model, two phases (see
 /// <see cref="CalibrationPhase"/>). Entry starts in <see cref="CalibrationPhase.Pair"/>
@@ -99,36 +100,39 @@ public sealed partial class CalibrationMarker : ObservableObject
 /// <see cref="ConfirmAnyway"/> call the persisting
 /// <see cref="IAreaCalibrationService.CalibrateCurrentArea"/>.</para>
 /// </summary>
-public sealed partial class PinCalibrationCoordinator : ObservableObject
+public sealed partial class PinCalibrationCoordinator : ObservableObject, IDisposable
 {
     private readonly IAreaCalibrationService _service;
-    private readonly IPlayerPinTracker _pins;
+    private readonly IMapPinState _pinState;
     private readonly LegolasSettings _settings;
     private readonly SessionState? _session;
-    private readonly IDisposable _sub;
+    private readonly IDisposable _addedSub;
+    private readonly IDisposable _removedSub;
 
-    // The accumulated solve pairs. Keyed by the MapPin (for spread + identity);
+    // The accumulated solve pairs. Keyed by the MapPinEntry (for spread + identity);
     // only (WorldCoord, Pixel) ever reaches the solver.
-    private readonly List<(MapPin Pin, PixelPoint Pixel)> _pairs = new();
+    private readonly List<(MapPinEntry Pin, PixelPoint Pixel)> _pairs = new();
     // Pins the user deferred ("skip") — excluded from the next suggestion until
     // everything else is paired (then recycled, so the user is never stuck).
-    private readonly List<MapPin> _skipped = new();
+    private readonly List<MapPinEntry> _skipped = new();
 
     // #524: SessionState carries the live in-game map zoom the user types into
     // the wizard / overlay slider. Optional so the unit-test ctor stays
     // unchanged (legacy callers stamp the calibration at the default 1.0,
     // matching the pre-#524 hardcoded value).
     public PinCalibrationCoordinator(
-        IAreaCalibrationService service, IPlayerPinTracker pins, LegolasSettings settings,
-        SessionState? session = null)
+        IAreaCalibrationService service, IMapPinState pinState, IDomainEventSubscriber bus,
+        LegolasSettings settings, SessionState? session = null)
     {
         _service = service;
-        _pins = pins;
+        _pinState = pinState;
         _settings = settings;
         _session = session;
-        // Subscribe replays a Snapshot synchronously (seeds ExistingPins);
-        // live notifications arrive on the tracker's ingestion thread.
-        _sub = _pins.Subscribe(OnPinSetChanged);
+        // Seed ExistingPins from the current pin state; live add/remove
+        // notifications arrive via the domain event bus.
+        SyncExistingPins(_pinState.Pins);
+        _addedSub = bus.Subscribe<MapPinAdded>(OnPinAdded);
+        _removedSub = bus.Subscribe<MapPinRemoved>(OnPinRemoved);
         _settings.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(LegolasSettings.CalibrationGoodResidualPx))
@@ -167,11 +171,11 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SuggestedPin))]
     [NotifyPropertyChangedFor(nameof(PromptText))]
-    private MapPin? _overridePin;
+    private MapPinEntry? _overridePin;
 
     /// <summary>Current-area pins by in-game identity — the override picker's
-    /// source. Kept in sync with the GameState set.</summary>
-    public ObservableCollection<MapPin> ExistingPins { get; } = new();
+    /// source. Kept in sync with the Arda pin state.</summary>
+    public ObservableCollection<MapPinEntry> ExistingPins { get; } = new();
 
     /// <summary>Markers the overlay renders, one per accumulated pair (parallel
     /// to <c>_pairs</c> by <see cref="CalibrationMarker.PairIndex"/>).</summary>
@@ -182,7 +186,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
     [ObservableProperty] private CalibrationMarker? _selectedMarker;
 
     /// <summary>Live count of current-area pins available to pair against.</summary>
-    public int PinsAvailable => _pins.CurrentAreaPins.Count;
+    public int PinsAvailable => _pinState.Pins.Count;
 
     /// <summary>≥3 pins exist ⇒ Pair phase is workable without dropping more.</summary>
     public bool HasUsablePins => PinsAvailable >= 3;
@@ -212,7 +216,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
     /// <summary>The next pin the user should pair: the explicit override if
     /// set, else the spread suggestion (farthest-point from already-paired,
     /// excluding skipped). Null when nothing is left to pair.</summary>
-    public MapPin? SuggestedPin
+    public MapPinEntry? SuggestedPin
     {
         get
         {
@@ -247,7 +251,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
             if (Phase == CalibrationPhase.Drop)
                 return "Drop ≥3 well-spread map pins in-game (works on a fogged/blank map).";
             if (SuggestedPin is { } p)
-                return $"Click where this pin is: {p.Appearance} — “{p.DisplayName}”.";
+                return $"Click where this pin is: {p.Appearance()} — “{p.DisplayName()}”.";
             return PairedCount >= 3
                 ? "All pins paired. Check the fit, then Confirm."
                 : "No more pins to pair — drop more, or Confirm if you have ≥3.";
@@ -266,7 +270,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
         SelectedMarker = null;
         OverridePin = null;
         PreviewResidual = null;
-        SyncExistingPins(_pins.CurrentAreaPins);
+        SyncExistingPins(_pinState.Pins);
         Phase = HasUsablePins ? CalibrationPhase.Pair : CalibrationPhase.Drop;
         IsArmed = true;
         RaiseAll();
@@ -424,15 +428,15 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
         if (m is not null) m.IsSelected = true;
     }
 
-    private MapPin? ComputeSuggestion()
+    private MapPinEntry? ComputeSuggestion()
     {
-        var candidates = _pins.CurrentAreaPins
+        var candidates = _pinState.Pins
             .Where(p => !IsPaired(p) && !_skipped.Any(s => SameWorld(s, p)))
             .ToList();
         if (candidates.Count == 0)
         {
             // Everything left is skipped — recycle so the user is never stuck.
-            candidates = _pins.CurrentAreaPins.Where(p => !IsPaired(p)).ToList();
+            candidates = _pinState.Pins.Where(p => !IsPaired(p)).ToList();
         }
         if (candidates.Count == 0) return null;
         if (_pairs.Count == 0) return candidates[0];
@@ -440,7 +444,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
         // Farthest-point: maximise the minimum world-distance to already-paired
         // pins, so each new pair widens the geometric spread (a well-spread set
         // conditions the similarity solve far better than a clustered one).
-        MapPin? best = null;
+        MapPinEntry? best = null;
         var bestMin = double.NegativeInfinity;
         foreach (var c in candidates)
         {
@@ -450,12 +454,12 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
         return best;
     }
 
-    private bool IsPaired(MapPin p) => _pairs.Any(q => SameWorld(q.Pin, p));
+    private bool IsPaired(MapPinEntry p) => _pairs.Any(q => SameWorld(q.Pin, p));
 
-    private static bool SameWorld(MapPin a, MapPin b) =>
+    private static bool SameWorld(MapPinEntry a, MapPinEntry b) =>
         Math.Abs(a.X - b.X) < 0.01 && Math.Abs(a.Z - b.Z) < 0.01;
 
-    private static double WorldDist(MapPin a, MapPin b)
+    private static double WorldDist(MapPinEntry a, MapPinEntry b)
     {
         var dx = a.X - b.X;
         var dz = a.Z - b.Z;
@@ -471,20 +475,33 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject
         PreviewResidual = LandmarkCalibrationSolver.Solve(refs)?.ResidualPixels;
     }
 
-    private void OnPinSetChanged(PinSetChanged note)
+    public void Dispose()
+    {
+        _addedSub.Dispose();
+        _removedSub.Dispose();
+    }
+
+    private void OnPinAdded(MapPinAdded evt)
     {
         var disp = Application.Current?.Dispatcher;
         if (disp is not null && !disp.CheckAccess())
-            disp.Invoke(() => Apply(note));
+            disp.Invoke(() => SyncExistingPins(_pinState.Pins));
         else
-            Apply(note);
+            SyncExistingPins(_pinState.Pins);
     }
 
-    private void Apply(PinSetChanged note) => SyncExistingPins(note.Pins);
+    private void OnPinRemoved(MapPinRemoved evt)
+    {
+        var disp = Application.Current?.Dispatcher;
+        if (disp is not null && !disp.CheckAccess())
+            disp.Invoke(() => SyncExistingPins(_pinState.Pins));
+        else
+            SyncExistingPins(_pinState.Pins);
+    }
 
     /// <summary>Rebuild <see cref="ExistingPins"/> from a snapshot, preserving
     /// the override selection by value when the same pin survives.</summary>
-    private void SyncExistingPins(IReadOnlyList<MapPin> pins)
+    private void SyncExistingPins(IReadOnlyCollection<MapPinEntry> pins)
     {
         var prevOverride = OverridePin;
         ExistingPins.Clear();
