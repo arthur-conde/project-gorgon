@@ -70,7 +70,7 @@ public sealed class VendorIngestionService : BackgroundService
                 return;
             }
 
-            var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level : 0;
+            var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level + cp.BonusLevels : 0;
 
             _calibration.RecordObservation(
                 e.NpcKey,

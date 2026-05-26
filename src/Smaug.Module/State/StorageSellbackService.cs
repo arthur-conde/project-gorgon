@@ -127,7 +127,7 @@ public sealed class StorageSellbackService
                 bool? acceptable = null;
                 if (playerTier is not null)
                 {
-                    var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level : 0;
+                    var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level + cp.BonusLevels : 0;
                     maxGold = VendorCapResolver.ResolveMaxGold(
                         store, playerTier.Value, ctx.Keywords, civicPride);
                     acceptable = maxGold is not null && ctx.Entry.Value <= maxGold.Value;

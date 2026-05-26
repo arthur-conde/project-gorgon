@@ -94,7 +94,7 @@ public sealed class VendorCatalogService
                     playerTier = _favorLookup?.GetFavorTier(src.Npc);
                     if (playerTier is not null)
                     {
-                    var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level : 0;
+                    var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level + cp.BonusLevels : 0;
                     maxGold = VendorCapResolver.ResolveMaxGold(
                         storeService, playerTier.Value, itemKeywords, civicPride);
                     acceptable = maxGold is not null && item.Value <= maxGold.Value;

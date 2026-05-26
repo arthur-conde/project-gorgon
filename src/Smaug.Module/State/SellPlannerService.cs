@@ -118,7 +118,7 @@ public sealed class SellPlannerService
                 npcKey,
                 item.InternalName,
                 estimateTier.ToToken(),
-                _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level : 0);
+                _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level + cp.BonusLevels : 0);
 
             rows.Add(new SellPlannerVendorRow(
                 NpcKey: npcKey,
