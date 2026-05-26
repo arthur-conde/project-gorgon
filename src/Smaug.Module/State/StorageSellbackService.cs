@@ -1,4 +1,4 @@
-using Arda.World.Player;
+using Arda.Composition;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Diagnostics;
@@ -43,8 +43,9 @@ public sealed class StorageSellbackService
 {
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeCharSvc;
-    private readonly IPlayerState _playerState;
+    private readonly IPlayerProgressionState _progression;
     private readonly IFavorLookupService? _favorLookup;
+    private readonly INpcStateTracker? _npcTracker;
     private readonly IDiagnosticsSink? _diag;
 
     private IReadOnlyList<StorageSellbackVendor> _vendors = [];
@@ -59,14 +60,16 @@ public sealed class StorageSellbackService
     public StorageSellbackService(
         IReferenceDataService refData,
         IActiveCharacterService activeCharSvc,
-        IPlayerState playerState,
+        IPlayerProgressionState progression,
         IFavorLookupService? favorLookup = null,
+        INpcStateTracker? npcTracker = null,
         IDiagnosticsSink? diag = null)
     {
         _refData = refData;
         _activeCharSvc = activeCharSvc;
-        _playerState = playerState;
+        _progression = progression;
         _favorLookup = favorLookup;
+        _npcTracker = npcTracker;
         _diag = diag;
 
         _activeCharSvc.ActiveCharacterChanged += (_, _) => Rebuild();
@@ -77,6 +80,8 @@ public sealed class StorageSellbackService
         };
         if (_favorLookup is not null)
             _favorLookup.FavorChanged += (_, _) => Rebuild();
+        if (_npcTracker is not null)
+            _npcTracker.StateChanged += () => Rebuild();
 
         Rebuild();
     }
@@ -122,7 +127,7 @@ public sealed class StorageSellbackService
                 bool? acceptable = null;
                 if (playerTier is not null)
                 {
-                    var civicPride = _playerState.Skills.TryGetValue("CivicPride", out var cp) ? cp.Raw : 0;
+                    var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level : 0;
                     maxGold = VendorCapResolver.ResolveMaxGold(
                         store, playerTier.Value, ctx.Keywords, civicPride);
                     acceptable = maxGold is not null && ctx.Entry.Value <= maxGold.Value;

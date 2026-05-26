@@ -33,13 +33,13 @@ public sealed class VendorIngestionServiceSkillStateTests
     {
         await using var harness = await TestHarness.StartAsync();
 
-        harness.PlayerState.SetSkill("CivicPride", raw: 15, bonus: 5);
+        harness.PlayerState.SetSkill("CivicPride", 15);
 
         harness.Bus.Publish(new VendorItemSold(130, "BottleOfWater", 78177652, "NPC_Therese", "Neutral", LiveMeta));
 
         harness.Calibration.Data.Observations.Should().HaveCount(1);
         harness.Calibration.Data.Observations[0].CivicPrideLevel.Should().Be(15,
-            because: "CivicPride should be read from IPlayerState.Skills[\"CivicPride\"].Raw on demand");
+            because: "CivicPride should be read from IPlayerProgressionState.Skills[\"CivicPride\"].Level on demand");
     }
 
     [Fact]
@@ -165,15 +165,18 @@ public sealed class VendorIngestionServiceSkillStateTests
         }
     }
 
-    private sealed class FakePlayerState : IPlayerState
+    private sealed class FakePlayerState : IPlayerProgressionState
     {
-        private readonly Dictionary<string, ArdaSkillEntry> _skills = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, EnrichedSkill> _skills = new(StringComparer.Ordinal);
 
-        public IReadOnlyDictionary<string, ArdaSkillEntry> Skills => _skills;
-        public IReadOnlyDictionary<int, RecipeEntry> Recipes { get; } = new Dictionary<int, RecipeEntry>();
+        public IReadOnlyDictionary<string, EnrichedSkill> Skills => _skills;
+        public IReadOnlyDictionary<string, int> RecipeCompletions { get; } = new Dictionary<string, int>();
+#pragma warning disable CS0067
+        public event Action? StateChanged;
+#pragma warning restore CS0067
 
-        public void SetSkill(string name, int raw, int bonus = 0) =>
-            _skills[name] = new ArdaSkillEntry(raw, bonus, 0, 0, 0);
+        public void SetSkill(string name, int level) =>
+            _skills[name] = new EnrichedSkill(name, level, 0, 0, 0, 0, false, DateTimeOffset.UtcNow);
     }
 
     private sealed class FakeSessionComposer : ISessionComposer

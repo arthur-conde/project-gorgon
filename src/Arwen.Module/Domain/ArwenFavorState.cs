@@ -17,12 +17,6 @@ public sealed class ArwenFavorState : IVersionedState<ArwenFavorState>
 
     /// <summary>NPC key → latest exact favor snapshot.</summary>
     public Dictionary<string, NpcFavorSnapshot> Favor { get; set; } = new(StringComparer.Ordinal);
-
-    public NpcFavorSnapshot? GetExactFavor(string npcKey)
-        => Favor.TryGetValue(npcKey, out var s) ? s : null;
-
-    public void SetExactFavor(string npcKey, double exactFavor, DateTimeOffset timestamp)
-        => Favor[npcKey] = new NpcFavorSnapshot { ExactFavor = exactFavor, Timestamp = timestamp };
 }
 
 [JsonSourceGenerationOptions(

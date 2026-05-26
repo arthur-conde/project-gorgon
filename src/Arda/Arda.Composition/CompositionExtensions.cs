@@ -81,6 +81,7 @@ public static class CompositionExtensions
                     charactersRootDir,
                     "npc-state.json",
                     NpcStateSnapshotJsonContext.Default.NpcStateSnapshot,
+                    legacy: new NpcStateArwenMigration(charactersRootDir),
                     logger: loggerFactory?.CreateLogger("PerCharacterStore<NpcStateSnapshot>"));
             }
 

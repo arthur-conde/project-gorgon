@@ -1,3 +1,4 @@
+using Arda.Composition;
 using Arwen.Domain;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
@@ -41,7 +42,7 @@ public sealed class FavorStateService : IFavorLookupService
 {
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _charData;
-    private readonly PerCharacterView<ArwenFavorState> _favorView;
+    private readonly INpcStateTracker _tracker;
 
     private IReadOnlyList<NpcFavorEntry> _entries = [];
     private Dictionary<string, FavorTier> _tierByNpcKey = new(StringComparer.Ordinal);
@@ -60,25 +61,27 @@ public sealed class FavorStateService : IFavorLookupService
     public FavorStateService(
         IReferenceDataService refData,
         IActiveCharacterService charData,
-        PerCharacterView<ArwenFavorState> favorView)
+        INpcStateTracker tracker)
     {
         _refData = refData;
         _charData = charData;
-        _favorView = favorView;
+        _tracker = tracker;
 
         _refData.FileUpdated += (_, key) => { if (key == "npcs") Rebuild(); };
         _charData.CharacterExportsChanged += (_, _) => Rebuild();
-        // CurrentChanged covers two triggers: character switch (fires from ActiveCharacterChanged
-        // inside PerCharacterView) and post-fanout invalidate. One subscription is enough — no
-        // separate ActiveCharacterChanged hookup needed.
-        _favorView.CurrentChanged += (_, _) => Rebuild();
+        _tracker.StateChanged += OnTrackerStateChanged;
         Rebuild();
+    }
+
+    private void OnTrackerStateChanged()
+    {
+        Rebuild();
+        FavorChanged?.Invoke(this, EventArgs.Empty);
     }
 
     /// <summary>Called by the ingestion service when a single NPC's favor is updated.</summary>
     public void OnFavorUpdated(string npcKey)
     {
-        // Update the specific entry in-place if it exists
         foreach (var entry in _entries)
         {
             if (entry.NpcKey != npcKey) continue;
@@ -88,7 +91,6 @@ public sealed class FavorStateService : IFavorLookupService
             FavorChanged?.Invoke(this, EventArgs.Empty);
             return;
         }
-        // NPC not in list yet — full rebuild
         Rebuild();
     }
 
@@ -130,20 +132,19 @@ public sealed class FavorStateService : IFavorLookupService
     {
         var activeChar = _charData.ActiveCharacter;
 
-        // Priority 1: Persisted exact favor from Player.log
-        var snapshot = _favorView.Current?.GetExactFavor(entry.NpcKey);
-        if (snapshot is not null)
+        // Priority 1: exact favor from NpcStateTracker (Arda L4 composer)
+        var npcRecord = _tracker.GetNpc(entry.NpcKey);
+        if (npcRecord?.AbsoluteFavor is { } exactFavor)
         {
-            entry.ExactFavor = snapshot.ExactFavor;
-            entry.CurrentTier = FavorScale.TierForFavor(snapshot.ExactFavor);
-            entry.TierProgress = FavorScale.ProgressInTier(snapshot.ExactFavor, entry.CurrentTier);
+            entry.ExactFavor = exactFavor;
+            entry.CurrentTier = FavorScale.TierForFavor(exactFavor);
+            entry.TierProgress = FavorScale.ProgressInTier(exactFavor, entry.CurrentTier);
             entry.IsKnown = true;
             return;
         }
 
         // Priority 2: Character export tier (no exact value). Unknown token →
-        // treat as not-known and fall through to Priority 3 (preserves the old
-        // FavorTiers.TryParse==false behaviour).
+        // treat as not-known and fall through to Priority 3.
         if (activeChar?.NpcFavor.TryGetValue(entry.NpcKey, out var tierName) == true)
         {
             var parsed = FavorTierExtensions.Parse(tierName);

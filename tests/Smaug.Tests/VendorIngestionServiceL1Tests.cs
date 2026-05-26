@@ -133,12 +133,15 @@ public sealed class VendorIngestionServiceL1Tests
         }
     }
 
-    private sealed class FakePlayerState : IPlayerState
+    private sealed class FakePlayerState : IPlayerProgressionState
     {
-        public IReadOnlyDictionary<string, ArdaSkillEntry> Skills { get; } =
-            new Dictionary<string, ArdaSkillEntry>();
-        public IReadOnlyDictionary<int, RecipeEntry> Recipes { get; } =
-            new Dictionary<int, RecipeEntry>();
+        public IReadOnlyDictionary<string, EnrichedSkill> Skills { get; } =
+            new Dictionary<string, EnrichedSkill>();
+        public IReadOnlyDictionary<string, int> RecipeCompletions { get; } =
+            new Dictionary<string, int>();
+#pragma warning disable CS0067
+        public event Action? StateChanged;
+#pragma warning restore CS0067
     }
 
     private sealed class FakeSessionComposer : ISessionComposer
