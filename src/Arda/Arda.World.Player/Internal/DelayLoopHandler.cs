@@ -23,18 +23,9 @@ internal sealed class DelayLoopHandler(IDomainEventPublisher bus) : IFrameHandle
 
         var isInteractor = args.Contains("IsInteractorDelayLoop", StringComparison.Ordinal);
 
-        var verbMem = SliceFromSource(sourceLog, verbSpan);
-        var textMem = SliceFromSource(sourceLog, textSpan);
+        var verbMem = SpanHelpers.SliceFromSource(sourceLog, verbSpan);
+        var textMem = SpanHelpers.SliceFromSource(sourceLog, textSpan);
 
         bus.Publish(new DelayLoopStarted(seconds, verbMem, textMem, isInteractor, metadata));
-    }
-
-    private static ReadOnlyMemory<char> SliceFromSource(string sourceLog, ReadOnlySpan<char> span)
-    {
-        if (span.IsEmpty) return ReadOnlyMemory<char>.Empty;
-        var sourceSpan = sourceLog.AsSpan();
-        if (sourceSpan.Overlaps(span, out var offset))
-            return sourceLog.AsMemory(offset, span.Length);
-        return span.ToString().AsMemory();
     }
 }

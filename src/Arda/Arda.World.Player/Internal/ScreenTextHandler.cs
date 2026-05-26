@@ -29,18 +29,9 @@ internal sealed class ScreenTextHandler(IDomainEventPublisher bus) : IFrameHandl
         var categorySpan = tok.NextTokenSpan();
         var textSpan = tok.NextQuotedSpan();
 
-        var categoryMem = SliceFromSource(sourceLog, categorySpan);
-        var textMem = SliceFromSource(sourceLog, textSpan);
+        var categoryMem = SpanHelpers.SliceFromSource(sourceLog, categorySpan);
+        var textMem = SpanHelpers.SliceFromSource(sourceLog, textSpan);
 
         bus.Publish(new ScreenTextObserved(categoryMem, textMem, metadata));
-    }
-
-    private static ReadOnlyMemory<char> SliceFromSource(string sourceLog, ReadOnlySpan<char> span)
-    {
-        if (span.IsEmpty) return ReadOnlyMemory<char>.Empty;
-        var sourceSpan = sourceLog.AsSpan();
-        if (sourceSpan.Overlaps(span, out var offset))
-            return sourceLog.AsMemory(offset, span.Length);
-        return span.ToString().AsMemory();
     }
 }

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Arda.Abstractions.Logs;
 
 namespace Arda.World.Player.Events;
@@ -7,5 +8,5 @@ namespace Arda.World.Player.Events;
 /// <c>ProcessRemoveEffects</c>. Carries the instance IDs being removed.
 /// </summary>
 public readonly record struct EffectsRemoved(
-    IReadOnlyList<long> InstanceIds,
+    ImmutableArray<long> InstanceIds,
     LogLineMetadata Metadata);

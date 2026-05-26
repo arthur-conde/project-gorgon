@@ -26,9 +26,9 @@ internal sealed class MapFxHandler(IDomainEventPublisher bus) : IFrameHandler
 
         bus.Publish(new MapFxObserved(
             x, y, z,
-            SliceFromSource(sourceLog, shortSpan),
-            SliceFromSource(sourceLog, catSpan),
-            SliceFromSource(sourceLog, msgSpan),
+            SpanHelpers.SliceFromSource(sourceLog, shortSpan),
+            SpanHelpers.SliceFromSource(sourceLog, catSpan),
+            SpanHelpers.SliceFromSource(sourceLog, msgSpan),
             metadata));
     }
 
@@ -69,14 +69,5 @@ internal sealed class MapFxHandler(IDomainEventPublisher bus) : IFrameHandler
 
         afterTuple = remaining;
         return true;
-    }
-
-    private static ReadOnlyMemory<char> SliceFromSource(string sourceLog, ReadOnlySpan<char> span)
-    {
-        if (span.IsEmpty) return ReadOnlyMemory<char>.Empty;
-        var sourceSpan = sourceLog.AsSpan();
-        if (sourceSpan.Overlaps(span, out var offset))
-            return sourceLog.AsMemory(offset, span.Length);
-        return span.ToString().AsMemory();
     }
 }

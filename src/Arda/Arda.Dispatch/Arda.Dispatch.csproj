@@ -20,6 +20,7 @@
     <InternalsVisibleTo Include="Arda.Dispatch.Tests" />
     <InternalsVisibleTo Include="Arda.Composition.Tests" />
     <InternalsVisibleTo Include="Arda.Hosting" />
+    <InternalsVisibleTo Include="Arda.Hosting.Tests" />
   </ItemGroup>
 
 </Project>

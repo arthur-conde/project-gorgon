@@ -35,7 +35,7 @@ internal sealed class ProcessBookHandler(IDomainEventPublisher bus) : IFrameHand
 
         if (bodySpan.Contains(FoodsConsumedMarker, StringComparison.Ordinal))
         {
-            var bodyMem = SliceFromSource(sourceLog, bodySpan);
+            var bodyMem = SpanHelpers.SliceFromSource(sourceLog, bodySpan);
             bus.Publish(new FoodsConsumedReport(bodyMem, metadata));
             return;
         }
@@ -46,8 +46,8 @@ internal sealed class ProcessBookHandler(IDomainEventPublisher bus) : IFrameHand
             return;
         }
 
-        var titleMem = SliceFromSource(sourceLog, titleSpan);
-        var genericBodyMem = SliceFromSource(sourceLog, bodySpan);
+        var titleMem = SpanHelpers.SliceFromSource(sourceLog, titleSpan);
+        var genericBodyMem = SpanHelpers.SliceFromSource(sourceLog, bodySpan);
         bus.Publish(new BookOpened(titleMem, genericBodyMem, metadata));
     }
 
@@ -83,19 +83,10 @@ internal sealed class ProcessBookHandler(IDomainEventPublisher bus) : IFrameHand
         var doubleNewline = descStart.IndexOf(@"\n\n");
         var descSpan = doubleNewline >= 0 ? descStart[..doubleNewline] : descStart;
 
-        var codeMem = SliceFromSource(sourceLog, codeSpan);
-        var effectMem = SliceFromSource(sourceLog, effectSpan);
-        var descMem = SliceFromSource(sourceLog, descSpan);
+        var codeMem = SpanHelpers.SliceFromSource(sourceLog, codeSpan);
+        var effectMem = SpanHelpers.SliceFromSource(sourceLog, effectSpan);
+        var descMem = SpanHelpers.SliceFromSource(sourceLog, descSpan);
 
         bus.Publish(new WordOfPowerDiscovered(codeMem, effectMem, descMem, metadata));
-    }
-
-    private static ReadOnlyMemory<char> SliceFromSource(string sourceLog, ReadOnlySpan<char> span)
-    {
-        if (span.IsEmpty) return ReadOnlyMemory<char>.Empty;
-        var sourceSpan = sourceLog.AsSpan();
-        if (sourceSpan.Overlaps(span, out var offset))
-            return sourceLog.AsMemory(offset, span.Length);
-        return span.ToString().AsMemory();
     }
 }

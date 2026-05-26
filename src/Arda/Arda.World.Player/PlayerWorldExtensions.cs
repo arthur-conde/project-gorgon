@@ -122,7 +122,7 @@ public static class PlayerWorldExtensions
         // --- Map scope composite (flat IMapState over all map-scoped handlers) ---
         builder.Services.AddSingleton<IMapState>(sp => new MapScope(
             sp.GetRequiredService<Map>(),
-            sp.GetRequiredService<PositionHandler>(),
+            sp.GetRequiredService<Position>(),
             sp.GetRequiredService<Weather>(),
             sp.GetRequiredService<MapPins>()));
 
@@ -146,9 +146,9 @@ public static class PlayerWorldExtensions
         builder.Services.AddSingleton(sp =>
         {
             var bus = sp.GetRequiredService<IDomainEventPublisher>();
-            return new PositionHandler(bus);
+            return new Position(bus);
         });
-        builder.Services.AddSingleton<IPositionState>(sp => sp.GetRequiredService<PositionHandler>());
+        builder.Services.AddSingleton<IPositionState>(sp => sp.GetRequiredService<Position>());
 
         // --- Calendar handler (line observer — sees every timestamp) ---
         builder.Services.AddSingleton(sp =>
@@ -186,7 +186,7 @@ public static class PlayerWorldExtensions
             var mapPins = sp.GetRequiredService<MapPins>();
             var effects = sp.GetRequiredService<Effects>();
             var quest = sp.GetRequiredService<Quest>();
-            var position = sp.GetRequiredService<PositionHandler>();
+            var position = sp.GetRequiredService<Position>();
 
             // Order matters: Map must run before StateResetHandler for LOADING_LEVEL.
             // Map clears CurrentArea; StateResetHandler then resets downstream state.

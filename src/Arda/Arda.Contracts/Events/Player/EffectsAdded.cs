@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Arda.Abstractions.Logs;
 
 namespace Arda.World.Player.Events;
@@ -7,6 +8,6 @@ namespace Arda.World.Player.Events;
 /// <c>ProcessAddEffects</c>. Carries the catalog IDs as a list.
 /// </summary>
 public readonly record struct EffectsAdded(
-    IReadOnlyList<int> CatalogIds,
+    ImmutableArray<int> CatalogIds,
     long SourceCharId,
     LogLineMetadata Metadata);

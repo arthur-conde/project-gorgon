@@ -3,7 +3,6 @@ using System.Text.Json;
 using Arda.Abstractions.Logs;
 using Arda.Composition;
 using Arda.Contracts;
-using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
 using FluentAssertions;
@@ -194,7 +193,7 @@ public sealed class SarumanCodebookServiceTests : IDisposable
         var text = afterChannel[(colonSpace + 2)..];
 
         _bus.Publish(new PlayerChatLine(
-            channel, speaker, text,
+            channel, speaker, text.AsMemory(),
             new LogLineMetadata(BaseTime.AddSeconds(1), BaseTime.AddSeconds(1), IsReplay: false)));
     }
 }

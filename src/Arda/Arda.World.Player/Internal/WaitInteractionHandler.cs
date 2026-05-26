@@ -21,17 +21,8 @@ internal sealed class WaitInteractionHandler(IDomainEventPublisher bus) : IFrame
         tok.NextQuotedSpan(); // verb string
         var bodySpan = tok.NextQuotedSpan();
 
-        var bodyMem = SliceFromSource(sourceLog, bodySpan);
+        var bodyMem = SpanHelpers.SliceFromSource(sourceLog, bodySpan);
 
         bus.Publish(new InteractionWaiting(entityId, bodyMem, metadata));
-    }
-
-    private static ReadOnlyMemory<char> SliceFromSource(string sourceLog, ReadOnlySpan<char> span)
-    {
-        if (span.IsEmpty) return ReadOnlyMemory<char>.Empty;
-        var sourceSpan = sourceLog.AsSpan();
-        if (sourceSpan.Overlaps(span, out var offset))
-            return sourceLog.AsMemory(offset, span.Length);
-        return span.ToString().AsMemory();
     }
 }

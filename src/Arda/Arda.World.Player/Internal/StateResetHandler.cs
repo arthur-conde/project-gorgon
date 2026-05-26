@@ -21,14 +21,14 @@ internal sealed class StateResetHandler : IFrameHandler
     private readonly Session _session;
     private readonly Celestial _celestial;
     private readonly MapPins _mapPins;
-    private readonly PositionHandler _position;
+    private readonly Position _position;
     private readonly Effects _effects;
     private readonly Quest _quest;
 
     public StateResetHandler(
         Inventory inventory, Player player, Npc npc,
         Weather weather, Session session, Celestial celestial, MapPins mapPins,
-        PositionHandler position, Effects effects, Quest quest)
+        Position position, Effects effects, Quest quest)
     {
         _inventory = inventory;
         _player = player;

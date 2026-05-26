@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Globalization;
 using Arda.Abstractions.Logs;
 using Arda.Contracts;
@@ -54,7 +55,7 @@ internal sealed class Effects : IEffectsState
             return;
 
         var ids = ParseCatalogIds(listSpan);
-        if (ids.Count == 0)
+        if (ids.IsEmpty)
             return;
 
         var ts = metadata.Timestamp ?? metadata.ReadOn;
@@ -135,7 +136,7 @@ internal sealed class Effects : IEffectsState
             return;
 
         var ids = ParseInstanceIds(listSpan);
-        if (ids.Count == 0)
+        if (ids.IsEmpty)
             return;
 
         foreach (var instanceId in ids)
@@ -160,9 +161,9 @@ internal sealed class Effects : IEffectsState
         _bus.Publish(new EffectsRemoved(ids, metadata));
     }
 
-    private static List<int> ParseCatalogIds(ReadOnlySpan<char> span)
+    private static ImmutableArray<int> ParseCatalogIds(ReadOnlySpan<char> span)
     {
-        var result = new List<int>();
+        var builder = ImmutableArray.CreateBuilder<int>();
         var s = span;
         if (s.Length > 0 && s[0] == '[') s = s[1..];
         if (s.Length > 0 && s[^1] == ']') s = s[..^1];
@@ -172,22 +173,22 @@ internal sealed class Effects : IEffectsState
             var token = s[range].Trim();
             if (token.IsEmpty) continue;
             if (int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
-                result.Add(id);
+                builder.Add(id);
         }
-        return result;
+        return builder.ToImmutable();
     }
 
-    private static List<long> ParseInstanceIds(ReadOnlySpan<char> span)
+    private static ImmutableArray<long> ParseInstanceIds(ReadOnlySpan<char> span)
     {
-        var result = new List<long>();
+        var builder = ImmutableArray.CreateBuilder<long>();
         foreach (var range in span.Split(','))
         {
             var token = span[range].Trim();
             if (token.IsEmpty) continue;
             if (long.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
-                result.Add(id);
+                builder.Add(id);
         }
-        return result;
+        return builder.ToImmutable();
     }
 
     private sealed class AddVerb(Effects owner) : IFrameHandler

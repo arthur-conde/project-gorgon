@@ -29,12 +29,7 @@ internal sealed class ErrorMessageHandler(IDomainEventPublisher bus) : IFrameHan
             return;
 
         var nameSpan = msgSpan[..cantIdx];
-        ReadOnlyMemory<char> nameMem;
-        var sourceSpan = sourceLog.AsSpan();
-        if (sourceSpan.Overlaps(nameSpan, out var offset))
-            nameMem = sourceLog.AsMemory(offset, nameSpan.Length);
-        else
-            nameMem = nameSpan.ToString().AsMemory();
+        var nameMem = SpanHelpers.SliceFromSource(sourceLog, nameSpan);
 
         bus.Publish(new PlantingCapFrame(nameMem, metadata));
     }

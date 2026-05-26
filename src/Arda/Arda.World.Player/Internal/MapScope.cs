@@ -4,11 +4,11 @@ namespace Arda.World.Player.Internal;
 
 /// <summary>
 /// Composite that implements <see cref="IMapState"/> by delegating to the
-/// individual map-scoped handlers (<see cref="Map"/>, <see cref="PositionHandler"/>,
+/// individual map-scoped handlers (<see cref="Map"/>, <see cref="Position"/>,
 /// <see cref="Weather"/>, <see cref="MapPins"/>). Registered as a singleton;
 /// consumers inject <see cref="IMapState"/> for a flat view of all map state.
 /// </summary>
-internal sealed class MapScope(Map map, PositionHandler position, Weather weather, MapPins pins) : IMapState
+internal sealed class MapScope(Map map, Position position, Weather weather, MapPins pins) : IMapState
 {
     public string? CurrentArea => map.CurrentArea;
     public string? PreviousArea => map.PreviousArea;

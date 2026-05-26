@@ -36,19 +36,10 @@ internal sealed class UpdateDescriptionHandler(IDomainEventPublisher bus) : IFra
                 double.TryParse(afterScale[..end], System.Globalization.CultureInfo.InvariantCulture, out scale);
         }
 
-        var titleMem = SliceFromSource(sourceLog, titleSpan);
-        var descMem = SliceFromSource(sourceLog, descSpan);
-        var actionMem = SliceFromSource(sourceLog, actionSpan);
+        var titleMem = SpanHelpers.SliceFromSource(sourceLog, titleSpan);
+        var descMem = SpanHelpers.SliceFromSource(sourceLog, descSpan);
+        var actionMem = SpanHelpers.SliceFromSource(sourceLog, actionSpan);
 
         bus.Publish(new UpdateDescriptionFrame(plotId, titleMem, descMem, actionMem, scale, metadata));
-    }
-
-    private static ReadOnlyMemory<char> SliceFromSource(string sourceLog, ReadOnlySpan<char> span)
-    {
-        if (span.IsEmpty) return ReadOnlyMemory<char>.Empty;
-        var sourceSpan = sourceLog.AsSpan();
-        if (sourceSpan.Overlaps(span, out var offset))
-            return sourceLog.AsMemory(offset, span.Length);
-        return span.ToString().AsMemory();
     }
 }

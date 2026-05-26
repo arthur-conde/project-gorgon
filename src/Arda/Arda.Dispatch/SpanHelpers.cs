@@ -17,4 +17,19 @@ public static class SpanHelpers
             return span[1..];
         return span;
     }
+
+    /// <summary>
+    /// Produce a zero-copy <see cref="ReadOnlyMemory{T}"/> slice from the source log string.
+    /// If the span overlaps the source (the common case for ArgTokenizer output), returns
+    /// a memory slice with no allocation. Falls back to <c>ToString().AsMemory()</c> for
+    /// spans that don't overlap (e.g. stack-constructed sub-slices).
+    /// </summary>
+    public static ReadOnlyMemory<char> SliceFromSource(string sourceLog, ReadOnlySpan<char> span)
+    {
+        if (span.IsEmpty) return ReadOnlyMemory<char>.Empty;
+        var sourceSpan = sourceLog.AsSpan();
+        if (sourceSpan.Overlaps(span, out var offset))
+            return sourceLog.AsMemory(offset, span.Length);
+        return span.ToString().AsMemory();
+    }
 }

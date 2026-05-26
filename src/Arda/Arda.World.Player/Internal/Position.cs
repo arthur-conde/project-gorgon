@@ -13,7 +13,7 @@ namespace Arda.World.Player.Internal;
 /// position tuple first), ProcessAddPlayer starts with <c>(digit</c> (entity id first,
 /// position follows <c>System.String[]</c>).
 /// </summary>
-internal sealed class PositionHandler(IDomainEventPublisher bus) : IFrameHandler, IPositionState
+internal sealed class Position(IDomainEventPublisher bus) : IFrameHandler, IPositionState
 {
     public double? X { get; private set; }
     public double? Y { get; private set; }
