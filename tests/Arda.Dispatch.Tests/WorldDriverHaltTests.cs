@@ -119,6 +119,47 @@ public class WorldDriverHaltTests
         processed.Should().Be(1, "the second (well-formed) line still runs through the handler");
     }
 
+    [Fact]
+    public async Task TolerantMode_SiblingHandlersForSameVerbStillRun()
+    {
+        var signal = new GrammarBreakSignal();
+        var siblingInvocations = 0;
+
+        var table = new DispatchTable(
+            new Dictionary<string, List<IFrameHandler>>
+            {
+                ["ProcessAddItem"] =
+                [
+                    // first handler always grammar-breaks
+                    new ThrowOnce(() => throw new GrammarException(
+                        "ProcessAddItem", "src", "NOT_A_NUMBER", "expected long")),
+                    // second handler tracks whether it received the line
+                    new CountingHandler(() => siblingInvocations++),
+                ]
+            },
+            NullLogger<DispatchTable>.Instance);
+
+        var lines = new[]
+        {
+            MakeLine("LocalPlayer: ProcessAddItem(NOT_A_NUMBER)"),
+        };
+
+        var driver = new WorldDriver(
+            new InMemorySource(lines),
+            table,
+            sourceFamily: "Player",
+            grammarSignal: signal,
+            tolerantGrammar: true);
+
+        await driver.RunAsync(CancellationToken.None);
+
+        signal.IsRaised.Should().BeFalse();
+        signal.HasObservedBreak.Should().BeTrue();
+        siblingInvocations.Should().Be(1,
+            "tolerant mode must not silently drop sibling handlers — a grammar fault " +
+            "in one handler should not desync unrelated sibling state");
+    }
+
     private static LogLine MakeLine(string log, bool isReplay = false) =>
         new(log, new LogLineMetadata(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, IsReplay: isReplay));
 

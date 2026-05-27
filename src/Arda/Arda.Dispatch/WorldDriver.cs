@@ -86,10 +86,22 @@ internal sealed class WorldDriver : IWorldDriver
             var parsed = VerbExtractor.Parse(line.Log.AsSpan());
             try
             {
-                _dispatch.Dispatch(parsed, line.Log, line.Metadata);
+                if (_tolerantGrammar)
+                {
+                    // Tolerant mode: per-handler recovery. A grammar fault in
+                    // one handler must not silently skip its registered sibling
+                    // handlers for the same verb — that's how tolerant mode
+                    // would invisibly desync unrelated state.
+                    _dispatch.Dispatch(parsed, line.Log, line.Metadata, OnTolerantBreak);
+                }
+                else
+                {
+                    _dispatch.Dispatch(parsed, line.Log, line.Metadata);
+                }
             }
             catch (GrammarException ex)
             {
+                // Strict mode: halt the whole pipeline at the first grammar drift.
                 var details = new GrammarBreak(
                     _sourceFamily ?? "unknown",
                     ex.Verb,
@@ -97,15 +109,6 @@ internal sealed class WorldDriver : IWorldDriver
                     ex.TokenExcerpt,
                     ex.ParserHint,
                     _time.GetUtcNow());
-
-                if (_tolerantGrammar)
-                {
-                    _grammarSignal?.MarkObserved(details);
-                    _logger?.LogWarning(
-                        "Tolerant grammar mode: skipping line on {SourceFamily} (verb={Verb}, hint={Hint})",
-                        _sourceFamily ?? "unknown", ex.Verb, ex.ParserHint);
-                    continue;
-                }
 
                 _grammarSignal?.Raise(details);
 
@@ -116,6 +119,22 @@ internal sealed class WorldDriver : IWorldDriver
                 halted = true;
                 break;
             }
+        }
+
+        bool OnTolerantBreak(GrammarException ex, IFrameHandler handler)
+        {
+            var details = new GrammarBreak(
+                _sourceFamily ?? "unknown",
+                ex.Verb,
+                ex.SourceLine,
+                ex.TokenExcerpt,
+                ex.ParserHint,
+                _time.GetUtcNow());
+            _grammarSignal?.MarkObserved(details);
+            _logger?.LogWarning(
+                "Tolerant grammar mode: skipping handler {Handler} on {SourceFamily} (verb={Verb}, hint={Hint})",
+                handler.GetType().Name, _sourceFamily ?? "unknown", ex.Verb, ex.ParserHint);
+            return true;
         }
 
         // Only force a live transition if the source ran genuinely dry

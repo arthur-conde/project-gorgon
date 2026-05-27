@@ -28,12 +28,23 @@ internal sealed class DispatchTable
     /// Parse and dispatch a line to registered handlers. If the line has no
     /// recognizable verb, or no handler is registered, it is silently discarded
     /// (zero allocation). A handler bug is caught and logged — it does not
-    /// prevent subsequent handlers from executing on the same line. A
-    /// <see cref="GrammarException"/> is NOT caught here: it propagates out so
-    /// the surrounding <c>WorldDriver</c> can halt the simulation, since a
-    /// grammar drift means the in-memory world model is no longer trustworthy.
+    /// prevent subsequent handlers from executing on the same line.
+    /// <para>
+    /// A <see cref="GrammarException"/> from a handler is fatal by default — it
+    /// propagates out so the surrounding <c>WorldDriver</c> can halt the
+    /// simulation, since a grammar drift means the in-memory world model is no
+    /// longer trustworthy. Callers running in tolerant mode supply
+    /// <paramref name="onGrammarBreak"/>; if it returns <c>true</c> the
+    /// offending handler is skipped but sibling handlers registered for the
+    /// same verb still receive the line. This keeps a per-handler grammar
+    /// fault from silently knocking out unrelated sibling state.
+    /// </para>
     /// </summary>
-    public void Dispatch(ParsedVerb parsed, string sourceLog, LogLineMetadata metadata)
+    public void Dispatch(
+        ParsedVerb parsed,
+        string sourceLog,
+        LogLineMetadata metadata,
+        Func<GrammarException, IFrameHandler, bool>? onGrammarBreak = null)
     {
         if (parsed.IsEmpty)
             return;
@@ -47,8 +58,10 @@ internal sealed class DispatchTable
             {
                 handler.Handle(parsed.Args, parsed.Verb, sourceLog, metadata);
             }
-            catch (GrammarException)
+            catch (GrammarException ex)
             {
+                if (onGrammarBreak is not null && onGrammarBreak(ex, handler))
+                    continue;
                 throw;
             }
             catch (Exception ex)
