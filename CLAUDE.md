@@ -69,7 +69,7 @@ Arda is a deterministic log-replay and live world-state tracking engine organise
 | L0 | `Arda.Ingest` | Tails `Player.log` + `ChatLogs/*.log` via `ILogLineSource` |
 | L1 | `Arda.Ingest` | Span-based zero-alloc line parsing, string interning |
 | L2 | `Arda.Dispatch` | `VerbExtractor` + `FrozenDictionary` dispatch table |
-| L3 | `Arda.World.Player`, `Arda.World.Chat` | Stateful `IFrameHandler` implementations; emit domain events via `IDomainEventBus` |
+| L3 | `Arda.World.Player`, `Arda.World.Chat` | Stateful `IFrameHandler` implementations; emit domain events via `IDomainEventPublisher` |
 | L4 | `Arda.Composition` | Cross-source composers (session fusion, inventory correlation, word-of-power) |
 
 `Arda.Hosting` bootstraps the pipeline and exposes `ArdaOptions` for DI. `Arda.Contracts` holds the public domain events, state interfaces (`ISessionState`, `IAreaState`, `IPlayerState`, `IChatSessionState`), and subscriber/publisher contracts (`IDomainEventSubscriber`, `IDomainEventPublisher`).

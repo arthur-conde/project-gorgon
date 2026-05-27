@@ -3,7 +3,7 @@ using Arda.Dispatch;
 
 namespace Arda.World.Chat.Tests;
 
-internal sealed class SpyEventBus : IDomainEventBus
+internal sealed class SpyEventBus : IDomainEventSubscriber, IDomainEventPublisher
 {
     private readonly Dictionary<Type, List<object>> _published = [];
 

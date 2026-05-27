@@ -20,7 +20,7 @@ public class InventoryAccumulatorTests : IDisposable
 
     public InventoryAccumulatorTests()
     {
-        _composer = new InventoryComposer(_bus);
+        _composer = new InventoryComposer(_bus, _bus);
     }
 
     public void Dispose() => _composer.Dispose();

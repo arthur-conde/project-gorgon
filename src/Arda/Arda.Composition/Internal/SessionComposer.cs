@@ -1,6 +1,5 @@
 using Arda.Abstractions.Logs;
 using Arda.Contracts;
-using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Logging;
@@ -15,7 +14,7 @@ namespace Arda.Composition.Internal;
 /// </summary>
 internal sealed class SessionComposer : ISessionComposer, IDisposable
 {
-    private readonly IDomainEventPublisher _bus;
+    private readonly IDomainEventPublisher _publisher;
     private readonly ILogger? _logger;
     private readonly Func<string?>? _serverFallback;
     private IDisposable? _sessionSub;
@@ -31,13 +30,17 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
     public ComposedSession? Current { get; private set; }
     public event Action? StateChanged;
 
-    public SessionComposer(IDomainEventBus bus, ILogger? logger = null, Func<string?>? serverFallback = null)
+    public SessionComposer(
+        IDomainEventSubscriber subscriber,
+        IDomainEventPublisher publisher,
+        ILogger? logger = null,
+        Func<string?>? serverFallback = null)
     {
-        _bus = bus;
+        _publisher = publisher;
         _logger = logger;
         _serverFallback = serverFallback;
-        _sessionSub = bus.Subscribe<SessionStarted>(OnSessionStarted);
-        _chatSub = bus.Subscribe<ChatSessionIdentified>(OnChatSession);
+        _sessionSub = subscriber.Subscribe<SessionStarted>(OnSessionStarted);
+        _chatSub = subscriber.Subscribe<ChatSessionIdentified>(OnChatSession);
     }
 
     private void OnSessionStarted(SessionStarted evt)
@@ -104,7 +107,7 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
             resolvedServer ?? "(none)",
             _hasChatBanner,
             _timezoneOffset);
-        _bus.Publish(new SessionEstablished(session, _lastMetadata));
+        _publisher.Publish(new SessionEstablished(session, _lastMetadata));
         StateChanged?.Invoke();
     }
 

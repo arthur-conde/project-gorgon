@@ -259,7 +259,7 @@ public sealed class WorldHealthViewTests : IAsyncLifetime
 
     // ── Test infrastructure ───────────────────────────────────────────────
 
-    private sealed class TestBus : IDomainEventBus
+    private sealed class TestBus : IDomainEventSubscriber, IDomainEventPublisher
     {
         private readonly Dictionary<Type, List<Delegate>> _handlers = new();
 

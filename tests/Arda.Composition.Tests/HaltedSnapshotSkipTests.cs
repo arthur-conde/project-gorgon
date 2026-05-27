@@ -36,7 +36,7 @@ public class HaltedSnapshotSkipTests : IDisposable
             AccumulatorSnapshotJsonContext.Default.AccumulatorSnapshot);
 
         var bus = new DomainEventBus(NullLogger<DomainEventBus>.Instance);
-        var composer = new InventoryComposer(bus, store, signal);
+        var composer = new InventoryComposer(bus, bus, store, signal);
 
         // Accumulate some state by triggering a session-establish + add.
         var session = new ComposedSession("Alice", "Serbule", BaseTime, TimeSpan.Zero, "alice-session");
@@ -70,7 +70,7 @@ public class HaltedSnapshotSkipTests : IDisposable
             AccumulatorSnapshotJsonContext.Default.AccumulatorSnapshot);
 
         var bus = new DomainEventBus(NullLogger<DomainEventBus>.Instance);
-        var composer = new InventoryComposer(bus, store, signal);
+        var composer = new InventoryComposer(bus, bus, store, signal);
 
         var session = new ComposedSession("Alice", "Serbule", BaseTime, TimeSpan.Zero, "alice-session");
         bus.Publish(new SessionEstablished(session, Meta(BaseTime)));
@@ -100,7 +100,7 @@ public class HaltedSnapshotSkipTests : IDisposable
             AccumulatorSnapshotJsonContext.Default.AccumulatorSnapshot);
 
         var bus = new DomainEventBus(NullLogger<DomainEventBus>.Instance);
-        var composer = new InventoryComposer(bus, store, signal);
+        var composer = new InventoryComposer(bus, bus, store, signal);
 
         var session = new ComposedSession("Alice", "Serbule", BaseTime, TimeSpan.Zero, "alice-session");
         bus.Publish(new SessionEstablished(session, Meta(BaseTime)));

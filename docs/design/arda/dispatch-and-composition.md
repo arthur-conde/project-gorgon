@@ -94,7 +94,7 @@ The distinguishing question: "does more than one consumer need the *interpreted*
 
 ## State handler catalogue
 
-Arda state handlers are named by their domain (`Map`, `Inventory`, `Npc`, `Player`, `Calendar`, `ChatInventory`, `ChatSession`, `ChatLine`). No suffix — the handler IS the state owner. Each handler implements `IFrameHandler`, receives verb dispatches, owns mutable state, and emits domain events via `IDomainEventBus`.
+Arda state handlers are named by their domain (`Map`, `Inventory`, `Npc`, `Player`, `Calendar`, `ChatInventory`, `ChatSession`, `ChatLine`). No suffix — the handler IS the state owner. Each handler implements `IFrameHandler`, receives verb dispatches, owns mutable state, and emits domain events via `IDomainEventPublisher`.
 
 ### Player source — `Arda.World.Player`
 
@@ -172,7 +172,7 @@ Arda.World.Chat/       — Chat-source handlers + state + event structs
 Arda.Composition/      — L4 cross-source composers (subscribes to both buses)
 ```
 
-Each library references `Arda.Dispatch` (for `IFrameHandler`, `ArgTokenizer`, `InternPool`, `IDomainEventBus`) and exposes a registration extension method:
+Each library references `Arda.Dispatch` (for `IFrameHandler`, `ArgTokenizer`, `InternPool`) and `Arda.Contracts` (for `IDomainEventPublisher` / `IDomainEventSubscriber`) and exposes a registration extension method:
 
 ```csharp
 services
@@ -244,10 +244,10 @@ Neither source alone has the full picture (Player.log knows instance ID + intern
 ```mermaid
 flowchart LR
     subgraph PlayerWorld ["Arda.World.Player"]
-        Inv["Inventory handler"] -->|"InventoryItemAdded"| Bus1["IDomainEventBus"]
+        Inv["Inventory handler"] -->|"InventoryItemAdded"| Bus1["IDomainEventPublisher"]
     end
     subgraph ChatWorld ["Arda.World.Chat"]
-        ChatInv["ChatInventory handler"] -->|"ChatInventoryObserved"| Bus2["IDomainEventBus"]
+        ChatInv["ChatInventory handler"] -->|"ChatInventoryObserved"| Bus2["IDomainEventPublisher"]
     end
     subgraph L4 ["Arda.Composition"]
         Bus1 --> IC["InventoryComposer"]
@@ -290,7 +290,7 @@ Every composer exposes:
 | Channel | Shape | Purpose |
 |---|---|---|
 | **Query** | `IReadOnlyDictionary<TKey, TEntry>` property | Point lookups and snapshot iteration |
-| **React** | Domain events on `IDomainEventBus` and/or a coarse `event EventHandler? Changed` | Notify consumers of mutations |
+| **React** | Domain events on `IDomainEventSubscriber` and/or a coarse `event EventHandler? Changed` | Notify consumers of mutations |
 
 No **Bind** channel (observable collection, `INotifyPropertyChanged` per-row, `ItemsSyncRoot`). Composers live in `Arda.Composition` which has no WPF dependency. Modules that need WPF binding build their own `ObservableCollection` from the Query snapshot + React events — the module-side adapter pattern (Palantir's `LiveInventoryViewModel` is the current example). A shared adapter in `Mithril.Shared.Wpf` is deferred until multiple modules bind to the same composer's collection simultaneously.
 

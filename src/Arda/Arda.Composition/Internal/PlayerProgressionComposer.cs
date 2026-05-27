@@ -1,4 +1,5 @@
 using Arda.Composition.Events;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Player;
 using Arda.World.Player.Events;
@@ -16,7 +17,7 @@ namespace Arda.Composition.Internal;
 /// </summary>
 internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisposable
 {
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _publisher;
     private readonly IPlayerState _playerState;
     private readonly PerCharacterStore<ProgressionSnapshot>? _store;
     private readonly Func<int, string?>? _recipeKeyResolver;
@@ -41,25 +42,26 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
     public event Action? StateChanged;
 
     public PlayerProgressionComposer(
-        IDomainEventBus bus,
+        IDomainEventSubscriber subscriber,
+        IDomainEventPublisher publisher,
         IPlayerState playerState,
         PerCharacterStore<ProgressionSnapshot>? store = null,
         Func<int, string?>? recipeKeyResolver = null,
         IGrammarBreakSignal? grammarSignal = null,
         ILogger? logger = null)
     {
-        _bus = bus;
+        _publisher = publisher;
         _playerState = playerState;
         _store = store;
         _recipeKeyResolver = recipeKeyResolver;
         _grammarSignal = grammarSignal;
         _logger = logger;
 
-        _skillsLoadedSub = bus.Subscribe<SkillsLoaded>(OnSkillsLoaded);
-        _skillUpdatedSub = bus.Subscribe<SkillUpdated>(OnSkillUpdated);
-        _recipesLoadedSub = bus.Subscribe<RecipesLoaded>(OnRecipesLoaded);
-        _recipeUpdatedSub = bus.Subscribe<RecipeUpdated>(OnRecipeUpdated);
-        _sessionSub = bus.Subscribe<SessionEstablished>(OnSessionEstablished);
+        _skillsLoadedSub = subscriber.Subscribe<SkillsLoaded>(OnSkillsLoaded);
+        _skillUpdatedSub = subscriber.Subscribe<SkillUpdated>(OnSkillUpdated);
+        _recipesLoadedSub = subscriber.Subscribe<RecipesLoaded>(OnRecipesLoaded);
+        _recipeUpdatedSub = subscriber.Subscribe<RecipeUpdated>(OnRecipeUpdated);
+        _sessionSub = subscriber.Subscribe<SessionEstablished>(OnSessionEstablished);
     }
 
     // ── Skill events ──────────────────────────────────────────────────────
@@ -105,7 +107,7 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
         };
         _skills = newDict;
 
-        _bus.Publish(new SkillProgressionChanged(evt.SkillKey, enriched, evt.XpGained, evt.Metadata));
+        _publisher.Publish(new SkillProgressionChanged(evt.SkillKey, enriched, evt.XpGained, evt.Metadata));
         StateChanged?.Invoke();
     }
 

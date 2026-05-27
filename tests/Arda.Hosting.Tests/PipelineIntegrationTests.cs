@@ -110,7 +110,6 @@ public class PipelineIntegrationTests
 
         var bus = new DomainEventBus(NullLogger<DomainEventBus>.Instance);
         services.AddSingleton(bus);
-        services.AddSingleton<IDomainEventBus>(bus);
         services.AddSingleton<IDomainEventSubscriber>(bus);
         services.AddSingleton<IDomainEventPublisher>(bus);
 

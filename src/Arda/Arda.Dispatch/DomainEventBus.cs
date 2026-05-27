@@ -1,5 +1,5 @@
 using System.Collections.Concurrent;
-using Arda.Contracts;
+using Arda.Dispatch.Internal;
 using Microsoft.Extensions.Logging;
 
 namespace Arda.Dispatch;
@@ -83,6 +83,13 @@ internal sealed class DomainEventBus : IDomainEventBus
                 try
                 {
                     handler(domainEvent);
+                }
+                catch (GrammarException)
+                {
+                    // Grammar break is the world-halt signal — must propagate
+                    // out of the publish loop the same way DispatchTable lets
+                    // it escape the handler loop.
+                    throw;
                 }
                 catch (Exception ex)
                 {

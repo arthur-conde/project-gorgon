@@ -19,7 +19,7 @@ public class SessionComposerTests : IDisposable
 
     public SessionComposerTests()
     {
-        _composer = new SessionComposer(_bus);
+        _composer = new SessionComposer(_bus, _bus);
         _bus.Subscribe<SessionEstablished>(e => _established.Add(e));
     }
 
@@ -92,7 +92,7 @@ public class SessionComposerTests : IDisposable
     [Fact]
     public void ServerFallback_UsedWhenNoChatBanner()
     {
-        using var composer = new SessionComposer(_bus, serverFallback: () => "FallbackServer");
+        using var composer = new SessionComposer(_bus, _bus, serverFallback: () => "FallbackServer");
         _bus.Publish(new SessionStarted("Bob", Meta(T0)));
 
         composer.Current.Should().NotBeNull();
@@ -102,7 +102,7 @@ public class SessionComposerTests : IDisposable
     [Fact]
     public void ServerFallback_IgnoredWhenChatBannerPresent()
     {
-        using var composer = new SessionComposer(_bus, serverFallback: () => "FallbackServer");
+        using var composer = new SessionComposer(_bus, _bus, serverFallback: () => "FallbackServer");
         _bus.Publish(new ChatSessionIdentified("Bob", "RealServer", TimeSpan.Zero, Meta(T0)));
         _bus.Publish(new SessionStarted("Bob", Meta(T0.AddSeconds(1))));
 
