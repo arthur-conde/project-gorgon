@@ -20,7 +20,7 @@ public class SurveyAnchorResolutionTests
     private static TrackerFix Tracker(double x, double z, DateTimeOffset at,
         PositionSource src = PositionSource.Spawn) => new(x, 0, z, at, src);
     private static CharacterPinFix Pin(double x, double z, DateTimeOffset at) =>
-        new(new WorldCoord(x, 0, z), at);
+        new(new WorldCoord(x, 0, z), at, "@me");
 
     [Fact]
     public void Character_pin_is_the_preferred_manual_when_calibrated()

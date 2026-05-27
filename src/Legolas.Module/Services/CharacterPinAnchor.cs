@@ -11,9 +11,13 @@ namespace Legolas.Services;
 /// The player's <b>declared</b> position: an in-game map pin they dropped
 /// labelled with their character name (or the fixed <see cref="SelfPinSentinel"/>
 /// sentinel). <see cref="World"/> is the pin's exact engine-unit coordinate;
-/// <see cref="ObservedAt"/> is when the declaration was seen (UTC).
+/// <see cref="ObservedAt"/> is when the declaration was seen (UTC). The
+/// <see cref="Label"/> records which pin established this anchor so a
+/// subsequent <c>ProcessMapPinRemove</c> at the same coords (rename = remove
+/// + add at identical coords, or a coincidental overlap with another player's
+/// pin) does not clear it.
 /// </summary>
-public readonly record struct CharacterPinFix(WorldCoord World, DateTimeOffset ObservedAt);
+public readonly record struct CharacterPinFix(WorldCoord World, DateTimeOffset ObservedAt, string Label);
 
 /// <summary>
 /// Resolves a "this is where I am" self-declaration from the area's map pins.
@@ -91,13 +95,13 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
             if (string.IsNullOrEmpty(label)) continue;
             if (!string.IsNullOrWhiteSpace(name)
                 && string.Equals(label, name, StringComparison.OrdinalIgnoreCase))
-                return new CharacterPinFix(new WorldCoord(p.X, 0, p.Z), observedAt);
+                return new CharacterPinFix(new WorldCoord(p.X, 0, p.Z), observedAt, label);
             if (sentinel is null
                 && string.Equals(label, SelfPinSentinel, StringComparison.OrdinalIgnoreCase))
                 sentinel = p;
         }
         return sentinel is { } s
-            ? new CharacterPinFix(new WorldCoord(s.X, 0, s.Z), observedAt)
+            ? new CharacterPinFix(new WorldCoord(s.X, 0, s.Z), observedAt, s.Label?.Trim() ?? SelfPinSentinel)
             : null;
     }
 
@@ -109,7 +113,7 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         {
             CharacterPinFix? next;
             if (Matches(evt.Label, _activeChar.ActiveCharacterName))
-                next = new CharacterPinFix(new WorldCoord(evt.X, 0, evt.Z), at);
+                next = new CharacterPinFix(new WorldCoord(evt.X, 0, evt.Z), at, evt.Label?.Trim() ?? string.Empty);
             else
                 next = _current;
             changed = PresenceOrCoordChanged(_current, next);
@@ -129,7 +133,13 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         lock (_gate)
         {
             CharacterPinFix? next;
-            if (_current is { } cur && evt.X == cur.World.X && evt.Z == cur.World.Z)
+            // Identity is (Label, X, Z) — coords alone collide on rename
+            // (remove + add at identical coords) and on coincidental overlap
+            // with another player's pin. Per pg_map_pin_log_grammar.
+            var removedLabel = evt.Label?.Trim() ?? string.Empty;
+            if (_current is { } cur
+                && evt.X == cur.World.X && evt.Z == cur.World.Z
+                && string.Equals(removedLabel, cur.Label, StringComparison.OrdinalIgnoreCase))
                 next = ResolveFromPinState(at);
             else
                 next = _current;

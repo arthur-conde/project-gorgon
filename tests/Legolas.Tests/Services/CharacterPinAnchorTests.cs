@@ -136,6 +136,24 @@ public class CharacterPinAnchorTests
     }
 
     [Fact]
+    public void Coincidental_overlap_does_not_clear_anchor_on_other_pin_remove()
+    {
+        // Another player's pin happens to share coords with my @me pin.
+        // The PG remove verb carries the label, so a coord-only match would
+        // wrongly clear my anchor.
+        var (anchor, bus, pinState, _, _) = Build("Arthas");
+        AddPin(bus, pinState, 100, 100, "@me");
+        anchor.Current!.Value.World.X.Should().Be(100);
+
+        AddPin(bus, pinState, 100, 100, "Visitor");
+        RemovePin(bus, pinState, 100, 100, "Visitor");
+
+        anchor.Current.Should().NotBeNull(
+            "removing a same-coord but differently-labelled pin must not clear our anchor");
+        anchor.Current!.Value.World.X.Should().Be(100);
+    }
+
+    [Fact]
     public void IsSelfPin_applies_the_same_rule()
     {
         var (anchor, _, _, _, _) = Build("Arthas");
