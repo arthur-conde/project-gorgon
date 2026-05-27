@@ -12,6 +12,7 @@
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Elrond.Module\Elrond.Module.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Planning\Mithril.Planning.csproj" />
     <ProjectReference Include="..\..\src\Mithril.Reference\Mithril.Reference.csproj" />

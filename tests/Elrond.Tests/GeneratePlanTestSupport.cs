@@ -1,3 +1,5 @@
+using Arda.Composition;
+using Elrond.Services;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
@@ -56,6 +58,48 @@ internal sealed class FakeGameReports : IGameReportsService
     public event EventHandler? CharacterSnapshotsChanged { add { } remove { } }
     public void Refresh() { }
     public void Dispose() { }
+}
+
+/// <summary>Configurable live-progression double for adapter/VM tests.</summary>
+internal sealed class FakePlayerProgressionState : IPlayerProgressionState
+{
+    private Dictionary<string, EnrichedSkill> _skills = new(StringComparer.Ordinal);
+    private Dictionary<string, int> _recipes = new(StringComparer.Ordinal);
+
+    public IReadOnlyDictionary<string, EnrichedSkill> Skills => _skills;
+    public IReadOnlyDictionary<string, int> RecipeCompletions => _recipes;
+    public event Action? StateChanged;
+
+    public void SetSkill(string key, int level, long currentXp = 0, long xpNeeded = 100)
+    {
+        _skills[key] = new EnrichedSkill(key, level, 0, currentXp, xpNeeded, 50, false, DateTimeOffset.UtcNow);
+        StateChanged?.Invoke();
+    }
+
+    public void SetRecipe(string internalName, int count)
+    {
+        _recipes[internalName] = count;
+        StateChanged?.Invoke();
+    }
+
+    public void Clear()
+    {
+        _skills = new Dictionary<string, EnrichedSkill>(StringComparer.Ordinal);
+        _recipes = new Dictionary<string, int>(StringComparer.Ordinal);
+    }
+}
+
+internal static class ProgressionTestSupport
+{
+    public static LiveProgressionAdapter AdapterFor(
+        IActiveCharacterService activeChar,
+        IGameReportsService? reports = null,
+        FakePlayerProgressionState? progression = null)
+    {
+        reports ??= new FakeGameReports(activeChar.ActiveCharacter);
+        progression ??= new FakePlayerProgressionState();
+        return new LiveProgressionAdapter(progression, reports, activeChar);
+    }
 }
 
 /// <summary>Captures the plan JSON Elrond hands off so B2 serialization is observable.</summary>

@@ -12,6 +12,7 @@
     <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Mithril.Leveling\Mithril.Leveling.csproj" />
     <ProjectReference Include="..\Mithril.Planning\Mithril.Planning.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
