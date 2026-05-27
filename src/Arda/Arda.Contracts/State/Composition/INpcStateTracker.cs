@@ -1,14 +1,21 @@
+using Mithril.Reference.Models.Npcs;
+
 namespace Arda.Composition;
 
 /// <summary>
 /// A single NPC's last-known state: absolute favor, favor tier, and vendor gold.
 /// Per-field timestamps allow consumers to judge recency independently.
+/// <para>
+/// <see cref="FavorTier"/> uses the canonical <see cref="Mithril.Reference.Models.Npcs.FavorTier"/>
+/// enum (#370 convergence). Unknown / never-observed → <see cref="Mithril.Reference.Models.Npcs.FavorTier.Unknown"/>
+/// rather than a null sentinel, so consumers compare with typed ordering.
+/// </para>
 /// </summary>
 public readonly record struct NpcRecord(
     string NpcKey,
     double? AbsoluteFavor,
     DateTimeOffset? FavorUpdatedAt,
-    string? FavorTier,
+    FavorTier FavorTier,
     long? RemainingGold,
     long? GoldCap,
     DateTimeOffset? GoldResetsAt,

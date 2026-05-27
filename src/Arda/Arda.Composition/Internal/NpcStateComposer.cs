@@ -3,6 +3,7 @@ using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Logging;
+using Mithril.Reference.Models.Npcs;
 using Mithril.Shared.Character;
 
 namespace Arda.Composition.Internal;
@@ -80,7 +81,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 NpcKey: npcKey,
                 AbsoluteFavor: e.Favor,
                 FavorUpdatedAt: now,
-                FavorTier: null,
+                FavorTier: FavorTier.Unknown,
                 RemainingGold: null,
                 GoldCap: null,
                 GoldResetsAt: null,
@@ -100,12 +101,13 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
         var now = e.Metadata.Timestamp ?? e.Metadata.ReadOn;
         var npcKey = e.NpcKey;
         _currentVendorNpcKey = npcKey;
+        var tier = FavorTierExtensions.Parse(e.FavorTier);
 
         if (_npcs.TryGetValue(npcKey, out var existing))
         {
             _npcs[npcKey] = existing with
             {
-                FavorTier = e.FavorTier,
+                FavorTier = tier,
                 RemainingGold = e.RemainingGold,
                 GoldCap = e.GoldCap,
                 GoldResetsAt = e.GoldResetsAt,
@@ -119,7 +121,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 NpcKey: npcKey,
                 AbsoluteFavor: null,
                 FavorUpdatedAt: null,
-                FavorTier: e.FavorTier,
+                FavorTier: tier,
                 RemainingGold: e.RemainingGold,
                 GoldCap: e.GoldCap,
                 GoldResetsAt: e.GoldResetsAt,
@@ -156,7 +158,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 NpcKey: npcKey,
                 AbsoluteFavor: null,
                 FavorUpdatedAt: null,
-                FavorTier: null,
+                FavorTier: FavorTier.Unknown,
                 RemainingGold: e.RemainingGold,
                 GoldCap: e.GoldCap,
                 GoldResetsAt: e.GoldResetsAt,
@@ -189,7 +191,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 NpcKey: npcKey,
                 AbsoluteFavor: e.DeltaFavor,
                 FavorUpdatedAt: now,
-                FavorTier: null,
+                FavorTier: FavorTier.Unknown,
                 RemainingGold: null,
                 GoldCap: null,
                 GoldResetsAt: null,
@@ -236,7 +238,9 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
             {
                 AbsoluteFavor = record.AbsoluteFavor,
                 FavorUpdatedAt = record.FavorUpdatedAt,
-                FavorTier = record.FavorTier,
+                // Persisted as the canonical token string (round-trip-safe with
+                // existing on-disk files). Unknown round-trips to "Unknown".
+                FavorTier = record.FavorTier.ToToken(),
                 RemainingGold = record.RemainingGold,
                 GoldCap = record.GoldCap,
                 GoldResetsAt = record.GoldResetsAt,
@@ -251,7 +255,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Failed to save NPC state snapshot for {Character}/{Server}",
+            _logger?.LogError(ex, "Failed to save NPC state snapshot for {Character}/{Server}",
                 _currentCharacter, _currentServer);
         }
     }
@@ -276,7 +280,9 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                     NpcKey: key,
                     AbsoluteFavor: persisted.AbsoluteFavor,
                     FavorUpdatedAt: persisted.FavorUpdatedAt,
-                    FavorTier: persisted.FavorTier,
+                    // Parse: case-insensitive, null/blank/junk → FavorTier.Unknown.
+                    // Old snapshots written with string tokens round-trip cleanly.
+                    FavorTier: FavorTierExtensions.Parse(persisted.FavorTier),
                     RemainingGold: persisted.RemainingGold,
                     GoldCap: persisted.GoldCap,
                     GoldResetsAt: persisted.GoldResetsAt,

@@ -9,6 +9,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Arda.Abstractions\Arda.Abstractions.csproj" />
+    <!--
+      Mithril.Reference owns the canonical FavorTier enum (#370 convergence).
+      NpcRecord in Composition/INpcStateTracker.cs uses it directly so the
+      post-composition surface is strongly typed and consumers don't reintroduce
+      the pre-#370 stringly-typed footgun.
+    -->
+    <ProjectReference Include="..\..\Mithril.Reference\Mithril.Reference.csproj" />
   </ItemGroup>
 
 </Project>

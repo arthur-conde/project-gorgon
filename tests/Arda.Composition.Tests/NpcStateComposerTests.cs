@@ -6,6 +6,7 @@ using Arda.Dispatch;
 using Arda.World.Player.Events;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Mithril.Reference.Models.Npcs;
 using Mithril.Shared.Character;
 using Xunit;
 
@@ -102,7 +103,7 @@ public class NpcStateComposerTests : IDisposable
 
         _composer.Npcs.Should().ContainKey("NPC_Marna");
         var record = _composer.Npcs["NPC_Marna"];
-        record.FavorTier.Should().Be("Comfortable");
+        record.FavorTier.Should().Be(FavorTier.Comfortable);
         record.RemainingGold.Should().Be(48637);
         record.GoldCap.Should().Be(50000);
         record.GoldResetsAt.Should().Be(GoldResetTime);
@@ -127,7 +128,7 @@ public class NpcStateComposerTests : IDisposable
 
         var record = _composer.Npcs["NPC_Marna"];
         record.AbsoluteFavor.Should().Be(2847.3);
-        record.FavorTier.Should().Be("Comfortable");
+        record.FavorTier.Should().Be(FavorTier.Comfortable);
         record.RemainingGold.Should().Be(48637);
     }
 
@@ -280,7 +281,7 @@ public class NpcStateComposerTests : IDisposable
 
             composer2.Npcs.Should().ContainKey("NPC_Marna");
             composer2.Npcs["NPC_Marna"].AbsoluteFavor.Should().Be(2847.3);
-            composer2.Npcs["NPC_Marna"].FavorTier.Should().Be("Comfortable");
+            composer2.Npcs["NPC_Marna"].FavorTier.Should().Be(FavorTier.Comfortable);
             composer2.Npcs["NPC_Marna"].RemainingGold.Should().Be(48637);
             composer2.Npcs["NPC_Marna"].GoldCap.Should().Be(50000);
             composer2.Npcs["NPC_Marna"].GoldResetsAt.Should().Be(GoldResetTime);
