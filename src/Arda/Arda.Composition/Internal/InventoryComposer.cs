@@ -122,8 +122,11 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
 
     private void TrimPending<T>(LinkedList<T> list, DateTimeOffset currentReadOn) where T : struct
     {
-        while (list.Count > MaxPending)
+        while (list.Count > MaxPending && list.First is { } overflow)
+        {
+            LogFifoEviction(overflow.Value, currentReadOn);
             list.RemoveFirst();
+        }
 
         while (list.First is { } first)
         {
@@ -136,6 +139,26 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
             if (currentReadOn - readOn > CorrelationWindow)
                 list.RemoveFirst();
             else
+                break;
+        }
+    }
+
+    private void LogFifoEviction<T>(T evicted, DateTimeOffset currentReadOn) where T : struct
+    {
+        if (_logger is null) return;
+        switch (evicted)
+        {
+            case InventoryItemAdded a:
+                _logger.LogWarning(
+                    "Dropping uncorrelated InventoryItemAdded {InstanceId} ({InternalName}) after {AgeMs} ms — MaxPending={MaxPending} reached",
+                    a.InstanceId, a.InternalName,
+                    (long)(currentReadOn - a.Metadata.ReadOn).TotalMilliseconds, MaxPending);
+                break;
+            case ChatInventoryObserved c:
+                _logger.LogWarning(
+                    "Dropping uncorrelated ChatInventoryObserved {DisplayName} x{Count} after {AgeMs} ms — MaxPending={MaxPending} reached",
+                    c.DisplayName, c.Count,
+                    (long)(currentReadOn - c.Metadata.ReadOn).TotalMilliseconds, MaxPending);
                 break;
         }
     }

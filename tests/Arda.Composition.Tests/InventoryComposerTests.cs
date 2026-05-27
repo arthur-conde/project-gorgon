@@ -6,6 +6,7 @@ using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -116,6 +117,36 @@ public class InventoryComposerTests : IDisposable
 
         _resolved.Should().ContainSingle()
             .Which.InstanceId.Should().Be(6, "items 0-5 were trimmed; item 6 is the oldest remaining");
+    }
+
+    [Fact]
+    public void MaxPendingOverflow_EmitsWarningPerEviction()
+    {
+        _composer.Dispose(); // discard the default no-logger composer
+
+        var warningCount = 0;
+        var logger = new CountingLogger(level => { if (level == LogLevel.Warning) warningCount++; });
+        using var composer = new InventoryComposer(_bus, store: null, logger: logger);
+
+        // 64 fill MaxPending; subsequent 64 each evict the oldest.
+        for (var i = 0; i < 128; i++)
+            _bus.Publish(new InventoryItemAdded(i, $"item_{i}", Meta(BaseTime.AddMilliseconds(i))));
+
+        warningCount.Should().Be(64,
+            "each add past MaxPending evicts one uncorrelated entry; every eviction is observable");
+    }
+
+    private sealed class CountingLogger(Action<LogLevel> onLog) : ILogger
+    {
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => onLog(logLevel);
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 
     [Fact]
