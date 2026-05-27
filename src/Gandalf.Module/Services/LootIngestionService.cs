@@ -1,3 +1,4 @@
+using System.Windows;
 using Microsoft.Extensions.Logging;
 using Arda.Contracts;
 using Arda.World.Player.Events;
@@ -52,49 +53,51 @@ public sealed class LootIngestionService : BackgroundService
     {
         _logger?.LogInformation("Subscribing to Arda domain events for loot ingestion");
 
+        // Arda dispatches on its driver thread. LootBracketTracker is currently
+        // pure FSM logic so the cross-thread call is safe today, but the
+        // moment a future consumer touches WPF-bound state through the bracket
+        // chain we'd silently violate STA. Marshal preemptively, matching
+        // Mithril's other Arda → WPF subscribers.
         _subscriptions.Add(_bus.Subscribe<InteractionStarted>(evt =>
-        {
-            _bracket.OnInteractionStarted(evt);
-        }));
+            MarshalToUi(() => _bracket.OnInteractionStarted(evt))));
 
         _subscriptions.Add(_bus.Subscribe<TalkScreenFrame>(_ =>
-        {
-            _bracket.OnTalkScreen();
-        }));
+            MarshalToUi(() => _bracket.OnTalkScreen())));
 
         _subscriptions.Add(_bus.Subscribe<ScreenTextObserved>(evt =>
-        {
-            _bracket.OnScreenTextObserved(evt);
-            DispatchScreenText(evt);
-        }));
+            MarshalToUi(() =>
+            {
+                _bracket.OnScreenTextObserved(evt);
+                DispatchScreenText(evt);
+            })));
 
         _subscriptions.Add(_bus.Subscribe<EnableInteractorsFrame>(evt =>
-        {
-            _bracket.OnEnableInteractors(evt);
-        }));
+            MarshalToUi(() => _bracket.OnEnableInteractors(evt))));
 
         _subscriptions.Add(_bus.Subscribe<InteractionEnded>(evt =>
-        {
-            _bracket.OnInteractionEnded(evt);
-        }));
+            MarshalToUi(() => _bracket.OnInteractionEnded(evt))));
 
         _subscriptions.Add(_bus.Subscribe<DelayLoopStarted>(evt =>
-        {
-            _bracket.OnDelayLoopStarted(evt);
-        }));
+            MarshalToUi(() => _bracket.OnDelayLoopStarted(evt))));
 
         _subscriptions.Add(_bus.Subscribe<InteractionWaiting>(evt =>
-        {
-            _bracket.OnInteractionWaiting(evt);
-        }));
+            MarshalToUi(() => _bracket.OnInteractionWaiting(evt))));
 
         _subscriptions.Add(_bus.Subscribe<InventoryItemAdded>(evt =>
         {
             var ts = evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow;
-            _bracket.OnInventoryItemAdded(ts);
+            MarshalToUi(() => _bracket.OnInventoryItemAdded(ts));
         }));
 
         return base.StartAsync(cancellationToken);
+    }
+
+    private static void MarshalToUi(Action action)
+    {
+        if (Application.Current?.Dispatcher is { } d && !d.CheckAccess())
+            d.Invoke(action);
+        else
+            action();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
