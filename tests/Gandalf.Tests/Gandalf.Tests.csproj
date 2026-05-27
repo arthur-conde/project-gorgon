@@ -18,7 +18,5 @@
     <!-- Shared test helpers opted into per-project (see tests/Directory.Build.props). -->
     <Compile Include="..\TestSupport\FakeReferenceData.cs"
              Link="TestSupport\FakeReferenceData.cs" />
-    <Compile Include="..\TestSupport\FakePlayerQuestJournalService.cs"
-             Link="TestSupport\FakePlayerQuestJournalService.cs" />
   </ItemGroup>
 </Project>

@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -15,12 +15,12 @@ namespace Silmarillion.Navigation;
 public sealed class QuestsKindTarget : IReferenceKindTarget
 {
     private readonly QuestsTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public QuestsKindTarget(QuestsTabViewModel vm, IDiagnosticsSink? diag = null)
+    public QuestsKindTarget(QuestsTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.Quest;
@@ -32,10 +32,10 @@ public sealed class QuestsKindTarget : IReferenceKindTarget
         var row = _vm.AllQuests.FirstOrDefault(r => r.InternalName == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"Quests.TrySelect '{internalName}' → not found (AllQuests={_vm.AllQuests.Count}).");
+            _logger?.LogTrace("Quests.TrySelect '{InternalName}' → not found (AllQuests={AllQuests}).", internalName, _vm.AllQuests.Count);
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"Quests.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Quests.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible
         // ListBox. See ItemsKindTarget for the symptom.
         _vm.QueryText = "";

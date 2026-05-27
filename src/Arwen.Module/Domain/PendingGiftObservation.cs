@@ -27,7 +27,7 @@ public sealed partial class PendingGiftObservation : ObservableObject
 
     /// <summary>
     /// PG session id captured at the moment the pending observation was parked
-    /// (sourced from <c>IGameSessionService.Current</c>). Empty when no session
+    /// (sourced from <see cref="Arda.Composition.ISessionComposer.Current"/>). Empty when no session
     /// was active. Propagates to the persisted <c>GiftObservation</c> on confirm
     /// so dedup behaves identically to live-recorded observations.
     /// </summary>

@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -20,12 +20,12 @@ namespace Silmarillion.Navigation;
 public sealed class LorebooksKindTarget : IReferenceKindTarget
 {
     private readonly LorebooksTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public LorebooksKindTarget(LorebooksTabViewModel vm, IDiagnosticsSink? diag = null)
+    public LorebooksKindTarget(LorebooksTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.Lorebook;
@@ -37,10 +37,10 @@ public sealed class LorebooksKindTarget : IReferenceKindTarget
         var row = _vm.AllLorebooks.FirstOrDefault(b => b.InternalName == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"Lorebooks.TrySelect '{internalName}' → not found (AllLorebooks={_vm.AllLorebooks.Count}).");
+            _logger?.LogTrace("Lorebooks.TrySelect '{InternalName}' → not found (AllLorebooks={AllLorebooks}).", internalName, _vm.AllLorebooks.Count);
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"Lorebooks.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Lorebooks.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible list.
         _vm.QueryText = "";
         _vm.SelectedLorebook = row;

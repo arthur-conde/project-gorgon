@@ -30,9 +30,9 @@ public sealed record MapTargetDetected(
     string Message) : GameEvent(Timestamp);
 
 // Map-pin lifecycle (ProcessMapPin{Add,Remove}) is no longer a Legolas
-// GameEvent: it was promoted to the GameState-tier MapPinParser /
-// PlayerPinTracker (#468). Calibration consumers read the area-scoped pin
-// set from IPlayerPinTracker, not a Legolas log event.
+// GameEvent: it is handled by the Arda pipeline (MapPinAdded/MapPinRemoved
+// domain events via IDomainEventSubscriber). Calibration consumers read
+// the area-scoped pin set from IMapPinState, not a Legolas log event.
 
 /// <summary>
 /// The <c>ProcessScreenText(ImportantInfo, "&lt;Mineral&gt; collected!")</c>
@@ -47,8 +47,7 @@ public sealed record MapTargetDetected(
 /// retired chat parser; PG emits no count on the primary "collected!" line
 /// (#699 then accepted this as a structural single-world property —
 /// <see cref="ItemCollectionTracker"/> credits one per matched
-/// (Add, Collect) pair against <c>IPlayerWorld.Bus</c>'s
-/// <see cref="Mithril.GameState.Inventory.PlayerInventoryAdded"/> events, with
+/// (Add, Collect) pair against Arda's <c>InventoryItemAdded</c> domain events, with
 /// no separate quantity composition). So this always carries <c>1</c> from
 /// <see cref="PlayerLogParser"/>.</para>
 /// </summary>
@@ -93,7 +92,7 @@ public sealed record MotherlodeUseDetected(
     string? MapName = null) : GameEvent(Timestamp);
 
 // The chat-log area banner ("******* Entering Area: <FriendlyName>") was
-// retired in #605. IPlayerAreaState (Mithril.GameState.Areas) is the
-// authoritative area-key source, fed by Player.log's LOADING LEVEL line, and
-// PlayerLogIngestionService.OnAreaChanged drives the calibration service
-// directly. See #531 for the redundancy analysis.
+// retired in #605. Arda's IAreaState is the authoritative area-key source,
+// fed by Player.log's LOADING LEVEL line, and PlayerLogIngestionService
+// subscribes to the AreaChanged domain event to drive the calibration
+// service directly. See #531 for the redundancy analysis.

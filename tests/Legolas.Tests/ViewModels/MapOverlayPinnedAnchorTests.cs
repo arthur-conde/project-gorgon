@@ -1,9 +1,12 @@
+using Arda.Abstractions.Logs;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
-using Mithril.GameState.Movement;
 
 namespace Legolas.Tests.ViewModels;
 
@@ -16,30 +19,32 @@ namespace Legolas.Tests.ViewModels;
 /// </summary>
 public class MapOverlayPinnedAnchorTests
 {
-    // Scale 1, no rotation, origin (0,0): ProjectWorld(x,_,z) → (x, -z).
     private static readonly AreaCalibration Calib = new(
         Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
         ReferenceCount: 3, ResidualPixels: 0.5);
 
+    private static readonly LogLineMetadata Meta = new(
+        Timestamp: new DateTimeOffset(2026, 5, 22, 14, 0, 0, TimeSpan.Zero),
+        ReadOn: DateTimeOffset.UtcNow,
+        IsReplay: false);
+
     private static (SessionState session, MapOverlayViewModel map,
-        FakePlayerPositionTracker tracker, FakePlayerPinTracker pins,
-        FakeActiveCharacterService chr, FakeAreaCalibrationService areaCal)
+        FakePositionState posState, TestDomainEventBus bus,
+        FakeMapPinState pinState, FakeActiveCharacterService chr, FakeAreaCalibrationService areaCal)
         BuildSut(bool calibrated)
     {
         var session = new SessionState();
-        // #524: legacy CalibrationZoom = 1.0 stamp ⇒ pin live zoom to 1.0 so
-        // the projection zoomFactor is 1.0 and the pre-#524 byte-identical
-        // assertions still hold.
         session.CurrentMapZoom = 1.0;
         var settings = new LegolasSettings();
         var surveyFlow = new SurveyFlowController(session, settings);
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
-        var tracker = new FakePlayerPositionTracker();
-        var pins = new FakePlayerPinTracker();
+        var posState = new FakePositionState();
+        var bus = new TestDomainEventBus();
+        var pinState = new FakeMapPinState();
         var chr = new FakeActiveCharacterService();
         chr.SetName("Arthas");
-        var charPin = new CharacterPinAnchor(pins, chr);
+        var charPin = new CharacterPinAnchor(bus, pinState, chr);
         var areaCal = new FakeAreaCalibrationService();
         if (calibrated) areaCal.SetCalibration(Calib);
 
@@ -47,17 +52,18 @@ public class MapOverlayPinnedAnchorTests
             session, projector, new AdaptiveRouteOptimizer(
                 new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer()),
             surveyFlow, brushes, settings,
-            pinCalibration: null, positionTracker: tracker, areaCalibration: areaCal,
+            pinCalibration: null, positionState: posState, bus: bus, areaCalibration: areaCal,
             motherlode: null, characterPin: charPin);
-        return (session, map, tracker, pins, chr, areaCal);
+        return (session, map, posState, bus, pinState, chr, areaCal);
     }
 
     [Fact]
     public void Dropping_a_character_named_pin_becomes_the_anchor()
     {
-        var (session, map, _, pins, _, _) = BuildSut(calibrated: true);
+        var (session, map, _, bus, pinState, _, _) = BuildSut(calibrated: true);
 
-        pins.Add(40, -25, "Arthas");
+        bus.Publish(new MapPinAdded(40, -25, "Arthas", 0, 0, Meta));
+        pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
         session.SurveyPlayerIsManual.Should().BeTrue();
@@ -68,9 +74,10 @@ public class MapOverlayPinnedAnchorTests
     [Fact]
     public void The_at_me_sentinel_also_works()
     {
-        var (session, _, _, pins, _, _) = BuildSut(calibrated: true);
+        var (session, _, _, bus, pinState, _, _) = BuildSut(calibrated: true);
 
-        pins.Add(10, 10, "@me");
+        bus.Publish(new MapPinAdded(10, 10, "@me", 0, 0, Meta));
+        pinState.Add(new MapPinEntry(10, 10, "@me", 0, 0));
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
         session.SurveyPlayerPixel.Should().Be(Calib.ProjectWorld(new WorldCoord(10, 0, 10)));
@@ -79,11 +86,12 @@ public class MapOverlayPinnedAnchorTests
     [Fact]
     public void The_pin_beats_a_stale_tracker_fix()
     {
-        var (session, _, tracker, pins, _, _) = BuildSut(calibrated: true);
-        tracker.Push(999, 0, 999, PlayerPositionSource.Spawn,
-            DateTimeOffset.UtcNow.AddHours(-1));   // old auto fix
+        var (session, _, _, bus, pinState, _, _) = BuildSut(calibrated: true);
+        var staleMeta = Meta with { Timestamp = DateTimeOffset.UtcNow.AddHours(-1) };
+        bus.Publish(new PlayerPositionChanged(999, 0, 999, PositionSource.Spawn, staleMeta));
 
-        pins.Add(40, -25, "Arthas");
+        bus.Publish(new MapPinAdded(40, -25, "Arthas", 0, 0, Meta));
+        pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
 
         session.SurveyPlayerIsPinned.Should().BeTrue();
         session.SurveyPlayerPixel.Should().Be(Calib.ProjectWorld(new WorldCoord(40, 0, -25)));
@@ -92,12 +100,13 @@ public class MapOverlayPinnedAnchorTests
     [Fact]
     public void A_genuinely_newer_tracker_fix_supersedes_the_pin()
     {
-        var (session, _, tracker, pins, _, _) = BuildSut(calibrated: true);
-        pins.Add(40, -25, "Arthas");
+        var (session, _, _, bus, pinState, _, _) = BuildSut(calibrated: true);
+        bus.Publish(new MapPinAdded(40, -25, "Arthas", 0, 0, Meta));
+        pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
         session.SurveyPlayerIsPinned.Should().BeTrue();
 
-        tracker.Push(7, 0, 8, PlayerPositionSource.Movement,
-            DateTimeOffset.UtcNow.AddMinutes(5));   // fresh zone-in/teleport
+        var newerMeta = Meta with { Timestamp = DateTimeOffset.UtcNow.AddMinutes(5) };
+        bus.Publish(new PlayerPositionChanged(7, 0, 8, PositionSource.Movement, newerMeta));
 
         session.SurveyPlayerIsPinned.Should().BeFalse();
         session.SurveyPlayerIsManual.Should().BeFalse();
@@ -107,12 +116,15 @@ public class MapOverlayPinnedAnchorTests
     [Fact]
     public void Removing_the_pin_falls_back_to_the_auto_fix()
     {
-        var (session, _, tracker, pins, _, _) = BuildSut(calibrated: true);
-        tracker.Push(7, 0, 8, PlayerPositionSource.Spawn, DateTimeOffset.UtcNow.AddHours(-1));
-        var pin = pins.Add(40, -25, "Arthas");
+        var (session, _, _, bus, pinState, _, _) = BuildSut(calibrated: true);
+        var oldMeta = Meta with { Timestamp = DateTimeOffset.UtcNow.AddHours(-1) };
+        bus.Publish(new PlayerPositionChanged(7, 0, 8, PositionSource.Spawn, oldMeta));
+        bus.Publish(new MapPinAdded(40, -25, "Arthas", 0, 0, Meta));
+        pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
         session.SurveyPlayerIsPinned.Should().BeTrue();
 
-        pins.Remove(pin);
+        pinState.Remove(40, -25);
+        bus.Publish(new MapPinRemoved(40, -25, "Arthas", Meta));
 
         session.SurveyPlayerIsPinned.Should().BeFalse();
         session.SurveyPlayerIsManual.Should().BeFalse();
@@ -122,9 +134,10 @@ public class MapOverlayPinnedAnchorTests
     [Fact]
     public void Uncalibrated_area_cannot_show_the_pinned_marker()
     {
-        var (session, map, _, pins, _, _) = BuildSut(calibrated: false);
+        var (session, map, _, bus, pinState, _, _) = BuildSut(calibrated: false);
 
-        pins.Add(40, -25, "Arthas");
+        bus.Publish(new MapPinAdded(40, -25, "Arthas", 0, 0, Meta));
+        pinState.Add(new MapPinEntry(40, -25, "Arthas", 0, 0));
 
         session.SurveyPlayerIsPinned.Should().BeFalse();
         session.SurveyPlayerPixel.Should().BeNull();

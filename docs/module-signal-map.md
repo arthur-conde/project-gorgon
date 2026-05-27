@@ -29,8 +29,8 @@ A component classified as "no state machines" still appears if it consumes or ex
 
 ## Conventions
 
-- Log pipe names (`LocalPlayer`, `CombatActor`, `SystemSignal`, unified classified `IClassifiedPlayerLogStream`, `IChatLogStream`) refer to the post-#556 L1 driver surfaces. Modules subscribe via `ILogStreamDriver`; the canonical pipe definitions live in [`src/Mithril.Shared/Logging/PlayerLogPipeSplitter.cs`](../src/Mithril.Shared/Logging/PlayerLogPipeSplitter.cs).
-- GameState services are named by interface (`IInventoryView` etc.). Modules subscribe to **these**, not raw log pipes — the architectural commitment per #587. (Post-#606 there are zero in-module direct `IChatLogStream` consumers — Legolas's `LogIngestionService` was the last and retired alongside Phase 3 of the world-sim migration.)
+- Log-derived signals are consumed via Arda domain events (`IDomainEventSubscriber`). The legacy L0/L0.5/L1 pipeline (`IPlayerLogStream`, `IChatLogStream`, `ILogStreamDriver`, `PlayerLogPipeSplitter`) has been retired; all modules consume Arda's typed events.
+- GameState services are named by interface (`IInventoryView` etc.). Modules subscribe to **these**, not raw log lines — the architectural commitment per #587.
 - "Wall-clock TTL" means a transition guarded by `_time.GetUtcNow()` deltas. Distinguished from event-time deltas (`envelope.Payload.Timestamp` arithmetic) which are part of the log stream and replay-deterministic.
 
 ### Scope vocabulary

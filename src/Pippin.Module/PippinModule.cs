@@ -8,7 +8,6 @@ using Mithril.Shared.Wpf.Dialogs;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Pippin.Domain;
-using Pippin.Parsing;
 using Pippin.Sharing;
 using Pippin.State;
 using Pippin.ViewModels;
@@ -37,16 +36,16 @@ public sealed class PippinModule : IMithrilModule
         services.AddMithrilSettings<PippinSettings>(settingsPath, PippinSettingsJsonContext.Default.PippinSettings);
 
         // Per-character persistence with a one-shot migration from the legacy flat file.
-        services.AddSingleton<ILegacyMigration<GourmandState>>(_ =>
-            new GourmandLegacyMigration(legacyPippinDir, GourmandStateJsonContext.Default.GourmandState));
+        services.AddSingleton<ILegacyMigration<GourmandState>>(sp =>
+            new GourmandLegacyMigration(
+                legacyPippinDir,
+                GourmandStateJsonContext.Default.GourmandState,
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()?.CreateLogger("Pippin")));
         services.AddPerCharacterModuleStore<GourmandState>(Id, GourmandStateJsonContext.Default.GourmandState);
 
         // Domain
         services.AddSingleton<FoodCatalog>(sp =>
             new FoodCatalog(sp.GetRequiredService<IReferenceDataService>()));
-
-        // Parsing
-        services.AddSingleton<GourmandLogParser>();
 
         // State
         services.AddSingleton<GourmandStateMachine>();
@@ -71,7 +70,7 @@ public sealed class PippinModule : IMithrilModule
         services.AddSingleton<IPippinShareImportTarget>(sp => new PippinShareImportTarget(
             sp.GetRequiredService<FoodCatalog>(),
             sp.GetService<IModuleActivator>(),
-            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Pippin")));
         services.AddSingleton<IDeepLinkHandler>(sp =>
             new PippinDeepLinkHandler(sp.GetRequiredService<IPippinShareImportTarget>()));
 

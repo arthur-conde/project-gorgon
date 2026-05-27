@@ -1,13 +1,11 @@
+using Microsoft.Extensions.Logging;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Collections;
-using Mithril.Shared.Diagnostics;
-using Mithril.GameState.Gifting;
-using Mithril.GameState.Inventory;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 
@@ -21,7 +19,8 @@ public sealed record EstimateResult(double Value, string Tier, int SampleCount);
 /// and computes per-NPC / per-item / per-signature category rates.
 ///
 /// Gift detection sequence:
-/// 1. <see cref="IInventoryView"/> maintains the canonical instanceId → InternalName map
+/// 1. <see cref="IInventoryAccumulatorState"/> maintains the canonical instanceId → InternalName map
+///    (soft-deletes retained, so post-removal lookups succeed)
 /// 2. ProcessStartInteraction(NPC_Key) → set active NPC context
 /// 3. ProcessDeleteItem(instanceId) → item removed while talking to NPC → pending gift
 /// 4. ProcessDeltaFavor(NPC_Key, delta) → favor gained → correlate with pending gift
@@ -42,11 +41,11 @@ public sealed class CalibrationService
 
     private readonly IReferenceDataService _refData;
     private readonly GiftIndex _giftIndex;
-    private readonly IInventoryView _inventory;
-    private readonly IGameSessionService? _session;
+    private readonly IInventoryAccumulatorState _inventory;
+    private readonly ISessionComposer? _session;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly TimeProvider _time;
     private readonly string _dataPath;
     private readonly string _observationsPath;
@@ -105,15 +104,15 @@ public sealed class CalibrationService
     public CalibrationService(
         IReferenceDataService refData,
         GiftIndex giftIndex,
-        IInventoryView inventory,
+        IInventoryAccumulatorState inventory,
         string dataDir,
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,
-        IDiagnosticsSink? diag = null,
+        ILogger? logger = null,
         TimeSpan? pendingTtl = null,
         Action<Action>? dispatch = null,
         TimeProvider? time = null,
-        IGameSessionService? session = null)
+        ISessionComposer? session = null)
     {
         _refData = refData;
         _giftIndex = giftIndex;
@@ -121,7 +120,7 @@ public sealed class CalibrationService
         _session = session;
         _community = community;
         _calibrationSettings = calibrationSettings;
-        _diag = diag;
+        _logger = logger;
         _time = time ?? TimeProvider.System;
         _dataPath = Path.Combine(dataDir, "calibration.json");
         _observationsPath = Path.Combine(dataDir, "observations.json");
@@ -184,11 +183,12 @@ public sealed class CalibrationService
     public void OnItemDeleted(long instanceId, DateTimeOffset timestamp)
     {
         if (_activeNpcKey is null) return;
-        if (!_inventory.TryResolve(instanceId, out var internalName))
+        if (!_inventory.Items.TryGetValue(instanceId, out var entry))
         {
-            _diag?.Trace("Arwen.Calibration", $"Delete id={instanceId} unresolved while talking to {_activeNpcKey}");
+            _logger?.LogTrace($"Delete id={instanceId} unresolved while talking to {_activeNpcKey}");
             return;
         }
+        var internalName = entry.InternalName;
 
         if (_pendingDelta is var (npcKey, delta, deltaTs))
         {
@@ -202,37 +202,38 @@ public sealed class CalibrationService
     }
 
     /// <summary>
-    /// Production gift-detection entry point (#608, iteration 2). Consumed by
+    /// Production gift-detection entry point. Consumed by
     /// <see cref="State.FavorIngestionService"/>'s
-    /// <see cref="IGiftSignalService.Subscribe"/> handler — the Tier-2 signal
-    /// service correlates the <c>ProcessStartInteraction</c> /
-    /// <c>ProcessDeleteItem</c> / <c>ProcessDeltaFavor</c> verb triple on its
-    /// own single L1 subscription (with its own <c>ProcessAddItem</c> map)
-    /// and emits a fully-resolved <see cref="GiftAccepted"/>. By the time
-    /// this method fires, the <c>InternalName</c> is resolved, the NPC key
-    /// is known, and the favor delta is paired — no cross-pump
-    /// <c>TryResolve</c> peek, no FSM ordering dependency on cross-source
-    /// arrival.
+    /// <see cref="Arda.World.Player.Events.GiftAccepted"/> handler — the Arda Npc
+    /// handler correlates the <c>ProcessStartInteraction</c> /
+    /// <c>ProcessDeleteItem</c> / <c>ProcessDeltaFavor</c> verb triple at L3
+    /// dispatch and emits <see cref="GiftAccepted"/>.
     ///
-    /// <para>Goes directly to <see cref="RecordObservation"/>. The legacy
-    /// <see cref="OnStartInteraction(string)"/> /
+    /// <para>Resolves <c>ItemInternalName</c> from <see cref="IInventoryAccumulatorState"/>.
+    /// The accumulator retains soft-deleted entries, so post-removal lookups succeed
+    /// even when the game's delete verb fires before the favor delta.</para>
+    ///
+    /// <para>The legacy <see cref="OnStartInteraction(string)"/> /
     /// <see cref="OnItemDeleted(long)"/> /
-    /// <see cref="OnDeltaFavor(string, double)"/> FSM overloads remain — they
-    /// were never on the production path; existing unit tests drive them
-    /// directly to exercise the FSM transitions and verify
-    /// <see cref="RecordObservation"/> integration.</para>
+    /// <see cref="OnDeltaFavor(string, double)"/> FSM overloads remain for
+    /// existing unit tests.</para>
     /// </summary>
-    public void OnGiftAccepted(GiftAccepted gift)
+    public void OnGiftAccepted(
+        string npcKey,
+        long itemInstanceId,
+        double deltaFavor,
+        DateTimeOffset timestamp)
     {
-        if (string.IsNullOrEmpty(gift.NpcKey)) return;
-        if (string.IsNullOrEmpty(gift.ItemInternalName)) return;
-        if (gift.DeltaFavor <= 0) return;
-        RecordObservation(
-            gift.NpcKey,
-            gift.ItemInstanceId,
-            gift.ItemInternalName,
-            gift.DeltaFavor,
-            gift.Timestamp);
+        if (string.IsNullOrEmpty(npcKey)) return;
+        if (deltaFavor <= 0) return;
+
+        if (!_inventory.Items.TryGetValue(itemInstanceId, out var entry))
+        {
+            _logger?.LogTrace($"GiftAccepted for instance {itemInstanceId} — item not in accumulator.");
+            return;
+        }
+
+        RecordObservation(npcKey, itemInstanceId, entry.InternalName, deltaFavor, timestamp);
     }
 
     public void OnDeltaFavor(string npcKey, double delta)
@@ -258,13 +259,13 @@ public sealed class CalibrationService
     {
         if (!_refData.ItemsByInternalName.TryGetValue(internalName, out var item))
         {
-            _diag?.Trace("Arwen.Calibration", $"Unknown item '{internalName}' — skipping observation");
+            _logger?.LogTrace($"Unknown item '{internalName}' — skipping observation");
             return;
         }
 
         if (item.Value <= 0)
         {
-            _diag?.Trace("Arwen.Calibration", $"Item '{internalName}' has value 0 — skipping observation");
+            _logger?.LogTrace($"Item '{internalName}' has value 0 — skipping observation");
             return;
         }
 
@@ -279,9 +280,9 @@ public sealed class CalibrationService
         {
             quantity = 1;
         }
-        else if (_inventory.TryGetStackSize(instanceId, out var trackedSize) && trackedSize > 0)
+        else if (_inventory.Items.TryGetValue(instanceId, out var invEntry) && invEntry.StackSize > 0)
         {
-            quantity = trackedSize;
+            quantity = invEntry.StackSize;
         }
         else
         {
@@ -292,14 +293,14 @@ public sealed class CalibrationService
         var matchedPrefs = _giftIndex.MatchAllPreferencesForItem(item.Id, npcKey);
         if (matchedPrefs.Count == 0)
         {
-            _diag?.Trace("Arwen.Calibration", $"Item '{internalName}' doesn't match any preference for {npcKey}");
+            _logger?.LogTrace($"Item '{internalName}' doesn't match any preference for {npcKey}");
             return;
         }
 
         var effectivePref = matchedPrefs.Sum(p => p.Pref);
         if (effectivePref <= 0)
         {
-            _diag?.Trace("Arwen.Calibration", $"Item '{internalName}' nets non-positive pref for {npcKey} — skipping");
+            _logger?.LogTrace($"Item '{internalName}' nets non-positive pref for {npcKey} — skipping");
             return;
         }
 
@@ -324,8 +325,7 @@ public sealed class CalibrationService
                 SessionId = sessionId,
             };
             _pending.Add(pending);
-            _diag?.Info("Arwen.Calibration",
-                $"Pending: '{internalName}' → {npcKey} (+{delta} favor) — quantity unknown, awaiting user confirmation.");
+            _logger?.LogInformation($"Pending: '{internalName}' → {npcKey} (+{delta} favor) — quantity unknown, awaiting user confirmation.");
             return;
         }
 
@@ -365,7 +365,7 @@ public sealed class CalibrationService
             // pass persisted this observation; the second pass produces an
             // identical key (same SessionId + InstanceId + log-line ts). Drop
             // silently so SampleCount stays clean.
-            _diag?.Trace("Arwen.Calibration", $"Skipped replay of observation {key}");
+            _logger?.LogTrace($"Skipped replay of observation {key}");
             return;
         }
 
@@ -373,8 +373,7 @@ public sealed class CalibrationService
         RecomputeRates();
         Save();
 
-        _diag?.Info("Arwen.Calibration",
-            $"Gift observed: {internalName} → {npcKey}, +{delta} favor, rate={observation.DerivedRate:F4} (signature={observation.Signature})");
+        _logger?.LogInformation($"Gift observed: {internalName} → {npcKey}, +{delta} favor, rate={observation.DerivedRate:F4} (signature={observation.Signature})");
 
         DataChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -395,8 +394,7 @@ public sealed class CalibrationService
         {
             // Reference data drifted out from under us; refuse rather than persist
             // an observation we can't validate.
-            _diag?.Warn("Arwen.Calibration",
-                $"ConfirmPending: '{entry.InternalName}' no longer in reference data — discarding instead.");
+            _logger?.LogWarning($"ConfirmPending: '{entry.InternalName}' no longer in reference data — discarding instead.");
             _pending.Remove(p => p.Id == id);
             return false;
         }
@@ -586,8 +584,7 @@ public sealed class CalibrationService
                 // carry observations; pick neither, merge with dedup (ObservationKey).
                 mergedObservations = MergeObservations(observations.Observations, legacy!.Observations);
                 loadedVersion = Math.Min(observations.Version, legacy.Version);
-                _diag?.Info("Arwen.Calibration",
-                    $"Both observations.json and legacy calibration.json have observations; merged " +
+                _logger?.LogInformation($"Both observations.json and legacy calibration.json have observations; merged " +
                     $"{observations.Observations.Count} + {legacy.Observations.Count} → {mergedObservations.Count} (deduped).");
             }
             else if (observations is not null)
@@ -620,8 +617,7 @@ public sealed class CalibrationService
                 if (_data.Version < 2)
                 {
                     var (kept, dropped) = MigrateObservationsToV2(_data.Observations);
-                    _diag?.Info("Arwen.Calibration",
-                        $"Migrating calibration v{_data.Version} → v2: kept {kept.Count}, dropped {dropped}");
+                    _logger?.LogInformation($"Migrating calibration v{_data.Version} → v2: kept {kept.Count}, dropped {dropped}");
                     _data.Observations = kept;
                     _data.Version = 2;
                 }
@@ -629,8 +625,7 @@ public sealed class CalibrationService
                 if (_data.Version < 3)
                 {
                     var (kept, dropped) = MigrateObservationsToV3(_data.Observations);
-                    _diag?.Info("Arwen.Calibration",
-                        $"Migrating calibration v{_data.Version} → v3: kept {kept.Count}, dropped {dropped} (stackable items)");
+                    _logger?.LogInformation($"Migrating calibration v{_data.Version} → v3: kept {kept.Count}, dropped {dropped} (stackable items)");
                     _data.Observations = kept;
                     _data.Version = 3;
                 }
@@ -648,8 +643,7 @@ public sealed class CalibrationService
                         obs.SessionId ??= "";
                         // InstanceId defaults to 0 on the property — no-op for clarity.
                     }
-                    _diag?.Info("Arwen.Calibration",
-                        $"Migrating calibration v{_data.Version} → v4: {_data.Observations.Count} observations carried forward (legacy session/instance fields default).");
+                    _logger?.LogInformation($"Migrating calibration v{_data.Version} → v4: {_data.Observations.Count} observations carried forward (legacy session/instance fields default).");
                     _data.Version = 4;
                 }
             }
@@ -670,14 +664,13 @@ public sealed class CalibrationService
                 Save();
             }
 
-            _diag?.Info("Arwen.Calibration",
-                $"Loaded {_data.Observations.Count} observations " +
+            _logger?.LogInformation($"Loaded {_data.Observations.Count} observations " +
                 $"({_data.ItemRates.Count} item rates, {_data.SignatureRates.Count} signature rates, " +
                 $"{_data.NpcRates.Count} NPC baselines, {_data.KeywordRates.Count} keyword rates)");
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to load calibration: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to load calibration");
             _data = new();
         }
     }
@@ -702,7 +695,7 @@ public sealed class CalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to read legacy calibration.json: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to read legacy calibration.json");
             return null;
         }
     }
@@ -725,7 +718,7 @@ public sealed class CalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to read observations.json: {ex.Message}; quarantining as .corrupt.bak");
+            _logger?.LogWarning(ex, "Failed to read observations.json: {Message}; quarantining as .corrupt.bak", ex.Message);
             QuarantineCorruptObservations();
             return null;
         }
@@ -740,11 +733,11 @@ public sealed class CalibrationService
             // they're investigating; preserve the original instead.
             if (File.Exists(corruptPath)) return;
             File.Move(_observationsPath, corruptPath);
-            _diag?.Info("Arwen.Calibration", $"Quarantined unparseable observations.json → {corruptPath}");
+            _logger?.LogInformation($"Quarantined unparseable observations.json → {corruptPath}");
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to quarantine corrupt observations.json: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to quarantine corrupt observations.json");
         }
     }
 
@@ -772,11 +765,11 @@ public sealed class CalibrationService
             var backupPath = $"{_dataPath}.v{preMigrationVersion}.bak";
             if (File.Exists(backupPath)) return;
             File.Copy(_dataPath, backupPath);
-            _diag?.Info("Arwen.Calibration", $"Wrote pre-migration backup: {backupPath}");
+            _logger?.LogInformation($"Wrote pre-migration backup: {backupPath}");
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to write pre-migration backup: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to write pre-migration backup");
         }
     }
 
@@ -793,11 +786,11 @@ public sealed class CalibrationService
             var backupPath = $"{_dataPath}.split.bak";
             if (File.Exists(backupPath)) return;
             File.Copy(_dataPath, backupPath);
-            _diag?.Info("Arwen.Calibration", $"Wrote pre-split backup: {backupPath}");
+            _logger?.LogInformation($"Wrote pre-split backup: {backupPath}");
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to write pre-split backup: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to write pre-split backup");
         }
     }
 
@@ -821,7 +814,7 @@ public sealed class CalibrationService
 
             if (!_refData.ItemsByInternalName.TryGetValue(obs.ItemInternalName, out var item))
             {
-                _diag?.Trace("Arwen.Calibration", $"Migration: dropping '{obs.ItemInternalName}' (not in reference data)");
+                _logger?.LogTrace($"Migration: dropping '{obs.ItemInternalName}' (not in reference data)");
                 dropped++;
                 continue;
             }
@@ -829,7 +822,7 @@ public sealed class CalibrationService
             var matchedPrefs = _giftIndex.MatchAllPreferencesForItem(item.Id, obs.NpcKey);
             if (matchedPrefs.Count == 0)
             {
-                _diag?.Trace("Arwen.Calibration", $"Migration: dropping '{obs.ItemInternalName}' for {obs.NpcKey} (no matching preferences)");
+                _logger?.LogTrace($"Migration: dropping '{obs.ItemInternalName}' for {obs.NpcKey} (no matching preferences)");
                 dropped++;
                 continue;
             }
@@ -859,14 +852,13 @@ public sealed class CalibrationService
         {
             if (!_refData.ItemsByInternalName.TryGetValue(obs.ItemInternalName, out var item))
             {
-                _diag?.Trace("Arwen.Calibration", $"v3 migration: dropping '{obs.ItemInternalName}' (not in reference data)");
+                _logger?.LogTrace($"v3 migration: dropping '{obs.ItemInternalName}' (not in reference data)");
                 dropped++;
                 continue;
             }
             if (item.MaxStackSize > 1)
             {
-                _diag?.Trace("Arwen.Calibration",
-                    $"v3 migration: dropping '{obs.ItemInternalName}' for {obs.NpcKey} (MaxStackSize={item.MaxStackSize}, true gift quantity unrecoverable)");
+                _logger?.LogTrace($"v3 migration: dropping '{obs.ItemInternalName}' for {obs.NpcKey} (MaxStackSize={item.MaxStackSize}, true gift quantity unrecoverable)");
                 dropped++;
                 continue;
             }
@@ -896,7 +888,7 @@ public sealed class CalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to save observations: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to save observations");
             return;
         }
 
@@ -916,7 +908,7 @@ public sealed class CalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Calibration", $"Failed to save aggregates: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to save aggregates");
         }
     }
 
@@ -970,7 +962,7 @@ public sealed class CalibrationService
     {
         var json = ExportJson(contributorNote);
         File.WriteAllText(path, json);
-        _diag?.Info("Arwen.Calibration", $"Exported {_data.Observations.Count} observations to {path}");
+        _logger?.LogInformation($"Exported {_data.Observations.Count} observations to {path}");
     }
 
     public int ImportJson(string json, bool replaceExisting = false)
@@ -981,8 +973,7 @@ public sealed class CalibrationService
         if (imported.Version < 2)
         {
             var (kept, dropped) = MigrateObservationsToV2(imported.Observations);
-            _diag?.Info("Arwen.Calibration",
-                $"Importing v{imported.Version} payload → v2: migrated {kept.Count}, dropped {dropped}");
+            _logger?.LogInformation($"Importing v{imported.Version} payload → v2: migrated {kept.Count}, dropped {dropped}");
             imported.Observations = kept;
             imported.Version = 2;
         }
@@ -990,8 +981,7 @@ public sealed class CalibrationService
         if (imported.Version < 3)
         {
             var (kept, dropped) = MigrateObservationsToV3(imported.Observations);
-            _diag?.Info("Arwen.Calibration",
-                $"Importing v{imported.Version} payload → v3: migrated {kept.Count}, dropped {dropped} (stackable items)");
+            _logger?.LogInformation($"Importing v{imported.Version} payload → v3: migrated {kept.Count}, dropped {dropped} (stackable items)");
             imported.Observations = kept;
             imported.Version = 3;
         }
@@ -1035,7 +1025,7 @@ public sealed class CalibrationService
             DataChanged?.Invoke(this, EventArgs.Empty);
         }
 
-        _diag?.Info("Arwen.Calibration", $"Imported {added} new observations ({incoming.Observations.Count - added} duplicates skipped)");
+        _logger?.LogInformation($"Imported {added} new observations ({incoming.Observations.Count - added} duplicates skipped)");
         return added;
     }
 
@@ -1117,8 +1107,7 @@ public sealed class CalibrationService
         _observationKeys.Remove(observationKey);
         RecomputeRates();
         Save();
-        _diag?.Info("Arwen.Calibration",
-            $"Deleted observation: {removed.ItemInternalName} → {removed.NpcKey} (+{removed.FavorDelta} favor, {removed.Timestamp:O})");
+        _logger?.LogInformation($"Deleted observation: {removed.ItemInternalName} → {removed.NpcKey} (+{removed.FavorDelta} favor, {removed.Timestamp:O})");
         DataChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
@@ -1143,8 +1132,7 @@ public sealed class CalibrationService
         // Quantity isn't part of ObservationKey, so the key set doesn't change.
         RecomputeRates();
         Save();
-        _diag?.Info("Arwen.Calibration",
-            $"Updated quantity: {obs.ItemInternalName} → {obs.NpcKey} qty {oldQuantity} → {quantity}");
+        _logger?.LogInformation($"Updated quantity: {obs.ItemInternalName} → {obs.NpcKey} qty {oldQuantity} → {quantity}");
         DataChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
@@ -1161,7 +1149,7 @@ public sealed class CalibrationService
         RebuildObservationKeySet();
         RecomputeRates();
         Save();
-        _diag?.Info("Arwen.Calibration", $"Bulk-deleted {removed} observation(s)");
+        _logger?.LogInformation($"Bulk-deleted {removed} observation(s)");
         DataChanged?.Invoke(this, EventArgs.Empty);
         return removed;
     }

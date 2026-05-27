@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using Mithril.Shared.Diagnostics;
+using Mithril.Shared.Diagnostics.Performance;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Wpf;
@@ -10,6 +11,7 @@ using Mithril.Shell.ViewModels;
 using Mithril.Shell.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shell.DependencyInjection;
 
@@ -84,8 +86,13 @@ public static class ShellServiceCollectionExtensions
             .AddSingleton<UpdateChannelInfo>(_ => UpdateChannelInfo.FromEmbedded())
             .AddSingleton<MithrilUpdateManager>()
             .AddSingleton<IUpdateStatusService, UpdateStatusService>()
-            .AddSingleton<IUpdateChecker, VelopackUpdateChecker>()
-            .AddSingleton<IUpdateApplier, VelopackUpdateApplier>()
+            .AddSingleton<IUpdateChecker>(sp => new VelopackUpdateChecker(
+                sp.GetRequiredService<MithrilUpdateManager>(),
+                sp.GetRequiredService<IUpdateStatusService>(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("updates")))
+            .AddSingleton<IUpdateApplier>(sp => new VelopackUpdateApplier(
+                sp.GetRequiredService<MithrilUpdateManager>(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("updates")))
             .AddHostedService<UpdateCheckHostedService>();
 
     public static IServiceCollection AddMithrilItemDetail(this IServiceCollection services) =>
@@ -101,15 +108,19 @@ public static class ShellServiceCollectionExtensions
             // register from their own IMithrilModule.Register() implementations.
             .AddSingleton<IDeepLinkRouter>(sp => new DeepLinkRouter(
                 sp.GetServices<IDeepLinkHandler>(),
-                sp.GetService<IDiagnosticsSink>()));
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("DeepLink")));
 
     public static IServiceCollection AddMithrilIngredientSources(this IServiceCollection services) =>
         services.AddSingleton<IIngredientSourcesPresenter, IngredientSourcesPresenter>();
 
     public static IServiceCollection AddMithrilShellCommands(this IServiceCollection services) =>
         services
-            .AddSingleton<IHotkeyCommand, ForceQuitCommand>()
-            .AddSingleton<IHotkeyCommand, StartPerfTraceHotkey>();
+            .AddSingleton<IHotkeyCommand>(sp => new ForceQuitCommand(
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("Shell")))
+            .AddSingleton<IHotkeyCommand>(sp => new StartPerfTraceHotkey(
+                sp.GetRequiredService<ShellSettings>(),
+                sp.GetRequiredService<PerfTracerHostedService>(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("PerfTrace")));
 
     public static IServiceCollection AddMithrilShellViews(this IServiceCollection services) =>
         services

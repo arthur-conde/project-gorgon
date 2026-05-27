@@ -1,56 +1,45 @@
-using System.Collections;
-using System.Collections.ObjectModel;
-using System.Collections.Specialized;
-using System.ComponentModel;
+using Arda.Composition;
+using Arda.Wpf;
 using FluentAssertions;
-using Mithril.GameState.Inventory;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
-using Mithril.Shared.Collections;
 using Mithril.Shared.Reference;
-using Mithril.WorldSim;
 using Palantir.ViewModels;
 using Xunit;
 
 namespace Palantir.Tests;
 
 /// <summary>
-/// Tests for the #726 migration: Palantir's live-inventory VM binds to
-/// <see cref="IInventoryView.Items"/> directly instead of mirroring an
-/// event stream into a local collection. Each test seeds / mutates a
-/// <see cref="FakeInventoryView"/>'s items and asserts the VM's
-/// <c>View</c>/<c>LiveCount</c>/<c>DeletedCount</c>/<c>ShowDeleted</c>
-/// surfaces reflect the bound state. The view-internal bus → items mutation
-/// path is covered by <c>InventoryViewTests</c> in
-/// <c>Mithril.GameState.Tests</c> — these tests pin the consumer-side
-/// projection only. (The legacy union-shaped event shim Palantir used
-/// pre-#726 retired in #659; this VM's pre-#726 re-mirror path is gone
-/// regardless.)
+/// Tests for the Arda-backed <see cref="LiveInventoryViewModel"/>. The VM
+/// shows items from <see cref="IInventoryAccumulatorState"/> via
+/// <see cref="InventoryProjection"/>.
 /// </summary>
 public sealed class LiveInventoryViewModelTests
 {
     [Fact]
-    public void Binding_ReflectsCurrentViewItems()
+    public void Seed_from_state_populates_items_and_count()
     {
-        var view = new FakeInventoryView();
-        view.Seed(NewItem(1, "Moonstone", stack: 1, confirmed: true));
-        view.Seed(NewItem(2, "Guava", stack: 4, confirmed: true));
-
-        using var vm = NewVm(view);
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1),
+            [2] = MakeItem("Guava", 4),
+        });
+        using var vm = NewVm(state);
 
         vm.Items.Should().HaveCount(2);
         vm.LiveCount.Should().Be(2);
-        vm.DeletedCount.Should().Be(0);
-        VisibleRows(vm).Should().HaveCount(2);
     }
 
     [Fact]
-    public void Added_AfterBind_AppearsInBoundCollection()
+    public void StateChanged_adds_new_items()
     {
-        var view = new FakeInventoryView();
-        using var vm = NewVm(view);
+        var state = new FakeAccumulatorState();
+        using var vm = NewVm(state);
 
-        view.Seed(NewItem(1, "Moonstone", stack: 1, confirmed: true));
+        state.SetItems(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1)
+        });
 
         vm.Items.Should().ContainSingle();
         vm.Items.Single().InternalName.Should().Be("Moonstone");
@@ -58,153 +47,140 @@ public sealed class LiveInventoryViewModelTests
     }
 
     [Fact]
-    public void RowStackSize_PropagatesViaInpc()
+    public void StateChanged_removes_evicted_items()
     {
-        var view = new FakeInventoryView();
-        var item = NewItem(1, "Guava", stack: 1, confirmed: false);
-        view.Seed(item);
-        using var vm = NewVm(view);
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1),
+            [2] = MakeItem("Guava", 4),
+        });
+        using var vm = NewVm(state);
+        vm.Items.Should().HaveCount(2);
 
-        item.StackSize = 4;
-        item.SizeConfirmed = true;
+        state.SetItems(new Dictionary<long, AccumulatedItem>
+        {
+            [2] = MakeItem("Guava", 4)
+        });
 
-        vm.Items.Single().StackSize.Should().Be(4);
-        vm.Items.Single().SizeConfirmed.Should().BeTrue();
+        vm.Items.Should().ContainSingle();
+        vm.Items.Single().InternalName.Should().Be("Guava");
+        vm.LiveCount.Should().Be(1);
     }
 
     [Fact]
-    public void IsDeletedFlip_HidesRowFromDefaultViewAndUpdatesCounts()
+    public void StateChanged_updates_stack_size()
     {
-        var view = new FakeInventoryView();
-        var skull = NewItem(1, "GiantSkull", stack: 50, confirmed: true);
-        view.Seed(skull);
-        view.Seed(NewItem(2, "Guava", stack: 4, confirmed: true));
-        using var vm = NewVm(view);
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Guava", 4),
+        });
+        using var vm = NewVm(state);
+        vm.Items.Single().StackSize.Should().Be(4);
 
-        skull.IsDeleted = true;
+        state.SetItems(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Guava", 8)
+        });
 
-        VisibleRows(vm).Select(r => r.InstanceId).Should().BeEquivalentTo([2L]);
+        vm.Items.Single().StackSize.Should().Be(8);
+    }
+
+    [Fact]
+    public void Soft_deleted_items_tracked_separately()
+    {
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1),
+            [2] = MakeItem("Guava", 4, isRemoved: true),
+        });
+        using var vm = NewVm(state);
+
+        vm.Items.Should().HaveCount(2);
         vm.LiveCount.Should().Be(1);
         vm.DeletedCount.Should().Be(1);
-        // Soft-delete contract: the row stays in the underlying collection.
-        vm.Items.Should().HaveCount(2);
-        skull.StackSize.Should().Be(50);
     }
 
     [Fact]
-    public void ShowDeletedToggle_RevealsDeletedRows()
+    public void RefreshCommand_reloads_from_state()
     {
-        var view = new FakeInventoryView();
-        var ms = NewItem(1, "Moonstone", stack: 1, confirmed: true);
-        view.Seed(ms);
-        using var vm = NewVm(view);
+        var state = new FakeAccumulatorState();
+        using var vm = NewVm(state);
+        vm.Items.Should().BeEmpty();
 
-        ms.IsDeleted = true;
-        VisibleRows(vm).Should().BeEmpty();
+        state.MutateWithoutNotify(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1)
+        });
+        vm.RefreshCommand.Execute(null);
 
-        vm.ShowDeleted = true;
-        VisibleRows(vm).Should().ContainSingle().Which.InstanceId.Should().Be(1);
+        vm.Items.Should().ContainSingle();
     }
 
     [Fact]
-    public void DisplayMetadata_ResolvesViaReferenceData()
+    public void ReferenceData_accessor_is_surfaced()
     {
-        // Display projection lives in the XAML cell converter; this test pins
-        // the VM-side hook (ReferenceData accessor) the converter binds to,
-        // so the binding path is unbroken across the migration.
         var refData = new FakeRefData(
             new Item { Id = 0, Name = "Moonstone Crystal", InternalName = "Moonstone", MaxStackSize = 100, IconId = 4242, Keywords = [] });
-        var view = new FakeInventoryView();
-        using var vm = NewVm(view, refData);
+        using var vm = NewVm(new FakeAccumulatorState(), refData);
 
         vm.ReferenceData.Should().BeSameAs(refData);
         vm.ReferenceData!.ItemsByInternalName["Moonstone"].IconId.Should().Be(4242);
     }
 
     [Fact]
-    public void Dispose_DetachesFromUnderlyingCollection()
+    public void Dispose_stops_observing_events()
     {
-        var view = new FakeInventoryView();
-        var vm = NewVm(view);
-        view.Seed(NewItem(1, "Moonstone", stack: 1, confirmed: true));
+        var state = new FakeAccumulatorState(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1),
+        });
+        var vm = NewVm(state);
         vm.LiveCount.Should().Be(1);
 
         vm.Dispose();
-        view.Seed(NewItem(2, "Guava", stack: 4, confirmed: true));
 
-        vm.LiveCount.Should().Be(1, "the disposed VM must stop re-counting on collection mutations");
+        state.SetItems(new Dictionary<long, AccumulatedItem>
+        {
+            [1] = MakeItem("Moonstone", 1),
+            [2] = MakeItem("Guava", 4),
+        });
+
+        vm.LiveCount.Should().Be(1, "the disposed VM must stop refreshing on events");
     }
 
-    private static LiveInventoryViewModel NewVm(IInventoryView view, IReferenceDataService? refData = null)
-        // Synchronous dispatcher: test thread runs both VM ctor + event handlers.
-        => new(view, refData, dispatch: action => action());
+    // --- Helpers ---------------------------------------------------------------
 
-    private static IEnumerable<InventoryItem> VisibleRows(LiveInventoryViewModel vm)
-        => vm.View.Cast<InventoryItem>();
+    private static AccumulatedItem MakeItem(string name, int stack, bool isRemoved = false) =>
+        new(name, null, stack, null, isRemoved,
+            isRemoved ? DateTimeOffset.UtcNow : null,
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
 
-    private static InventoryItem NewItem(long id, string internalName, int stack, bool confirmed)
-        => new(id, internalName, stack, confirmed);
-
-    /// <summary>
-    /// Minimal <see cref="IInventoryView"/> stub. <c>Bus</c> is unused (the
-    /// VM binds to <see cref="IInventoryView.Items"/> directly and observes
-    /// per-row INPC), so it throws to surface accidental regressions.
-    /// </summary>
-    private sealed class FakeInventoryView : IInventoryView
+    private static LiveInventoryViewModel NewVm(
+        FakeAccumulatorState state, IReferenceDataService? refData = null)
     {
-        private readonly ObservableInventoryItemsStub _items = new();
-        public IWorldEventBus Bus => throw new NotSupportedException("Palantir VM binds to Items directly, not Bus.");
-        public IReadOnlyObservableCollection<InventoryItem> Items => _items;
-        public object ItemsSyncRoot { get; } = new();
-
-        public void Seed(InventoryItem item) => _items.AddItem(item);
-
-        public bool TryResolve(long instanceId, out string internalName) { internalName = ""; return false; }
-        public bool TryGetStackSize(long instanceId, out int stackSize) { stackSize = 0; return false; }
+        return new LiveInventoryViewModel(state, refData);
     }
 
-    /// <summary>
-    /// Wraps an <see cref="ObservableCollection{T}"/> as the read-only
-    /// observable + non-generic <see cref="IList"/> surface
-    /// <see cref="IInventoryView.Items"/> exposes in production (mirrors
-    /// <c>ObservableInventoryItems</c> minus the internal mutator
-    /// access-control — tests want to seed it from outside).
-    /// </summary>
-    private sealed class ObservableInventoryItemsStub : IReadOnlyObservableCollection<InventoryItem>, IList
+    // --- Fakes -----------------------------------------------------------------
+
+    private sealed class FakeAccumulatorState : IInventoryAccumulatorState
     {
-        private readonly ObservableCollection<InventoryItem> _inner = new();
+        private Dictionary<long, AccumulatedItem> _items;
 
-        public InventoryItem this[int index] => _inner[index];
-        public int Count => _inner.Count;
-        public IEnumerator<InventoryItem> GetEnumerator() => _inner.GetEnumerator();
-        IEnumerator IEnumerable.GetEnumerator() => ((IEnumerable)_inner).GetEnumerator();
+        public IReadOnlyDictionary<long, AccumulatedItem> Items => _items;
+        public event Action? StateChanged;
 
-        public event NotifyCollectionChangedEventHandler? CollectionChanged
+        public FakeAccumulatorState(Dictionary<long, AccumulatedItem>? items = null)
+            => _items = items ?? new Dictionary<long, AccumulatedItem>();
+
+        public void SetItems(Dictionary<long, AccumulatedItem> items)
         {
-            add => _inner.CollectionChanged += value;
-            remove => _inner.CollectionChanged -= value;
-        }
-        public event PropertyChangedEventHandler? PropertyChanged
-        {
-            add => ((INotifyPropertyChanged)_inner).PropertyChanged += value;
-            remove => ((INotifyPropertyChanged)_inner).PropertyChanged -= value;
+            _items = items;
+            StateChanged?.Invoke();
         }
 
-        internal void AddItem(InventoryItem item) => _inner.Add(item);
-
-        object? IList.this[int index] { get => _inner[index]; set => throw new NotSupportedException(); }
-        bool IList.IsReadOnly => true;
-        bool IList.IsFixedSize => false;
-        bool ICollection.IsSynchronized => ((ICollection)_inner).IsSynchronized;
-        object ICollection.SyncRoot => ((ICollection)_inner).SyncRoot;
-        int IList.Add(object? value) => throw new NotSupportedException();
-        void IList.Clear() => throw new NotSupportedException();
-        bool IList.Contains(object? value) => ((IList)_inner).Contains(value);
-        int IList.IndexOf(object? value) => ((IList)_inner).IndexOf(value);
-        void IList.Insert(int index, object? value) => throw new NotSupportedException();
-        void IList.Remove(object? value) => throw new NotSupportedException();
-        void IList.RemoveAt(int index) => throw new NotSupportedException();
-        void ICollection.CopyTo(Array array, int index) => ((ICollection)_inner).CopyTo(array, index);
+        public void MutateWithoutNotify(Dictionary<long, AccumulatedItem> items)
+            => _items = items;
     }
 
     private sealed class FakeRefData : IReferenceDataService
@@ -224,7 +200,7 @@ public sealed class LiveInventoryViewModelTests
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
-        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, Mithril.Shared.Reference.SkillEntry> Skills { get; } = new Dictionary<string, Mithril.Shared.Reference.SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public IReadOnlyDictionary<string, AreaEntry> Areas { get; } = new Dictionary<string, AreaEntry>(StringComparer.Ordinal);

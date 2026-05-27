@@ -1,9 +1,10 @@
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
-using Mithril.GameState.Movement;
 using Xunit;
 
 namespace Legolas.Tests.ViewModels;
@@ -22,7 +23,7 @@ public class ManualAnchorNudgeTests
         Scale: 1.0, RotationRadians: 0.0, OriginX: 0.0, OriginY: 0.0,
         ReferenceCount: 3, ResidualPixels: 0.5);
 
-    private static (SessionState session, MapOverlayViewModel map, FakePlayerPositionTracker tracker)
+    private static (SessionState session, MapOverlayViewModel map, TestDomainEventBus bus)
         BuildSut()
     {
         var session = new SessionState { Mode = SessionMode.Survey };
@@ -35,13 +36,14 @@ public class ManualAnchorNudgeTests
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
-        var tracker = new FakePlayerPositionTracker();
+        var posState = new FakePositionState();
+        var bus = new TestDomainEventBus();
         var areaCal = new FakeAreaCalibrationService();
         areaCal.SetCalibration(Calib);
         var map = new MapOverlayViewModel(
             session, projector, optimizer, surveyFlow, brushes, settings,
-            pinCalibration: null, positionTracker: tracker, areaCalibration: areaCal);
-        return (session, map, tracker);
+            pinCalibration: null, positionState: posState, bus: bus, areaCalibration: areaCal);
+        return (session, map, bus);
     }
 
     [Fact]
@@ -74,12 +76,12 @@ public class ManualAnchorNudgeTests
     [Fact]
     public void A_fresh_tracker_fix_after_a_nudge_still_supersedes()
     {
-        var (session, map, tracker) = BuildSut();
+        var (session, map, bus) = BuildSut();
         session.SurveyPlayerPixel = new PixelPoint(100, 100);
         session.SurveyPlayerIsManual = true;
         map.Nudge(2, 0, step: 5); // → (110, 100)
 
-        tracker.Push(33, 0, 11, PlayerPositionSource.Movement);
+        bus.Publish(new PlayerPositionChanged(33, 0, 11, PositionSource.Movement, default));
 
         session.SurveyPlayerIsManual.Should().BeFalse("a zone-in/teleport wins");
         session.SurveyPlayerPixel.Should().Be(new PixelPoint(33, -11), "reprojected from the fresh fix");

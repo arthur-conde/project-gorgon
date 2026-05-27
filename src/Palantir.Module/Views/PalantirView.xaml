@@ -21,6 +21,9 @@
             <DataTemplate DataType="{x:Type vm:WorldStateViewModel}">
                 <local:WorldStateView/>
             </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:WorldHealthViewModel}">
+                <local:WorldHealthView/>
+            </DataTemplate>
             <DataTemplate DataType="{x:Type vm:NotificationTesterViewModel}">
                 <local:NotificationTesterView/>
             </DataTemplate>

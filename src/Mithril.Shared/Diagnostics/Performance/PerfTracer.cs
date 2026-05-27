@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.IO;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Core;
 using Serilog.Formatting.Compact;
+using MelLogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace Mithril.Shared.Diagnostics.Performance;
 
@@ -10,7 +12,7 @@ namespace Mithril.Shared.Diagnostics.Performance;
 /// Default <see cref="IPerfTracer"/>. Owns a per-session Serilog
 /// <see cref="Logger"/> writing to <c>perf-{yyyyMMdd-HHmmss}.jsonl</c> with
 /// <see cref="CompactJsonFormatter"/> — same shape as
-/// <see cref="SerilogDiagnosticsSink"/> so analysis tooling (e.g. the
+/// the diagnostics JSON log so analysis tooling (e.g. the
 /// <c>mithril-logs</c> MCP server) can consume both streams identically.
 ///
 /// Inactive emit calls take a single uncontended volatile read and return,
@@ -20,16 +22,16 @@ namespace Mithril.Shared.Diagnostics.Performance;
 public sealed class PerfTracer : IPerfTracer, IDisposable
 {
     private readonly string _perfDir;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly MelLogger? _diagLogger;
     private readonly object _lock = new();
     private Logger? _logger;
     private string? _currentSessionPath;
     private const int RetainedSessionFiles = 30;
 
-    public PerfTracer(string perfDir, IDiagnosticsSink? diag = null)
+    public PerfTracer(string perfDir, MelLogger? logger = null)
     {
         _perfDir = perfDir;
-        _diag = diag;
+        _diagLogger = logger;
     }
 
     public bool IsActive => Volatile.Read(ref _logger) is not null;
@@ -68,14 +70,14 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
 
                 Volatile.Write(ref _logger, logger);
                 Volatile.Write(ref _currentSessionPath, sessionPath);
-                _diag?.Info("PerfTrace", $"Session started: {sessionPath}");
+                _diagLogger?.LogInformation($"Session started: {sessionPath}");
 
                 EmitSessionHeader(header);
                 notify = true;
             }
             catch (Exception ex)
             {
-                _diag?.Warn("PerfTrace", $"Failed to start session: {ex.Message}");
+                _diagLogger?.LogWarning(ex, "Failed to start session");
                 _logger = null;
                 _currentSessionPath = null;
             }
@@ -97,7 +99,7 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
         toDispose?.Dispose();
         if (finishedPath is not null)
         {
-            _diag?.Info("PerfTrace", $"Session stopped: {finishedPath}");
+            _diagLogger?.LogInformation($"Session stopped: {finishedPath}");
             IsActiveChanged?.Invoke(this, EventArgs.Empty);
         }
     }

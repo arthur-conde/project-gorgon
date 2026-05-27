@@ -1,3 +1,4 @@
+using Arda.Composition;
 using Mithril.Shared.Reference;
 using Smaug.Domain;
 using FavorTier = Mithril.Reference.Models.Npcs.FavorTier;
@@ -34,7 +35,8 @@ public sealed class VendorCatalogService
 {
     private readonly IReferenceDataService _refData;
     private readonly IFavorLookupService? _favorLookup;
-    private readonly VendorSellContext _sellContext;
+    private readonly IPlayerProgressionState _progression;
+    private readonly INpcStateTracker? _npcTracker;
     private IReadOnlyList<VendorCatalogEntry> _entries = [];
 
     public IReadOnlyList<VendorCatalogEntry> Entries => _entries;
@@ -42,12 +44,14 @@ public sealed class VendorCatalogService
 
     public VendorCatalogService(
         IReferenceDataService refData,
-        VendorSellContext sellContext,
-        IFavorLookupService? favorLookup = null)
+        IPlayerProgressionState progression,
+        IFavorLookupService? favorLookup = null,
+        INpcStateTracker? npcTracker = null)
     {
         _refData = refData;
-        _sellContext = sellContext;
+        _progression = progression;
         _favorLookup = favorLookup;
+        _npcTracker = npcTracker;
 
         Rebuild();
         _refData.FileUpdated += (_, key) =>
@@ -57,6 +61,8 @@ public sealed class VendorCatalogService
         };
         if (_favorLookup is not null)
             _favorLookup.FavorChanged += (_, _) => Rebuild();
+        if (_npcTracker is not null)
+            _npcTracker.StateChanged += () => Rebuild();
     }
 
     public void Refresh() => Rebuild();
@@ -88,9 +94,10 @@ public sealed class VendorCatalogService
                     playerTier = _favorLookup?.GetFavorTier(src.Npc);
                     if (playerTier is not null)
                     {
-                        maxGold = VendorCapResolver.ResolveMaxGold(
-                            storeService, playerTier.Value, itemKeywords, _sellContext.CivicPrideLevel);
-                        acceptable = maxGold is not null && item.Value <= maxGold.Value;
+                    var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level + cp.BonusLevels : 0;
+                    maxGold = VendorCapResolver.ResolveMaxGold(
+                        storeService, playerTier.Value, itemKeywords, civicPride);
+                    acceptable = maxGold is not null && item.Value <= maxGold.Value;
                     }
                 }
 

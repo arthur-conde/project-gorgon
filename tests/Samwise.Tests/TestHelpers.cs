@@ -1,5 +1,5 @@
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
+using Arda.Contracts;
+using Arda.World.Player;
 using Samwise.Config;
 using Samwise.State;
 
@@ -14,88 +14,54 @@ internal sealed class FakeTime : TimeProvider
 }
 
 /// <summary>
-/// Fake <see cref="IWorldClock"/> that advances when callers explicitly set
-/// <see cref="Now"/>. The production clock is driven by frame timestamps from
-/// the L1 source-stream; the test stand-in just hands the value to consumers.
+/// Fake <see cref="ICalendarState"/> exposing a settable <see cref="LastTimestamp"/>
+/// for tests that need world-clock-driven time gates. The production calendar state
+/// advances from log-line timestamps; the test stand-in lets callers set it directly.
 /// </summary>
-internal sealed class FakeWorldClock : IWorldClock
+internal sealed class FakeCalendarState : ICalendarState
 {
-    public DateTimeOffset Now { get; set; } = DateTimeOffset.MinValue;
-    public long Frame { get; set; }
-    public WorldMode Mode { get; set; } = WorldMode.Live;
+    public DateTimeOffset? LastTimestamp { get; set; }
+    public string? CurrentShift { get; set; }
 }
 
 /// <summary>
-/// Fake <see cref="IPlayerWorld"/> exposing a <see cref="FakeWorldClock"/>
-/// plus a synthetic-publish <see cref="TestEventBus"/> for tests that drive
-/// PlayerWorld bus frames directly (post-#725 the Samwise inventory subscription
-/// reads <see cref="PlayerInventoryAdded"/> / <see cref="PlayerInventoryRemoved"/>
-/// off this bus). The register methods are unused by the in-tree tests —
-/// folder / composer registration lives in <c>Mithril.WorldSim.Player.Tests</c>.
+/// Headless typed pub-sub bus for Arda domain events in tests. Mirrors the
+/// real <c>DomainEventBus</c> shape — subscribers see events on the publishing
+/// thread. The test calls <see cref="Publish{T}(T)"/> and all registered
+/// handlers fire synchronously.
 /// </summary>
-internal sealed class FakePlayerWorld : IPlayerWorld
+internal sealed class TestDomainEventBus : IDomainEventSubscriber
 {
-    public FakeWorldClock WorldClock { get; } = new();
-    public TestEventBus TestBus { get; } = new();
-
-    public IWorldClock Clock => WorldClock;
-    public IWorldEventBus Bus => TestBus;
-
-    public void RegisterProducer<T>(IFrameProducer<T> producer) =>
-        throw new NotSupportedException("FakePlayerWorld is read-only.");
-    public void RegisterFolder<T>(IFolder<T> folder) =>
-        throw new NotSupportedException("FakePlayerWorld is read-only.");
-    public void RegisterComposer(IComposer composer) =>
-        throw new NotSupportedException("FakePlayerWorld is read-only.");
-    public Task StartMerger(CancellationToken ct) => Task.CompletedTask;
-}
-
-/// <summary>
-/// Headless typed pub-sub bus for tests — mirrors the real
-/// <c>WorldEventBus</c> shape (subscribers see <see cref="Frame{T}"/>
-/// payloads on the publishing thread) without the per-type registration
-/// machinery. The test calls <see cref="Publish{T}(DateTimeOffset, T)"/>
-/// with a payload and the bus wraps it into a <see cref="Frame{T}"/>.
-/// </summary>
-internal sealed class TestEventBus : IWorldEventBus
-{
-    private readonly object _lock = new();
     private readonly Dictionary<Type, List<Delegate>> _handlers = new();
 
-    public IDisposable Subscribe<T>(Action<Frame<T>> handler)
+    public IDisposable Subscribe<T>(Action<T> handler) where T : struct
     {
-        ArgumentNullException.ThrowIfNull(handler);
-        lock (_lock)
+        var type = typeof(T);
+        if (!_handlers.TryGetValue(type, out var list))
         {
-            if (!_handlers.TryGetValue(typeof(T), out var list))
-                _handlers[typeof(T)] = list = new List<Delegate>();
-            list.Add(handler);
-            return new Sub(this, typeof(T), handler);
+            list = new List<Delegate>();
+            _handlers[type] = list;
         }
+        list.Add(handler);
+        return new Subscription(this, type, handler);
     }
 
-    public void Publish<T>(DateTimeOffset timestamp, T payload)
+    public void Publish<T>(T domainEvent) where T : struct
     {
-        List<Delegate>? snap;
-        lock (_lock)
-        {
-            if (!_handlers.TryGetValue(typeof(T), out var list)) return;
-            snap = list.ToList();
-        }
-        var frame = new Frame<T>(timestamp, payload);
-        foreach (var h in snap) ((Action<Frame<T>>)h)(frame);
+        if (!_handlers.TryGetValue(typeof(T), out var list)) return;
+        foreach (var h in list.ToArray())
+            ((Action<T>)h)(domainEvent);
     }
 
-    public int SubscriberCountFor(Type t)
-    {
-        lock (_lock) return _handlers.TryGetValue(t, out var list) ? list.Count : 0;
-    }
+    public int SubscriberCountFor<T>() where T : struct
+        => _handlers.TryGetValue(typeof(T), out var list) ? list.Count : 0;
 
-    private sealed class Sub(TestEventBus o, Type t, Delegate h) : IDisposable
+    private sealed class Subscription(TestDomainEventBus bus, Type type, Delegate handler) : IDisposable
     {
         public void Dispose()
         {
-            lock (o._lock) { if (o._handlers.TryGetValue(t, out var list)) list.Remove(h); }
+            if (bus._handlers.TryGetValue(type, out var list))
+                list.Remove(handler);
         }
     }
 }

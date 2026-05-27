@@ -2,8 +2,8 @@ using System.IO;
 using System.Text.Json;
 using Arwen.Domain;
 using FluentAssertions;
-using Mithril.GameState.Inventory;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
+using Arda.World.Player;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 using Xunit;
@@ -1301,7 +1301,7 @@ public sealed class CalibrationServiceTests
             svc.Data.Observations.Should().HaveCount(1,
                 "second triplet is a replay — session id + instance id collide on the key");
             var obs = svc.Data.Observations[0];
-            obs.SessionId.Should().Be(session.Current!.SessionId);
+            obs.SessionId.Should().Be(session.Current!.Value.SessionId);
             obs.InstanceId.Should().Be(12345);
             obs.Timestamp.Should().Be(ts);
         }
@@ -1438,31 +1438,25 @@ public sealed class CalibrationServiceTests
     }
 
     /// <summary>
-    /// In-memory <see cref="IGameSessionService"/> stub: holds a single
-    /// <see cref="GameSession"/> and lets tests flip to a new one via
-    /// <see cref="Set"/>. Subscribe is implemented for shape but not used
-    /// by CalibrationService today (it just reads <c>Current</c>).
+    /// In-memory <see cref="ISessionComposer"/> stub: holds a single
+    /// <see cref="ComposedSession"/> and lets tests flip to a new one via
+    /// <see cref="Set"/>. CalibrationService only reads <c>Current</c>.
     /// </summary>
-    private sealed class FakeSession : IGameSessionService
+    private sealed class FakeSession : ISessionComposer
     {
-        public GameSession? Current { get; private set; }
-        public event EventHandler<GameSession>? SessionStarted;
+        public ComposedSession? Current { get; private set; }
+#pragma warning disable CS0067
+        public event Action? StateChanged;
+#pragma warning restore CS0067
         public FakeSession(string sessionId)
         {
             Set(sessionId);
         }
         public void Set(string sessionId)
         {
-            // Synthesize a plausible login instant from the id for shape; only
-            // SessionId matters for the dedup key.
-            Current = new GameSession(sessionId, "char", new DateTime(2026, 5, 11, 12, 25, 4, DateTimeKind.Utc), TimeSpan.Zero);
-            SessionStarted?.Invoke(this, Current);
+            Current = new ComposedSession("char", null,
+                new DateTimeOffset(2026, 5, 11, 12, 25, 4, TimeSpan.Zero),
+                TimeSpan.Zero, sessionId);
         }
-        public IDisposable Subscribe(Action<GameSession> handler)
-        {
-            if (Current is not null) handler(Current);
-            return new Sub();
-        }
-        private sealed class Sub : IDisposable { public void Dispose() { } }
     }
 }

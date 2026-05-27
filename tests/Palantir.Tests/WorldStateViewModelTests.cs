@@ -1,10 +1,8 @@
+using Arda.Abstractions.Logs;
+using Arda.Contracts;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using FluentAssertions;
-using Mithril.GameState.Areas;
-using Mithril.GameState.Areas.Parsing;
-using Mithril.GameState.Celestial;
-using Mithril.GameState.Movement;
-using Mithril.GameState.Pins;
-using Mithril.GameState.Weather;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Recipes;
 using Mithril.Shared.Reference;
@@ -18,10 +16,13 @@ public sealed class WorldStateViewModelTests
     private static readonly DateTimeOffset T =
         new(2026, 5, 18, 10, 45, 47, TimeSpan.Zero);
 
+    private static LogLineMetadata Meta(DateTimeOffset? ts = null)
+        => new(ts ?? T, DateTimeOffset.UtcNow, IsReplay: false);
+
     [Fact]
     public void No_area_no_position_shows_defaults()
     {
-        using var vm = NewVm(out _, out _);
+        using var vm = NewVm(out _);
 
         vm.AreaKey.Should().Be("(none)");
         vm.AreaResolved.Should().BeFalse();
@@ -33,10 +34,11 @@ public sealed class WorldStateViewModelTests
     public void Refresh_resolves_area_through_areas_json()
     {
         var refData = new FakeRefData(("AreaSerbule", new AreaEntry("AreaSerbule", "Serbule", "Serb")));
-        using var vm = NewVm(out _, out var area, refData);
+        var area = new FakeAreaState();
+        using var vm = NewVm(out _, area: area, refData: refData);
 
-        area.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-        vm.RefreshCommand.Execute(null); // PlayerAreaTracker has no change event — explicit re-read.
+        area.CurrentArea = "AreaSerbule";
+        vm.RefreshCommand.Execute(null);
 
         vm.AreaKey.Should().Be("AreaSerbule");
         vm.AreaFriendlyName.Should().Be("Serbule");
@@ -48,9 +50,10 @@ public sealed class WorldStateViewModelTests
     public void Short_name_suppressed_when_equal_to_friendly_name()
     {
         var refData = new FakeRefData(("AreaTomb1", new AreaEntry("AreaTomb1", "The Tomb", "The Tomb")));
-        using var vm = NewVm(out _, out var area, refData);
+        var area = new FakeAreaState();
+        using var vm = NewVm(out _, area: area, refData: refData);
 
-        area.Observe("LOADING LEVEL AreaTomb1", DateTime.UtcNow);
+        area.CurrentArea = "AreaTomb1";
         vm.RefreshCommand.Execute(null);
 
         vm.AreaFriendlyName.Should().Be("The Tomb");
@@ -60,9 +63,10 @@ public sealed class WorldStateViewModelTests
     [Fact]
     public void Area_key_known_but_absent_from_areas_json_falls_back_to_key()
     {
-        using var vm = NewVm(out _, out var area, new FakeRefData());
+        var area = new FakeAreaState();
+        using var vm = NewVm(out _, area: area, refData: new FakeRefData());
 
-        area.Observe("LOADING LEVEL AreaMysteryZone", DateTime.UtcNow);
+        area.CurrentArea = "AreaMysteryZone";
         vm.RefreshCommand.Execute(null);
 
         vm.AreaKey.Should().Be("AreaMysteryZone");
@@ -74,143 +78,118 @@ public sealed class WorldStateViewModelTests
     public void Position_event_populates_coords_instant_and_reresolves_area()
     {
         var refData = new FakeRefData(("AreaSerbule", new AreaEntry("AreaSerbule", "Serbule", "Serb")));
-        using var vm = NewVm(out var pos, out var area, refData);
+        var area = new FakeAreaState { CurrentArea = "AreaSerbule" };
+        using var vm = NewVm(out var bus, area: area, refData: refData);
 
-        area.Observe("LOADING LEVEL AreaSerbule", DateTime.UtcNow);
-        pos.Fire(new PlayerPosition(834.09, 290.24, 3480.81, T, PlayerPositionSource.Movement));
+        bus.Fire(new PlayerPositionChanged(834.09, 290.24, 3480.81, PositionSource.Movement, Meta()));
 
         vm.HasPosition.Should().BeTrue();
         vm.PositionText.Should().Be("X 834.09   Y 290.24   Z 3480.81");
         vm.MeasuredAtText.Should().Be("2026-05-18 10:45:47Z");
         vm.PositionSourceText.Should().Contain("ProcessNewPosition");
-        // The position update also re-resolved the area (zone-change coincidence).
         vm.AreaFriendlyName.Should().Be("Serbule");
     }
 
     [Fact]
-    public void Replay_on_subscribe_seeds_existing_position()
+    public void Seed_from_state_picks_up_existing_position()
     {
-        var pos = new FakePositionTracker();
-        pos.PreloadAsCurrent(new PlayerPosition(1, 2, 3, T, PlayerPositionSource.Spawn));
-        using var vm = new WorldStateViewModel(
-            pos, new PlayerAreaTracker(new AreaTransitionParser()),
-            new FakePinTracker(), new FakeCelestialState(), new FakeWeatherTracker(), null, a => a());
+        var pos = new FakePositionState { X = 1, Y = 2, Z = 3 };
+        using var vm = NewVm(out _, position: pos);
 
         vm.HasPosition.Should().BeTrue();
         vm.PositionText.Should().Be("X 1.00   Y 2.00   Z 3.00");
-        vm.PositionSourceText.Should().Contain("Spawn");
     }
 
     [Fact]
     public void Dispose_stops_observing_position()
     {
-        using var vm = NewVm(out var pos, out _);
+        using var vm = NewVm(out var bus);
         vm.Dispose();
 
-        pos.Fire(new PlayerPosition(9, 9, 9, T, PlayerPositionSource.Movement));
+        bus.Fire(new PlayerPositionChanged(9, 9, 9, PositionSource.Movement, Meta()));
 
         vm.HasPosition.Should().BeFalse("the disposed VM must unsubscribe");
     }
 
-    private static MapPin Pin(double x, double z, string label,
-        PinShape shape = PinShape.Dot, PinColor color = PinColor.Red)
-        => new(x, z, label, shape, color, RawList: 1);
+    // --- Pins ---------------------------------------------------------------
 
     [Fact]
-    public void Replay_on_subscribe_seeds_existing_pin_set()
+    public void Seed_from_state_picks_up_existing_pins()
     {
-        var pins = new FakePinTracker();
-        pins.Preload("AreaSerbule",
-            Pin(10, -20, "Vendor"), Pin(-5.5, 99.25, ""));
-        using var vm = new WorldStateViewModel(
-            new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
-            pins, new FakeCelestialState(), new FakeWeatherTracker(), null, a => a());
+        var pins = new FakeMapPinState([
+            new MapPinEntry(10, -20, "Vendor", 1, 2),
+            new MapPinEntry(-5.5, 99.25, "", 0, 0),
+        ]);
+        using var vm = NewVm(out _, pins: pins);
 
         vm.HasPins.Should().BeTrue();
         vm.PinCount.Should().Be(2);
         vm.Pins.Should().HaveCount(2);
-        // Snapshot replay reflects an existing set, not a fresh observation.
-        vm.PinsObservedAtText.Should().Be("—");
     }
 
     [Fact]
-    public void Added_pin_appends_row_and_stamps_observed_at()
+    public void MapPinAdded_refreshes_pin_rows_and_stamps_observed_at()
     {
-        using var vm = NewVm(out _, out _, out var pins);
-        var pin = Pin(123.4, -567.8, "Camp", PinShape.Square, PinColor.Green);
+        var pins = new FakeMapPinState();
+        using var vm = NewVm(out var bus, pins: pins);
 
-        pins.Fire(new PinSetChanged(
-            PinSetChange.Added, "AreaSerbule", pin, [pin], T));
+        pins.Set([new MapPinEntry(123.4, -567.8, "Camp", 2, 3)]);
+        bus.Fire(new MapPinAdded(123.4, -567.8, "Camp", 2, 3, Meta()));
 
         vm.HasPins.Should().BeTrue();
         vm.PinCount.Should().Be(1);
         var row = vm.Pins.Single();
         row.Label.Should().Be("Camp");
-        row.Appearance.Should().Be("green square");
         row.Coords.Should().Be("X 123.40   Z -567.80");
-        row.Detail.Should().Be("Green · Square");
         vm.PinsObservedAtText.Should().Be("2026-05-18 10:45:47Z");
     }
 
     [Fact]
-    public void Removed_pin_drops_the_row()
+    public void MapPinRemoved_drops_the_row()
     {
-        using var vm = NewVm(out _, out _, out var pins);
-        var a = Pin(1, 1, "A");
-        var b = Pin(2, 2, "B");
-        pins.Fire(new PinSetChanged(PinSetChange.Added, "X", b, [a, b], T));
+        var b = new MapPinEntry(2, 2, "B", 0, 0);
+        var pins = new FakeMapPinState([new MapPinEntry(1, 1, "A", 0, 0), b]);
+        using var vm = NewVm(out var bus, pins: pins);
 
-        pins.Fire(new PinSetChanged(PinSetChange.Removed, "X", a, [b], T));
+        pins.Set([b]);
+        bus.Fire(new MapPinRemoved(1, 1, "A", Meta()));
 
         vm.Pins.Select(r => r.Label).Should().ContainSingle().Which.Should().Be("B");
     }
 
     [Fact]
-    public void Area_change_clears_the_pin_set()
-    {
-        using var vm = NewVm(out _, out _, out var pins);
-        var p = Pin(1, 1, "Gone");
-        pins.Fire(new PinSetChanged(PinSetChange.Added, "AreaA", p, [p], T));
-
-        pins.Fire(new PinSetChanged(PinSetChange.AreaChanged, "AreaB", null, [], T));
-
-        vm.HasPins.Should().BeFalse();
-        vm.PinCount.Should().Be(0);
-        vm.Pins.Should().BeEmpty();
-    }
-
-    [Fact]
     public void Unlabeled_pin_falls_back_to_placeholder_name()
     {
-        using var vm = NewVm(out _, out _, out var pins);
-        var p = Pin(-3.14, 0, "  ", PinShape.Unknown, PinColor.Unknown);
+        var pins = new FakeMapPinState();
+        using var vm = NewVm(out var bus, pins: pins);
 
-        pins.Fire(new PinSetChanged(PinSetChange.Added, "X", p, [p], T));
+        pins.Set([new MapPinEntry(-3.14, 0, "", 0, 0)]);
+        bus.Fire(new MapPinAdded(-3.14, 0, "", 0, 0, Meta()));
 
         var row = vm.Pins.Single();
         row.Label.Should().Be("Unnamed pin");
-        row.Appearance.Should().Be("pin"); // unknown colour omitted, unknown shape → "pin"
         row.Coords.Should().Be("X -3.14   Z 0.00");
     }
 
     [Fact]
     public void Dispose_stops_observing_pins()
     {
-        using var vm = NewVm(out _, out _, out var pins);
+        var pins = new FakeMapPinState();
+        using var vm = NewVm(out var bus, pins: pins);
         vm.Dispose();
 
-        var p = Pin(9, 9, "Late");
-        pins.Fire(new PinSetChanged(PinSetChange.Added, "X", p, [p], T));
+        pins.Set([new MapPinEntry(9, 9, "Late", 0, 0)]);
+        bus.Fire(new MapPinAdded(9, 9, "Late", 0, 0, Meta()));
 
         vm.HasPins.Should().BeFalse("the disposed VM must unsubscribe from pins");
     }
 
-    // --- Moon phase -------------------------------------------------------
+    // --- Moon phase ---------------------------------------------------------
 
     [Fact]
     public void No_celestial_info_shows_default()
     {
-        using var vm = NewVm(out _, out _, out _, out _);
+        using var vm = NewVm(out _);
 
         vm.HasMoonPhase.Should().BeFalse();
         vm.MoonPhaseText.Should().Contain("no celestial");
@@ -220,9 +199,9 @@ public sealed class WorldStateViewModelTests
     [Fact]
     public void Celestial_event_surfaces_phase_raw_token_and_instant()
     {
-        using var vm = NewVm(out _, out _, out _, out var celestial);
+        using var vm = NewVm(out var bus);
 
-        celestial.Fire(new CelestialInfo(MoonPhase.WaxingCrescent, "WaxingCrescentMoon", T));
+        bus.Fire(new CelestialInfoChanged(null, "WaxingCrescentMoon", MoonPhase.WaxingCrescent, "Waxing Crescent", Meta()));
 
         vm.HasMoonPhase.Should().BeTrue();
         vm.MoonPhaseText.Should().Be("Waxing Crescent");
@@ -233,9 +212,9 @@ public sealed class WorldStateViewModelTests
     [Fact]
     public void Unrecognised_phase_token_is_flagged_but_still_shown()
     {
-        using var vm = NewVm(out _, out _, out _, out var celestial);
+        using var vm = NewVm(out var bus);
 
-        celestial.Fire(new CelestialInfo(MoonPhase.Unknown, "BloodMoonEclipse", T));
+        bus.Fire(new CelestialInfoChanged(null, "BloodMoonEclipse", MoonPhase.Unknown, "Blood Moon Eclipse", Meta()));
 
         vm.HasMoonPhase.Should().BeTrue();
         vm.MoonPhaseText.Should().Be("Blood Moon Eclipse");
@@ -243,13 +222,14 @@ public sealed class WorldStateViewModelTests
     }
 
     [Fact]
-    public void Replay_on_subscribe_seeds_existing_phase()
+    public void Seed_from_state_picks_up_existing_phase()
     {
-        var celestial = new FakeCelestialState();
-        celestial.PreloadAsCurrent(new CelestialInfo(MoonPhase.FullMoon, "FullMoon", T));
-        using var vm = new WorldStateViewModel(
-            new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
-            new FakePinTracker(), celestial, new FakeWeatherTracker(), null, a => a());
+        var celestial = new FakeCelestialState
+        {
+            CurrentPhaseRaw = "FullMoon", Phase = MoonPhase.FullMoon,
+            DisplayName = "Full Moon", MeasuredAt = T,
+        };
+        using var vm = NewVm(out _, celestial: celestial);
 
         vm.HasMoonPhase.Should().BeTrue();
         vm.MoonPhaseText.Should().Be("Full Moon");
@@ -258,238 +238,136 @@ public sealed class WorldStateViewModelTests
     [Fact]
     public void Dispose_stops_observing_celestial()
     {
-        using var vm = NewVm(out _, out _, out _, out var celestial);
+        using var vm = NewVm(out var bus);
         vm.Dispose();
 
-        celestial.Fire(new CelestialInfo(MoonPhase.FullMoon, "FullMoon", T));
+        bus.Fire(new CelestialInfoChanged(null, "FullMoon", MoonPhase.FullMoon, "Full Moon", Meta()));
 
         vm.HasMoonPhase.Should().BeFalse("the disposed VM must unsubscribe from celestial");
     }
 
-    // --- Weather ----------------------------------------------------------
+    // --- Weather ------------------------------------------------------------
 
     [Fact]
-    public void Replay_on_subscribe_seeds_existing_weather()
+    public void Seed_from_state_picks_up_existing_weather()
     {
-        var weather = new FakeWeatherTracker();
-        weather.Preload("AreaSerbule", new WeatherState("Foggy", true, T));
-        using var vm = new WorldStateViewModel(
-            new FakePositionTracker(), new PlayerAreaTracker(new AreaTransitionParser()),
-            new FakePinTracker(), new FakeCelestialState(), weather, null, a => a());
+        var weather = new FakeWeatherState { CurrentWeather = "Foggy" };
+        using var vm = NewVm(out _, weather: weather);
 
         vm.HasWeather.Should().BeTrue();
         vm.WeatherConditionText.Should().Be("Foggy");
-        vm.WeatherFlagText.Should().Be("True");
-        // Snapshot replay reflects existing state, not a fresh observation.
-        vm.WeatherObservedAtText.Should().Be("—");
     }
 
     [Fact]
-    public void Changed_weather_populates_condition_flag_and_observed_at()
+    public void Changed_weather_populates_condition_and_observed_at()
     {
-        using var vm = NewVm(out _, out _, out _, out _, out var weather);
+        using var vm = NewVm(out var bus);
 
-        weather.Fire(new WeatherChanged(
-            WeatherChangeKind.Changed, "AreaSerbule",
-            new WeatherState("Rainy", false, T), T));
+        bus.Fire(new Arda.World.Player.Events.WeatherChanged(null, "Rainy", Meta()));
 
         vm.HasWeather.Should().BeTrue();
         vm.WeatherConditionText.Should().Be("Rainy");
-        vm.WeatherFlagText.Should().Be("False");
         vm.WeatherObservedAtText.Should().Be("2026-05-18 10:45:47Z");
-    }
-
-    [Fact]
-    public void Map_change_resets_weather_to_unknown_not_stale()
-    {
-        using var vm = NewVm(out _, out _, out _, out _, out var weather);
-        weather.Fire(new WeatherChanged(
-            WeatherChangeKind.Changed, "AreaA", new WeatherState("Foggy", true, T), T));
-
-        weather.Fire(new WeatherChanged(
-            WeatherChangeKind.AreaChanged, "AreaB", null, T));
-
-        vm.HasWeather.Should().BeFalse();
-        vm.WeatherConditionText.Should().Be("(weather unknown for this map)");
-        vm.WeatherFlagText.Should().Be("—");
-        vm.WeatherObservedAtText.Should().Be("—");
     }
 
     [Fact]
     public void Dispose_stops_observing_weather()
     {
-        using var vm = NewVm(out _, out _, out _, out _, out var weather);
+        using var vm = NewVm(out var bus);
         vm.Dispose();
 
-        weather.Fire(new WeatherChanged(
-            WeatherChangeKind.Changed, "X", new WeatherState("Foggy", true, T), T));
+        bus.Fire(new Arda.World.Player.Events.WeatherChanged(null, "Foggy", Meta()));
 
         vm.HasWeather.Should().BeFalse("the disposed VM must unsubscribe from weather");
     }
 
-    private static WorldStateViewModel NewVm(
-        out FakePositionTracker pos, out PlayerAreaTracker area, IReferenceDataService? refData = null)
-        => NewVm(out pos, out area, out _, out _, out _, refData);
+    // --- Helpers ------------------------------------------------------------
 
     private static WorldStateViewModel NewVm(
-        out FakePositionTracker pos, out PlayerAreaTracker area,
-        out FakePinTracker pins, IReferenceDataService? refData = null)
-        => NewVm(out pos, out area, out pins, out _, out _, refData);
-
-    // 4-out (celestial) — kept so the moon-phase tests' call sites stay
-    // unchanged after the weather param was stacked on; delegates to the
-    // 5-out base discarding weather.
-    private static WorldStateViewModel NewVm(
-        out FakePositionTracker pos, out PlayerAreaTracker area,
-        out FakePinTracker pins, out FakeCelestialState celestial,
-        IReferenceDataService? refData = null)
-        => NewVm(out pos, out area, out pins, out celestial, out _, refData);
-
-    private static WorldStateViewModel NewVm(
-        out FakePositionTracker pos, out PlayerAreaTracker area,
-        out FakePinTracker pins, out FakeCelestialState celestial,
-        out FakeWeatherTracker weather,
+        out FakeBus bus,
+        FakePositionState? position = null,
+        FakeAreaState? area = null,
+        FakeMapPinState? pins = null,
+        FakeCelestialState? celestial = null,
+        FakeWeatherState? weather = null,
         IReferenceDataService? refData = null)
     {
-        pos = new FakePositionTracker();
-        area = new PlayerAreaTracker(new AreaTransitionParser());
-        pins = new FakePinTracker();
-        celestial = new FakeCelestialState();
-        weather = new FakeWeatherTracker();
-        // Synchronous dispatcher: test thread is the WPF thread.
-        return new WorldStateViewModel(pos, area, pins, celestial, weather, refData, a => a());
+        bus = new FakeBus();
+        return new WorldStateViewModel(
+            position ?? new FakePositionState(),
+            area ?? new FakeAreaState(),
+            pins ?? new FakeMapPinState(),
+            celestial ?? new FakeCelestialState(),
+            weather ?? new FakeWeatherState(),
+            bus,
+            refData,
+            dispatch: a => a());
     }
 
-    private sealed class FakePositionTracker : IPlayerPositionTracker
+    // --- Fakes --------------------------------------------------------------
+
+    internal sealed class FakeBus : IDomainEventSubscriber
     {
-        private PlayerPosition? _current;
-        private Action<PlayerPosition>? _handler;
+        private readonly Dictionary<Type, List<Delegate>> _handlers = new();
 
-        public PlayerPosition? Current => _current;
-
-        public void PreloadAsCurrent(PlayerPosition p) => _current = p;
-
-        public void Fire(PlayerPosition p)
+        public IDisposable Subscribe<T>(Action<T> handler) where T : struct
         {
-            _current = p;
-            _handler?.Invoke(p);
+            var type = typeof(T);
+            if (!_handlers.TryGetValue(type, out var list))
+            {
+                list = [];
+                _handlers[type] = list;
+            }
+            list.Add(handler);
+            return new Sub(() => list.Remove(handler));
         }
 
-        public IDisposable Subscribe(Action<PlayerPosition> handler)
+        public void Fire<T>(T evt) where T : struct
         {
-            if (_current is not null) handler(_current);
-            _handler = handler;
-            return new Sub(this);
+            if (_handlers.TryGetValue(typeof(T), out var list))
+                foreach (var h in list.ToArray())
+                    ((Action<T>)h)(evt);
         }
 
-        private sealed class Sub(FakePositionTracker owner) : IDisposable
+        private sealed class Sub(Action onDispose) : IDisposable
         {
-            public void Dispose() => owner._handler = null;
-        }
-    }
-
-    private sealed class FakePinTracker : IPlayerPinTracker
-    {
-        private string? _area;
-        private IReadOnlyList<MapPin> _pins = [];
-        private Action<PinSetChanged>? _handler;
-
-        public string? CurrentArea => _area;
-        public IReadOnlyList<MapPin> CurrentAreaPins => _pins;
-
-        /// <summary>Seed the set so the Subscribe replay (Snapshot) carries it.</summary>
-        public void Preload(string area, params MapPin[] pins)
-        {
-            _area = area;
-            _pins = pins;
-        }
-
-        public void Fire(PinSetChanged change)
-        {
-            _area = change.Area;
-            _pins = change.Pins;
-            _handler?.Invoke(change);
-        }
-
-        public IDisposable Subscribe(Action<PinSetChanged> handler)
-        {
-            // Mirror PlayerPinTracker: synchronous Snapshot replay first.
-            handler(new PinSetChanged(
-                PinSetChange.Snapshot, _area, null, _pins, DateTimeOffset.UnixEpoch));
-            _handler = handler;
-            return new Sub(this);
-        }
-
-        private sealed class Sub(FakePinTracker owner) : IDisposable
-        {
-            public void Dispose() => owner._handler = null;
+            public void Dispose() => onDispose();
         }
     }
 
-    private sealed class FakeCelestialState : IPlayerCelestialState
+    internal sealed class FakePositionState : IPositionState
     {
-        private CelestialInfo? _current;
-        private Action<CelestialInfo>? _handler;
-
-        public CelestialInfo? Current => _current;
-
-        public void PreloadAsCurrent(CelestialInfo c) => _current = c;
-
-        public void Fire(CelestialInfo c)
-        {
-            _current = c;
-            _handler?.Invoke(c);
-        }
-
-        public IDisposable Subscribe(Action<CelestialInfo> handler)
-        {
-            if (_current is not null) handler(_current);
-            _handler = handler;
-            return new Sub(this);
-        }
-
-        private sealed class Sub(FakeCelestialState owner) : IDisposable
-        {
-            public void Dispose() => owner._handler = null;
-        }
+        public double? X { get; set; }
+        public double? Y { get; set; }
+        public double? Z { get; set; }
     }
 
-    private sealed class FakeWeatherTracker : IPlayerWeatherTracker
+    internal sealed class FakeAreaState : IAreaState
     {
-        private string? _area;
-        private WeatherState? _current;
-        private Action<WeatherChanged>? _handler;
+        public string? CurrentArea { get; set; }
+    }
 
-        public string? CurrentArea => _area;
-        public WeatherState? Current => _current;
+    internal sealed class FakeMapPinState : IMapPinState
+    {
+        public IReadOnlyCollection<MapPinEntry> Pins { get; private set; }
 
-        /// <summary>Seed so the Subscribe replay (Snapshot) carries it.</summary>
-        public void Preload(string area, WeatherState? state)
-        {
-            _area = area;
-            _current = state;
-        }
+        public FakeMapPinState(IReadOnlyCollection<MapPinEntry>? pins = null)
+            => Pins = pins ?? [];
 
-        public void Fire(WeatherChanged change)
-        {
-            _area = change.Area;
-            _current = change.State;
-            _handler?.Invoke(change);
-        }
+        public void Set(IReadOnlyCollection<MapPinEntry> pins) => Pins = pins;
+    }
 
-        public IDisposable Subscribe(Action<WeatherChanged> handler)
-        {
-            // Mirror PlayerWeatherTracker: synchronous Snapshot replay first.
-            handler(new WeatherChanged(
-                WeatherChangeKind.Snapshot, _area, _current, DateTimeOffset.UnixEpoch));
-            _handler = handler;
-            return new Sub(this);
-        }
+    internal sealed class FakeCelestialState : ICelestialState
+    {
+        public string? CurrentPhaseRaw { get; set; }
+        public MoonPhase Phase { get; set; }
+        public string? DisplayName { get; set; }
+        public DateTimeOffset? MeasuredAt { get; set; }
+    }
 
-        private sealed class Sub(FakeWeatherTracker owner) : IDisposable
-        {
-            public void Dispose() => owner._handler = null;
-        }
+    internal sealed class FakeWeatherState : IWeatherState
+    {
+        public string? CurrentWeather { get; set; }
     }
 
     private sealed class FakeRefData : IReferenceDataService
@@ -509,7 +387,7 @@ public sealed class WorldStateViewModelTests
         public ItemKeywordIndex KeywordIndex { get; } = ItemKeywordIndex.Empty;
         public IReadOnlyDictionary<string, Recipe> Recipes { get; } = new Dictionary<string, Recipe>();
         public IReadOnlyDictionary<string, Recipe> RecipesByInternalName { get; } = new Dictionary<string, Recipe>();
-        public IReadOnlyDictionary<string, SkillEntry> Skills { get; } = new Dictionary<string, SkillEntry>();
+        public IReadOnlyDictionary<string, Mithril.Shared.Reference.SkillEntry> Skills { get; } = new Dictionary<string, Mithril.Shared.Reference.SkillEntry>();
         public IReadOnlyDictionary<string, XpTableEntry> XpTables { get; } = new Dictionary<string, XpTableEntry>();
         public IReadOnlyDictionary<string, NpcEntry> Npcs { get; } = new Dictionary<string, NpcEntry>();
         public IReadOnlyDictionary<string, IReadOnlyList<ItemSource>> ItemSources { get; } = new Dictionary<string, IReadOnlyList<ItemSource>>();

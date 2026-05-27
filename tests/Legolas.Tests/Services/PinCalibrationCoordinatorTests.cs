@@ -1,11 +1,11 @@
+using Arda.World.Player;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
 using Mithril.Shared.Reference;
 using Xunit;
-using PinShape = Mithril.GameState.Pins.PinShape;
-using PinColor = Mithril.GameState.Pins.PinColor;
 
 namespace Legolas.Tests.Services;
 
@@ -17,21 +17,23 @@ namespace Legolas.Tests.Services;
 /// </summary>
 public class PinCalibrationCoordinatorTests
 {
-    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakePlayerPinTracker pins, LegolasSettings settings) Build()
+    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakeMapPinState pins, LegolasSettings settings) Build()
     {
         var calib = new FakeCalib();
-        var pins = new FakePlayerPinTracker();
+        var pins = new FakeMapPinState();
+        var bus = new TestDomainEventBus();
         var settings = new LegolasSettings();
-        return (new PinCalibrationCoordinator(calib, pins, settings), calib, pins, settings);
+        return (new PinCalibrationCoordinator(calib, pins, bus, settings), calib, pins, settings);
     }
 
-    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakePlayerPinTracker pins, SessionState session) BuildWithSession()
+    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakeMapPinState pins, SessionState session) BuildWithSession()
     {
         var calib = new FakeCalib();
-        var pins = new FakePlayerPinTracker();
+        var pins = new FakeMapPinState();
+        var bus = new TestDomainEventBus();
         var settings = new LegolasSettings();
         var session = new SessionState();
-        return (new PinCalibrationCoordinator(calib, pins, settings, session), calib, pins, session);
+        return (new PinCalibrationCoordinator(calib, pins, bus, settings, session), calib, pins, session);
     }
 
     // A well-conditioned scale-only transform: pixel = (100 + 2X, 100 - 2Z),
@@ -56,7 +58,7 @@ public class PinCalibrationCoordinatorTests
         coord.Phase.Should().Be(CalibrationPhase.Drop, "no pins yet");
 
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(1, 2), FakePlayerPinTracker.Pin(3, 4), FakePlayerPinTracker.Pin(5, 6));
+            FakeMapPinState.Pin(1, 2), FakeMapPinState.Pin(3, 4), FakeMapPinState.Pin(5, 6));
         coord.Arm();
         coord.Phase.Should().Be(CalibrationPhase.Pair, "≥3 usable pins → skip Drop");
     }
@@ -98,13 +100,14 @@ public class PinCalibrationCoordinatorTests
     public void Suggestion_is_the_farthest_unpaired_pin_from_already_paired()
     {
         var (coord, _, pins, _) = Build();
-        var near = FakePlayerPinTracker.Pin(11, 10);
-        var far = FakePlayerPinTracker.Pin(900, 900);
-        pins.SeedExisting(FakePlayerPinTracker.Pin(10, 10), near, far);
+        var near = FakeMapPinState.Pin(11, 10);
+        var far = FakeMapPinState.Pin(900, 900);
+        pins.SeedExisting(FakeMapPinState.Pin(10, 10), near, far);
         coord.Arm(); // Pair (3 pins)
 
         // First suggestion (no pairs yet) is deterministic: list head.
-        coord.SuggestedPin!.X.Should().Be(10);
+        coord.SuggestedPin.Should().NotBeNull();
+        coord.SuggestedPin!.Value.X.Should().Be(10);
         coord.PairClick(Project(10, 10));
 
         // Now the farthest-from-(10,10) unpaired pin wins.
@@ -115,9 +118,9 @@ public class PinCalibrationCoordinatorTests
     public void Skip_defers_the_pin_without_recording_a_pair()
     {
         var (coord, _, pins, _) = Build();
-        var a = FakePlayerPinTracker.Pin(10, 10);
-        var b = FakePlayerPinTracker.Pin(20, 20);
-        var c = FakePlayerPinTracker.Pin(30, 30);
+        var a = FakeMapPinState.Pin(10, 10);
+        var b = FakeMapPinState.Pin(20, 20);
+        var c = FakeMapPinState.Pin(30, 30);
         pins.SeedExisting(a, b, c);
         coord.Arm();
 
@@ -131,9 +134,9 @@ public class PinCalibrationCoordinatorTests
     public void Override_pin_takes_precedence_over_the_spread_suggestion()
     {
         var (coord, _, pins, _) = Build();
-        var a = FakePlayerPinTracker.Pin(10, 10);
-        var b = FakePlayerPinTracker.Pin(20, 20);
-        var c = FakePlayerPinTracker.Pin(30, 30);
+        var a = FakeMapPinState.Pin(10, 10);
+        var b = FakeMapPinState.Pin(20, 20);
+        var c = FakeMapPinState.Pin(30, 30);
         pins.SeedExisting(a, b, c);
         coord.Arm();
 
@@ -152,9 +155,9 @@ public class PinCalibrationCoordinatorTests
     {
         var (coord, calib, pins, _) = Build();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         coord.Arm();
 
         coord.PairClick(Project(10, 10));
@@ -173,7 +176,7 @@ public class PinCalibrationCoordinatorTests
     public void Duplicate_world_point_is_rejected_to_keep_the_solve_conditioned()
     {
         var (coord, _, pins, _) = Build();
-        var p = FakePlayerPinTracker.Pin(10, 20, "A");
+        var p = FakeMapPinState.Pin(10, 20, "A");
         pins.SeedExisting(p);
         coord.Arm();
         coord.TogglePhase(); // 1 pin → entered in Drop; move to Pair
@@ -191,9 +194,9 @@ public class PinCalibrationCoordinatorTests
     {
         var (coord, calib, pins, _) = Build();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         coord.Arm();
         PairAllPerfectly(coord); // marker[0] is the first-suggested pin = (10,10)
 
@@ -226,9 +229,9 @@ public class PinCalibrationCoordinatorTests
     {
         var (coord, _, pins, _) = Build();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         coord.Arm();
         coord.PairClick(Project(10, 10));
         coord.TrySelectMarkerAt(new PixelPoint(9999, 9999), radius: 14).Should().BeFalse();
@@ -241,9 +244,9 @@ public class PinCalibrationCoordinatorTests
     {
         var (coord, calib, pins, _) = Build();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         coord.Arm();
 
         coord.PreviewResidual.Should().BeNull("under 3 pairs");
@@ -270,9 +273,9 @@ public class PinCalibrationCoordinatorTests
     {
         var (coord, calib, pins, settings) = Build();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         coord.Arm();
 
         coord.PairClick(Project(10, 10));
@@ -295,9 +298,9 @@ public class PinCalibrationCoordinatorTests
     public void No_correction_run_solves_equivalently_and_only_Confirm_persists()
     {
         var (coord, calib, pins, _) = Build();
-        var a = FakePlayerPinTracker.Pin(10, 10);
-        var b = FakePlayerPinTracker.Pin(50, 60);
-        var c = FakePlayerPinTracker.Pin(90, 20);
+        var a = FakeMapPinState.Pin(10, 10);
+        var b = FakeMapPinState.Pin(50, 60);
+        var c = FakeMapPinState.Pin(90, 20);
         pins.SeedExisting(a, b, c);
         coord.Arm();
 
@@ -323,9 +326,9 @@ public class PinCalibrationCoordinatorTests
     {
         var (coord, calib, pins, session) = BuildWithSession();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         session.CurrentMapZoom = 1.5;
         coord.Arm();
         // Walk the spread-suggested order so each pin maps to its OWN perfect
@@ -346,9 +349,9 @@ public class PinCalibrationCoordinatorTests
         // unit-test paths and the pre-#524 default stamp.
         var (coord, calib, pins, _) = Build();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         coord.Arm();
         PairAllPerfectly(coord);
 
@@ -361,9 +364,9 @@ public class PinCalibrationCoordinatorTests
     {
         var (coord, _, pins, _) = Build();
         pins.SeedExisting(
-            FakePlayerPinTracker.Pin(10, 10),
-            FakePlayerPinTracker.Pin(50, 60),
-            FakePlayerPinTracker.Pin(90, 20));
+            FakeMapPinState.Pin(10, 10),
+            FakeMapPinState.Pin(50, 60),
+            FakeMapPinState.Pin(90, 20));
         coord.Arm();
         coord.PairClick(Project(10, 10));
         coord.PairedCount.Should().Be(1);

@@ -1,7 +1,8 @@
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
-using Legolas.Tests;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
 using Mithril.Shared.Reference;
 
@@ -656,7 +657,7 @@ public class CalibrationSessionViewModelTests
 
     // ---- #454 freehand pin calibration ----------------------------------
 
-    private static CalibrationSessionViewModel ArmedPinVm(out FakeService svc, out FakePlayerPinTracker pins)
+    private static CalibrationSessionViewModel ArmedPinVm(out FakeService svc, out TestDomainEventBus bus)
     {
         svc = new FakeService
         {
@@ -664,8 +665,8 @@ public class CalibrationSessionViewModelTests
             CurrentAreaKey = "AreaEltibule",
             SolveResult = new AreaCalibration(0.4, 0.1, 5, 6, 3, 0.0),
         };
-        pins = new FakePlayerPinTracker();
-        var vm = new CalibrationSessionViewModel(svc, pins);
+        bus = new TestDomainEventBus();
+        var vm = new CalibrationSessionViewModel(svc, bus);
         vm.TogglePinCalibrationCommand.Execute(null);
         vm.PinCalibrationArmed.Should().BeTrue();
         return vm;
@@ -675,12 +676,12 @@ public class CalibrationSessionViewModelTests
     public void Disarmed_pins_are_dropped_so_area_entry_replay_cannot_leak()
     {
         var svc = new FakeService { CurrentAreaKey = "AreaEltibule" };
-        var pins = new FakePlayerPinTracker();
-        var vm = new CalibrationSessionViewModel(svc, pins);
+        var bus = new TestDomainEventBus();
+        var vm = new CalibrationSessionViewModel(svc, bus);
 
         // Bulk area-entry replay arrives BEFORE the user arms — must be ignored.
-        pins.Add(-521.96, 368.39);
-        pins.Add(367.28, 2798.03);
+        bus.Publish(new MapPinAdded(-521.96, 368.39, "", 0, 0, default));
+        bus.Publish(new MapPinAdded(367.28, 2798.03, "", 0, 0, default));
         vm.PendingPinCount.Should().Be(0);
 
         // A click while disarmed/empty doesn't fabricate a placement.
@@ -691,16 +692,16 @@ public class CalibrationSessionViewModelTests
     [Fact]
     public void Pins_pair_with_overlay_clicks_in_turn_order_never_by_label()
     {
-        var vm = ArmedPinVm(out var svc, out var pins);
+        var vm = ArmedPinVm(out var svc, out var bus);
 
-        // The tracker hands the VM a bare world point — there is structurally
+        // The bus hands the VM a bare world point — there is structurally
         // no label the VM could key off. Drop three distinct world points…
         var w0 = new WorldCoord(-521.96, 0, 368.39);
         var w1 = new WorldCoord(367.28, 0, 2798.03);
         var w2 = new WorldCoord(1145.39, 0, 1323.40);
-        pins.Add(w0.X, w0.Z);
-        pins.Add(w1.X, w1.Z);
-        pins.Add(w2.X, w2.Z);
+        bus.Publish(new MapPinAdded(w0.X, w0.Z, "", 0, 0, default));
+        bus.Publish(new MapPinAdded(w1.X, w1.Z, "", 0, 0, default));
+        bus.Publish(new MapPinAdded(w2.X, w2.Z, "", 0, 0, default));
         vm.PendingPinCount.Should().Be(3);
 
         // …then click three overlay spots. Pairing is OLDEST-first (turn
@@ -723,8 +724,8 @@ public class CalibrationSessionViewModelTests
     [Fact]
     public void ClearPlacements_disarms_and_drops_pending_pins()
     {
-        var vm = ArmedPinVm(out _, out var pins);
-        pins.Add(1, 2);
+        var vm = ArmedPinVm(out _, out var bus);
+        bus.Publish(new MapPinAdded(1, 2, "", 0, 0, default));
         vm.PendingPinCount.Should().Be(1);
 
         vm.ClearPlacementsCommand.Execute(null);
@@ -732,7 +733,7 @@ public class CalibrationSessionViewModelTests
         vm.PinCalibrationArmed.Should().BeFalse();
         vm.PendingPinCount.Should().Be(0);
         // A pin arriving now is ignored again (disarmed).
-        pins.Add(3, 4);
+        bus.Publish(new MapPinAdded(3, 4, "", 0, 0, default));
         vm.PendingPinCount.Should().Be(0);
     }
 

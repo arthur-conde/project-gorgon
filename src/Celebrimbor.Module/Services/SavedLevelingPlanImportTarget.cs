@@ -1,8 +1,8 @@
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Windows;
 using Celebrimbor.ViewModels;
 using Mithril.Planning;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 
 namespace Celebrimbor.Services;
@@ -21,25 +21,25 @@ public sealed class SavedLevelingPlanImportTarget : ISavedLevelingPlanImportTarg
     private readonly LevelingPlanStore _store;
     private readonly PlansViewModel _plans;
     private readonly IModuleActivator? _activator;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public SavedLevelingPlanImportTarget(
         LevelingPlanStore store,
         PlansViewModel plans,
         IModuleActivator? activator = null,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _store = store;
         _plans = plans;
         _activator = activator;
-        _diag = diag;
+        _logger = logger;
     }
 
     public void ImportPlan(string planJson, string source)
     {
         if (string.IsNullOrWhiteSpace(planJson))
         {
-            _diag?.Info("Celebrimbor", $"Plan import from \"{source}\": empty payload, dropped.");
+            _logger?.LogInformation($"Plan import from \"{source}\": empty payload, dropped.");
             return;
         }
 
@@ -50,13 +50,13 @@ public sealed class SavedLevelingPlanImportTarget : ISavedLevelingPlanImportTarg
         }
         catch (JsonException ex)
         {
-            _diag?.Info("Celebrimbor", $"Plan import from \"{source}\": invalid JSON ({ex.Message}), dropped.");
+            _logger?.LogInformation($"Plan import from \"{source}\": invalid JSON ({ex.Message}), dropped.");
             return;
         }
 
         if (plan is null || plan.Phases.Count == 0)
         {
-            _diag?.Info("Celebrimbor", $"Plan import from \"{source}\": no phases, dropped.");
+            _logger?.LogInformation($"Plan import from \"{source}\": no phases, dropped.");
             return;
         }
 
@@ -64,9 +64,9 @@ public sealed class SavedLevelingPlanImportTarget : ISavedLevelingPlanImportTarg
         {
             _store.Upsert(plan);
             if (_activator is not null && !_activator.Activate("celebrimbor"))
-                _diag?.Info("Celebrimbor", "Plan import: module activator could not find 'celebrimbor'.");
+                _logger?.LogInformation("Plan import: module activator could not find 'celebrimbor'.");
             _plans.SurfaceImported(plan.Id);
-            _diag?.Info("Celebrimbor", $"Imported leveling plan \"{plan.Skill} → {plan.GoalLevel}\" from \"{source}\".");
+            _logger?.LogInformation($"Imported leveling plan \"{plan.Skill} → {plan.GoalLevel}\" from \"{source}\".");
         });
     }
 

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Arda.Dispatch</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Arda.Abstractions\Arda.Abstractions.csproj" />
+    <ProjectReference Include="..\Arda.Contracts\Arda.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Arda.Dispatch.Tests" />
+    <InternalsVisibleTo Include="Arda.Composition.Tests" />
+    <InternalsVisibleTo Include="Arda.Hosting" />
+    <InternalsVisibleTo Include="Arda.Hosting.Tests" />
+  </ItemGroup>
+
+</Project>

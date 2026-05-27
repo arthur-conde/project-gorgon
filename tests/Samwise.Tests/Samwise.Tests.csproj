@@ -12,6 +12,7 @@
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\..\src\Samwise.Module\Samwise.Module.csproj" />
   </ItemGroup>
 </Project>

@@ -1,17 +1,22 @@
+using System.Collections.Frozen;
+using Arda.Composition;
+using Arda.Contracts.State.Health;
+using Arda.Hosting;
+using Arda.Wpf;
+using Arda.World.Chat;
+using Arda.World.Player;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
-using Mithril.GameState.DependencyInjection;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics.Performance;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
+using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.DependencyInjection;
-using Mithril.WorldSim.Chat.DependencyInjection;
-using Mithril.WorldSim.Player.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Mithril.Shell.DependencyInjection;
@@ -40,21 +45,14 @@ public sealed record ShellCompositionOptions(
 public static class ShellComposition
 {
     /// <summary>
-    /// Top-level composition entry point. Wires the full shell service graph
-    /// AND appends the trailing <see cref="WorldMergerStartHostedService"/>
-    /// (#696 Call 2) so each world's merger drain starts strictly after every
-    /// other hosted service has finished its registration work. The "registered
-    /// LAST" invariant is enforced structurally — call sites use this method
-    /// rather than <see cref="AddMithrilShell"/> so they cannot forget the
-    /// trailing merger start, and a future contributor adding another shell
-    /// registration edits <see cref="AddMithrilShell"/> while the trailing
-    /// invariant is preserved automatically here.
+    /// Top-level composition entry point. Wires the full shell service graph.
+    /// The Arda pipeline (L0–L3 + L4 composition) is the sole log-processing
+    /// engine; the legacy world-sim merger was retired alongside
+    /// <c>Mithril.GameState</c> and <c>Mithril.WorldSim.*</c>.
     /// </summary>
     public static IServiceCollection AddMithrilApp(
         this IServiceCollection services, ShellCompositionOptions o) =>
-        services
-            .AddMithrilShell(o)
-            .AddWorldMergerStart();
+        services.AddMithrilShell(o);
 
     /// <summary>
     /// The complete shell service registration, in order. This is the single source
@@ -62,34 +60,17 @@ public static class ShellComposition
     /// it via <see cref="AddMithrilApp"/> so the guard validates exactly what ships.
     /// </summary>
     public static IServiceCollection AddMithrilShell(
-        this IServiceCollection services, ShellCompositionOptions o) =>
+        this IServiceCollection services, ShellCompositionOptions o)
+    {
         services
             .AddMithrilSettings<UserPreferences>(o.PreferencesPath, UserPreferencesJsonContext.Default.UserPreferences)
             .AddSingleton<ISettingsStore<ShellSettings>>(o.ShellStore)
             .AddSingleton(o.ShellSettings)
             .AddSingleton<IActiveCharacterPersistence>(o.ShellSettings)
             .AddSingleton(o.GameConfig)
-            .AddMithrilDiagnostics(o.LogDir)
+            .AddMithrilLogging(o.LogDir)
             .AddMithrilPerfTrace(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
-            .AddMithrilGameServices(sp => () => sp.GetRequiredService<ShellSettings>().MirrorRawLogLinesToDiagnostics)
-            .AddMithrilLogActorPipeline(sp => () => sp.GetRequiredService<ShellSettings>().CaptureRawPlayerLogLines)
-            // L1 driver — consumed by archetype-A GameState producers (#550 PR 2)
-            // and the archetype-B consumer fleet (#550 PR 3..N). Registered
-            // between the L0.5 classifier+splitter (which it consumes via
-            // the typed pipes + the unified pipe — #556) and
-            // AddMithrilGameState (whose producers depend on ILogStreamDriver).
-            .AddMithrilLogStreamDriver()
-            // PlayerWorld + ChatWorld register the world singletons and the
-            // L1 / chat-tail producers. Under #696 (Call 2) neither extension
-            // registers a hosted service — the merger drain starts trailing,
-            // from the WorldMergerStartHostedService appended by AddMithrilApp.
-            // Registration order between AddPlayerWorld / AddChatWorld and
-            // AddMithrilGameState is therefore irrelevant for hosted-service
-            // ordering; resolution-order is what matters, and DI resolution is
-            // order-independent.
-            .AddPlayerWorld()
-            .AddChatWorld()
-            .AddMithrilGameState()
+            .AddMithrilGameServices()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)
             .AddMithrilCommunityCalibration(o.CommunityCalibrationCacheDir)
@@ -110,4 +91,69 @@ public static class ShellComposition
             .AddMithrilItemDetail()
             .AddMithrilIngredientSources()
             .AddMithrilShellCommands();
+
+        // L4 composition (singleton factories resolved eagerly by the bootstrap
+        // below). Registered before the Arda drivers so hosted-service startup
+        // order ensures all event subscriptions are wired before replay begins.
+        services.AddArdaComposition(
+            o.CharactersRootDir,
+            recipeKeyResolverFactory: sp =>
+            {
+                var refData = sp.GetRequiredService<IReferenceDataService>();
+                return id =>
+                {
+                    var key = $"recipe_{id}";
+                    return refData.Recipes.TryGetValue(key, out var recipe)
+                        ? recipe.InternalName ?? key
+                        : key;
+                };
+            },
+            serverFallbackFactory: sp =>
+            {
+                var active = sp.GetRequiredService<IActiveCharacterService>();
+                return () => active.ActiveServer;
+            });
+
+        services.AddHostedService<CompositionBootstrap>();
+
+        // Arda pipeline (L0–L3): the sole log-processing engine.
+        // Uses the game root as log directory (Player.log + ChatLogs/).
+        services
+            .AddArda(new ArdaOptions(o.GameConfig.GameRoot))
+            .AddPlayerWorld(
+                itemPoolFactory: sp =>
+                {
+                    var refData = sp.GetRequiredService<IReferenceDataService>();
+                    var keys = refData.ItemsByInternalName.Keys;
+                    var identity = keys.ToFrozenDictionary(k => k, k => k, StringComparer.Ordinal);
+                    return new Arda.Dispatch.InternPool(identity);
+                },
+                projectToGameHourFactory: _ => at => GameClock.Project(at).Hour,
+                shiftsFactory: sp =>
+                {
+                    var catalog = sp.GetRequiredService<IShiftCatalog>();
+                    return catalog.Shifts.Select(s => (s.Slug, s.StartHour)).ToList();
+                })
+            .AddChatWorld();
+
+        services.AddSingleton<InventoryProjection>();
+
+        services.AddSingleton<WorldHealthView>();
+        services.AddSingleton<IWorldHealthView>(sp => sp.GetRequiredService<WorldHealthView>());
+        services.AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<WorldHealthView>());
+        services.AddHostedService(sp => sp.GetRequiredService<WorldHealthView>());
+
+        services.AddHostedService<ActiveCharacterLogSynchronizer>(sp => new ActiveCharacterLogSynchronizer(
+            sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
+            sp.GetRequiredService<IActiveCharacterService>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("ActiveChar")));
+
+        services.AddSingleton<SessionAgreementComposer>(sp => new SessionAgreementComposer(
+            sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("SessionAgreement")));
+        services.AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<SessionAgreementComposer>());
+        services.AddHostedService(sp => sp.GetRequiredService<SessionAgreementComposer>());
+
+        return services;
+    }
 }

@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Arda.Contracts.State.Health;
+using Arda.Dispatch;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
@@ -59,6 +61,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly ModuleGates _gates;
     private readonly DispatcherTimer _gameClockTimer;
     private readonly IPerfTracer _perf;
+    private readonly IWorldHealthView _health;
 
     public ShellViewModel(
         IServiceProvider services,
@@ -72,7 +75,8 @@ public sealed partial class ShellViewModel : ObservableObject
         IAttentionAggregator attention,
         IGameClock gameClock,
         IShiftCatalog shiftCatalog,
-        IPerfTracer perf)
+        IPerfTracer perf,
+        IWorldHealthView health)
     {
         _services = services;
         _settings = settings;
@@ -85,6 +89,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _gameClock = gameClock;
         _shiftCatalog = shiftCatalog;
         _perf = perf;
+        _health = health;
         _allModules = modules.OrderBy(m => m.SortOrder).ToList();
         RebuildVisibleModules();
 
@@ -95,7 +100,9 @@ public sealed partial class ShellViewModel : ObservableObject
         _preferences.PropertyChanged += OnPreferencesChanged;
         _attention.AttentionChanged += OnAttentionChanged;
         _perf.IsActiveChanged += OnPerfTraceStateChanged;
+        _health.Changed += OnHealthChanged;
         RefreshPerfTraceState();
+        RefreshHealthState();
         RefreshCharacter();
         RefreshUpdateStatus();
         RefreshAttentionSurface();
@@ -176,6 +183,42 @@ public sealed partial class ShellViewModel : ObservableObject
         PerfTraceTooltip = IsPerfTraceRecording
             ? (string.IsNullOrEmpty(path) ? "Perf-trace recording" : $"Recording → {path}")
             : "Perf-trace not recording";
+    }
+
+    private void OnHealthChanged(object? sender, EventArgs e)
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) RefreshHealthState();
+        else d.InvokeAsync(RefreshHealthState);
+    }
+
+    private void RefreshHealthState()
+    {
+        var player = _health.Player;
+        var chat = _health.Chat;
+        var brk = _health.Break;
+
+        PipelineModeText = _health.IsHalted ? "HALTED" : (_health.AllLive ? "LIVE" : "REPLAY");
+        PlayerDriftText = FormatDrift(player);
+        ChatDriftText = FormatDrift(chat);
+        IsHealthDegraded = _health.AllLive &&
+            (player.Drift > WorldHealth.DriftWarningThreshold || chat.Drift > WorldHealth.DriftWarningThreshold);
+        HealthTooltip = $"Player: {player.Mode} · {player.FrameCount:N0} frames · drift {player.Drift.TotalSeconds:0.0}s\n" +
+                        $"Chat: {chat.Mode} · {chat.FrameCount:N0} frames · drift {chat.Drift.TotalSeconds:0.0}s";
+
+        IsHalted = _health.IsHalted;
+        IsTolerantBreakActive = _health.IsTolerantBreakActive;
+        ObservedBreakCount = _health.ObservedBreakCount;
+        GrammarBreak = brk;
+        HaltBannerVerb = brk?.Verb ?? "";
+        HaltBannerHint = brk?.ParserHint ?? "";
+    }
+
+    private static string FormatDrift(WorldHealth h)
+    {
+        if (h.LastTimestamp is null) return "—";
+        var d = h.Drift;
+        return d.TotalSeconds < 2 ? "<2s" : $"{d.TotalSeconds:0}s";
     }
 
     private void OnAttentionChanged(object? sender, AttentionChangedEventArgs e)
@@ -259,8 +302,27 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty] private bool _isPerfTraceRecording;
     [ObservableProperty] private string _perfTraceTooltip = "Perf-trace recording";
 
+    [ObservableProperty] private string _pipelineModeText = "";
+    [ObservableProperty] private string _playerDriftText = "";
+    [ObservableProperty] private string _chatDriftText = "";
+    [ObservableProperty] private bool _isHealthDegraded;
+    [ObservableProperty] private string _healthTooltip = "";
+
+    [ObservableProperty] private bool _isHalted;
+    [ObservableProperty] private bool _isTolerantBreakActive;
+    [ObservableProperty] private int _observedBreakCount;
+    [ObservableProperty] private GrammarBreak? _grammarBreak;
+    [ObservableProperty] private string _haltBannerVerb = "";
+    [ObservableProperty] private string _haltBannerHint = "";
+
     [RelayCommand]
     private void DismissUpdate() => _updateStatus.Dismiss();
+
+    [RelayCommand]
+    private void CloseShell()
+    {
+        System.Windows.Application.Current?.Shutdown();
+    }
 
     [RelayCommand]
     private async Task ApplyUpdateAsync()

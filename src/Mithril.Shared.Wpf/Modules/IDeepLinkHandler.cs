@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shared.Modules;
 
@@ -22,5 +22,5 @@ public interface IDeepLinkHandler
     /// and any per-handler diagnostic messages. Return false for validation
     /// failure or missing dependency; true on successful dispatch.
     /// </summary>
-    bool TryHandle(string subPath, IDiagnosticsSink? diag);
+    bool TryHandle(string subPath, ILogger? logger);
 }

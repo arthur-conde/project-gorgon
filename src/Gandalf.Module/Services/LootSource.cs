@@ -1,11 +1,10 @@
+using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
+using Arda.World.Player;
 using Gandalf.Domain;
-using Mithril.GameState.Areas;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
@@ -50,11 +49,11 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly DerivedTimerProgressService _derived;
     private readonly ISettingsStore<LootCatalogCache> _cacheStore;
     private readonly LootCatalogCache _cache;
-    private readonly IPlayerAreaState? _areaState;
+    private readonly IAreaState? _areaState;
     private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _time;
-    private readonly IWorldClock? _worldClock;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ICalendarState? _calendarState;
+    private readonly ILogger? _logger;
     private readonly object _catalogLock = new();
     private IReadOnlyDictionary<string, DefeatCatalogEntry> _calibrationByDisplayName =
         new Dictionary<string, DefeatCatalogEntry>(StringComparer.OrdinalIgnoreCase);
@@ -66,11 +65,11 @@ public sealed class LootSource : ITimerSource, IDisposable
         DerivedTimerProgressService derived,
         ISettingsStore<LootCatalogCache> cacheStore,
         LootCatalogCache cache,
-        IPlayerAreaState? areaState = null,
+        IAreaState? areaState = null,
         IReferenceDataService? refData = null,
         TimeProvider? time = null,
-        IDiagnosticsSink? diag = null,
-        IPlayerWorld? playerWorld = null)
+        ILogger? logger = null,
+        ICalendarState? calendarState = null)
     {
         _derived = derived;
         _cacheStore = cacheStore;
@@ -78,8 +77,8 @@ public sealed class LootSource : ITimerSource, IDisposable
         _areaState = areaState;
         _refData = refData;
         _time = time ?? TimeProvider.System;
-        _worldClock = playerWorld?.Clock;
-        _diag = diag;
+        _calendarState = calendarState;
+        _logger = logger;
         _catalog = BuildCatalog();
         _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
         _lastProgressByKey = SnapshotProgress();
@@ -260,9 +259,9 @@ public sealed class LootSource : ITimerSource, IDisposable
                 _derived.Start(Id, key, rejectionAt);
                 rowChanged = true;
             }
-            // State-decision gate: read PlayerWorld's clock (#609) so replay
-            // produces identical stale-anchor decisions regardless of attach time.
-            else if (prior.DismissedAt is null && prior.StartedAt + duration <= (_worldClock?.Now ?? _time.GetUtcNow()))
+        // State-decision gate: read calendar's last timestamp so replay
+        // produces identical stale-anchor decisions regardless of attach time.
+        else if (prior.DismissedAt is null && prior.StartedAt + duration <= (_calendarState?.LastTimestamp ?? _time.GetUtcNow()))
             {
                 // Stale anchor — recorded loot is older than this rejection
                 // implies. Refresh the anchor; the rejection guarantees the
@@ -361,8 +360,7 @@ public sealed class LootSource : ITimerSource, IDisposable
     public void OnDefeatCooldownActive(string npcDisplayName, DateTime timestampUtc)
     {
         if (string.IsNullOrEmpty(npcDisplayName)) return;
-        _diag?.Trace("Gandalf.Loot",
-            $"Cooldown still active for {npcDisplayName.Trim()} at {timestampUtc:O}");
+        _logger?.LogTrace($"Cooldown still active for {npcDisplayName.Trim()} at {timestampUtc:O}");
     }
 
     /// <summary>
@@ -578,9 +576,9 @@ public sealed class LootSource : ITimerSource, IDisposable
 
     private void FireReady(string key, string displayName, TimeSpan durationOverride, DateTimeOffset atUtc)
     {
-        // State-decision gate: read PlayerWorld's clock (#609) so replay
+        // State-decision gate: read calendar's last timestamp so replay
         // fires the same eager-ready events as a live attach.
-        if (atUtc <= (_worldClock?.Now ?? _time.GetUtcNow()))
+        if (atUtc <= (_calendarState?.LastTimestamp ?? _time.GetUtcNow()))
         {
             TimerReady?.Invoke(this, new TimerReadyEventArgs
             {

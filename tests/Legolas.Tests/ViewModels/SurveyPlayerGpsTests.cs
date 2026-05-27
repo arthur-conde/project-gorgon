@@ -1,9 +1,10 @@
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
-using Mithril.GameState.Movement;
 
 namespace Legolas.Tests.ViewModels;
 
@@ -32,9 +33,9 @@ public class SurveyPlayerGpsTests
         ReferenceCount: 3, ResidualPixels: 0.5);
 
     private static (SessionState session, MapOverlayViewModel map,
-        FakePlayerPositionTracker tracker, FakeAreaCalibrationService areaCal, CapturingOptimizer opt)
+        FakePositionState posState, TestDomainEventBus bus, FakeAreaCalibrationService areaCal, CapturingOptimizer opt)
         BuildSut(bool calibrated, double px = 40, double pz = -25,
-            PlayerPositionSource source = PlayerPositionSource.Spawn)
+            PositionSource source = PositionSource.Spawn)
     {
         var session = new SessionState();
         // #524: this suite's calibration uses the default CalibrationZoom = 1.0,
@@ -46,15 +47,15 @@ public class SurveyPlayerGpsTests
         var opt = new CapturingOptimizer();
         var projector = new CoordinateProjector();
         var brushes = new LegolasBrushes(settings);
-        var tracker = new FakePlayerPositionTracker();
-        tracker.Seed(px, 0, pz, source);
+        var posState = new FakePositionState { X = px, Y = 0, Z = pz };
+        var bus = new TestDomainEventBus();
         var areaCal = new FakeAreaCalibrationService();
         if (calibrated) areaCal.SetCalibration(Calib);
 
         var map = new MapOverlayViewModel(
             session, projector, opt, surveyFlow, brushes, settings,
-            pinCalibration: null, positionTracker: tracker, areaCalibration: areaCal);
-        return (session, map, tracker, areaCal, opt);
+            pinCalibration: null, positionState: posState, bus: bus, areaCalibration: areaCal);
+        return (session, map, posState, bus, areaCal, opt);
     }
 
     private static SurveyItemViewModel SeedSurveyAt(SessionState session, string name,
@@ -72,7 +73,7 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void OptimizeRoute_starts_from_projected_player_pixel_when_calibrated()
     {
-        var (session, map, _, _, opt) = BuildSut(calibrated: true, px: 40, pz: -25);
+        var (session, map, _, _, _, opt) = BuildSut(calibrated: true, px: 40, pz: -25);
         var expected = Calib.ProjectWorld(new WorldCoord(40, 0, -25));
         SeedSurveyAt(session, "A", 200, 200, 0);
         SeedSurveyAt(session, "B", 300, 300, 1);
@@ -86,7 +87,7 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void OptimizeRoute_falls_back_to_first_pin_when_uncalibrated()
     {
-        var (session, map, _, _, opt) = BuildSut(calibrated: false);
+        var (session, map, _, _, _, opt) = BuildSut(calibrated: false);
         var first = SeedSurveyAt(session, "A", 210, 220, 0);
         SeedSurveyAt(session, "B", 300, 300, 1);
 
@@ -113,7 +114,7 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void Marker_is_motherlode_anchor_in_motherlode_mode()
     {
-        var (session, map, _, _, _) = BuildSut(calibrated: true);
+        var (session, map, _, _, _, _) = BuildSut(calibrated: true);
         session.Mode = SessionMode.Motherlode;
 
         map.PlayerMarkerPixel.Should().BeNull("Motherlode marker needs a recorded click");
@@ -126,13 +127,13 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void Live_fix_updates_the_anchor_on_zone_or_teleport()
     {
-        var (session, _, tracker, _, _) = BuildSut(calibrated: true, px: 5, pz: -5);
+        var (session, _, _, bus, _, _) = BuildSut(calibrated: true, px: 5, pz: -5);
         session.SurveyPlayerPixel.Should().Be(Calib.ProjectWorld(new WorldCoord(5, 0, -5)));
 
-        tracker.Push(60, 0, -70, PlayerPositionSource.Movement);
+        bus.Publish(new PlayerPositionChanged(60, 0, -70, PositionSource.Movement, default));
 
         session.SurveyPlayerPixel.Should().Be(Calib.ProjectWorld(new WorldCoord(60, 0, -70)));
-        session.SurveyPlayerSource.Should().Be(PlayerPositionSource.Movement);
+        session.SurveyPlayerSource.Should().Be(PositionSource.Movement);
     }
 
     [Fact]
@@ -140,7 +141,7 @@ public class SurveyPlayerGpsTests
     {
         // Mirrors the live order: the overlay VM is built, then the area's
         // calibration is applied on zone-in (AreaCalibrationService.Changed).
-        var (session, _, _, areaCal, _) = BuildSut(calibrated: false, px: 9, pz: -3);
+        var (session, _, _, _, areaCal, _) = BuildSut(calibrated: false, px: 9, pz: -3);
         session.SurveyPlayerPixel.Should().BeNull();
 
         areaCal.SetCalibration(Calib);
@@ -153,7 +154,7 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void Initial_segment_runs_from_player_pixel_before_first_collection()
     {
-        var (session, map, _, _, _) = BuildSut(calibrated: true, px: 10, pz: -10);
+        var (session, map, _, _, _, _) = BuildSut(calibrated: true, px: 10, pz: -10);
         var start = Calib.ProjectWorld(new WorldCoord(10, 0, -10));
         SeedSurveyAt(session, "First", 200, 200, 0);
         SeedSurveyAt(session, "Second", 300, 300, 1);
@@ -167,7 +168,7 @@ public class SurveyPlayerGpsTests
     public void Initial_segment_absent_before_first_collection_when_uncalibrated()
     {
         // #454 parity: no anchor, nothing collected ⇒ no segment.
-        var (session, map, _, _, _) = BuildSut(calibrated: false);
+        var (session, map, _, _, _, _) = BuildSut(calibrated: false);
         SeedSurveyAt(session, "First", 200, 200, 0);
         SeedSurveyAt(session, "Second", 300, 300, 1);
 
@@ -177,11 +178,11 @@ public class SurveyPlayerGpsTests
     // ─── Staleness surface ───────────────────────────────────────────────
 
     [Theory]
-    [InlineData(PlayerPositionSource.Spawn, 0, "You — zone-in, just now")]
-    [InlineData(PlayerPositionSource.Spawn, 240, "You — zone-in, 4m ago")]
-    [InlineData(PlayerPositionSource.Movement, 7200, "You — teleport, 2h ago")]
+    [InlineData(PositionSource.Spawn, 0, "You — zone-in, just now")]
+    [InlineData(PositionSource.Spawn, 240, "You — zone-in, 4m ago")]
+    [InlineData(PositionSource.Movement, 7200, "You — teleport, 2h ago")]
     public void FormatAnchorStatus_reflects_source_and_age(
-        PlayerPositionSource source, int ageSeconds, string expected)
+        PositionSource source, int ageSeconds, string expected)
     {
         var now = DateTimeOffset.UnixEpoch + TimeSpan.FromHours(10);
         var measuredAt = now - TimeSpan.FromSeconds(ageSeconds);
@@ -192,11 +193,11 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void PlayerAnchorStatus_is_empty_until_an_anchor_resolves_and_only_in_survey_mode()
     {
-        var (session, map, _, _, _) = BuildSut(calibrated: false);
+        var (session, map, _, _, _, _) = BuildSut(calibrated: false);
         map.PlayerAnchorStatus.Should().BeEmpty("no anchor yet");
         map.IsPlayerAnchorStatusVisible.Should().BeFalse();
 
-        var (s2, m2, _, _, _) = BuildSut(calibrated: true);
+        var (s2, m2, _, _, _, _) = BuildSut(calibrated: true);
         m2.PlayerAnchorStatus.Should().NotBeEmpty("anchor resolved in Survey mode");
         m2.IsPlayerAnchorStatusVisible.Should().BeTrue();
 
@@ -209,7 +210,7 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void Map_click_records_a_manual_override_only_while_setting_position()
     {
-        var (session, map, _, _, _) = BuildSut(calibrated: true, px: 1, pz: -1);
+        var (session, map, _, _, _, _) = BuildSut(calibrated: true, px: 1, pz: -1);
         var auto = Calib.ProjectWorld(new WorldCoord(1, 0, -1));
         session.SurveyPlayerPixel.Should().Be(auto);
 
@@ -235,7 +236,7 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void Manual_override_survives_a_calibration_reapply_but_a_fresh_fix_supersedes_it()
     {
-        var (session, map, tracker, areaCal, _) = BuildSut(calibrated: true, px: 2, pz: -2);
+        var (session, map, _, bus, areaCal, _) = BuildSut(calibrated: true, px: 2, pz: -2);
 
         map.SetPositionCommand.Execute(null);
         map.HandleMapClick(new PixelPoint(123, 456));
@@ -248,7 +249,7 @@ public class SurveyPlayerGpsTests
         session.SurveyPlayerIsManual.Should().BeTrue();
 
         // A fresh tracker fix (zone-in / teleport) is authoritative again.
-        tracker.Push(80, 0, -90, PlayerPositionSource.Movement);
+        bus.Publish(new PlayerPositionChanged(80, 0, -90, PositionSource.Movement, default));
         session.SurveyPlayerIsManual.Should().BeFalse();
         session.SurveyPlayerPixel.Should().Be(Calib.ProjectWorld(new WorldCoord(80, 0, -90)));
     }
@@ -258,7 +259,7 @@ public class SurveyPlayerGpsTests
     {
         // The whole point of Option C: an uncalibrated area has no auto
         // anchor, but the user can still place one by hand.
-        var (session, map, _, _, opt) = BuildSut(calibrated: false);
+        var (session, map, _, _, _, opt) = BuildSut(calibrated: false);
         session.SurveyPlayerPixel.Should().BeNull();
 
         map.SetPositionCommand.Execute(null);
@@ -276,7 +277,7 @@ public class SurveyPlayerGpsTests
     [Fact]
     public void Cancel_leaves_the_anchor_unchanged()
     {
-        var (session, map, _, _, _) = BuildSut(calibrated: true, px: 3, pz: -4);
+        var (session, map, _, _, _, _) = BuildSut(calibrated: true, px: 3, pz: -4);
         var auto = Calib.ProjectWorld(new WorldCoord(3, 0, -4));
 
         map.SetPositionCommand.Execute(null);

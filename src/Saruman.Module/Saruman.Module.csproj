@@ -5,15 +5,18 @@
     <RootNamespace>Saruman</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Saruman.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="MahApps.Metro.IconPacks.Lucide" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
-    <ProjectReference Include="..\Mithril.GameState\Mithril.GameState.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\saruman.ico" />

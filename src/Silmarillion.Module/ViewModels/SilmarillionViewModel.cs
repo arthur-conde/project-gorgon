@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Logging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 
@@ -24,20 +24,20 @@ public sealed partial class SilmarillionViewModel : ObservableObject
 {
     private readonly IReferenceNavigator _navigator;
     private readonly IReadOnlyDictionary<EntityKind, IReferenceKindTarget> _targets;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public SilmarillionViewModel(
         IEnumerable<ITabViewModel> tabs,
         IReferenceNavigator navigator,
         IEnumerable<IReferenceKindTarget> targets,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         Tabs = tabs
             .OrderBy(t => t.TabOrder)
             .Select(t => new ModuleTab(t.TabHeader, t))
             .ToArray();
         _navigator = navigator;
-        _diag = diag;
+        _logger = logger;
 
         // Same fail-loud-on-duplicate shape as SilmarillionReferenceNavigator —
         // mis-wired DI should crash startup, not silently last-wins.
@@ -88,16 +88,16 @@ public sealed partial class SilmarillionViewModel : ObservableObject
 
         if (e.Current is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"OnNavigated kind=null ({e.Kind}) — no-op.");
+            _logger?.LogTrace("OnNavigated kind=null ({Kind}) — no-op.", e.Kind);
             return;
         }
         if (!_targets.TryGetValue(e.Current.Kind, out var target))
         {
-            _diag?.Info("Silmarillion.Nav", $"OnNavigated kind={e.Current.Kind} name='{e.Current.InternalName}' — no target registered.");
+            _logger?.LogTrace("OnNavigated kind={Kind} name='{InternalName}' — no target registered.", e.Current.Kind, e.Current.InternalName);
             return;
         }
 
-        _diag?.Info("Silmarillion.Nav", $"OnNavigated kind={e.Current.Kind} name='{e.Current.InternalName}' tabIndex={target.TabIndex}.");
+        _logger?.LogTrace("OnNavigated kind={Kind} name='{InternalName}' tabIndex={TabIndex}.", e.Current.Kind, e.Current.InternalName, target.TabIndex);
         SelectedTabIndex = target.TabIndex;
         target.TrySelectByInternalName(e.Current.InternalName);
     }

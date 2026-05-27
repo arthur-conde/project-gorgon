@@ -1,7 +1,7 @@
 using System.IO;
 using Arwen.Domain;
 using FluentAssertions;
-using Mithril.GameState.Inventory;
+using Arda.World.Player;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Reference;
 using Xunit;

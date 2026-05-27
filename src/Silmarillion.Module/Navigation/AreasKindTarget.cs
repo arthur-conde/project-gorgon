@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -18,12 +18,12 @@ namespace Silmarillion.Navigation;
 public sealed class AreasKindTarget : IReferenceKindTarget
 {
     private readonly AreasTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public AreasKindTarget(AreasTabViewModel vm, IDiagnosticsSink? diag = null)
+    public AreasKindTarget(AreasTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.Area;
@@ -35,10 +35,10 @@ public sealed class AreasKindTarget : IReferenceKindTarget
         var row = _vm.AllAreas.FirstOrDefault(a => a.Key == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"Areas.TrySelect '{internalName}' → not found (AllAreas={_vm.AllAreas.Count}).");
+            _logger?.LogTrace("Areas.TrySelect '{InternalName}' → not found (AllAreas={AllAreas}).", internalName, _vm.AllAreas.Count);
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"Areas.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Areas.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible ListBox.
         _vm.QueryText = "";
         _vm.SelectedArea = row;

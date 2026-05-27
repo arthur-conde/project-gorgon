@@ -19,4 +19,4 @@ if ($Build) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-dotnet run ./Mithril.slnx --project ./src/Mithril.Shell/Mithril.Shell.csproj
+dotnet run ./Mithril.slnx --project ./src/Mithril.Shell/Mithril.Shell.csproj --no-build --no-restore

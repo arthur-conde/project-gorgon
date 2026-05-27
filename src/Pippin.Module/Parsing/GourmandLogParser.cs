@@ -21,17 +21,26 @@ public sealed partial class GourmandLogParser : ILogParser
 
     public LogEvent? TryParse(string line, DateTime timestamp)
     {
-        // Fast path: skip lines that can't possibly match
         if (!line.Contains("ProcessBook", StringComparison.Ordinal))
             return null;
 
         var outer = ProcessBookFoodsRx().Match(line);
         if (!outer.Success) return null;
 
-        var body = outer.Groups[1].Value;
-        // The log encodes newlines as literal two-char sequences: backslash + n
-        var entries = body.Split("\\n", StringSplitOptions.RemoveEmptyEntries);
+        var foods = ParseBody(outer.Groups[1].Value);
+        return foods.Count > 0
+            ? new FoodsConsumedReport(timestamp, foods)
+            : null;
+    }
 
+    /// <summary>
+    /// Parse individual food entries from a raw Foods Consumed report body.
+    /// The body uses literal <c>\n</c> escapes (not real newlines) as line
+    /// separators. Each entry matches <see cref="FoodEntryRx"/>.
+    /// </summary>
+    public static IReadOnlyList<FoodConsumedEntry> ParseBody(string body)
+    {
+        var entries = body.Split("\\n", StringSplitOptions.RemoveEmptyEntries);
         var foods = new List<FoodConsumedEntry>();
         foreach (var entry in entries)
         {
@@ -54,9 +63,6 @@ public sealed partial class GourmandLogParser : ILogParser
 
             foods.Add(new FoodConsumedEntry(name, count, tags));
         }
-
-        return foods.Count > 0
-            ? new FoodsConsumedReport(timestamp, foods)
-            : null;
+        return foods;
     }
 }

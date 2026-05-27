@@ -1,14 +1,11 @@
 using System.IO;
 using Arwen.Domain;
-using Arwen.Parsing;
 using Arwen.State;
 using Arwen.ViewModels;
 using Arwen.Views;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
-using Mithril.Shared.Diagnostics;
-using Mithril.GameState.Inventory;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -52,9 +49,8 @@ public sealed class ArwenModule : IMithrilModule
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetRequiredService<ISettingsStore<ArwenSettings>>(),
             sp.GetRequiredService<ArwenSettings>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Arwen")));
 
-        services.AddSingleton<FavorLogParser>();
         services.AddSingleton<FavorStateService>();
         services.AddSingleton<IFavorLookupService>(sp => sp.GetRequiredService<FavorStateService>());
         services.AddSingleton<GiftIndex>(sp =>
@@ -71,14 +67,14 @@ public sealed class ArwenModule : IMithrilModule
             return new CalibrationService(
                 sp.GetRequiredService<IReferenceDataService>(),
                 sp.GetRequiredService<GiftIndex>(),
-                sp.GetRequiredService<IInventoryView>(),
+                sp.GetRequiredService<IInventoryAccumulatorState>(),
                 Path.Combine(localApp, "Mithril", "Arwen"),
                 sp.GetService<ICommunityCalibrationService>(),
                 settings.Calibration,
-                sp.GetService<IDiagnosticsSink>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Arwen"),
                 pendingTtl: settings.PendingObservationTtl,
                 dispatch: UiDispatch,
-                session: sp.GetService<IGameSessionService>());
+                session: sp.GetService<ISessionComposer>());
         });
         services.AddSingleton<IAttentionSource, ArwenAttentionSource>();
 

@@ -1,8 +1,8 @@
+using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Gandalf.Domain;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Microsoft.Extensions.Hosting;
 
@@ -24,22 +24,22 @@ public sealed class GandalfAreaFlattenMigration : IHostedService
 {
     private readonly string _defsPath;
     private readonly IReferenceDataService _refData;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public GandalfAreaFlattenMigration(
         string defsPath,
         IReferenceDataService refData,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _defsPath = defsPath;
         _refData = refData;
-        _diag = diag;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _diag?.Warn("Gandalf.AreaFlatten", $"Failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Failed"); }
         return Task.CompletedTask;
     }
 
@@ -82,7 +82,6 @@ public sealed class GandalfAreaFlattenMigration : IHostedService
 
         var serialized = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_defsPath, serialized);
-        _diag?.Info("Gandalf.AreaFlatten",
-            $"Migrated {migrated} timer definition(s) from v{schemaVersion} to v{GandalfDefinitions.Version}.");
+        _logger?.LogInformation($"Migrated {migrated} timer definition(s) from v{schemaVersion} to v{GandalfDefinitions.Version}.");
     }
 }

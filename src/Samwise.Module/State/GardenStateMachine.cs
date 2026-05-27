@@ -1,8 +1,7 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
+using Arda.World.Player;
 using Samwise.Config;
 using Samwise.Parsing;
 
@@ -27,8 +26,8 @@ public sealed class GardenStateMachine
 
     private readonly ICropConfigStore _config;
     private readonly TimeProvider _time;
-    private readonly IWorldClock? _worldClock;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ICalendarState? _calendarState;
+    private readonly ILogger? _logger;
     private readonly Alarms.SamwiseSettings? _settings;
     private readonly IReferenceDataService? _referenceData;
     private readonly IActiveCharacterService? _activeChar;
@@ -55,16 +54,16 @@ public sealed class GardenStateMachine
     public GardenStateMachine(
         ICropConfigStore config,
         TimeProvider? time = null,
-        IDiagnosticsSink? diag = null,
+        ILogger? logger = null,
         Alarms.SamwiseSettings? settings = null,
         IReferenceDataService? referenceData = null,
         IActiveCharacterService? activeChar = null,
-        IPlayerWorld? playerWorld = null)
+        ICalendarState? calendarState = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
-        _worldClock = playerWorld?.Clock;
-        _diag = diag;
+        _calendarState = calendarState;
+        _logger = logger;
         _settings = settings;
         _referenceData = referenceData;
         _activeChar = activeChar;
@@ -100,7 +99,7 @@ public sealed class GardenStateMachine
             }
         }
         _seedToCrop = map;
-        _diag?.Trace("Samwise.SeedMap", $"Built seed→crop map with {map.Count} entries");
+        _logger?.LogTrace($"Built seed→crop map with {map.Count} entries");
     }
 
     public string? CurrentCharacter => _currentChar;
@@ -174,20 +173,19 @@ public sealed class GardenStateMachine
         var crop = ResolveCropFromDisplayName(pcr.SeedDisplayName);
         if (crop is null)
         {
-            _diag?.Trace("Samwise.Cap", $"Can't resolve crop from seed '{pcr.SeedDisplayName}'");
+            _logger?.LogTrace($"Can't resolve crop from seed '{pcr.SeedDisplayName}'");
             return;
         }
         if (!_config.Current.Crops.TryGetValue(crop, out var def))
         {
-            _diag?.Trace("Samwise.Cap", $"Crop '{crop}' not in config — slot family unknown");
+            _logger?.LogTrace($"Crop '{crop}' not in config — slot family unknown");
             return;
         }
         var family = def.SlotFamily;
         if (string.IsNullOrEmpty(family)) return;
 
         var count = CountFamilyPlots(_currentChar, family);
-        _diag?.Info("Samwise.Cap",
-            $"Cap reached: family={family} char={_currentChar} count={count} (trigger={pcr.SeedDisplayName})");
+        _logger?.LogInformation($"Cap reached: family={family} char={_currentChar} count={count} (trigger={pcr.SeedDisplayName})");
 
         SlotCapObserved?.Invoke(this, new SlotCapObservedArgs(_currentChar, family, count, pcr.Timestamp));
     }
@@ -248,7 +246,7 @@ public sealed class GardenStateMachine
         plots[plotId] = plot;
         _pendingPlant = (plotId, _currentChar, now);
 
-        _diag?.Info("Samwise.Plant", $"plot={plotId} char={_currentChar} cropGuess=(pending)");
+        _logger?.LogInformation($"plot={plotId} char={_currentChar} cropGuess=(pending)");
         RaisePlotChanged(plot, null, PlotStage.Planted);
     }
 
@@ -279,8 +277,7 @@ public sealed class GardenStateMachine
         plot.CropType = crop;
         plot.UpdatedAt = now;
         _pendingPlant = null;
-        _diag?.Info("Samwise.Plant",
-            $"resolved plot={pending.PlotId} crop={crop} via itemId={itemId}");
+        _logger?.LogInformation($"resolved plot={pending.PlotId} crop={crop} via itemId={itemId}");
         RaisePlotChanged(plot, plot.Stage, plot.Stage);
     }
 
@@ -549,7 +546,7 @@ public sealed class GardenStateMachine
         // produces identical pruning regardless of real attach time (#609).
         // Pre-frame the clock returns DateTimeOffset.MinValue → no plot
         // appears withered, which is the safe conservative fallback.
-        var now = _worldClock?.Now ?? _time.GetUtcNow();
+        var now = _calendarState?.LastTimestamp ?? _time.GetUtcNow();
         var removed = 0;
         foreach (var plots in _plotsByChar.Values)
         {
@@ -607,7 +604,7 @@ public sealed class GardenStateMachine
         // State-decision gate: read PlayerWorld's clock (#609). Pre-frame
         // (MinValue) the diff is negative → returns false, which is the
         // safe conservative fallback (alarm still fires).
-        var age = (_worldClock?.Now ?? _time.GetUtcNow()) - plot.PlantedAt;
+        var age = (_calendarState?.LastTimestamp ?? _time.GetUtcNow()) - plot.PlantedAt;
         return age > ExpectedEntityLifetime(plot);
     }
 }

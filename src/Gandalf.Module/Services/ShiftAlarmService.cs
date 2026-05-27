@@ -1,13 +1,13 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using System.Windows.Threading;
+using Arda.Contracts;
+using Arda.World.Player.Events;
 using Gandalf.Domain;
 using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Audio;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 using Mithril.Shared.Wpf;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
@@ -18,22 +18,16 @@ namespace Gandalf.Services;
 /// pipeline (<see cref="TimerAlarmService"/>) — shifts are global,
 /// character-agnostic, and have no Start/Done lifecycle.
 ///
-/// <para><b>Event-driven (scheduler-collapse, #613).</b> Subscribes to
-/// PlayerWorld's <see cref="TimeOfDayShift"/> domain events on
-/// <see cref="StartAsync"/>; the world clock drives the transition cadence,
-/// retiring the legacy <see cref="DispatcherTimer"/> wake injection (design
-/// notebook §Migration item #12, principle 13). The composer
-/// (<c>TimeOfDayShiftComposer</c> in <c>Mithril.WorldSim.Player</c>)
-/// dedups within a bucket, so this service sees at most one event per real
-/// transition.</para>
+/// <para><b>Event-driven (Arda migration).</b> Subscribes to
+/// <see cref="TimeOfDayShifted"/> domain events via
+/// <see cref="IDomainEventSubscriber"/>. The Arda pipeline drives the
+/// transition cadence from the log stream.</para>
 ///
-/// <para><b>Mode-gate at the side-effect boundary.</b> Per principle 12 +
-/// PR #705 / #708, the audio playback + window flash branch gates on
-/// <see cref="IWorldClock.Mode"/> == <see cref="WorldMode.Replaying"/> and
-/// returns immediately — drain-time replay updates the per-shift
-/// last-fired ledger but does not ring. State derivation upstream of the
-/// gate stays mode-agnostic so the next Live tick reuses a coherent
-/// suppression contract.</para>
+/// <para><b>Mode-gate at the side-effect boundary.</b>
+/// The audio playback + window flash branch gates on
+/// <see cref="TimeOfDayShifted.Metadata"/>.<see cref="Arda.Abstractions.Logs.LogLineMetadata.IsReplay"/>
+/// and returns immediately — replay updates the per-shift last-fired
+/// ledger but does not ring.</para>
 /// </summary>
 public sealed class ShiftAlarmService : BackgroundService
 {
@@ -41,8 +35,8 @@ public sealed class ShiftAlarmService : BackgroundService
     private readonly GandalfSettings _globalSettings;
     private readonly GandalfShiftSettings _shiftSettings;
     private readonly IAudioPlaybackSink _audio;
-    private readonly IPlayerWorld _world;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly IDomainEventSubscriber _bus;
+    private readonly ILogger? _logger;
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
     private IDisposable? _subscription;
     private string? _lastFiredSlug;
@@ -53,26 +47,21 @@ public sealed class ShiftAlarmService : BackgroundService
         GandalfSettings globalSettings,
         GandalfShiftSettings shiftSettings,
         IAudioPlaybackSink audio,
-        IPlayerWorld world,
-        IDiagnosticsSink? diag = null)
+        IDomainEventSubscriber bus,
+        ILogger? logger = null)
     {
         _catalog = catalog;
         _globalSettings = globalSettings;
         _shiftSettings = shiftSettings;
         _audio = audio;
-        _world = world;
-        _diag = diag;
+        _bus = bus;
+        _logger = logger;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        // Subscribe synchronously before base.StartAsync — same shape as the
-        // six PR #705 ingestion services. The trailing-registered merger
-        // (#702 / Call 2) starts only after every hosted-service StartAsync
-        // completes, so no TimeOfDayShift event slips past during cold-start.
-        _subscription = _world.Bus.Subscribe<TimeOfDayShift>(frame => OnShiftTransition(frame.Payload));
-        _diag?.Info("Gandalf.ShiftAlarm",
-            "Subscribed to PlayerWorld TimeOfDayShift (scheduler-collapse, #613)");
+        _subscription = _bus.Subscribe<TimeOfDayShifted>(OnShiftTransition);
+        _logger?.LogInformation("Subscribed to Arda TimeOfDayShifted events");
         return base.StartAsync(cancellationToken);
     }
 
@@ -125,21 +114,16 @@ public sealed class ShiftAlarmService : BackgroundService
         config.SoundFilePath ?? global.SoundFilePath;
 
     /// <summary>
-    /// Test hook — feed a synthetic <see cref="TimeOfDayShift"/> through the
-    /// transition handler without driving the world's bus.
+    /// Test hook — feed a synthetic <see cref="TimeOfDayShifted"/> through the
+    /// transition handler without driving the bus.
     /// </summary>
-    internal void OnShiftTransitionForTests(TimeOfDayShift shift) => OnShiftTransition(shift);
+    internal void OnShiftTransitionForTests(TimeOfDayShifted shift) => OnShiftTransition(shift);
 
-    private void OnShiftTransition(TimeOfDayShift shift)
+    private void OnShiftTransition(TimeOfDayShifted shift)
     {
         if (_disposed) return;
 
         var slug = shift.To;
-        // Bucket-level dedup. The composer already dedups within a bucket,
-        // but a Replaying-mode tick on cold-start can emit a first
-        // transition that the service has already observed on a prior run
-        // (the persisted GandalfShiftSettings has no per-slug last-fired
-        // mark); the slug ledger absorbs that without ringing again.
         if (string.Equals(_lastFiredSlug, slug, StringComparison.Ordinal)) return;
 
         ShiftDefinition? def = null;
@@ -149,8 +133,7 @@ public sealed class ShiftAlarmService : BackgroundService
         }
         if (def is null)
         {
-            _diag?.Warn("Gandalf.ShiftAlarm",
-                $"Received TimeOfDayShift slug='{slug}' not in catalog; ignoring");
+            _logger?.LogWarning($"Received TimeOfDayShifted slug='{slug}' not in catalog; ignoring");
             return;
         }
 
@@ -159,22 +142,11 @@ public sealed class ShiftAlarmService : BackgroundService
 
         if (!ShouldAlarm(config, _globalSettings)) return;
 
-        // Call 3 / principle 12 + #708 constraint — mode-gate the user-
-        // facing projection (audio playback + window flash). State
-        // derivation upstream (the _lastFiredSlug write above) stays mode-
-        // agnostic so the next Live tick reuses a coherent suppression
-        // contract. Reference impls: Samwise.AlarmService.Fire and
-        // Gandalf.TimerAlarmService.OnTimerReady (both PR #705).
-        if (_world.Clock.Mode == WorldMode.Replaying) return;
+        // Mode-gate: suppress audio during replay.
+        if (shift.Metadata.IsReplay) return;
 
-        // #712 — cold-start suppression. The composer reports From == null
-        // exactly once per session: the first TimeOfDayShift emission after
-        // Mithril starts, carrying the in-progress shift the user already
-        // sees on-screen. Pre-#709 Reschedule-based scheduling armed only
-        // the NEXT transition, so cold-start was always silent; default-off
-        // matches that prior behaviour. Same shape as the Mode gate above —
-        // ledger has already advanced, only the audio + flash side-effect
-        // is suppressed.
+        // Cold-start suppression (#712): From == null means the first emission
+        // after Mithril starts, carrying the in-progress shift. Default-off.
         if (shift.From is null && !_shiftSettings.RingOnCurrentShiftAtStartup) return;
 
         var path = ResolveSoundPath(config, _globalSettings);

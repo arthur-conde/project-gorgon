@@ -6,6 +6,7 @@ using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Saruman.Services;
 using Saruman.Settings;
+using Saruman.State;
 using Saruman.ViewModels;
 using Saruman.Views;
 
@@ -26,14 +27,20 @@ public sealed class SarumanModule : IMithrilModule
     {
         var localApp = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var legacySarumanDir = Path.Combine(localApp, "Mithril", "Saruman");
+        var charactersRootDir = Path.Combine(localApp, "Mithril", "characters");
+        var codebookPath = Path.Combine(localApp, "Mithril", "Saruman", "codebook.json");
 
-        // Per-character module store for the override ledger only — the
-        // codebook itself (discovery + chat-spent state) lives in
-        // Mithril.GameState.WordsOfPower as a folder + view pair (#603).
+        // Per-character override ledger (saruman.json)
         services.AddSingleton<ILegacyMigration<SarumanState>>(_ =>
             new SarumanLegacyMigration(legacySarumanDir, SarumanJsonContext.Default.SarumanState));
         services.AddPerCharacterModuleStore<SarumanState>(Id, SarumanJsonContext.Default.SarumanState);
 
+        // Server-scoped codebook (single file) — discovery + chat-spent
+        services.AddSingleton(sp => new SarumanCodebookService(
+            codebookPath,
+            sp.GetRequiredService<Arda.Composition.ISessionComposer>(),
+            sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
+            new SarumanCodebookLegacyMigration(charactersRootDir)));
         services.AddSingleton<SarumanOverrideService>();
 
         services.AddSingleton<SarumanViewModel>();

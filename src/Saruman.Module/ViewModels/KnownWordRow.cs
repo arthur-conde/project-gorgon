@@ -1,28 +1,30 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using Mithril.GameState.WordsOfPower;
+using Saruman.State;
 
 namespace Saruman.ViewModels;
 
 /// <summary>
-/// VM row for a single Word-of-Power code (#603 — post-codebook-split). Wraps
-/// a <see cref="WordOfPowerEntry"/> from the cross-source view and composes
-/// the Saruman module-internal override flag — UI Spent state is
-/// <c>view.IsSpent OR override.IsSpent</c>.
+/// VM row for a single Word-of-Power code. Wraps a
+/// <see cref="SarumanCodebook.CodebookEntry"/> and composes the module-internal
+/// override flag — UI Spent state is
+/// <c>codebook.LastSpentAt != null OR override.IsSpent</c>.
 /// </summary>
 public sealed partial class KnownWordRow : ObservableObject
 {
-    public KnownWordRow(WordOfPowerEntry e, bool userOverrideSpent)
+    public KnownWordRow(SarumanCodebook.CodebookEntry e, bool userOverrideSpent)
     {
         Code = e.Code;
-        FirstDiscoveredAt = e.DiscoveredAt;
-        _effectName = e.EffectName;
-        _description = e.Description;
-        _viewSpent = e.State == WordOfPowerKnowledge.Spent;
-        _spentAt = e.LastSpentAt;
+        Server = e.Server;
+        FirstDiscoveredAt = e.DiscoveredAt.DateTime;
+        _effectName = e.Effect;
+        _description = e.Description ?? "";
+        _viewSpent = e.LastSpentAt is not null;
+        _spentAt = e.LastSpentAt?.DateTime;
         _userOverrideSpent = userOverrideSpent;
     }
 
     public string Code { get; }
+    public string Server { get; }
     public DateTime FirstDiscoveredAt { get; }
 
     [ObservableProperty] private string _effectName;
@@ -52,12 +54,12 @@ public sealed partial class KnownWordRow : ObservableObject
     /// <summary>Sorts Known above Spent within an effect group.</summary>
     public int StateOrder => IsKnown ? 0 : 1;
 
-    public void UpdateFrom(WordOfPowerEntry e, bool userOverrideSpent)
+    public void UpdateFrom(SarumanCodebook.CodebookEntry e, bool userOverrideSpent)
     {
-        EffectName = e.EffectName;
-        Description = e.Description;
-        ViewSpent = e.State == WordOfPowerKnowledge.Spent;
-        SpentAt = e.LastSpentAt;
+        EffectName = e.Effect;
+        Description = e.Description ?? "";
+        ViewSpent = e.LastSpentAt is not null;
+        SpentAt = e.LastSpentAt?.DateTime;
         UserOverrideSpent = userOverrideSpent;
     }
 }

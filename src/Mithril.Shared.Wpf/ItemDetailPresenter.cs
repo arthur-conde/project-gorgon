@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using Mithril.Reference.Models.Items;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Wpf;
@@ -9,13 +9,13 @@ public sealed class ItemDetailPresenter : IItemDetailPresenter
 {
     private readonly IReferenceDataService _refData;
     private readonly IAugmentPoolPresenter? _poolPresenter;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public ItemDetailPresenter(IReferenceDataService refData, IAugmentPoolPresenter? poolPresenter = null, IDiagnosticsSink? diag = null)
+    public ItemDetailPresenter(IReferenceDataService refData, IAugmentPoolPresenter? poolPresenter = null, ILogger? logger = null)
     {
         _refData = refData;
         _poolPresenter = poolPresenter;
-        _diag = diag;
+        _logger = logger;
     }
 
     public void Show(string internalName) => ShowCore(internalName, ItemDetailContext.Empty);
@@ -30,13 +30,13 @@ public sealed class ItemDetailPresenter : IItemDetailPresenter
     {
         if (string.IsNullOrWhiteSpace(internalName))
         {
-            _diag?.Warn("ItemDetail", "Show called with empty internal name.");
+            _logger?.LogWarning("Show called with empty internal name.");
             return;
         }
 
         if (!_refData.ItemsByInternalName.TryGetValue(internalName, out var item))
         {
-            _diag?.Info("ItemDetail", $"Item '{internalName}' not found in reference data; nothing to show.");
+            _logger?.LogInformation($"Item '{internalName}' not found in reference data; nothing to show.");
             return;
         }
 

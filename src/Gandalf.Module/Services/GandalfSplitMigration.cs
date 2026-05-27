@@ -1,10 +1,10 @@
+using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Gandalf.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
@@ -30,7 +30,7 @@ public sealed class GandalfSplitMigration : IHostedService
     private readonly PerCharacterStore<GandalfProgress> _progressStore;
     private readonly PerCharacterView<GandalfProgress> _progressView;
     private readonly IReferenceDataService _refData;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public GandalfSplitMigration(
         PerCharacterStoreOptions options,
@@ -38,20 +38,20 @@ public sealed class GandalfSplitMigration : IHostedService
         PerCharacterStore<GandalfProgress> progressStore,
         PerCharacterView<GandalfProgress> progressView,
         IReferenceDataService refData,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _charactersRootDir = options.CharactersRootDir;
         _defStore = defStore;
         _progressStore = progressStore;
         _progressView = progressView;
         _refData = refData;
-        _diag = diag;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _diag?.Warn("Gandalf.SplitMigration", $"Failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Failed"); }
         return Task.CompletedTask;
     }
 
@@ -91,8 +91,7 @@ public sealed class GandalfSplitMigration : IHostedService
                     if (!string.Equals(existing.Name, timer.Name, StringComparison.Ordinal) ||
                         existing.Duration != timer.Duration)
                     {
-                        _diag?.Info("Gandalf.SplitMigration",
-                            $"Timer id {timer.Id} diverged across characters; kept newer '{existing.Name}' ({existing.Duration}), discarded '{timer.Name}' ({timer.Duration}).");
+                        _logger?.LogInformation($"Timer id {timer.Id} diverged across characters; kept newer '{existing.Name}' ({existing.Duration}), discarded '{timer.Name}' ({timer.Duration}).");
                     }
                 }
             }
@@ -117,15 +116,13 @@ public sealed class GandalfSplitMigration : IHostedService
                 };
             }
             _progressStore.Save(candidate.Character, candidate.Server, progress);
-            _diag?.Info("Gandalf.SplitMigration",
-                $"Rewrote {candidate.Character}/{candidate.Server} as v2 progress ({progress.ByTimerId.Count} entries).");
+            _logger?.LogInformation($"Rewrote {candidate.Character}/{candidate.Server} as v2 progress ({progress.ByTimerId.Count} entries).");
         }
 
         // Step 3: invalidate any already-cached progress so live readers pick up the new shape.
         _progressView.Invalidate();
 
-        _diag?.Info("Gandalf.SplitMigration",
-            $"Split complete: {defs.Timers.Count} definitions across {candidates.Count(c => !c.IsV2)} migrated characters.");
+        _logger?.LogInformation($"Split complete: {defs.Timers.Count} definitions across {candidates.Count(c => !c.IsV2)} migrated characters.");
     }
 
     private List<Candidate> CollectCandidates()
@@ -182,7 +179,7 @@ public sealed class GandalfSplitMigration : IHostedService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Gandalf.SplitMigration", $"Legacy read failed for {path}: {ex.Message}");
+            _logger?.LogWarning(ex, "Legacy read failed for {Path}", path);
             return (false, null);
         }
     }

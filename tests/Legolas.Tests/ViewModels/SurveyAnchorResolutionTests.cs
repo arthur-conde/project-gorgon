@@ -1,8 +1,8 @@
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
 using Legolas.ViewModels;
-using Mithril.GameState.Movement;
 
 namespace Legolas.Tests.ViewModels;
 
@@ -17,10 +17,10 @@ public class SurveyAnchorResolutionTests
 
     // ProjectWorld with this cal: (100 + 2x, 200 - 2z).
     private static AreaCalibration Cal() => new(2.0, 0.0, 100, 200, 3, 1.0);
-    private static PlayerPosition Tracker(double x, double z, DateTimeOffset at,
-        PlayerPositionSource src = PlayerPositionSource.Spawn) => new(x, 0, z, at, src);
+    private static TrackerFix Tracker(double x, double z, DateTimeOffset at,
+        PositionSource src = PositionSource.Spawn) => new(x, 0, z, at, src);
     private static CharacterPinFix Pin(double x, double z, DateTimeOffset at) =>
-        new(new WorldCoord(x, 0, z), at);
+        new(new WorldCoord(x, 0, z), at, "@me");
 
     [Fact]
     public void Character_pin_is_the_preferred_manual_when_calibrated()
@@ -46,7 +46,7 @@ public class SurveyAnchorResolutionTests
 
         r!.Value.IsPinned.Should().BeFalse();
         r.Value.IsManual.Should().BeFalse();
-        r.Value.Source.Should().Be(PlayerPositionSource.Spawn);
+        r.Value.Source.Should().Be(PositionSource.Spawn);
         r.Value.Pixel.Should().Be(new PixelPoint(106, 192));   // tracker projected
     }
 

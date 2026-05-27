@@ -1,7 +1,7 @@
+using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shared.Game;
 
@@ -107,11 +107,11 @@ public sealed class JsonShiftCatalog : IShiftCatalog
 
     public IReadOnlyList<ShiftDefinition> Shifts { get; }
 
-    public JsonShiftCatalog(string? bundledDir = null, IDiagnosticsSink? diag = null)
+    public JsonShiftCatalog(string? bundledDir = null, ILogger? logger = null)
     {
         var dir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
         var path = Path.Combine(dir, "shifts.json");
-        Shifts = TryLoad(path, diag) ?? HardcodedFallback;
+        Shifts = TryLoad(path, logger) ?? HardcodedFallback;
     }
 
     private JsonShiftCatalog(IReadOnlyList<ShiftDefinition> shifts)
@@ -127,8 +127,8 @@ public sealed class JsonShiftCatalog : IShiftCatalog
     /// Test-only loader that reads a specific JSON file. Returns null if the
     /// file is malformed or carries an unsupported schema version.
     /// </summary>
-    public static IReadOnlyList<ShiftDefinition>? TryLoadFromFile(string path, IDiagnosticsSink? diag = null) =>
-        TryLoad(path, diag);
+    public static IReadOnlyList<ShiftDefinition>? TryLoadFromFile(string path, ILogger? logger = null) =>
+        TryLoad(path, logger);
 
     public (DateTimeOffset At, ShiftDefinition Shift) NextTransition(IGameClock clock, DateTimeOffset floor)
     {
@@ -171,11 +171,11 @@ public sealed class JsonShiftCatalog : IShiftCatalog
         return $"{hours}h {minutesPart:D2}m";
     }
 
-    private static IReadOnlyList<ShiftDefinition>? TryLoad(string path, IDiagnosticsSink? diag)
+    private static IReadOnlyList<ShiftDefinition>? TryLoad(string path, ILogger? logger)
     {
         if (!File.Exists(path))
         {
-            diag?.Warn("ShiftCatalog", $"shifts.json missing at {path}; using hardcoded fallback.");
+            logger?.LogWarning($"shifts.json missing at {path}; using hardcoded fallback.");
             return null;
         }
 
@@ -187,26 +187,25 @@ public sealed class JsonShiftCatalog : IShiftCatalog
         }
         catch (Exception ex)
         {
-            diag?.Warn("ShiftCatalog", $"shifts.json parse failed ({ex.Message}); using hardcoded fallback.");
+            logger?.LogWarning(ex, "shifts.json parse failed ({Message}); using hardcoded fallback.", ex.Message);
             return null;
         }
 
         if (payload is null)
         {
-            diag?.Warn("ShiftCatalog", "shifts.json deserialized to null; using hardcoded fallback.");
+            logger?.LogWarning("shifts.json deserialized to null; using hardcoded fallback.");
             return null;
         }
 
         if (payload.SchemaVersion != CurrentSchemaVersion)
         {
-            diag?.Warn("ShiftCatalog",
-                $"shifts.json schemaVersion {payload.SchemaVersion} != expected {CurrentSchemaVersion}; using hardcoded fallback.");
+            logger?.LogWarning($"shifts.json schemaVersion {payload.SchemaVersion} != expected {CurrentSchemaVersion}; using hardcoded fallback.");
             return null;
         }
 
         if (payload.Shifts is null || payload.Shifts.Count == 0)
         {
-            diag?.Warn("ShiftCatalog", "shifts.json has no shifts; using hardcoded fallback.");
+            logger?.LogWarning("shifts.json has no shifts; using hardcoded fallback.");
             return null;
         }
 
@@ -215,14 +214,12 @@ public sealed class JsonShiftCatalog : IShiftCatalog
         {
             if (string.IsNullOrEmpty(entry.Slug) || string.IsNullOrEmpty(entry.Label))
             {
-                diag?.Warn("ShiftCatalog",
-                    $"shifts.json entry has empty slug/label (slug='{entry.Slug}', label='{entry.Label}'); using hardcoded fallback.");
+                logger?.LogWarning($"shifts.json entry has empty slug/label (slug='{entry.Slug}', label='{entry.Label}'); using hardcoded fallback.");
                 return null;
             }
             if (entry.StartHour is < 0 or > 23)
             {
-                diag?.Warn("ShiftCatalog",
-                    $"shifts.json entry '{entry.Slug}' has out-of-range StartHour {entry.StartHour}; using hardcoded fallback.");
+                logger?.LogWarning($"shifts.json entry '{entry.Slug}' has out-of-range StartHour {entry.StartHour}; using hardcoded fallback.");
                 return null;
             }
             shifts.Add(new ShiftDefinition(entry.Slug, entry.Label, entry.Emoji ?? "", entry.StartHour));

@@ -1,3 +1,4 @@
+using Arda.Composition;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
 using Mithril.Shared.Reference;
@@ -44,8 +45,9 @@ public sealed class SellPlannerService
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeChar;
     private readonly PriceCalibrationService _calibration;
-    private readonly VendorSellContext _sellContext;
+    private readonly IPlayerProgressionState _progression;
     private readonly IFavorLookupService? _favorLookup;
+    private readonly INpcStateTracker? _npcTracker;
 
     private IReadOnlyList<SellPlannerItem> _ownedItems = [];
 
@@ -59,14 +61,16 @@ public sealed class SellPlannerService
         IReferenceDataService refData,
         IActiveCharacterService activeChar,
         PriceCalibrationService calibration,
-        VendorSellContext sellContext,
-        IFavorLookupService? favorLookup = null)
+        IPlayerProgressionState progression,
+        IFavorLookupService? favorLookup = null,
+        INpcStateTracker? npcTracker = null)
     {
         _refData = refData;
         _activeChar = activeChar;
         _calibration = calibration;
-        _sellContext = sellContext;
+        _progression = progression;
         _favorLookup = favorLookup;
+        _npcTracker = npcTracker;
 
         _activeChar.ActiveCharacterChanged += (_, _) => RebuildOwnedItems();
         _activeChar.StorageReportsChanged += (_, _) => RebuildOwnedItems();
@@ -77,6 +81,8 @@ public sealed class SellPlannerService
         _calibration.DataChanged += (_, _) => VendorsChanged?.Invoke(this, EventArgs.Empty);
         if (_favorLookup is not null)
             _favorLookup.FavorChanged += (_, _) => VendorsChanged?.Invoke(this, EventArgs.Empty);
+        if (_npcTracker is not null)
+            _npcTracker.StateChanged += () => VendorsChanged?.Invoke(this, EventArgs.Empty);
 
         RebuildOwnedItems();
     }
@@ -112,7 +118,7 @@ public sealed class SellPlannerService
                 npcKey,
                 item.InternalName,
                 estimateTier.ToToken(),
-                _sellContext.CivicPrideLevel);
+                _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level + cp.BonusLevels : 0);
 
             rows.Add(new SellPlannerVendorRow(
                 NpcKey: npcKey,

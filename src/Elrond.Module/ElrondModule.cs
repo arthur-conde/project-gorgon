@@ -39,10 +39,10 @@ public sealed class ElrondModule : IMithrilModule
         // shell/module-activator edge. Powers B2 "Generate leveling plan".
         services.AddMithrilPlanning();
         services.AddSingleton<SkillAdvisorEngine>();
+        services.AddSingleton<LiveProgressionAdapter>();
 
         services.AddSingleton<GenerateLevelingPlanViewModel>(sp => new GenerateLevelingPlanViewModel(
-            sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
-            sp.GetRequiredService<Mithril.GameReports.IGameReportsService>(),
+            sp.GetRequiredService<LiveProgressionAdapter>(),
             sp.GetRequiredService<CrossSkillPlanner>(),
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             // Deferred for the same reason as the craft-list accessor below:
@@ -54,11 +54,7 @@ public sealed class ElrondModule : IMithrilModule
         services.AddSingleton<SkillAdvisorViewModel>(sp => new SkillAdvisorViewModel(
             sp.GetRequiredService<SkillAdvisorEngine>(),
             sp.GetRequiredService<Mithril.Shared.Character.IActiveCharacterService>(),
-            // #612: snapshot input rewired to Mithril.GameReports directly.
-            // Selection state still flows through IActiveCharacterService;
-            // only the character-snapshot DATA reads from the foundation
-            // reports service via the VM's ActiveCharacterSnapshot helper.
-            sp.GetRequiredService<Mithril.GameReports.IGameReportsService>(),
+            sp.GetRequiredService<LiveProgressionAdapter>(),
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetRequiredService<ElrondSettings>(),
             sp.GetRequiredService<GenerateLevelingPlanViewModel>(),
@@ -71,7 +67,7 @@ public sealed class ElrondModule : IMithrilModule
         services.AddSingleton<IElrondSkillImportTarget>(sp => new Services.ElrondSkillImportTarget(
             sp.GetRequiredService<SkillAdvisorViewModel>(),
             sp.GetService<IModuleActivator>(),
-            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Elrond")));
         services.AddSingleton<IDeepLinkHandler>(sp =>
             new ElrondDeepLinkHandler(sp.GetRequiredService<IElrondSkillImportTarget>()));
         services.AddSingleton<SkillAdvisorView>(sp => new SkillAdvisorView

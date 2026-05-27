@@ -8,19 +8,10 @@ namespace Mithril.Shared.Tests.Diagnostics;
 /// <summary>
 /// Pre-rebrand Serilog rolling files were named <c>gorgon-*.json</c>; the prefix
 /// changed to <c>mithril-</c> in the rebrand commit but on-disk files persisted.
-/// These tests pin the migration that happens at sink construction.
+/// These tests pin the migration that happens at provider construction.
 /// </summary>
-public class SerilogDiagnosticsSinkMigrationTests
+public class DiagnosticsLogSerilogMigrationTests
 {
-    private sealed class CapturingSink : IDiagnosticsSink
-    {
-        public List<(DiagnosticLevel Level, string Category, string Message)> Entries { get; } = new();
-        public void Write(DiagnosticLevel level, string category, string message) =>
-            Entries.Add((level, category, message));
-        public IReadOnlyList<DiagnosticEntry> Snapshot() => Array.Empty<DiagnosticEntry>();
-        public event EventHandler<DiagnosticEntry>? EntryAdded { add { } remove { } }
-    }
-
     private static string FreshDir()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"mithril-sink-migration-{Guid.NewGuid():N}");
@@ -36,9 +27,10 @@ public class SerilogDiagnosticsSinkMigrationTests
         {
             File.WriteAllText(Path.Combine(dir, "gorgon-20260415.json"), "x");
             File.WriteAllText(Path.Combine(dir, "gorgon-20260416_001.json"), "y");
-            var diag = new CapturingSink();
-
-            SerilogDiagnosticsSink.MigrateLegacyLogFiles(diag, dir);
+            var entries = new List<(DiagnosticLevel Level, string Category, string Message)>();
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles(
+                (level, category, message) => entries.Add((level, category, message)),
+                dir);
 
             File.Exists(Path.Combine(dir, "gorgon-20260415.json")).Should().BeFalse();
             File.Exists(Path.Combine(dir, "gorgon-20260416_001.json")).Should().BeFalse();
@@ -51,16 +43,12 @@ public class SerilogDiagnosticsSinkMigrationTests
     [Fact]
     public void Does_Not_Clash_With_Existing_Mithril_File_For_Same_Date()
     {
-        // The real reason -prebrand exists: on at least one install, gorgon-20260425.json
-        // and mithril-20260425.json both exist on disk for the same date.
         var dir = FreshDir();
         try
         {
             File.WriteAllText(Path.Combine(dir, "gorgon-20260425.json"), "old");
             File.WriteAllText(Path.Combine(dir, "mithril-20260425.json"), "new");
-            var diag = new CapturingSink();
-
-            SerilogDiagnosticsSink.MigrateLegacyLogFiles(diag, dir);
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles((_, _, _) => { }, dir);
 
             File.Exists(Path.Combine(dir, "gorgon-20260425.json")).Should().BeFalse();
             File.Exists(Path.Combine(dir, "mithril-20260425.json")).Should().BeTrue();
@@ -79,9 +67,7 @@ public class SerilogDiagnosticsSinkMigrationTests
         {
             File.WriteAllText(Path.Combine(dir, "gorgon-20260425.json"), "old");
             File.WriteAllText(Path.Combine(dir, "mithril-20260425-prebrand.json"), "previous-attempt");
-            var diag = new CapturingSink();
-
-            SerilogDiagnosticsSink.MigrateLegacyLogFiles(diag, dir);
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles((_, _, _) => { }, dir);
 
             File.Exists(Path.Combine(dir, "gorgon-20260425.json")).Should().BeFalse();
             File.Exists(Path.Combine(dir, "mithril-20260425-prebrand.json")).Should().BeTrue();
@@ -99,14 +85,15 @@ public class SerilogDiagnosticsSinkMigrationTests
         try
         {
             File.WriteAllText(Path.Combine(dir, "mithril-20260425.json"), "new");
-            var diag = new CapturingSink();
+            var entries = new List<(DiagnosticLevel Level, string Category, string Message)>();
+            void Capture(DiagnosticLevel level, string category, string message) =>
+                entries.Add((level, category, message));
 
-            SerilogDiagnosticsSink.MigrateLegacyLogFiles(diag, dir);
-            SerilogDiagnosticsSink.MigrateLegacyLogFiles(diag, dir); // run twice
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles(Capture, dir);
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles(Capture, dir);
 
             File.Exists(Path.Combine(dir, "mithril-20260425.json")).Should().BeTrue();
-            // No warnings emitted — only the optional info log on actual renames.
-            diag.Entries.Should().NotContain(e => e.Level == DiagnosticLevel.Warn);
+            entries.Should().NotContain(e => e.Level == DiagnosticLevel.Warn);
         }
         finally { Directory.Delete(dir, recursive: true); }
     }
@@ -115,11 +102,13 @@ public class SerilogDiagnosticsSinkMigrationTests
     public void Logs_Warning_If_Directory_Missing()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"mithril-sink-missing-{Guid.NewGuid():N}");
-        var diag = new CapturingSink();
+        var entries = new List<(DiagnosticLevel Level, string Category, string Message)>();
 
-        SerilogDiagnosticsSink.MigrateLegacyLogFiles(diag, dir);
+        DiagnosticsLogSerilog.MigrateLegacyLogFiles(
+            (level, category, message) => entries.Add((level, category, message)),
+            dir);
 
-        diag.Entries.Should().Contain(e =>
+        entries.Should().Contain(e =>
             e.Level == DiagnosticLevel.Warn && e.Category == "SerilogSink");
     }
 }

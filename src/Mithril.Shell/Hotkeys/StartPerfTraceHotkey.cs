@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Diagnostics.Performance;
 using Mithril.Shared.Hotkeys;
@@ -16,16 +17,16 @@ public sealed class StartPerfTraceHotkey : IHotkeyCommand
 {
     private readonly ShellSettings _settings;
     private readonly PerfTracerHostedService _perf;
-    private readonly IDiagnosticsSink _diagnostics;
+    private readonly ILogger _logger;
 
     public StartPerfTraceHotkey(
         ShellSettings settings,
         PerfTracerHostedService perf,
-        IDiagnosticsSink diagnostics)
+        ILogger logger)
     {
         _settings = settings;
         _perf = perf;
-        _diagnostics = diagnostics;
+        _logger = logger;
     }
 
     public string Id => "mithril.shell.perf-trace.toggle";
@@ -39,8 +40,7 @@ public sealed class StartPerfTraceHotkey : IHotkeyCommand
     {
         if (!_settings.EnablePerfTrace)
         {
-            _diagnostics.Warn("PerfTrace",
-                "Hotkey pressed but EnablePerfTrace=false — enable it in Settings first.");
+            _logger.LogWarning("Hotkey pressed but EnablePerfTrace=false — enable it in Settings first.");
             return Task.CompletedTask;
         }
 
@@ -48,12 +48,11 @@ public sealed class StartPerfTraceHotkey : IHotkeyCommand
         {
             var wasActive = _perf.IsActive;
             _perf.Toggle();
-            _diagnostics.Info("PerfTrace",
-                wasActive ? "Recording stopped." : "Recording started.");
+            _logger.LogInformation(wasActive ? "Recording stopped." : "Recording started.");
         }
         catch (Exception ex)
         {
-            _diagnostics.Error("PerfTrace", $"Toggle failed: {ex.Message}");
+            _logger.LogError(ex, "Toggle failed");
         }
         return Task.CompletedTask;
     }

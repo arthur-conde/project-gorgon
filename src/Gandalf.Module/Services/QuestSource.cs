@@ -1,32 +1,19 @@
 using System.Diagnostics.CodeAnalysis;
+using Arda.Contracts;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using Gandalf.Domain;
-using Mithril.GameState.Quests;
 using Mithril.Reference.Models.Quests;
 using Mithril.Shared.Reference;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
 /// <summary>
 /// <see cref="ITimerSource"/> for repeatable-quest cooldowns. Pure projector
-/// over <see cref="IPlayerQuestJournalState"/> + <see cref="DerivedTimerProgressService"/>:
-/// catalog enumerates <c>ActiveQuests ∪ keys-with-progress</c> joined against
-/// <see cref="IReferenceDataService.QuestsByInternalName"/> for static fields.
-/// Active set comes from <see cref="IPlayerQuestJournalState.ActiveQuests"/>
-/// (active-character live view, rebuilt per session from
-/// <c>ProcessLoadQuests</c>); cooldown progress is owned here via
-/// <see cref="DerivedTimerProgressService"/>, which is the canonical
-/// cross-session store for repeatable-quest anchors post-#718.
-///
-/// On <see cref="PlayerQuestCompleted"/> the source anchors the cooldown row
-/// past-anchored on the log-line timestamp, mirroring what the old inline
-/// <c>OnQuestCompleted</c> handler did before #155 split ingestion out.
-///
-/// Eligibility gates (<c>QuestCompletedRecently</c>, <c>MinFavorLevel</c>,
-/// <c>MinSkillLevel</c>, …) are intentionally not re-evaluated here. The
-/// game is the authoritative gate: a <see cref="PlayerQuestCompleted"/>
-/// observation already implies the server validated every requirement.
+/// over <see cref="IQuestState"/> (Arda L3) + <see cref="DerivedTimerProgressService"/>:
+/// catalog enumerates active quests (keyed by quest ID, resolved to InternalName
+/// via reference data) plus keys with existing progress. Cooldown anchors on
+/// <see cref="QuestCompleted"/> domain events.
 /// </summary>
 public sealed class QuestSource : ITimerSource, IDisposable
 {
@@ -34,11 +21,13 @@ public sealed class QuestSource : ITimerSource, IDisposable
 
     private readonly DerivedTimerProgressService _derived;
     private readonly IReferenceDataService _refData;
-    private readonly IPlayerQuestJournalState _questSvc;
+    private readonly IQuestState _questState;
     private readonly TimeProvider _time;
-    private readonly IWorldClock? _worldClock;
+    private readonly ICalendarState? _calendarState;
     private readonly object _lock = new();
-    private readonly IDisposable _questSubscription;
+    private readonly IDisposable _completedSub;
+    private readonly IDisposable _loadedSub;
+    private readonly IDisposable _acceptedSub;
     private IReadOnlyList<TimerCatalogEntry> _catalog;
     private IReadOnlyDictionary<string, TimerCatalogEntry> _lastCatalogByKey;
     private IReadOnlyDictionary<string, TimerProgressEntry> _lastProgressByKey;
@@ -46,25 +35,25 @@ public sealed class QuestSource : ITimerSource, IDisposable
     public QuestSource(
         DerivedTimerProgressService derived,
         IReferenceDataService refData,
-        IPlayerQuestJournalState questSvc,
+        IQuestState questState,
+        IDomainEventSubscriber domainBus,
         TimeProvider? time = null,
-        IPlayerWorld? playerWorld = null)
+        ICalendarState? calendarState = null)
     {
         _derived = derived;
         _refData = refData;
-        _questSvc = questSvc;
+        _questState = questState;
         _time = time ?? TimeProvider.System;
-        _worldClock = playerWorld?.Clock;
+        _calendarState = calendarState;
         _catalog = BuildCatalog();
         _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
         _lastProgressByKey = SnapshotProgress();
 
         _derived.ProgressChanged += OnDerivedProgressChanged;
         _refData.FileUpdated += OnReferenceFileUpdated;
-        // Subscribe last so all our fields are initialised — Subscribe's
-        // atomic replay fires synthetic Accepted/Completed events synchronously
-        // on the calling thread, which immediately re-enters our handler.
-        _questSubscription = _questSvc.Subscribe(OnQuestEvent);
+        _completedSub = domainBus.Subscribe<QuestCompleted>(OnQuestCompleted);
+        _loadedSub = domainBus.Subscribe<QuestsLoaded>(_ => RebuildCatalogAndEmit());
+        _acceptedSub = domainBus.Subscribe<QuestAccepted>(_ => RebuildCatalogAndEmit());
     }
 
     public string SourceId => Id;
@@ -82,25 +71,18 @@ public sealed class QuestSource : ITimerSource, IDisposable
     public event EventHandler<TimerReadyEventArgs>? TimerReady;
     public event EventHandler<TimerRowsChangedEventArgs>? RowsChanged;
 
-    private void OnQuestEvent(PlayerQuestEvent ev)
+    private void OnQuestCompleted(QuestCompleted evt)
     {
-        switch (ev)
-        {
-            case PlayerQuestCompleted completed:
-                AnchorCompletionCooldown(completed.InternalName, completed.Timestamp);
-                break;
-            case PlayerQuestAccepted:
-            case PlayerQuestAbandoned:
-                RebuildCatalogAndEmit();
-                break;
-        }
+        var internalName = ResolveInternalName(evt.QuestId);
+        if (internalName is null) return;
+
+        var ts = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
+        AnchorCompletionCooldown(internalName, ts.UtcDateTime);
     }
 
     /// <summary>
     /// Apply a quest-completion observation: stamp the cooldown row anchored
-    /// on the log-line timestamp. Skips quests with no <c>Reuse*</c> duration
-    /// (orphan completion — rare but possible if reference data dropped a
-    /// quest the user has in their journal).
+    /// on the log-line timestamp.
     /// </summary>
     private void AnchorCompletionCooldown(string questInternalName, DateTime timestampUtc)
     {
@@ -112,20 +94,12 @@ public sealed class QuestSource : ITimerSource, IDisposable
         var key = QuestKey(questInternalName);
         var startedAt = new DateTimeOffset(timestampUtc, TimeSpan.Zero);
         var prior = _derived.GetProgress(Id, key);
-        // Idempotency: matching StartedAt means this is a replay of an
-        // already-recorded completion (Subscribe replay or duplicate
-        // ProcessCompleteQuest). Skip _derived.Start regardless of
-        // DismissedAt — clearing it would silently resurrect a row the user
-        // X'd out (bug 1f164cf).
         if (prior is not null && prior.StartedAt == startedAt) return;
 
         _derived.Start(Id, key, startedAt);
-        // OnDerivedProgressChanged will pick up the catalog rebuild + EmitDeltas.
 
         var readyAt = startedAt + duration;
-        // State-decision gate: read PlayerWorld's clock (#609) so replay
-        // fires the same eager-ready events as a live attach.
-        if (readyAt <= (_worldClock?.Now ?? _time.GetUtcNow()))
+        if (readyAt <= (_calendarState?.LastTimestamp ?? _time.GetUtcNow()))
         {
             TimerReady?.Invoke(this, new TimerReadyEventArgs
             {
@@ -136,6 +110,8 @@ public sealed class QuestSource : ITimerSource, IDisposable
                 SourceMetadata = new QuestCatalogPayload(quest),
             });
         }
+
+        RebuildCatalogAndEmit();
     }
 
     private void RebuildCatalogAndEmit()
@@ -153,8 +129,6 @@ public sealed class QuestSource : ITimerSource, IDisposable
         var newCatalog = BuildCatalog();
         lock (_lock) _catalog = newCatalog;
 
-        // GC orphaned progress entries — quests removed from the catalog (or
-        // newly time-gated) shouldn't keep stale rows alive.
         var validKeys = newCatalog.Select(c => c.Key).ToArray();
         _derived.GarbageCollect(Id, validKeys);
 
@@ -186,20 +160,19 @@ public sealed class QuestSource : ITimerSource, IDisposable
     }
 
     /// <summary>
-    /// Project the rendered universe: every quest currently in
-    /// <see cref="IPlayerQuestJournalState.ActiveQuests"/> joined with reference data,
-    /// PLUS every key with non-null cooldown progress (so a completed-but-
-    /// still-cooling quest stays visible after it leaves the active journal).
-    /// Quests with no <c>Reuse*</c> duration are filtered out — nothing to
-    /// render as a timer row.
+    /// Project the rendered universe: every quest in the active journal
+    /// resolved to InternalName via reference data, plus every key with
+    /// non-null cooldown progress.
     /// </summary>
     private IReadOnlyList<TimerCatalogEntry> BuildCatalog()
     {
         var list = new List<TimerCatalogEntry>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var (internalName, _) in _questSvc.ActiveQuests)
+        foreach (var (questId, _) in _questState.ActiveQuests)
         {
+            var internalName = ResolveInternalName(questId);
+            if (internalName is null) continue;
             if (!_refData.QuestsByInternalName.TryGetValue(internalName, out var quest)) continue;
             var duration = ComputeDuration(quest);
             if (duration <= TimeSpan.Zero) continue;
@@ -211,9 +184,6 @@ public sealed class QuestSource : ITimerSource, IDisposable
 
         foreach (var (key, progress) in _derived.SnapshotFor(Id))
         {
-            // Dismissed progress = "user is done with this row, hide it" — same
-            // contract the old IsRelevant predicate enforced before #155
-            // collapsed catalog filtering into the projection.
             if (progress.DismissedAt is not null) continue;
             if (!seen.Add(key)) continue;
             var internalName = TryParseInternalName(key);
@@ -226,6 +196,9 @@ public sealed class QuestSource : ITimerSource, IDisposable
 
         return list;
     }
+
+    private string? ResolveInternalName(int questId) =>
+        _refData.Quests.TryGetValue($"quest_{questId}", out var entry) ? entry.InternalName : null;
 
     private static TimerCatalogEntry ProjectEntry(Quest quest, TimeSpan duration) =>
         new(
@@ -253,7 +226,9 @@ public sealed class QuestSource : ITimerSource, IDisposable
 
     public void Dispose()
     {
-        _questSubscription.Dispose();
+        _completedSub.Dispose();
+        _loadedSub.Dispose();
+        _acceptedSub.Dispose();
         _derived.ProgressChanged -= OnDerivedProgressChanged;
         _refData.FileUpdated -= OnReferenceFileUpdated;
     }

@@ -10,7 +10,6 @@ using Samwise.Alarms;
 using Samwise.Calibration;
 using Samwise.Config;
 using Samwise.Hotkeys;
-using Samwise.Parsing;
 using Samwise.State;
 using Samwise.ViewModels;
 using Samwise.Views;
@@ -37,20 +36,19 @@ public sealed class SamwiseModule : IMithrilModule
         var settingsPath = Path.Combine(samwiseDir, "settings.json");
 
         services.AddSingleton<ICropConfigStore>(_ => new CropConfigStore(bundledCrops, userCrops));
-        services.AddSingleton<GardenLogParser>();
         services.AddSingleton<GardenStateMachine>(sp => new GardenStateMachine(
             sp.GetRequiredService<ICropConfigStore>(),
             time: null,
-            diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),
+            logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Samwise"),
             settings: sp.GetRequiredService<SamwiseSettings>(),
             referenceData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             activeChar: sp.GetService<Mithril.Shared.Character.IActiveCharacterService>(),
-            playerWorld: sp.GetService<Mithril.WorldSim.Player.IPlayerWorld>()));
+            calendarState: sp.GetService<Arda.World.Player.ICalendarState>()));
         services.AddSingleton<AlarmService>(sp => new AlarmService(
             sp.GetRequiredService<GardenStateMachine>(),
             sp.GetRequiredService<SamwiseSettings>(),
             sp.GetRequiredService<Mithril.Shared.Audio.IAudioPlaybackSink>(),
-            playerWorld: sp.GetService<Mithril.WorldSim.Player.IPlayerWorld>()));
+            bus: sp.GetService<Arda.Contracts.IDomainEventSubscriber>()));
 
         // Global preferences stay app-wide.
         services.AddMithrilSettings<SamwiseSettings>(settingsPath, SamwiseSettingsJsonContext.Default.SamwiseSettings);
@@ -68,7 +66,7 @@ public sealed class SamwiseModule : IMithrilModule
             samwiseDir,
             sp.GetRequiredService<PerCharacterStore<GardenCharacterState>>(),
             sp.GetRequiredService<IActiveCharacterService>(),
-            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Samwise")));
 
         services.AddSingleton<GrowthCalibrationService>(sp => new GrowthCalibrationService(
             sp.GetRequiredService<GardenStateMachine>(),
@@ -76,7 +74,7 @@ public sealed class SamwiseModule : IMithrilModule
             samwiseDir,
             sp.GetService<Mithril.Shared.Reference.ICommunityCalibrationService>(),
             sp.GetRequiredService<SamwiseSettings>().Calibration,
-            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Samwise")));
 
         services.AddSingleton<GardenViewModel>();
         services.AddSingleton<GrowthCalibrationViewModel>();

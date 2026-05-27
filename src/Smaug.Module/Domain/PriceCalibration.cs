@@ -69,7 +69,7 @@ public sealed class PriceObservation
 
     /// <summary>
     /// PG session identity at the moment the sell was observed (sourced from
-    /// <c>IGameSessionService.Current</c>). Used by <c>ObservationKey</c> to
+    /// <c>ISessionComposer.Current</c>). Used by <c>ObservationKey</c> to
     /// dedup replays of the same vendor sell across Mithril restarts within
     /// the same PG session. Empty for legacy (pre-v2) observations migrated
     /// forward — they keep their wall-clock-stamped key shape.

@@ -1,7 +1,7 @@
+using Microsoft.Extensions.Logging;
 using System.IO;
 using Gandalf.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 
 namespace Gandalf.Services;
@@ -33,7 +33,7 @@ public sealed class TimerProgressService : IDisposable
     private readonly PerCharacterView<GandalfProgress> _view;
     private readonly TimerDefinitionsService _defs;
     private readonly PerCharacterStoreOptions _storeOptions;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly IGameClock _gameClock;
     private readonly TimeProvider _time;
     private readonly System.Timers.Timer _debounce;
@@ -45,14 +45,14 @@ public sealed class TimerProgressService : IDisposable
         PerCharacterView<GandalfProgress> view,
         TimerDefinitionsService defs,
         PerCharacterStoreOptions storeOptions,
-        IDiagnosticsSink? diag = null,
+        ILogger? logger = null,
         IGameClock? gameClock = null,
         TimeProvider? time = null)
     {
         _view = view;
         _defs = defs;
         _storeOptions = storeOptions;
-        _diag = diag;
+        _logger = logger;
         _time = time ?? TimeProvider.System;
         _gameClock = gameClock ?? new GameClock(_time);
         _view.CurrentChanged += OnCurrentChanged;
@@ -169,7 +169,7 @@ public sealed class TimerProgressService : IDisposable
                 try { File.Delete(path); }
                 catch (Exception ex)
                 {
-                    _diag?.Warn("Gandalf.Progress", $"Failed to delete {path}: {ex.Message}");
+                    _logger?.LogWarning(ex, "Failed to delete {Path}", path);
                 }
             }
 

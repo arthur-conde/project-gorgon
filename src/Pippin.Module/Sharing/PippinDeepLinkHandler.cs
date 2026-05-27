@@ -1,5 +1,5 @@
+using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 
 namespace Pippin.Sharing;
@@ -16,11 +16,11 @@ public sealed class PippinDeepLinkHandler : IDeepLinkHandler
 
     public string Action => "pippin";
 
-    public bool TryHandle(string subPath, IDiagnosticsSink? diag)
+    public bool TryHandle(string subPath, ILogger? logger)
     {
         if (!PayloadPattern.IsMatch(subPath))
         {
-            diag?.Info("DeepLink", $"Rejected: pippin payload (len={subPath.Length}) failed validation.");
+            logger?.LogInformation($"Rejected: pippin payload (len={subPath.Length}) failed validation.");
             return false;
         }
         _target.ImportFromLinkPayload(subPath);

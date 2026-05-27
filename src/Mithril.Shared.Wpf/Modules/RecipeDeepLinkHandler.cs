@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Modules;
@@ -12,11 +12,11 @@ public sealed class RecipeDeepLinkHandler : IDeepLinkHandler
 
     public string Action => "recipe";
 
-    public bool TryHandle(string subPath, IDiagnosticsSink? diag)
+    public bool TryHandle(string subPath, ILogger? logger)
     {
         if (!DeepLinkPayload.IsValidInternalName(subPath))
         {
-            diag?.Info("DeepLink", $"Rejected: recipe payload '{subPath}' failed validation.");
+            logger?.LogInformation($"Rejected: recipe payload '{subPath}' failed validation.");
             return false;
         }
         _navigator.Open(EntityRef.Recipe(subPath));

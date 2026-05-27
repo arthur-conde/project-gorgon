@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Logging;
 using Gandalf.Domain;
 using Microsoft.Extensions.Hosting;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
 namespace Gandalf.Services;
@@ -19,16 +19,16 @@ public sealed class DefeatCalibrationBridge : IHostedService, IDisposable
 {
     private readonly ICommunityCalibrationService _community;
     private readonly LootSource _lootSource;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public DefeatCalibrationBridge(
         ICommunityCalibrationService community,
         LootSource lootSource,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _community = community;
         _lootSource = lootSource;
-        _diag = diag;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -74,6 +74,6 @@ public sealed class DefeatCalibrationBridge : IHostedService, IDisposable
             .ToArray();
 
         _lootSource.OverlayDefeatCalibration(entries);
-        _diag?.Info("Gandalf.Loot", $"Applied defeat calibration ({entries.Length} entries).");
+        _logger?.LogInformation($"Applied defeat calibration ({entries.Length} entries).");
     }
 }

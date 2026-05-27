@@ -154,7 +154,7 @@ DI is composed via extension methods in [src/Mithril.Shared/DependencyInjection/
 - **Reference data** — `IReferenceDataService` fetches versioned JSON (items, recipes, skills, NPCs, XP tables) from `https://cdn.projectgorgon.com/{version}/data/{file}.json` with bundled JSON under [src/Mithril.Shared/Reference/BundledData/](src/Mithril.Shared/Reference/BundledData/) as fallback. `CdnVersionDetector` resolves the current CDN version by parsing a redirect meta tag. Item icons come from `https://cdn.projectgorgon.com/{version}/icons/icon_{IconId}.png`.
 - **Settings** — `ISettingsStore<T>` / `JsonSettingsStore<T>` using `System.Text.Json` source-generated contexts (no reflection-based serialization). `SettingsAutoSaver<T>` periodically flushes dirty state.
 - **Hotkeys** — OS-level Win32 global hotkey registration. Modules contribute `IHotkeyCommand` implementations; `HotkeyConflictDetector` validates uniqueness at registration.
-- **Diagnostics** — Serilog-backed `IDiagnosticsSink`, compact JSON file sink.
+- **Diagnostics** — `ILogger` via `DiagnosticsLoggerProvider` (in-app ring buffer, Serilog compact-JSON file sink).
 
 ### Log parsing
 

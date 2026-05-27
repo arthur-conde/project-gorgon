@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -22,12 +22,12 @@ namespace Silmarillion.Navigation;
 public sealed class PlayerTitlesKindTarget : IReferenceKindTarget
 {
     private readonly PlayerTitlesTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public PlayerTitlesKindTarget(PlayerTitlesTabViewModel vm, IDiagnosticsSink? diag = null)
+    public PlayerTitlesKindTarget(PlayerTitlesTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.PlayerTitle;
@@ -39,10 +39,10 @@ public sealed class PlayerTitlesKindTarget : IReferenceKindTarget
         var row = _vm.AllTitles.FirstOrDefault(t => t.EnvelopeKey == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"PlayerTitles.TrySelect '{internalName}' → not found (AllTitles={_vm.AllTitles.Count}).");
+            _logger?.LogTrace("PlayerTitles.TrySelect '{InternalName}' → not found (AllTitles={AllTitles}).", internalName, _vm.AllTitles.Count);
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"PlayerTitles.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("PlayerTitles.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible list.
         _vm.QueryText = "";
         _vm.SelectedTitle = row;

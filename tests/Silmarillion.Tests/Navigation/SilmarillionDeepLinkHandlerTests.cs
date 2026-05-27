@@ -14,7 +14,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new RecordingNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        var handled = handler.TryHandle("item/CraftedLeatherBoots5", diag: null);
+        var handled = handler.TryHandle("item/CraftedLeatherBoots5", logger: null);
 
         handled.Should().BeTrue();
         nav.LastOpened.Should().Be(EntityRef.Item("CraftedLeatherBoots5"));
@@ -26,7 +26,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new RecordingNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        var handled = handler.TryHandle("recipe/MakeTomatoSauce", diag: null);
+        var handled = handler.TryHandle("recipe/MakeTomatoSauce", logger: null);
 
         handled.Should().BeTrue();
         nav.LastOpened.Should().Be(EntityRef.Recipe("MakeTomatoSauce"));
@@ -50,7 +50,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new RecordingNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        handler.TryHandle(subPath, diag: null).Should().BeFalse();
+        handler.TryHandle(subPath, logger: null).Should().BeFalse();
         nav.LastOpened.Should().BeNull();
     }
 
@@ -69,7 +69,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new RecordingNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        handler.TryHandle(subPath, diag: null).Should().BeFalse();
+        handler.TryHandle(subPath, logger: null).Should().BeFalse();
         nav.LastOpened.Should().BeNull();
     }
 
@@ -86,7 +86,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new PermissiveNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        handler.TryHandle(subPath, diag: null).Should().BeTrue();
+        handler.TryHandle(subPath, logger: null).Should().BeTrue();
         nav.LastOpened.Should().Be(EntityRef.StorageVault(expectedName));
     }
 
@@ -105,7 +105,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new PermissiveNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        handler.TryHandle(subPath, diag: null).Should().BeTrue();
+        handler.TryHandle(subPath, logger: null).Should().BeTrue();
         nav.LastOpened.Should().Be(new EntityRef(kind, name));
     }
 
@@ -147,7 +147,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var handler = new SilmarillionDeepLinkHandler(nav);
 
         var tooLong = new string('A', 129);
-        handler.TryHandle($"item/{tooLong}", diag: null).Should().BeFalse();
+        handler.TryHandle($"item/{tooLong}", logger: null).Should().BeFalse();
         nav.LastOpened.Should().BeNull();
     }
 
@@ -167,7 +167,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new RecordingNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        handler.TryHandle(subPath, diag: null).Should().BeTrue();
+        handler.TryHandle(subPath, logger: null).Should().BeTrue();
         nav.LastOpened.Should().Be(EntityRef.Item("CraftedLeatherBoots5"));
     }
 
@@ -187,7 +187,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new PermissiveNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        handler.TryHandle(subPath, diag: null).Should().BeFalse();
+        handler.TryHandle(subPath, logger: null).Should().BeFalse();
         nav.LastOpened.Should().BeNull();
     }
 
@@ -207,7 +207,7 @@ public sealed class SilmarillionDeepLinkHandlerTests
         var nav = new PermissiveNavigator();
         var handler = new SilmarillionDeepLinkHandler(nav);
 
-        handler.TryHandle(subPath, diag: null).Should().BeTrue();
+        handler.TryHandle(subPath, logger: null).Should().BeTrue();
         nav.LastOpened.Should().Be(new EntityRef(expectedKind, expectedName));
     }
 

@@ -1,74 +1,72 @@
+using Microsoft.Extensions.Logging;
+using Arda.Contracts;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using Legolas.Domain;
-using Mithril.GameState.Pins;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 
 namespace Legolas.Services;
 
 /// <summary>
 /// The player's <b>declared</b> position: an in-game map pin they dropped
 /// labelled with their character name (or the fixed <see cref="SelfPinSentinel"/>
-/// sentinel). <see cref="World"/> is the pin's exact engine-unit coordinate
-/// from <c>ProcessMapPinAdd</c> (#468); <see cref="ObservedAt"/> is when the
-/// declaration was seen (UTC). A replay-sourced fix uses the subscribe instant
-/// — the original drop time isn't in the log; re-dropping the pin refreshes it
-/// precisely.
+/// sentinel). <see cref="World"/> is the pin's exact engine-unit coordinate;
+/// <see cref="ObservedAt"/> is when the declaration was seen (UTC). The
+/// <see cref="Label"/> records which pin established this anchor so a
+/// subsequent <c>ProcessMapPinRemove</c> at the same coords (rename = remove
+/// + add at identical coords, or a coincidental overlap with another player's
+/// pin) does not clear it.
 /// </summary>
-public readonly record struct CharacterPinFix(WorldCoord World, DateTimeOffset ObservedAt);
+public readonly record struct CharacterPinFix(WorldCoord World, DateTimeOffset ObservedAt, string Label);
 
 /// <summary>
-/// Resolves a "this is where I am" self-declaration from the area's map pins:
-/// a pin whose label matches the active character name or the
-/// <see cref="CharacterPinAnchor.SelfPinSentinel"/> sentinel. A deliberate,
-/// opt-in self-position gesture — the in-game analogue of the #476 "Set my
-/// position" click. Does <b>not</b> violate the #454 label-agnostic rule
-/// (that forbids <em>inferring</em> game-entity pairings by name; this is the
-/// user explicitly naming their own marker).
+/// Resolves a "this is where I am" self-declaration from the area's map pins.
 /// </summary>
 public interface ICharacterPinAnchor
 {
-    /// <summary>The current declared position, or null when no matching pin is
-    /// in the current area.</summary>
     CharacterPinFix? Current { get; }
 
-    /// <summary>True iff this pin's label is the self-declaration convention
-    /// (character name or <see cref="CharacterPinAnchor.SelfPinSentinel"/>).
-    /// Used by the Motherlode feeder to prefer it without depending on
-    /// cross-subscriber ordering.</summary>
-    bool IsSelfPin(MapPin pin);
+    /// <summary>True iff the pin label is the self-declaration convention
+    /// (character name or <see cref="CharacterPinAnchor.SelfPinSentinel"/>).</summary>
+    bool IsSelfPin(string? label);
 
-    /// <summary>Raised when <see cref="Current"/>'s presence or coordinate
-    /// changes. Fired off the lock; marshal for UI work.</summary>
     event Action? Changed;
 }
 
 /// <inheritdoc cref="ICharacterPinAnchor"/>
 public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
 {
-    /// <summary>Label that always declares position regardless of character
-    /// name — covers multi-box / the name not being resolved yet.</summary>
     public const string SelfPinSentinel = "@me";
 
     private readonly IActiveCharacterService _activeChar;
-    private readonly IDiagnosticsSink? _diag;
-    private readonly IDisposable _pinSub;
+    private readonly IMapPinState _mapPinState;
+    private readonly ILogger? _logger;
+    private readonly IDisposable _pinAddedSub;
+    private readonly IDisposable _pinRemovedSub;
+    private readonly IDisposable _areaChangedSub;
 
     private readonly object _gate = new();
-    private IReadOnlyList<MapPin> _pins = Array.Empty<MapPin>();
     private CharacterPinFix? _current;
 
     public event Action? Changed;
 
     public CharacterPinAnchor(
-        IPlayerPinTracker pinTracker,
+        IDomainEventSubscriber bus,
+        IMapPinState mapPinState,
         IActiveCharacterService activeChar,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
+        _mapPinState = mapPinState;
         _activeChar = activeChar;
-        _diag = diag;
+        _logger = logger;
         _activeChar.ActiveCharacterChanged += OnActiveCharacterChanged;
-        // Subscribe replays the current area set synchronously as a Snapshot.
-        _pinSub = pinTracker.Subscribe(OnPins);
+
+        // Initial resolve from current pin state (replaces Snapshot replay)
+        _current = ResolveFromPinState(DateTimeOffset.UtcNow);
+
+        _pinAddedSub = bus.Subscribe<MapPinAdded>(OnPinAdded);
+        _pinRemovedSub = bus.Subscribe<MapPinRemoved>(OnPinRemoved);
+        _areaChangedSub = bus.Subscribe<AreaChanged>(OnAreaChanged);
     }
 
     public CharacterPinFix? Current
@@ -76,70 +74,96 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         get { lock (_gate) return _current; }
     }
 
-    public bool IsSelfPin(MapPin pin) => Matches(pin, _activeChar.ActiveCharacterName);
+    public bool IsSelfPin(string? label) => Matches(label, _activeChar.ActiveCharacterName);
 
-    private static bool Matches(MapPin pin, string? activeName)
+    private static bool Matches(string? label, string? activeName)
     {
-        var label = pin.Label?.Trim();
-        if (string.IsNullOrEmpty(label)) return false;
-        if (string.Equals(label, SelfPinSentinel, StringComparison.OrdinalIgnoreCase)) return true;
+        var trimmed = label?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return false;
+        if (string.Equals(trimmed, SelfPinSentinel, StringComparison.OrdinalIgnoreCase)) return true;
         return !string.IsNullOrWhiteSpace(activeName)
-            && string.Equals(label, activeName.Trim(), StringComparison.OrdinalIgnoreCase);
+            && string.Equals(trimmed, activeName.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
-    // Exact-name match outranks the @me sentinel; then set order. Returns the
-    // chosen pin's fix, or null when nothing in the set matches.
-    private CharacterPinFix? Resolve(IReadOnlyList<MapPin> pins, DateTimeOffset observedAt)
+    private CharacterPinFix? ResolveFromPinState(DateTimeOffset observedAt)
     {
         var name = _activeChar.ActiveCharacterName?.Trim();
-        MapPin? sentinel = null;
-        foreach (var p in pins)
+        MapPinEntry? sentinel = null;
+        foreach (var p in _mapPinState.Pins)
         {
             var label = p.Label?.Trim();
             if (string.IsNullOrEmpty(label)) continue;
             if (!string.IsNullOrWhiteSpace(name)
                 && string.Equals(label, name, StringComparison.OrdinalIgnoreCase))
-                return new CharacterPinFix(new WorldCoord(p.X, 0, p.Z), observedAt);
+                return new CharacterPinFix(new WorldCoord(p.X, 0, p.Z), observedAt, label);
             if (sentinel is null
                 && string.Equals(label, SelfPinSentinel, StringComparison.OrdinalIgnoreCase))
                 sentinel = p;
         }
         return sentinel is { } s
-            ? new CharacterPinFix(new WorldCoord(s.X, 0, s.Z), observedAt)
+            ? new CharacterPinFix(new WorldCoord(s.X, 0, s.Z), observedAt, s.Label?.Trim() ?? SelfPinSentinel)
             : null;
     }
 
-    private void OnPins(PinSetChanged c)
+    private void OnPinAdded(MapPinAdded evt)
     {
         bool changed;
+        var at = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
         lock (_gate)
         {
-            _pins = c.Pins;
-            CharacterPinFix? next = c.Kind switch
-            {
-                // The freshly-added pin is the newest declaration if it matches;
-                // a non-matching add leaves the current declaration intact.
-                PinSetChange.Added when c.Pin is { } p && Matches(p, _activeChar.ActiveCharacterName)
-                    => new CharacterPinFix(new WorldCoord(p.X, 0, p.Z), c.ObservedAt),
-                PinSetChange.Added => _current,
-
-                // Only re-resolve when the removed pin was the active one
-                // (another @me/named pin may still remain).
-                PinSetChange.Removed when _current is { } cur && c.Pin is { } rp
-                    && rp.X == cur.World.X && rp.Z == cur.World.Z
-                    => Resolve(c.Pins, c.ObservedAt),
-                PinSetChange.Removed => _current,
-
-                PinSetChange.AreaChanged => null,
-                _ => Resolve(c.Pins, c.ObservedAt),   // Snapshot replay
-            };
+            CharacterPinFix? next;
+            if (Matches(evt.Label, _activeChar.ActiveCharacterName))
+                next = new CharacterPinFix(new WorldCoord(evt.X, 0, evt.Z), at, evt.Label?.Trim() ?? string.Empty);
+            else
+                next = _current;
             changed = PresenceOrCoordChanged(_current, next);
             _current = next;
         }
         if (changed)
         {
-            _diag?.Trace("Legolas.CharacterPin",
-                _current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
+            _logger?.LogTrace(_current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
+            Changed?.Invoke();
+        }
+    }
+
+    private void OnPinRemoved(MapPinRemoved evt)
+    {
+        bool changed;
+        var at = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
+        lock (_gate)
+        {
+            CharacterPinFix? next;
+            // Identity is (Label, X, Z) — coords alone collide on rename
+            // (remove + add at identical coords) and on coincidental overlap
+            // with another player's pin. Per pg_map_pin_log_grammar.
+            var removedLabel = evt.Label?.Trim() ?? string.Empty;
+            if (_current is { } cur
+                && evt.X == cur.World.X && evt.Z == cur.World.Z
+                && string.Equals(removedLabel, cur.Label, StringComparison.OrdinalIgnoreCase))
+                next = ResolveFromPinState(at);
+            else
+                next = _current;
+            changed = PresenceOrCoordChanged(_current, next);
+            _current = next;
+        }
+        if (changed)
+        {
+            _logger?.LogTrace(_current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
+            Changed?.Invoke();
+        }
+    }
+
+    private void OnAreaChanged(AreaChanged evt)
+    {
+        bool changed;
+        lock (_gate)
+        {
+            changed = _current is not null;
+            _current = null;
+        }
+        if (changed)
+        {
+            _logger?.LogTrace("cleared");
             Changed?.Invoke();
         }
     }
@@ -149,15 +173,13 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         bool changed;
         lock (_gate)
         {
-            var next = Resolve(_pins, DateTimeOffset.UtcNow);
+            var next = ResolveFromPinState(DateTimeOffset.UtcNow);
             changed = PresenceOrCoordChanged(_current, next);
             _current = next;
         }
         if (changed) Changed?.Invoke();
     }
 
-    // Ignore pure ObservedAt drift so a recompute that re-finds the same pin
-    // doesn't storm consumers; presence flip or a coordinate move does.
     private static bool PresenceOrCoordChanged(CharacterPinFix? a, CharacterPinFix? b)
     {
         if (a is null != b is null) return true;
@@ -168,7 +190,9 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
 
     public void Dispose()
     {
-        _pinSub.Dispose();
+        _pinAddedSub.Dispose();
+        _pinRemovedSub.Dispose();
+        _areaChangedSub.Dispose();
         _activeChar.ActiveCharacterChanged -= OnActiveCharacterChanged;
     }
 }

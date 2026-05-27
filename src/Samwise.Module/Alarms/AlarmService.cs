@@ -1,9 +1,9 @@
 using System.Windows;
 using System.Windows.Threading;
+using Arda.Contracts;
+using Arda.World.Player.Events;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Wpf;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
 using Samwise.State;
 
 namespace Samwise.Alarms;
@@ -15,7 +15,8 @@ public sealed class AlarmService : IDisposable
     private readonly GardenStateMachine _state;
     private readonly SamwiseSettings _settings;
     private readonly IAudioPlaybackSink _audio;
-    private readonly IWorldClock? _worldClock;
+    private readonly IDisposable? _calendarSub;
+    private volatile bool _isReplay;
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
 
@@ -32,16 +33,16 @@ public sealed class AlarmService : IDisposable
         GardenStateMachine state,
         SamwiseSettings settings,
         IAudioPlaybackSink audio,
-        IPlayerWorld? playerWorld = null)
+        IDomainEventSubscriber? bus = null)
     {
         _state = state;
         _settings = settings;
         _audio = audio;
-        _worldClock = playerWorld?.Clock;
+        _calendarSub = bus?.Subscribe<CalendarTimeAdvanced>(evt => _isReplay = evt.Metadata.IsReplay);
         _state.PlotChanged += OnPlotChanged;
     }
 
-    private DateTimeOffset Now => _worldClock?.Now ?? DateTimeOffset.UtcNow;
+    private DateTimeOffset Now => DateTimeOffset.UtcNow;
 
     public IReadOnlyCollection<string> ActiveKeys => _firedAt.Keys.ToArray();
 
@@ -181,7 +182,7 @@ public sealed class AlarmService : IDisposable
         // UIs). State derivation upstream of this method (the _firedAt /
         // _snoozedUntil writes in OnPlotChanged) stays mode-agnostic so the
         // first Live tick after a Replaying drain sees a coherent dedup state.
-        if (_worldClock?.Mode == WorldMode.Replaying) return;
+        if (_isReplay) return;
 
         Dispatch(() =>
         {
@@ -301,6 +302,7 @@ public sealed class AlarmService : IDisposable
     public void Dispose()
     {
         _state.PlotChanged -= OnPlotChanged;
+        _calendarSub?.Dispose();
         StopAllChannelPlayback();
     }
 }

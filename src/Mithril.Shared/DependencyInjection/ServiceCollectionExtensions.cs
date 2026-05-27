@@ -16,15 +16,12 @@ using Mithril.Shared.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shared.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddMithrilDiagnostics(this IServiceCollection services, string logDirectory) =>
-        services.AddSingleton<IDiagnosticsSink>(_ =>
-            new SerilogDiagnosticsSink(new DiagnosticsSink(), logDirectory));
-
     /// <summary>
     /// Register the opt-in perf-trace harness: an <see cref="IPerfTracer"/>
     /// singleton (writes per-session JSON-lines files to <paramref name="perfDirectory"/>)
@@ -43,164 +40,42 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IPerfTracer>(sp => new PerfTracer(
             perfDirectory,
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("PerfTrace")));
         services.AddSingleton<PerfTracerHostedService>(sp => new PerfTracerHostedService(
             sp.GetRequiredService<IPerfTracer>(),
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetServices<Mithril.Shared.Modules.IMithrilModule>(),
             verboseFrameEventsAccessor(sp),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("PerfTrace")));
         services.AddHostedService(sp => sp.GetRequiredService<PerfTracerHostedService>());
         return services;
     }
 
     /// <summary>
-    /// Register the core game-services graph (clocks, shift catalog, log
-    /// streams, character snapshots).
-    ///
-    /// <para><paramref name="mirrorRawLogLinesAccessor"/> is a late-bound read
-    /// of an infra diagnostic setting (typically
-    /// <c>ShellSettings.MirrorRawLogLinesToDiagnostics</c>) that gates the
-    /// per-line <c>_diag?.Trace</c> call inside
-    /// <see cref="PlayerLogStream"/> / <see cref="ChatLogStream"/>. When the
-    /// accessor is <c>null</c> or returns <c>false</c> (the default), the
-    /// DiagnosticsSink fanout + Serilog Verbose write per raw line is
-    /// skipped entirely — closing #507's hot-path cost. Flip the setting
-    /// and subsequent emissions reflect the new state (no restart).</para>
+    /// Register the core game-services graph (clocks, shift catalog,
+    /// character snapshots). Log tailing is handled exclusively by the
+    /// Arda pipeline (L0-L3).
     /// </summary>
     public static IServiceCollection AddMithrilGameServices(
-        this IServiceCollection services,
-        Func<IServiceProvider, Func<bool>>? mirrorRawLogLinesAccessor = null) =>
+        this IServiceCollection services) =>
         services
             .AddSingleton<IGameClock, GameClock>()
-            // Shift catalog is bundled JSON with a hardcoded fallback —
-            // critical-path for the shell's "next shift" countdown and the
-            // Gandalf shift-alarm scheduler, so we'd rather degrade to stale
-            // data than to no data on a bundled-file failure.
             .AddSingleton<IShiftCatalog>(sp => new JsonShiftCatalog(
                 bundledDir: null,
-                diag: sp.GetService<IDiagnosticsSink>()))
-            // SessionAnchor is a leaf so PlayerLogStream / ChatLogStream can
-            // resolve ISessionAnchor without forming a cycle with the higher-
-            // level GameSessionService (which CONSUMES the stream and PUSHES
-            // to the anchor — see SessionAnchor.cs).
-            .AddSingleton<SessionAnchor>()
-            .AddSingleton<ISessionAnchor>(sp => sp.GetRequiredService<SessionAnchor>())
-            .AddSingleton<IPlayerLogStream>(sp => new PlayerLogStream(
-                sp.GetRequiredService<Game.GameConfig>(),
-                sp.GetService<IDiagnosticsSink>(),
-                time: null,
-                sessionAnchor: sp.GetService<ISessionAnchor>(),
-                mirrorAccessor: mirrorRawLogLinesAccessor?.Invoke(sp)))
-            .AddSingleton<IChatLogStream>(sp => new ChatLogStream(
-                sp.GetRequiredService<Game.GameConfig>(),
-                sp.GetService<IDiagnosticsSink>(),
-                time: null,
-                sessionAnchor: sp.GetService<ISessionAnchor>(),
-                mirrorAccessor: mirrorRawLogLinesAccessor?.Invoke(sp)))
-            // Foundation service (#612) — owns the FileSystemWatcher on
-            // Reports/, parses storage exports + character snapshots,
-            // exposes per-(server, character) scope query. ActiveCharacterService
-            // is now a thin adapter that adds the "active selection" axis.
+                logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger("ShiftCatalog")))
             .AddSingleton<IGameReportsService>(sp =>
             {
                 var gameConfig = sp.GetRequiredService<Game.GameConfig>();
-                var diag = sp.GetService<IDiagnosticsSink>();
+                var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("GameReports");
                 return new GameReportsService(
                     () => gameConfig.ReportsDirectory,
-                    diag is null ? null : (category, message) => diag.Write(DiagnosticLevel.Warn, category, message));
+                    (category, message) => logger.LogWarning("{Category} {Detail}", category, message));
             })
             .AddSingleton<IActiveCharacterService>(sp => new ActiveCharacterService(
                 sp.GetRequiredService<Game.GameConfig>(),
                 sp.GetRequiredService<IActiveCharacterPersistence>(),
                 sp.GetRequiredService<IGameReportsService>(),
-                sp.GetRequiredService<IDiagnosticsSink>()))
-            .AddHostedService<ActiveCharacterLogSynchronizer>();
-
-    /// <summary>
-    /// Register the L0.5 classifier + splitter pair (#556). The
-    /// <see cref="PlayerLogClassifier"/> consumes <see cref="IPlayerLogStream"/>,
-    /// classifies each line, and publishes the surviving ~5% on the
-    /// unified <see cref="IClassifiedPlayerLogStream"/> pipe. The
-    /// <see cref="PlayerLogPipeSplitter"/> subscribes to that unified pipe
-    /// and fans out to three per-Kind typed pipes:
-    /// <see cref="ILocalPlayerLogStream"/>, <see cref="ICombatActorLogStream"/>,
-    /// <see cref="ISystemSignalLogStream"/>.
-    ///
-    /// <para>Cross-pipe-ordering-sensitive consumers subscribe to the
-    /// unified pipe via the L1 driver (using
-    /// <see cref="IClassifiedPlayerLogLine"/> as the subscription type).
-    /// Consumers needing only one Kind subscribe to the typed pipes.</para>
-    ///
-    /// <para><paramref name="captureRawAccessor"/> is a late-bound read of an
-    /// infra diagnostic setting (typically a <c>ShellSettings</c> property)
-    /// — when it returns <c>true</c> the classifier fills the <c>Raw</c>
-    /// field on emitted records with the exact source line; when
-    /// <c>false</c> (the default) <c>Raw</c> stays <c>null</c> and no
-    /// per-line string allocation occurs. Mirrors the perf-trace pattern:
-    /// flip the setting and subsequent emissions reflect the new state.</para>
-    /// </summary>
-    public static IServiceCollection AddMithrilLogActorPipeline(
-        this IServiceCollection services,
-        Func<IServiceProvider, Func<bool>>? captureRawAccessor = null)
-    {
-        services.AddSingleton<PlayerLogClassifier>(sp => new PlayerLogClassifier(
-            sp.GetRequiredService<IPlayerLogStream>(),
-            sp.GetService<IDiagnosticsSink>(),
-            captureRawAccessor?.Invoke(sp)));
-        services.AddSingleton<IClassifiedPlayerLogStream>(sp =>
-            sp.GetRequiredService<PlayerLogClassifier>());
-
-        services.AddSingleton<PlayerLogPipeSplitter>(sp => new PlayerLogPipeSplitter(
-            sp.GetRequiredService<IClassifiedPlayerLogStream>(),
-            sp.GetService<IDiagnosticsSink>()));
-        services.AddSingleton<ILocalPlayerLogStream>(sp =>
-            sp.GetRequiredService<PlayerLogPipeSplitter>());
-        services.AddSingleton<ICombatActorLogStream>(sp =>
-            sp.GetRequiredService<PlayerLogPipeSplitter>());
-        services.AddSingleton<ISystemSignalLogStream>(sp =>
-            sp.GetRequiredService<PlayerLogPipeSplitter>());
-        return services;
-    }
-
-    /// <summary>
-    /// Register the L1 subscription driver (#511 deliverable 3 / #550 PR 1).
-    /// Sits between the L0.5 typed pipes + unified pipe (registered by
-    /// <see cref="AddMithrilLogActorPipeline"/>) + the L0
-    /// <see cref="IChatLogStream"/>, and produces typed
-    /// <see cref="LogEnvelope{T}"/> subscriptions with cross-cutting
-    /// concerns owned by the driver: <see cref="ReplayMode"/>,
-    /// <see cref="LogEnvelope{T}.IsReplay"/>, per-handler containment,
-    /// drop accounting, <see cref="DeliveryContext"/> marshalling,
-    /// opt-in <see cref="LogSubscriptionOptions.SkipProcessedHighWater"/>
-    /// idempotence filter, and a per-subscription fault SM that surfaces
-    /// degraded subscriptions on <see cref="IAttentionAggregator"/> via the
-    /// <see cref="LogStreamAttentionSource"/> registered alongside.
-    ///
-    /// <para>The producer + consumer fleets now route through this driver
-    /// (archetype-A migrations landed across #555 / #560–#564; archetype-A
-    /// shared GameState — Pin/Weather/Position — migrated to the unified
-    /// pipe in #556 Phase 3 / #569). Archetype-B consumers continue to
-    /// migrate per the #550 plan; un-migrated consumers still subscribe to
-    /// the L0 / L0.5 surfaces directly until their PR lands.</para>
-    /// </summary>
-    public static IServiceCollection AddMithrilLogStreamDriver(this IServiceCollection services)
-    {
-        services.AddSingleton<LogStreamAttentionSource>();
-        // Surface the attention source via the shared IAttentionSource
-        // contract so AttentionAggregator picks it up alongside the
-        // per-module sources.
-        services.AddSingleton<Modules.IAttentionSource>(sp => sp.GetRequiredService<LogStreamAttentionSource>());
-        services.AddSingleton<ILogStreamDriver>(sp => new LogStreamDriver(
-            sp.GetRequiredService<ILocalPlayerLogStream>(),
-            sp.GetRequiredService<ICombatActorLogStream>(),
-            sp.GetRequiredService<ISystemSignalLogStream>(),
-            sp.GetRequiredService<IClassifiedPlayerLogStream>(),
-            sp.GetRequiredService<IChatLogStream>(),
-            sp.GetRequiredService<LogStreamAttentionSource>(),
-            sp.GetService<IDiagnosticsSink>()));
-        return services;
-    }
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("ActiveCharacter")));
 
     /// <summary>
     /// Register the root directory for per-character storage (typically
@@ -235,7 +110,8 @@ public static class ServiceCollectionExtensions
             fileName,
             typeInfo,
             sp.GetService<ILegacyMigration<T>>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()
+                ?.CreateLogger($"PerCharacterStore<{typeof(T).Name}>")));
         services.AddSingleton(sp => new PerCharacterView<T>(
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetRequiredService<PerCharacterStore<T>>()));
@@ -262,7 +138,7 @@ public static class ServiceCollectionExtensions
             .AddSingleton<IReferenceDataService>(sp => new ReferenceDataService(
                 cacheDirectory,
                 sp.GetRequiredService<HttpClient>(),
-                sp.GetRequiredService<IDiagnosticsSink>(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("Reference"),
                 perf: sp.GetService<IPerfTracer>()))
             .AddSingleton<IEntityNameResolver, ReferenceDataEntityNameResolver>();
 
@@ -271,7 +147,7 @@ public static class ServiceCollectionExtensions
             .AddSingleton<ICommunityCalibrationService>(sp => new CommunityCalibrationService(
                 cacheDirectory,
                 sp.GetRequiredService<HttpClient>(),
-                sp.GetRequiredService<IDiagnosticsSink>()));
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("CommunityCalibration")));
 
     /// <summary>
     /// Register a settings type for JSON persistence with debounced autosave on
@@ -342,7 +218,7 @@ public static class ServiceCollectionExtensions
             cacheDirectory,
             sp.GetRequiredService<HttpClient>(),
             sp.GetRequiredService<IReferenceDataService>(),
-            sp.GetRequiredService<IDiagnosticsSink>(),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Icons"),
             sp.GetRequiredService<IconSettings>()));
         return services;
     }

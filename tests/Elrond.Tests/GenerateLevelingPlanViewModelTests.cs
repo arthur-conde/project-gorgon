@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Elrond.Services;
 using Elrond.ViewModels;
+using static Elrond.Tests.ProgressionTestSupport;
 using FluentAssertions;
 using Mithril.Leveling;
 using Mithril.Planning;
@@ -40,8 +42,9 @@ public class GenerateLevelingPlanViewModelTests
         CharacterSnapshot? snap, FakeRef? data = null, RecordingPlanImportTarget? sink = null)
     {
         data ??= Data();
+        var active = new FakeActiveChar(snap);
         return new GenerateLevelingPlanViewModel(
-            new FakeActiveChar(snap), new FakeGameReports(snap), Planner(data), data,
+            AdapterFor(active, new FakeGameReports(snap)), Planner(data), data,
             sink is null ? null : () => sink);
     }
 

@@ -1,0 +1,17 @@
+using Arda.Abstractions.Logs;
+using Arda.Contracts;
+using Arda.Dispatch;
+using Arda.World.Player.Events;
+
+namespace Arda.World.Player.Internal;
+
+internal sealed class SetPetOwnerHandler(IDomainEventPublisher bus) : IFrameHandler
+{
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+    {
+        var tok = new ArgTokenizer(args, verb, sourceLog);
+        tok.SkipOpen();
+        var entityId = tok.NextLong();
+        bus.Publish(new SetPetOwnerFrame(entityId, metadata));
+    }
+}

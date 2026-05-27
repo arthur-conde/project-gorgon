@@ -56,18 +56,11 @@ public sealed partial class SkillAdvisorViewModel
 
     private readonly SkillAdvisorEngine _engine;
     private readonly IActiveCharacterService _activeChar;
-    private readonly IGameReportsService _gameReports;
+    private readonly LiveProgressionAdapter _progression;
     private readonly IReferenceDataService _referenceData;
     private readonly ElrondSettings _settings;
 
-    /// <summary>
-    /// Resolves the active character's snapshot via <see cref="IGameReportsService"/>
-    /// directly (#612). The character selection axis still flows through
-    /// <see cref="IActiveCharacterService"/> — only the snapshot DATA reads from
-    /// the foundation reports service.
-    /// </summary>
-    private CharacterSnapshot? ActiveCharacterSnapshot =>
-        _gameReports.GetCharacterSnapshot(_activeChar.ActiveCharacterName, _activeChar.ActiveServer);
+    private CharacterSnapshot? ActiveCharacterSnapshot => _progression.GetMergedSnapshot();
     // Resolved lazily, ONLY on the explicit Send click. Resolving ICraftListImportTarget
     // eagerly at ctor time closes a DI cycle: it pulls Celebrimbor's CraftListImportTarget
     // → IModuleActivator → ShellModuleActivator(ShellViewModel) → ShellViewModel..ctor's
@@ -89,7 +82,7 @@ public sealed partial class SkillAdvisorViewModel
     public SkillAdvisorViewModel(
         SkillAdvisorEngine engine,
         IActiveCharacterService characterData,
-        IGameReportsService gameReports,
+        LiveProgressionAdapter progression,
         IReferenceDataService referenceData,
         ElrondSettings settings,
         GenerateLevelingPlanViewModel generatePlan,
@@ -97,7 +90,7 @@ public sealed partial class SkillAdvisorViewModel
     {
         _engine = engine;
         _activeChar = characterData;
-        _gameReports = gameReports;
+        _progression = progression;
         _referenceData = referenceData;
         _settings = settings;
         GeneratePlan = generatePlan;
@@ -152,8 +145,7 @@ public sealed partial class SkillAdvisorViewModel
         HydrateFiltersFromSettings();
         foreach (var f in AvailableFilters) f.PropertyChanged += OnFilterPropertyChanged;
 
-        _activeChar.ActiveCharacterChanged += OnActiveCharacterChanged;
-        _activeChar.CharacterExportsChanged += OnActiveCharacterChanged;
+        _progression.Changed += OnProgressionChanged;
         _referenceData.FileUpdated += OnReferenceUpdated;
 
         BuildSkillNodes();
@@ -202,11 +194,11 @@ public sealed partial class SkillAdvisorViewModel
     public string SectionLevelText => Analysis switch
     {
         null => "—",
-        var a => a.CurrentLevel.ToString(),
+        var a => a.EffectiveLevel.ToString(),
     };
     public string SectionBonusLevelsText => Analysis switch
     {
-        { CurrentBonusLevels: > 0 } a => $" ({a.CurrentBonusLevels} from bonuses)",
+        { CurrentBonusLevels: > 0 } a => $" ({a.CurrentLevel} + {a.CurrentBonusLevels} bonus)",
         _ => string.Empty,
     };
     public string SectionCurrentXpText => Analysis switch
@@ -492,7 +484,7 @@ public sealed partial class SkillAdvisorViewModel
                 return new SkillNode(
                     Key: k,
                     DisplayName: displayName,
-                    CurrentLevel: charSkill.Level,
+                    CurrentLevel: charSkill.EffectiveLevel,
                     CurrentXp: charSkill.XpTowardNextLevel,
                     XpNeededForNextLevel: charSkill.XpNeededForNextLevel);
             })
@@ -533,7 +525,7 @@ public sealed partial class SkillAdvisorViewModel
 
         var active = ActiveCharacterSnapshot;
         SelectedSkillLevel = active is not null && active.Skills.TryGetValue(skillKey, out var charSkill)
-            ? charSkill.Level
+            ? charSkill.EffectiveLevel
             : null;
     }
 
@@ -565,7 +557,7 @@ public sealed partial class SkillAdvisorViewModel
         {
             foreach (var r in Analysis.Recipes) _recipes.Add(r);
             RecipesView.MoveCurrentToFirst();
-            StatusMessage = $"{active.Name} on {active.Server} — exported {active.ExportedAt:g}";
+            StatusMessage = FormatStatusMessage(active);
         }
         else
         {
@@ -578,13 +570,28 @@ public sealed partial class SkillAdvisorViewModel
         SelectedRecipe = RecipesView.CurrentItem as RecipeAnalysis;
     }
 
-    private void OnActiveCharacterChanged(object? sender, EventArgs e)
+    private void OnProgressionChanged()
     {
         OnUiThread(() =>
         {
             BuildSkillNodes();
             Reanalyze();
         });
+    }
+
+    private string FormatStatusMessage(CharacterSnapshot active)
+    {
+        var baseLine = $"{active.Name} on {active.Server}";
+        return _progression.LastDataSource switch
+        {
+            ProgressionDataSource.Merged when _progression.ExportTimestamp is { } exportAt =>
+                $"{baseLine} — live + export (export {exportAt:g})",
+            ProgressionDataSource.LiveOnly =>
+                $"{baseLine} — live tracking (no export yet)",
+            ProgressionDataSource.ExportOnly =>
+                $"{baseLine} — exported {active.ExportedAt:g}",
+            _ => $"{baseLine} — exported {active.ExportedAt:g}",
+        };
     }
 
     private void OnReferenceUpdated(object? sender, string key)
@@ -614,8 +621,7 @@ public sealed partial class SkillAdvisorViewModel
 
     public void Dispose()
     {
-        _activeChar.ActiveCharacterChanged -= OnActiveCharacterChanged;
-        _activeChar.CharacterExportsChanged -= OnActiveCharacterChanged;
+        _progression.Changed -= OnProgressionChanged;
         _referenceData.FileUpdated -= OnReferenceUpdated;
         RecipesView.CurrentChanged -= OnCurrentRecipeChanged;
         foreach (var f in AvailableFilters) f.PropertyChanged -= OnFilterPropertyChanged;

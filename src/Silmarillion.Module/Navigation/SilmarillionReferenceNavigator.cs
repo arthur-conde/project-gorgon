@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 
@@ -28,7 +28,7 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
     private readonly Func<IEnumerable<IReferenceKindTarget>>? _targetsFactory;
     private IReadOnlyDictionary<EntityKind, IReferenceKindTarget>? _targets;
     private readonly Func<IModuleActivator?>? _activatorFactory;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     private readonly Stack<EntityRef> _back = new();
     private readonly Stack<EntityRef> _forward = new();
@@ -52,11 +52,11 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
     public SilmarillionReferenceNavigator(
         Func<IEnumerable<IReferenceKindTarget>> targetsFactory,
         Func<IModuleActivator?>? activatorFactory = null,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _targetsFactory = targetsFactory;
         _activatorFactory = activatorFactory;
-        _diag = diag;
+        _logger = logger;
     }
 
     private IReadOnlyDictionary<EntityKind, IReferenceKindTarget> Targets =>
@@ -87,7 +87,7 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
 
     public void Open(EntityRef reference)
     {
-        _diag?.Info("Silmarillion.Nav", $"Open kind={reference.Kind} name='{reference.InternalName}'.");
+        _logger?.LogTrace("Open kind={Kind} name='{InternalName}'.", reference.Kind, reference.InternalName);
 
         // Activate the host module BEFORE firing Navigated so SilmarillionViewModel
         // exists and is subscribed by the time the event reaches it. Without this,

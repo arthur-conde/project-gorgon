@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shared.Modules;
 
@@ -13,9 +13,9 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
     private const string Scheme = "mithril";
 
     private readonly IReadOnlyDictionary<string, IDeepLinkHandler> _handlers;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public DeepLinkRouter(IEnumerable<IDeepLinkHandler> handlers, IDiagnosticsSink? diag = null)
+    public DeepLinkRouter(IEnumerable<IDeepLinkHandler> handlers, ILogger? logger = null)
     {
         // Fail-loud on duplicate Action registrations — that's a DI ordering bug,
         // not graceful-degradation territory.
@@ -30,7 +30,7 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
             byAction[key] = h;
         }
         _handlers = byAction;
-        _diag = diag;
+        _logger = logger;
     }
 
     public bool Handle(string? uri)
@@ -38,12 +38,12 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
         if (string.IsNullOrWhiteSpace(uri)) return false;
         if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed))
         {
-            _diag?.Info("DeepLink", $"Rejected: not a well-formed URI: '{uri}'.");
+            _logger?.LogInformation($"Rejected: not a well-formed URI: '{uri}'.");
             return false;
         }
         if (!string.Equals(parsed.Scheme, Scheme, StringComparison.OrdinalIgnoreCase))
         {
-            _diag?.Info("DeepLink", $"Rejected: scheme '{parsed.Scheme}' is not 'mithril'.");
+            _logger?.LogInformation($"Rejected: scheme '{parsed.Scheme}' is not 'mithril'.");
             return false;
         }
 
@@ -52,9 +52,9 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
 
         if (!_handlers.TryGetValue(action, out var handler))
         {
-            _diag?.Info("DeepLink", $"Rejected: unknown action '{action}'.");
+            _logger?.LogInformation($"Rejected: unknown action '{action}'.");
             return false;
         }
-        return handler.TryHandle(subPath, _diag);
+        return handler.TryHandle(subPath, _logger);
     }
 }

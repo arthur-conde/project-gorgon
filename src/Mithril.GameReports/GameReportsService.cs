@@ -15,7 +15,7 @@ namespace Mithril.GameReports;
 ///
 /// <para>Diagnostics are surfaced via an optional <c>logWarn</c> callback so
 /// the foundation assembly stays free of a hard dependency on Mithril.Shared's
-/// <c>IDiagnosticsSink</c>. Callers pass an adapter; nulls are tolerated.</para>
+/// <c>ILogger</c>. Callers pass an adapter; nulls are tolerated.</para>
 /// </summary>
 public sealed class GameReportsService : IGameReportsService
 {

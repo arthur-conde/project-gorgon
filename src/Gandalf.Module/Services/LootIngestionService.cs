@@ -1,147 +1,140 @@
+using System.Windows;
+using Microsoft.Extensions.Logging;
+using Arda.Contracts;
+using Arda.World.Player.Events;
 using Gandalf.Parsing;
 using Microsoft.Extensions.Hosting;
-using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Logging;
 
 namespace Gandalf.Services;
 
 /// <summary>
-/// Post-#550 PR 3 L1 migration. Subscribes to the L1
-/// <see cref="ILogStreamDriver"/>'s LocalPlayer pipe (the typed L0.5
-/// actor-classified surface) and routes loot-related events into
-/// <see cref="LootSource"/>. Chest detection delegates to
-/// <see cref="LootBracketTracker"/> — a signal-driven state machine that
-/// distinguishes loot chests from storage vaults / NPC dialog without a
-/// naming heuristic. Boss kills route through <see cref="BossKillCreditParser"/>
-/// — Combat Wisdom is awarded only on defeat-cooldown creature kills, so the
-/// wisdom-credit line is both the auto-discovery signal AND the cooldown
-/// anchor (the <see cref="DefeatCooldownParser"/> rejection text remains as
-/// a diagnostic-only "cooldown still active" observation).
+/// Arda-native ingestion service for loot events. Subscribes to domain events
+/// via <see cref="IDomainEventSubscriber"/> and routes them into
+/// <see cref="LootBracketTracker"/> (chest discrimination FSM) and
+/// <see cref="LootSource"/> (boss-kill auto-discovery).
 ///
-/// <para><b>Area→chest-stamp bridge (#790).</b> Owned by <see cref="LootSource"/>
-/// directly — it injects <c>IPlayerAreaState</c> and queries
-/// <c>CurrentArea</c> at chest-commit time. This service no longer has any
-/// area dep; the per-line area-tracker push-in retired in #790 because
-/// the producer's L1 subscription already owns the <c>LOADING LEVEL</c>
-/// envelope path end-to-end.</para>
+/// <para>Replaces the legacy L1-driver subscription that fed raw log lines
+/// through parser classes. The bracket tracker now receives typed events
+/// directly; the parsers for BossKillCredit and DefeatCooldown are retained
+/// because those signals arrive as <see cref="ScreenTextObserved"/> and
+/// require regex extraction of the NPC display name from free text.</para>
 ///
-/// <para><b>L1 migration disposition (#549 Gandalf row, #550 PR 3 archetype-B).</b>
-/// <list type="bullet">
-///   <item><see cref="ReplayMode.FromSessionStart"/> — eager module; the
-///   chest/defeat catalog must rebuild from session-start because the
-///   per-key upserts in <see cref="LootSource"/> need the full backlog to
-///   re-derive <c>LearnedChest</c> / <c>LearnedDefeat</c> rows on every cold
-///   start.</item>
-///   <item><see cref="DeliveryContext.Inline"/> — the handler writes to
-///   dictionaries + raises events; no <c>ObservableCollection</c> mutation
-///   in the ingestion path. VM-side dispatcher marshalling lives in
-///   <c>DashboardAggregator</c> / <c>TimerSourceBinder</c>, untouched by
-///   this migration.</item>
-///   <item><b>No</b> <see cref="LogSubscriptionOptions.SkipProcessedHighWater"/>
-///   — idempotent upsert: <see cref="LootSource.OnChestInteraction"/> /
-///   <see cref="LootSource.OnBossKillCredit"/> short-circuit on the
-///   per-key <c>(chest:&lt;internal&gt;|defeat:&lt;displayName&gt;)</c>
-///   <c>StartedAt</c> equality guard, so re-replay of the same Sequence
-///   re-applies a no-op without inflating any counter. The #549 audit row
-///   explicitly declines an L1 high-water for this consumer.</item>
-/// </list>
-/// </para>
-///
-/// <para><b>Containment retired.</b> The L1 driver wraps every handler
-/// invocation in try/catch + rate-limited Warn (#550 capability C), so the
-/// pre-L1 hand-rolled <c>_diag?.Warn("Gandalf.Loot", ...)</c> catch this
-/// service used to hold is gone. Failures surface on
-/// <see cref="IDiagnosticsSink"/> under the <c>Gandalf.Loot</c> category via
-/// the driver's <see cref="LogSubscriptionOptions.DiagnosticCategory"/>
-/// override (preserves the pre-L1 bucket — log consumers see no category
-/// churn).</para>
-///
-/// <para>No <c>ModuleGate</c> wait — Gandalf is eager; derived-source log
+/// <para>No <c>ModuleGate</c> wait — Gandalf is eager; derived-source event
 /// replay must run as soon as the host starts.</para>
 /// </summary>
 public sealed class LootIngestionService : BackgroundService
 {
-    private const string DiagCategory = "Gandalf.Loot";
-
-    private readonly ILogStreamDriver _driver;
+    private readonly IDomainEventSubscriber _bus;
     private readonly LootBracketTracker _bracket;
     private readonly BossKillCreditParser _bossKill;
     private readonly DefeatCooldownParser _defeatCooldown;
     private readonly LootSource _source;
-    private readonly IDiagnosticsSink? _diag;
-    private ILogSubscription? _subscription;
+    private readonly ILogger? _logger;
+    private readonly List<IDisposable> _subscriptions = new();
     private bool _firstObservationLogged;
 
     public LootIngestionService(
-        ILogStreamDriver driver,
+        IDomainEventSubscriber bus,
         LootBracketTracker bracket,
         BossKillCreditParser bossKill,
         DefeatCooldownParser defeatCooldown,
         LootSource source,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
-        _driver = driver;
+        _bus = bus;
         _bracket = bracket;
         _bossKill = bossKill;
         _defeatCooldown = defeatCooldown;
         _source = source;
-        _diag = diag;
+        _logger = logger;
+    }
+
+    public override Task StartAsync(CancellationToken cancellationToken)
+    {
+        _logger?.LogInformation("Subscribing to Arda domain events for loot ingestion");
+
+        // Arda dispatches on its driver thread. LootBracketTracker is currently
+        // pure FSM logic so the cross-thread call is safe today, but the
+        // moment a future consumer touches WPF-bound state through the bracket
+        // chain we'd silently violate STA. Marshal preemptively, matching
+        // Mithril's other Arda → WPF subscribers.
+        _subscriptions.Add(_bus.Subscribe<InteractionStarted>(evt =>
+            MarshalToUi(() => _bracket.OnInteractionStarted(evt))));
+
+        _subscriptions.Add(_bus.Subscribe<TalkScreenFrame>(_ =>
+            MarshalToUi(() => _bracket.OnTalkScreen())));
+
+        _subscriptions.Add(_bus.Subscribe<ScreenTextObserved>(evt =>
+            MarshalToUi(() =>
+            {
+                _bracket.OnScreenTextObserved(evt);
+                DispatchScreenText(evt);
+            })));
+
+        _subscriptions.Add(_bus.Subscribe<EnableInteractorsFrame>(evt =>
+            MarshalToUi(() => _bracket.OnEnableInteractors(evt))));
+
+        _subscriptions.Add(_bus.Subscribe<InteractionEnded>(evt =>
+            MarshalToUi(() => _bracket.OnInteractionEnded(evt))));
+
+        _subscriptions.Add(_bus.Subscribe<DelayLoopStarted>(evt =>
+            MarshalToUi(() => _bracket.OnDelayLoopStarted(evt))));
+
+        _subscriptions.Add(_bus.Subscribe<InteractionWaiting>(evt =>
+            MarshalToUi(() => _bracket.OnInteractionWaiting(evt))));
+
+        _subscriptions.Add(_bus.Subscribe<InventoryItemAdded>(evt =>
+        {
+            var ts = evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow;
+            MarshalToUi(() => _bracket.OnInventoryItemAdded(ts));
+        }));
+
+        return base.StartAsync(cancellationToken);
+    }
+
+    private static void MarshalToUi(Action action)
+    {
+        if (Application.Current?.Dispatcher is { } d && !d.CheckAccess())
+            d.Invoke(action);
+        else
+            action();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _diag?.Info(DiagCategory, "Subscribing to L1 driver (LocalPlayer pipe) for loot ingestion");
-
-        _subscription = _driver.Subscribe<LocalPlayerLogLine>(
-            envelope =>
-            {
-                Dispatch(envelope.Payload);
-                return ValueTask.CompletedTask;
-            },
-            new LogSubscriptionOptions
-            {
-                ReplayMode = ReplayMode.FromSessionStart,
-                DeliveryContext = DeliveryContext.Inline,
-                DiagnosticCategory = DiagCategory,
-            });
-
-        // Park until the host stops. The L1 subscription runs its own pump
-        // on a Task.Run; ExecuteAsync's job is to dispose it on shutdown.
         try { await Task.Delay(Timeout.Infinite, stoppingToken).ConfigureAwait(false); }
         catch (OperationCanceledException) { /* expected on host stop */ }
-        finally
-        {
-            _subscription?.Dispose();
-            _subscription = null;
-        }
+        finally { DisposeSubscriptions(); }
     }
 
     public override void Dispose()
     {
-        _subscription?.Dispose();
-        _subscription = null;
+        DisposeSubscriptions();
         base.Dispose();
     }
 
-    private void Dispatch(LocalPlayerLogLine payload)
+    private void DisposeSubscriptions()
     {
-        // L0.5 (#532) eats the [ts] + LocalPlayer: envelope; the parsers
-        // and bracket tracker consume LocalPlayerLogLine.Data directly
-        // (anchor dropped per the #550 PR #555 review — "downstream never
-        // re-matches the actor envelope").
-        var line = payload.Data;
-        var ts = payload.Timestamp.UtcDateTime;
+        foreach (var sub in _subscriptions) sub.Dispose();
+        _subscriptions.Clear();
+    }
 
-        _bracket.Observe(line, ts);
+    private void DispatchScreenText(ScreenTextObserved evt)
+    {
+        var category = evt.Category.ToString();
+        var text = evt.Text.ToString();
+        var ts = evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow;
 
-        if (_bossKill.TryParse(line, ts) is BossKillCreditEvent kill)
+        // Boss kill credit (CombatInfo channel)
+        if (_bossKill.TryParse($"ProcessScreenText({category}, \"{text}\")", ts) is BossKillCreditEvent kill)
         {
             _source.OnBossKillCredit(kill.NpcDisplayName, kill.Timestamp);
             FirstObservation();
             return;
         }
 
-        if (_defeatCooldown.TryParse(line, ts) is DefeatCooldownActiveEvent active)
+        // Defeat cooldown active (GeneralInfo channel)
+        if (_defeatCooldown.TryParse($"ProcessScreenText({category}, \"{text}\")", ts) is DefeatCooldownActiveEvent active)
         {
             _source.OnDefeatCooldownActive(active.NpcDisplayName, active.Timestamp);
             FirstObservation();
@@ -152,6 +145,6 @@ public sealed class LootIngestionService : BackgroundService
     {
         if (_firstObservationLogged) return;
         _firstObservationLogged = true;
-        _diag?.Info(DiagCategory, "First loot-source event observed this session");
+        _logger?.LogInformation("First loot-source event observed this session");
     }
 }

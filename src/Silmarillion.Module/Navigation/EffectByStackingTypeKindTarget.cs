@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 
@@ -15,12 +15,12 @@ namespace Silmarillion.Navigation;
 public sealed class EffectByStackingTypeKindTarget : IReferenceKindTarget
 {
     private readonly EffectsTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public EffectByStackingTypeKindTarget(EffectsTabViewModel vm, IDiagnosticsSink? diag = null)
+    public EffectByStackingTypeKindTarget(EffectsTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.EffectByStackingType;
@@ -31,13 +31,13 @@ public sealed class EffectByStackingTypeKindTarget : IReferenceKindTarget
     {
         if (string.IsNullOrEmpty(internalName))
         {
-            _diag?.Info("Silmarillion.Nav", "EffectByStackingType.TrySelect '' → empty payload, leaving Effects tab unchanged.");
+            _logger?.LogTrace("EffectByStackingType.TrySelect '' → empty payload, leaving Effects tab unchanged.");
             return false;
         }
 
         var escaped = internalName.Replace("\"", "\\\"");
         var query = $"StackingType = \"{escaped}\"";
-        _diag?.Info("Silmarillion.Nav", $"EffectByStackingType.TrySelect '{internalName}' → QueryText='{query}'.");
+        _logger?.LogTrace("EffectByStackingType.TrySelect '{InternalName}' → QueryText='{QueryText}'.", internalName, query);
         _vm.SelectedRow = null;
         _vm.QueryText = query;
         return true;

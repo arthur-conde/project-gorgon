@@ -44,33 +44,6 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private bool _autoStartPerfTrace;
     public bool AutoStartPerfTrace { get => _autoStartPerfTrace; set => Set(ref _autoStartPerfTrace, value); }
 
-    /// <summary>When true, the L0.5 classifier (#532 / #556 /
-    /// <c>PlayerLogClassifier</c>) fills
-    /// <see cref="Mithril.Shared.Logging.LocalPlayerLogLine.Raw"/> (and the
-    /// equivalent fields on the combat / system pipes) with the exact source
-    /// <see cref="Mithril.Shared.Logging.RawLogLine.Line"/>. <c>null</c> by
-    /// default — no per-line string allocation. Use when diagnosing an
-    /// L2 / L3 parse or interpretation failure where the original line is
-    /// useful at the failing datum. Flip takes effect forward (no restart).
-    /// Infra-level diagnostic; sibling to <see cref="VerboseFrameEvents"/>
-    /// and <see cref="MirrorRawLogLinesToDiagnostics"/>.</summary>
-    private bool _captureRawPlayerLogLines;
-    public bool CaptureRawPlayerLogLines { get => _captureRawPlayerLogLines; set => Set(ref _captureRawPlayerLogLines, value); }
-
-    /// <summary>When true, every Player.log and ChatLog tail line is mirrored
-    /// into the Mithril diagnostics sink (the in-memory ring buffer powering
-    /// the live Diagnostics view + the rolling <c>mithril-*.json</c> Serilog
-    /// file at Verbose). Default OFF — when off, the per-line
-    /// <see cref="Mithril.Shared.Diagnostics.IDiagnosticsSink.Trace"/> fanout
-    /// + Serilog Verbose write disappear from the L0 poll thread, closing
-    /// #507's hot-path cost (DiagnosticsSink <c>EntryAdded</c> fanout + per-line
-    /// unbuffered disk write under bursts). Turn on only when actively
-    /// diagnosing Mithril behavior or running ad-hoc <c>mithril-logs</c> MCP
-    /// analytics; flip takes effect forward (no restart). Infra-level
-    /// diagnostic; sibling to <see cref="CaptureRawPlayerLogLines"/>.</summary>
-    private bool _mirrorRawLogLinesToDiagnostics;
-    public bool MirrorRawLogLinesToDiagnostics { get => _mirrorRawLogLinesToDiagnostics; set => Set(ref _mirrorRawLogLinesToDiagnostics, value); }
-
     private string _uiFontFamily = "Segoe UI";
     public string UiFontFamily { get => _uiFontFamily; set => Set(ref _uiFontFamily, value); }
 

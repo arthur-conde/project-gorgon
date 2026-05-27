@@ -622,7 +622,7 @@ public class ReferenceDataServiceTests : IDisposable
         // Phase 6 drift detection: a Requirements row whose T discriminator
         // doesn't match any concrete QuestRequirement subclass should
         // deserialize to UnknownQuestRequirement and surface a Warn entry
-        // through IDiagnosticsSink. Bundled JSON has zero unknowns, so any
+        // through ILogger / DiagnosticsLoggerProvider. Bundled JSON has zero unknowns, so any
         // warning here is a real CDN-drift signal.
         File.WriteAllText(Path.Combine(_bundledDir, "items.json"), "{}");
         File.WriteAllText(Path.Combine(_bundledDir, "items.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
@@ -640,13 +640,15 @@ public class ReferenceDataServiceTests : IDisposable
             """);
         File.WriteAllText(Path.Combine(_bundledDir, "quests.meta.json"), "{\"cdnVersion\":\"v1\",\"source\":0}");
 
-        var diag = new Mithril.Shared.Diagnostics.DiagnosticsSink();
-        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), diag, bundledDir: _bundledDir);
+        using var logProvider = new Mithril.Shared.Diagnostics.DiagnosticsLoggerProvider(
+            Path.Combine(Path.GetTempPath(), "mithril-refdata-drift-" + Guid.NewGuid()));
+        var logger = logProvider.CreateLogger("Reference");
+        var svc = new ReferenceDataService(_cacheDir, NeverCallHttp(), logger, bundledDir: _bundledDir);
 
         // Confirm parse still succeeded — drift detection is non-fatal.
         svc.Quests.Should().ContainKey("quest_999");
 
-        var driftWarnings = diag.Snapshot()
+        var driftWarnings = logProvider.Snapshot()
             .Where(e => e.Level == Mithril.Shared.Diagnostics.DiagnosticLevel.Warn
                         && e.Category == "Reference"
                         && e.Message.Contains("unknown")
@@ -654,7 +656,7 @@ public class ReferenceDataServiceTests : IDisposable
             .ToList();
 
         driftWarnings.Should().NotBeEmpty(
-            "the unknown discriminator should surface as a Warn through IDiagnosticsSink");
+            "the unknown discriminator should surface as a Warn through ILogger");
     }
 
     [Fact]

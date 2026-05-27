@@ -1,6 +1,7 @@
+using Microsoft.Extensions.Logging;
+using Arda.Composition;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.GameReports;
 using Smaug.Domain;
@@ -42,9 +43,10 @@ public sealed class StorageSellbackService
 {
     private readonly IReferenceDataService _refData;
     private readonly IActiveCharacterService _activeCharSvc;
-    private readonly VendorSellContext _sellContext;
+    private readonly IPlayerProgressionState _progression;
     private readonly IFavorLookupService? _favorLookup;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly INpcStateTracker? _npcTracker;
+    private readonly ILogger? _logger;
 
     private IReadOnlyList<StorageSellbackVendor> _vendors = [];
 
@@ -58,15 +60,17 @@ public sealed class StorageSellbackService
     public StorageSellbackService(
         IReferenceDataService refData,
         IActiveCharacterService activeCharSvc,
-        VendorSellContext sellContext,
+        IPlayerProgressionState progression,
         IFavorLookupService? favorLookup = null,
-        IDiagnosticsSink? diag = null)
+        INpcStateTracker? npcTracker = null,
+        ILogger? logger = null)
     {
         _refData = refData;
         _activeCharSvc = activeCharSvc;
-        _sellContext = sellContext;
+        _progression = progression;
         _favorLookup = favorLookup;
-        _diag = diag;
+        _npcTracker = npcTracker;
+        _logger = logger;
 
         _activeCharSvc.ActiveCharacterChanged += (_, _) => Rebuild();
         _activeCharSvc.StorageReportsChanged += (_, _) => Rebuild();
@@ -76,6 +80,8 @@ public sealed class StorageSellbackService
         };
         if (_favorLookup is not null)
             _favorLookup.FavorChanged += (_, _) => Rebuild();
+        if (_npcTracker is not null)
+            _npcTracker.StateChanged += () => Rebuild();
 
         Rebuild();
     }
@@ -121,8 +127,9 @@ public sealed class StorageSellbackService
                 bool? acceptable = null;
                 if (playerTier is not null)
                 {
+                    var civicPride = _progression.Skills.TryGetValue("CivicPride", out var cp) ? cp.Level + cp.BonusLevels : 0;
                     maxGold = VendorCapResolver.ResolveMaxGold(
-                        store, playerTier.Value, ctx.Keywords, _sellContext.CivicPrideLevel);
+                        store, playerTier.Value, ctx.Keywords, civicPride);
                     acceptable = maxGold is not null && ctx.Entry.Value <= maxGold.Value;
                 }
 
@@ -150,8 +157,7 @@ public sealed class StorageSellbackService
 
         _vendors = matches;
         VendorsChanged?.Invoke(this, EventArgs.Empty);
-        _diag?.Info("Smaug.Sellback",
-            $"Rebuilt for {ActiveCharacter}: {matches.Count} vendors matched {report.Items.Count} stocked items.");
+        _logger?.LogInformation($"Rebuilt for {ActiveCharacter}: {matches.Count} vendors matched {report.Items.Count} stocked items.");
     }
 
     /// <summary>

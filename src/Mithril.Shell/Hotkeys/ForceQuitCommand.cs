@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using System.Windows.Threading;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Hotkeys;
 
 namespace Mithril.Shell.Hotkeys;
@@ -17,11 +17,11 @@ namespace Mithril.Shell.Hotkeys;
 /// </summary>
 public sealed class ForceQuitCommand : IHotkeyCommand
 {
-    private readonly IDiagnosticsSink _diagnostics;
+    private readonly ILogger _logger;
 
-    public ForceQuitCommand(IDiagnosticsSink diagnostics)
+    public ForceQuitCommand(ILogger logger)
     {
-        _diagnostics = diagnostics;
+        _logger = logger;
     }
 
     public string Id => "mithril.shell.force-quit";
@@ -33,7 +33,7 @@ public sealed class ForceQuitCommand : IHotkeyCommand
 
     public Task ExecuteAsync(CancellationToken ct)
     {
-        _diagnostics.Write(DiagnosticLevel.Warn, "Shell", "Force-quit hotkey triggered — shutting down.");
+        _logger.LogWarning("Force-quit hotkey triggered — shutting down.");
 
         var app = System.Windows.Application.Current;
         if (app is null) return Task.CompletedTask;

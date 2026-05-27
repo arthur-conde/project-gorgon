@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 
@@ -31,12 +31,12 @@ namespace Silmarillion.Navigation;
 public sealed class ItemByKeywordKindTarget : IReferenceKindTarget
 {
     private readonly ItemsTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public ItemByKeywordKindTarget(ItemsTabViewModel vm, IDiagnosticsSink? diag = null)
+    public ItemByKeywordKindTarget(ItemsTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.ItemByKeyword;
@@ -47,13 +47,13 @@ public sealed class ItemByKeywordKindTarget : IReferenceKindTarget
     {
         if (string.IsNullOrEmpty(internalName))
         {
-            _diag?.Info("Silmarillion.Nav", "ItemByKeyword.TrySelect '' → empty payload, leaving Items tab unchanged.");
+            _logger?.LogTrace("ItemByKeyword.TrySelect '' → empty payload, leaving Items tab unchanged.");
             return false;
         }
 
         var escaped = internalName.Replace("\"", "\\\"");
         var query = $"Keywords CONTAINS \"{escaped}\"";
-        _diag?.Info("Silmarillion.Nav", $"ItemByKeyword.TrySelect '{internalName}' → QueryText='{query}'.");
+        _logger?.LogTrace("ItemByKeyword.TrySelect '{InternalName}' → QueryText='{QueryText}'.", internalName, query);
         // Drop any stale detail selection so the filtered list doesn't render with a row
         // hidden by (or inconsistent with) the new filter — mirrors EffectKeywordKindTarget
         // and the retired ItemKeywordKindTarget's filter-only contract.

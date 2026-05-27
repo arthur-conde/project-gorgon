@@ -4,7 +4,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Services;
-using Mithril.GameState.Pins;
+using Arda.Contracts;
+using Arda.World.Player.Events;
 using Mithril.Shared.Reference;
 
 namespace Legolas.ViewModels;
@@ -22,21 +23,25 @@ namespace Legolas.ViewModels;
 /// </list>
 /// All decoupled from the survey FSM — nothing here touches SessionState.
 /// </summary>
-public sealed partial class CalibrationSessionViewModel : ObservableObject
+public sealed partial class CalibrationSessionViewModel : ObservableObject, IDisposable
 {
     private readonly IAreaCalibrationService _service;
     private readonly IDisposable? _pinSub;
 
-    public CalibrationSessionViewModel(IAreaCalibrationService service, IPlayerPinTracker? pins = null)
+    public CalibrationSessionViewModel(IAreaCalibrationService service, IDomainEventSubscriber? bus = null)
     {
         _service = service;
         _service.Changed += OnServiceChanged;
         _service.SurveyObserved += OnSurveyObserved;
-        // Pin lifecycle moved to the GameState tracker (#468). Subscribe for
-        // the turn-order route; the area-entry replay is service-deduped and
-        // additionally gated by PinCalibrationArmed below.
-        _pinSub = pins?.Subscribe(OnPinSetChanged);
+        _pinSub = bus?.Subscribe<MapPinAdded>(OnPinAdded);
         Refresh();
+    }
+
+    public void Dispose()
+    {
+        _service.Changed -= OnServiceChanged;
+        _service.SurveyObserved -= OnSurveyObserved;
+        _pinSub?.Dispose();
     }
 
     public ObservableCollection<CalibrationReference> References { get; } = new();
@@ -615,12 +620,9 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         RaiseDebug();
     }
 
-    private void OnPinSetChanged(PinSetChanged note)
+    private void OnPinAdded(MapPinAdded evt)
     {
-        // Only genuinely-new drops feed the turn-order queue. The tracker
-        // suppresses login/area-entry replay re-adds, so no backlog leaks.
-        if (note is not { Kind: PinSetChange.Added, Pin: { } pin }) return;
-        var world = new WorldCoord(pin.X, 0, pin.Z);
+        var world = new WorldCoord(evt.X, 0, evt.Z);
         var disp = Application.Current?.Dispatcher;
         if (disp is not null && !disp.CheckAccess()) disp.Invoke(() => EnqueuePin(world));
         else EnqueuePin(world);

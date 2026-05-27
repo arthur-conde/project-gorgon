@@ -11,10 +11,6 @@
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>
   <!--
-    Mithril.Shell is referenced for code access (ReferenceOutputAssembly=true)
-    so the #696 Call 2 merger-lifecycle tests can call AddWorldMergerStart()
-    via [InternalsVisibleTo]. Mithril.WorldSim.Player + .Core give those tests
-    the world primitives they need to build a minimal composition.
     All *.Module references stay build-order/deploy-only — they trigger
     Directory.Build.targets to deploy 12 module DLLs into the shell's
     bin/<cfg>/modules/ so the self-check sees the real full-install graph
@@ -22,8 +18,6 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mithril.Shell\Mithril.Shell.csproj" />
-    <ProjectReference Include="..\..\src\Mithril.WorldSim.Player\Mithril.WorldSim.Player.csproj" />
-    <ProjectReference Include="..\..\src\Mithril.WorldSim.Core\Mithril.WorldSim.Core.csproj" />
     <ProjectReference Include="..\..\src\Arwen.Module\Arwen.Module.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Bilbo.Module\Bilbo.Module.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Celebrimbor.Module\Celebrimbor.Module.csproj" ReferenceOutputAssembly="false" />

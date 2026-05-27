@@ -60,6 +60,22 @@ Modules are discovered at runtime via reflection from the `modules/` folder (`Sh
 
 This table is purpose-only and non-exhaustive (Silmarillion and Celebrimbor also ship). **Before proposing or building work for a module, read [docs/module-charters.md](docs/module-charters.md)** — it records each module's responsibility *boundaries* (what it explicitly does **not** own, and why). A data-availability gap is not a feature unless it serves the module's charter.
 
+### Arda Pipeline (sole log-processing engine)
+
+Arda is a deterministic log-replay and live world-state tracking engine organised in five layers:
+
+| Layer | Project(s) | Responsibility |
+|---|---|---|
+| L0 | `Arda.Ingest` | Tails `Player.log` + `ChatLogs/*.log` via `ILogLineSource` |
+| L1 | `Arda.Ingest` | Span-based zero-alloc line parsing, string interning |
+| L2 | `Arda.Dispatch` | `VerbExtractor` + `FrozenDictionary` dispatch table |
+| L3 | `Arda.World.Player`, `Arda.World.Chat` | Stateful `IFrameHandler` implementations; emit domain events via `IDomainEventBus` |
+| L4 | `Arda.Composition` | Cross-source composers (session fusion, inventory correlation, word-of-power) |
+
+`Arda.Hosting` bootstraps the pipeline and exposes `ArdaOptions` for DI. `Arda.Contracts` holds the public domain events, state interfaces (`ISessionState`, `IAreaState`, `IPlayerState`, `IChatSessionState`), and subscriber/publisher contracts (`IDomainEventSubscriber`, `IDomainEventPublisher`).
+
+Modules consume Arda via `IDomainEventSubscriber` and the read-only state interfaces — they never reference the internal handler or dispatch types.
+
 ### Shell Bootstrap (Program.cs)
 
 Single-instance mutex guard &rarr; game root detection &rarr; settings load &rarr; `IHost` build &rarr; eager module gates opened &rarr; WPF `App.Run()`. Second-instance attempts raise the existing window via `EventWaitHandle`.
@@ -68,18 +84,19 @@ Single-instance mutex guard &rarr; game root detection &rarr; settings load &rar
 
 DI is composed via extension methods in `Mithril.Shared/DependencyInjection/ServiceCollectionExtensions.cs`:
 
-- **Game services**: `IPlayerLogStream`, `IChatLogStream`, `ICharacterDataService` — tail game logs and parse character exports
+- **Game services**: `IGameClock`, `IShiftCatalog`, `IGameReportsService`, `IActiveCharacterService` — game clocks, character snapshots
 - **Reference data**: `IReferenceDataService` — fetches JSON (items, recipes, skills, NPCs, XP tables) from `cdn.projectgorgon.com` with bundled fallback and background refresh
 - **Settings**: `ISettingsStore<T>` / `JsonSettingsStore<T>` with `System.Text.Json` source-generated contexts; `SettingsAutoSaver<T>` for periodic persistence
 - **Hotkeys**: OS-level Win32 hotkey registration; modules provide `IHotkeyCommand` implementations; `HotkeyConflictDetector` validates uniqueness
-- **Diagnostics**: Serilog-backed `IDiagnosticsSink`
+- **Diagnostics**: `ILogger` via `DiagnosticsLoggerProvider` (ring buffer, Rx live stream, Serilog compact-JSON file)
+- **Logging**: inject `ILoggerFactory.CreateLogger("Subsystem")` (e.g. `"Arda.Player"`, `"Reference"`, `"Samwise"`) so diagnostics UI category filters stay stable. Use MEL message templates with named properties (`LogInformation("Loaded {FileName} from cache ({CdnVersion})", …)`), not `$"…"` interpolation. Levels: `Trace` = per-event/hot-path; `Information` = lifecycle milestones; `Warning` = recovered/degraded; `Error` = failure + exception. Use [`ThrottledWarn`](src/Mithril.Shared/Diagnostics/ThrottledWarn.cs) on hot ingest paths. Require `ILogger` on `BackgroundService` / `IHostedService` and Arda pipeline types; `ILogger?` only for optional WPF/import targets.
 - **Query system**: SQL-like filtering over data models — `MithrilDataGrid`/`MithrilQueryBox` (tabular UI), `QueryFilter` attached behaviour (any `ItemsControl`), `QueryableSource<T>` (VM-side, headless). See [docs/query-system.md](docs/query-system.md) before adding new filter UI.
 
 ### Patterns to Follow
 
 - **MVVM with CommunityToolkit.Mvvm** source generators (`[ObservableProperty]`, `[RelayCommand]`)
 - **Settings classes** implement `INotifyPropertyChanged` with source-generated JSON serialization contexts (not reflection)
-- **Log parsing**: implement `ILogParser.TryParse(string line, DateTime timestamp)` returning a `LogEvent?`; state machines consume events from `IPlayerLogStream`/`IChatLogStream`
+- **Log parsing**: Arda L3 handlers implement `IFrameHandler.Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)` with span-based zero-alloc parsing and emit domain events via `IDomainEventPublisher`. Module-level consumers subscribe via `IDomainEventSubscriber`
 - **HostedServices** for background work; gated behind `ModuleGate.WaitAsync()` for lazy modules
 - **WPF resources** shared via `Mithril.Shared.Wpf/Resources.xaml`; icons from MahApps Lucide icon pack
 - **Before editing any `*.xaml` or writing a new view, read [docs/wpf-gotchas.md](docs/wpf-gotchas.md)** — catalogues runtime-only WPF traps (hit-testing, null-leak templates, binding-mode defaults, `ItemContainerStyle` rules, etc.) that build green + tests green but break the UI silently.

@@ -1,10 +1,11 @@
 using System.Windows;
 using System.Windows.Threading;
+using Arda.Contracts;
+using Arda.World.Player;
+using Arda.World.Player.Events;
 using Gandalf.Domain;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Wpf;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
 
 namespace Gandalf.Services;
 
@@ -32,30 +33,35 @@ public sealed class TimerAlarmService : IDisposable
     private readonly GandalfSettings _settings;
     private readonly IAudioPlaybackSink _audio;
     private readonly TimeProvider _time;
-    private readonly IWorldClock? _worldClock;
+    private readonly ICalendarState? _calendarState;
+    private readonly IDisposable? _replayTracker;
     private readonly Dictionary<string, DateTimeOffset> _firedAt = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _snoozedUntil = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
+    private volatile bool _isReplaying;
 
     public TimerAlarmService(
         UserTimerSource source,
         GandalfSettings settings,
         IAudioPlaybackSink audio,
         TimeProvider? time = null,
-        IPlayerWorld? playerWorld = null)
+        ICalendarState? calendarState = null,
+        IDomainEventSubscriber? bus = null)
     {
         _source = source;
         _settings = settings;
         _audio = audio;
         _time = time ?? TimeProvider.System;
-        _worldClock = playerWorld?.Clock;
+        _calendarState = calendarState;
+        _replayTracker = bus?.Subscribe<CalendarTimeAdvanced>(evt =>
+            _isReplaying = evt.Metadata.IsReplay);
         _source.TimerReady += OnTimerReady;
     }
 
-    // State-decision clock: refire-suppression + snooze gates both read from
-    // PlayerWorld (#609); writes pair with reads so the comparison is
-    // internally consistent.
-    private DateTimeOffset Now => _worldClock?.Now ?? _time.GetUtcNow();
+    // State-decision clock: refire-suppression + snooze gates read from
+    // the Arda calendar state; writes pair with reads so the comparison
+    // is internally consistent.
+    private DateTimeOffset Now => _calendarState?.LastTimestamp ?? _time.GetUtcNow();
 
     public void SnoozeAll()
     {
@@ -92,11 +98,10 @@ public sealed class TimerAlarmService : IDisposable
 
         _firedAt[key] = now;
 
-        // Call 3 / principle 12 — mode-gate the user-facing projection (audio
-        // playback + window flash). State derivation upstream of the
-        // projection (the _firedAt dedup write above) stays mode-agnostic so
-        // the next live-mode tick reuses the same suppression contract.
-        if (_worldClock?.Mode == WorldMode.Replaying) return;
+        // Mode-gate: suppress audio during replay. The _firedAt dedup
+        // write above stays mode-agnostic so the next live-mode tick
+        // reuses the same suppression contract.
+        if (_isReplaying) return;
 
         var soundPath = ResolveSoundPath(e, _settings);
         Dispatch(() =>
@@ -129,6 +134,7 @@ public sealed class TimerAlarmService : IDisposable
     public void Dispose()
     {
         _source.TimerReady -= OnTimerReady;
+        _replayTracker?.Dispose();
         StopAllPlayback();
     }
 

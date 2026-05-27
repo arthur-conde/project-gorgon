@@ -1,8 +1,8 @@
+using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shared.Reference;
 
@@ -18,7 +18,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
 
     private readonly string _cacheDir;
     private readonly HttpClient _http;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     private GrowthRatesPayload? _samwiseRates;
     private GiftRatesPayload? _arwenRates;
@@ -29,11 +29,11 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
     private ReferenceFileSnapshot _smaugSnapshot = new("smaug", ReferenceFileSource.Bundled, "", null, 0);
     private ReferenceFileSnapshot _gandalfSnapshot = new("gandalf", ReferenceFileSource.Bundled, "", null, 0);
 
-    public CommunityCalibrationService(string cacheDir, HttpClient http, IDiagnosticsSink? diag = null)
+    public CommunityCalibrationService(string cacheDir, HttpClient http, ILogger? logger = null)
     {
         _cacheDir = cacheDir;
         _http = http;
-        _diag = diag;
+        _logger = logger;
         LoadSamwiseFromCache();
         LoadArwenFromCache();
         LoadSmaugFromCache();
@@ -80,7 +80,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         _ = Task.Run(async () =>
         {
             try { await RefreshAllAsync(CancellationToken.None); }
-            catch (Exception ex) { _diag?.Warn("CommunityCalibration", $"Background refresh failed: {ex.Message}"); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Background community calibration refresh failed"); }
         });
     }
 
@@ -98,7 +98,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         _arwenSnapshot = new ReferenceFileSnapshot("arwen", ReferenceFileSource.Bundled, "", null, 0);
         _smaugSnapshot = new ReferenceFileSnapshot("smaug", ReferenceFileSource.Bundled, "", null, 0);
         _gandalfSnapshot = new ReferenceFileSnapshot("gandalf", ReferenceFileSource.Bundled, "", null, 0);
-        _diag?.Info("CommunityCalibration", "Cleared cached community calibration.");
+        _logger?.LogInformation("Cleared cached community calibration");
         FileUpdated?.Invoke(this, "samwise");
         FileUpdated?.Invoke(this, "arwen");
         FileUpdated?.Invoke(this, "smaug");
@@ -210,7 +210,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         where TPayload : class
     {
         var url = string.Format(UrlTemplate, key);
-        _diag?.Info("CommunityCalibration", $"Refreshing {key} from {url}.");
+        _logger?.LogInformation("Refreshing {Key} from {Url}", key, url);
 
         byte[] body;
         try
@@ -221,7 +221,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("CommunityCalibration", $"{key}.json fetch failed ({ex.Message}); keeping existing data.");
+            _logger?.LogWarning(ex, "{Key}.json fetch failed; keeping existing data", key);
             return;
         }
 
@@ -233,7 +233,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("CommunityCalibration", $"{key}.json parse failed ({ex.Message}); keeping existing data.");
+            _logger?.LogWarning(ex, "{Key}.json parse failed; keeping existing data", key);
             return;
         }
 
@@ -256,7 +256,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
             ReferenceJsonContext.Default.ReferenceFileMetadata, ct);
 
         swap(payload);
-        _diag?.Info("CommunityCalibration", $"{key}.json refreshed.");
+        _logger?.LogInformation("{Key}.json refreshed", key);
         FileUpdated?.Invoke(this, key);
     }
 
@@ -291,12 +291,12 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
             if (!ValidateSchemaVersion(key, payload, expectedSchemaVersion)) return;
 
             swap(payload, fetchedAt);
-            _diag?.Info("CommunityCalibration", $"Loaded {key} from cache.");
+            _logger?.LogInformation("Loaded {Key} from cache", key);
             FileUpdated?.Invoke(this, key);
         }
         catch (Exception ex)
         {
-            _diag?.Warn("CommunityCalibration", $"{key} cache load failed: {ex.Message}");
+            _logger?.LogWarning(ex, "{Key} cache load failed", key);
         }
     }
 
@@ -312,8 +312,11 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
             _ => -1,
         };
         if (actual == expected) return true;
-        _diag?.Warn("CommunityCalibration",
-            $"{key}.json schemaVersion {actual} != expected {expected}; ignoring payload.");
+        _logger?.LogWarning(
+            "{Key}.json schemaVersion {Actual} != expected {Expected}; ignoring payload",
+            key,
+            actual,
+            expected);
         return false;
     }
 
@@ -342,7 +345,7 @@ public sealed class CommunityCalibrationService : ICommunityCalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("CommunityCalibration", $"Failed to delete {key} cache: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to delete {Key} cache", key);
         }
     }
 }

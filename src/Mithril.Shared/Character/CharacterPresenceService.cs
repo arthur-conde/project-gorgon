@@ -1,4 +1,4 @@
-using Mithril.Shared.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
 
 namespace Mithril.Shared.Character;
@@ -13,18 +13,18 @@ public sealed class CharacterPresenceService : IHostedService, ICharacterPresenc
 {
     private readonly IActiveCharacterService _active;
     private readonly PerCharacterStore<CharacterPresence> _store;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     private (string Name, string Server)? _tracked;
 
     public CharacterPresenceService(
         IActiveCharacterService active,
         PerCharacterStore<CharacterPresence> store,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _active = active;
         _store = store;
-        _diag = diag;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -46,7 +46,7 @@ public sealed class CharacterPresenceService : IHostedService, ICharacterPresenc
         try { return _store.Load(character, server).LastActiveAt; }
         catch (Exception ex)
         {
-            _diag?.Warn("Presence", $"Read failed for {character}/{server}: {ex.Message}");
+            _logger?.LogWarning(ex, "Read failed for {Character}/{Server}", character, server);
             return null;
         }
     }
@@ -76,7 +76,7 @@ public sealed class CharacterPresenceService : IHostedService, ICharacterPresenc
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Presence", $"Stamp failed for {character}/{server}: {ex.Message}");
+            _logger?.LogWarning(ex, "Stamp failed for {Character}/{Server}", character, server);
         }
     }
 

@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using Elrond.ViewModels;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 
 namespace Elrond.Services;
@@ -17,16 +17,16 @@ public sealed class ElrondSkillImportTarget : IElrondSkillImportTarget
 {
     private readonly SkillAdvisorViewModel _vm;
     private readonly IModuleActivator? _activator;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public ElrondSkillImportTarget(
         SkillAdvisorViewModel viewModel,
         IModuleActivator? activator = null,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _vm = viewModel;
         _activator = activator;
-        _diag = diag;
+        _logger = logger;
     }
 
     public void ImportFromLinkPayload(string skillKey)
@@ -41,7 +41,7 @@ public sealed class ElrondSkillImportTarget : IElrondSkillImportTarget
     private void Apply(string skillKey)
     {
         if (_activator is not null && !_activator.Activate("elrond"))
-            _diag?.Info("Elrond", "Deep-link import: module activator could not find 'elrond'.");
+            _logger?.LogInformation("Deep-link import: module activator could not find 'elrond'.");
         _vm.SelectSkillFromDeepLink(skillKey);
     }
 }

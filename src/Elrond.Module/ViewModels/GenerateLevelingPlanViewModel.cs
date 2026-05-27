@@ -1,10 +1,11 @@
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Elrond.Services;
 using Mithril.GameReports;
 using Mithril.Planning;
-using Mithril.Shared.Character;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 
@@ -24,17 +25,10 @@ namespace Elrond.ViewModels;
 /// </summary>
 public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
 {
-    private readonly IActiveCharacterService _activeChar;
-    private readonly IGameReportsService _gameReports;
+    private readonly LiveProgressionAdapter _progression;
     private readonly CrossSkillPlanner _planner;
 
-    /// <summary>
-    /// Reads the active character's snapshot via <see cref="IGameReportsService"/>
-    /// directly (#612 character-snapshot rewiring). Selection events still flow
-    /// through <see cref="IActiveCharacterService"/>.
-    /// </summary>
-    private CharacterSnapshot? ActiveCharacterSnapshot =>
-        _gameReports.GetCharacterSnapshot(_activeChar.ActiveCharacterName, _activeChar.ActiveServer);
+    private CharacterSnapshot? ActiveCharacterSnapshot => _progression.GetMergedSnapshot();
 
     // Deferred resolution: resolving the import target at construction would
     // close a DI cycle (→ Celebrimbor's target → IModuleActivator →
@@ -50,21 +44,27 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
     private readonly IReferenceDataService _ref;
 
     public GenerateLevelingPlanViewModel(
-        IActiveCharacterService activeChar,
-        IGameReportsService gameReports,
+        LiveProgressionAdapter progression,
         CrossSkillPlanner planner,
         IReferenceDataService referenceData,
         Func<ISavedLevelingPlanImportTarget?>? importAccessor = null)
     {
-        _activeChar = activeChar;
-        _gameReports = gameReports;
+        _progression = progression;
         _planner = planner;
         _ref = referenceData;
         _importAccessor = importAccessor;
 
-        _activeChar.ActiveCharacterChanged += (_, _) => RefreshSnapshot();
-        _activeChar.CharacterExportsChanged += (_, _) => RefreshSnapshot();
+        _progression.Changed += OnProgressionChanged;
         RefreshSnapshot();
+    }
+
+    private void OnProgressionChanged()
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+            RefreshSnapshot();
+        else
+            dispatcher.InvokeAsync(RefreshSnapshot, DispatcherPriority.Normal);
     }
 
     // ── Snapshot (embedded initial state) ────────────────────────────────
@@ -143,7 +143,7 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
         }
         SnapshotName = snap.Name;
         SnapshotServer = snap.Server;
-        SnapshotRelTime = HumanizeAge(DateTimeOffset.Now - snap.ExportedAt);
+        SnapshotRelTime = FormatSnapshotAge(snap);
         // Resolve id-shaped keys → human display names (convention); the model
         // (SelectedSkill / SkillTarget) still carries the key. Order by display.
         AvailableSkills = snap.Skills.Keys
@@ -169,7 +169,7 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
             return;
         }
 
-        CurrentLevel = snap.Skills.TryGetValue(SelectedSkill, out var cs) ? cs.Level : null;
+        CurrentLevel = snap.Skills.TryGetValue(SelectedSkill, out var cs) ? cs.EffectiveLevel : null;
 
         if (GoalLevel is not { } goal)
         {
@@ -232,6 +232,18 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
         var json = JsonSerializer.Serialize(saved, SavedLevelingPlanJsonContext.Default.SavedLevelingPlan);
         _importAccessor?.Invoke()?.ImportPlan(json, "Elrond");
         PlanHandedOff?.Invoke(this, EventArgs.Empty);
+    }
+
+    private string FormatSnapshotAge(CharacterSnapshot snap)
+    {
+        var reference = _progression.LastDataSource switch
+        {
+            ProgressionDataSource.ExportOnly => snap.ExportedAt,
+            ProgressionDataSource.LiveOnly => _progression.LiveMeasuredAt ?? snap.ExportedAt,
+            ProgressionDataSource.Merged => _progression.LiveMeasuredAt ?? snap.ExportedAt,
+            _ => snap.ExportedAt,
+        };
+        return HumanizeAge(DateTimeOffset.Now - reference);
     }
 
     private static string HumanizeAge(TimeSpan age)

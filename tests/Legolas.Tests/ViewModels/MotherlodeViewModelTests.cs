@@ -1,9 +1,11 @@
+using Arda.Abstractions.Logs;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
+using Legolas.Tests.TestSupport;
 using Legolas.ViewModels;
-using Mithril.GameState.Movement;
 
 namespace Legolas.Tests.ViewModels;
 
@@ -17,26 +19,38 @@ public class MotherlodeViewModelTests
 {
     private static readonly DateTimeOffset T0 = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    private static (MotherlodeViewModel vm, MotherlodeMeasurementCoordinator coord,
-        FakePlayerPositionTracker pos, FakeAreaCalibrationService area) Build()
+    private static LogLineMetadata Meta(DateTimeOffset at) => new(at, at, false);
+
+    private static void PublishPosition(TestDomainEventBus bus, double x, double y, double z,
+        PositionSource source, DateTimeOffset at)
+        => bus.Publish(new PlayerPositionChanged(x, y, z, source, Meta(at)));
+
+    private static void PublishDelete(TestDomainEventBus bus, long id, string internalName, DateTime at)
     {
-        var pos = new FakePlayerPositionTracker();
-        var pins = new FakePlayerPinTracker();
+        var ts = DateTime.SpecifyKind(at, DateTimeKind.Utc);
+        var dto = new DateTimeOffset(ts, TimeSpan.Zero);
+        bus.Publish(new InventoryItemRemoved(id, internalName, Meta(dto)));
+    }
+
+    private static (MotherlodeViewModel vm, MotherlodeMeasurementCoordinator coord,
+        TestDomainEventBus bus, FakeAreaCalibrationService area) Build()
+    {
+        var bus = new TestDomainEventBus();
         var flow = new MotherlodeFlowController(new SessionState());
-        var coord = new MotherlodeMeasurementCoordinator(new MultilaterationSolver(), flow, pos, pins);
+        var coord = new MotherlodeMeasurementCoordinator(new MultilaterationSolver(), flow, bus);
         var area = new FakeAreaCalibrationService();
         var optimizer = new AdaptiveRouteOptimizer(new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
-        var vm = new MotherlodeViewModel(coord, optimizer, flow, pins, area);
-        return (vm, coord, pos, area);
+        var vm = new MotherlodeViewModel(coord, optimizer, flow, areaCalibration: area);
+        return (vm, coord, bus, area);
     }
 
     private static double D(double x, double z, double tx, double tz) =>
         Math.Sqrt((x - tx) * (x - tx) + (z - tz) * (z - tz));
 
-    private static void Measure(MotherlodeMeasurementCoordinator coord, FakePlayerPositionTracker pos,
+    private static void Measure(MotherlodeMeasurementCoordinator coord, TestDomainEventBus bus,
         double x, double z, (double X, double Z) target, DateTimeOffset at)
     {
-        pos.Push(x, 0, z, PlayerPositionSource.Spawn, at);
+        PublishPosition(bus, x, 0, z, PositionSource.Spawn, at);
         coord.OnUse(at);
         coord.OnDistance((int)Math.Round(D(x, z, target.X, target.Z)), at.AddSeconds(2));
     }
@@ -52,9 +66,9 @@ public class MotherlodeViewModelTests
     [Fact]
     public void One_reading_with_no_solve_is_Locating()
     {
-        var (vm, coord, pos, _) = Build();
+        var (vm, coord, bus, _) = Build();
 
-        pos.Push(0, 0, 0, PlayerPositionSource.Spawn, T0);
+        PublishPosition(bus, 0, 0, 0, PositionSource.Spawn, T0);
         coord.OnUse(T0);
         coord.OnDistance(500, T0.AddSeconds(2));
 
@@ -66,13 +80,13 @@ public class MotherlodeViewModelTests
     [Fact]
     public void Three_solving_spots_reach_Walk_with_a_relative_headline_and_pill()
     {
-        var (vm, coord, pos, area) = Build();
+        var (vm, coord, bus, area) = Build();
         (double X, double Z) target = (420, -260);
         area.SetReferences(new CalibrationReference("Serbule Keep", "NPC", new WorldCoord(430, 0, -250)));
 
-        Measure(coord, pos, 0, 0, target, T0);
-        Measure(coord, pos, 800, 0, target, T0.AddMinutes(2));
-        Measure(coord, pos, 0, -800, target, T0.AddMinutes(4));
+        Measure(coord, bus, 0, 0, target, T0);
+        Measure(coord, bus, 800, 0, target, T0.AddMinutes(2));
+        Measure(coord, bus, 0, -800, target, T0.AddMinutes(4));
 
         vm.Stage.Should().Be(MotherlodeStage.Walk);
         vm.SolvedCount.Should().Be(1);
@@ -88,26 +102,23 @@ public class MotherlodeViewModelTests
     [Fact]
     public void Digging_the_only_treasure_reaches_Done()
     {
-        var pos = new FakePlayerPositionTracker();
-        var pins = new FakePlayerPinTracker();
-        var inv = new FakeMotherlodePlayerWorld();
+        var bus = new TestDomainEventBus();
         var refData = new FakeMotherlodeRefData(
             ("MiningSurveyKurMountains1X", "Kur Mountains Simple Metal Motherlode Map"));
         var flow = new MotherlodeFlowController(new SessionState());
         var coord = new MotherlodeMeasurementCoordinator(
-            new MultilaterationSolver(), flow, pos, pins, inv, refData, new LegolasSettings());
+            new MultilaterationSolver(), flow, bus, refData, new LegolasSettings());
         var optimizer = new AdaptiveRouteOptimizer(
             new HeldKarpOptimizer(), new NearestNeighbourTwoOptOptimizer());
-        var vm = new MotherlodeViewModel(coord, optimizer, flow, pins, new FakeAreaCalibrationService());
-        inv.Add(1, "MiningSurveyKurMountains1X");          // register (create-on-use ⇒ no slot)
+        var vm = new MotherlodeViewModel(coord, optimizer, flow, areaCalibration: new FakeAreaCalibrationService());
         (double X, double Z) target = (420, -260);
 
-        Measure(coord, pos, 0, 0, target, T0);
-        Measure(coord, pos, 800, 0, target, T0.AddMinutes(2));
-        Measure(coord, pos, 0, -800, target, T0.AddMinutes(4));
+        Measure(coord, bus, 0, 0, target, T0);
+        Measure(coord, bus, 800, 0, target, T0.AddMinutes(2));
+        Measure(coord, bus, 0, -800, target, T0.AddMinutes(4));
         vm.Stage.Should().Be(MotherlodeStage.Walk);
 
-        inv.Delete(1, T0.AddMinutes(6).UtcDateTime);       // the dig
+        PublishDelete(bus, 1, "MiningSurveyKurMountains1X", T0.AddMinutes(6).UtcDateTime);
 
         vm.Stage.Should().Be(MotherlodeStage.Done);
         vm.Slots.Should().BeEmpty();                       // active-only: the retired slot drops out
@@ -117,8 +128,8 @@ public class MotherlodeViewModelTests
     [Fact]
     public void Reset_returns_to_Measuring()
     {
-        var (vm, coord, pos, _) = Build();
-        Measure(coord, pos, 0, 0, (420, -260), T0);
+        var (vm, coord, bus, _) = Build();
+        Measure(coord, bus, 0, 0, (420, -260), T0);
 
         vm.ResetCommand.Execute(null);
 

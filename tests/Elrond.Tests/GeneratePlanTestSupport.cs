@@ -1,3 +1,5 @@
+using Arda.Composition;
+using Elrond.Services;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Quests;
 using Mithril.Reference.Models.Recipes;
@@ -56,6 +58,62 @@ internal sealed class FakeGameReports : IGameReportsService
     public event EventHandler? CharacterSnapshotsChanged { add { } remove { } }
     public void Refresh() { }
     public void Dispose() { }
+}
+
+/// <summary>Configurable live-progression double for adapter/VM tests.</summary>
+internal sealed class FakePlayerProgressionState : IPlayerProgressionState
+{
+    private Dictionary<string, EnrichedSkill> _skills = new(StringComparer.Ordinal);
+    private Dictionary<string, int> _recipes = new(StringComparer.Ordinal);
+
+    public IReadOnlyDictionary<string, EnrichedSkill> Skills => _skills;
+    public IReadOnlyDictionary<string, int> RecipeCompletions => _recipes;
+    public event Action? StateChanged;
+
+    public void SetSkill(string key, int level, long currentXp = 0, long xpNeeded = 100)
+    {
+        _skills[key] = new EnrichedSkill(key, level, 0, currentXp, xpNeeded, 50, false, DateTimeOffset.UtcNow);
+        StateChanged?.Invoke();
+    }
+
+    public void SetRecipe(string internalName, int count)
+    {
+        _recipes[internalName] = count;
+        StateChanged?.Invoke();
+    }
+
+    public void Clear()
+    {
+        _skills = new Dictionary<string, EnrichedSkill>(StringComparer.Ordinal);
+        _recipes = new Dictionary<string, int>(StringComparer.Ordinal);
+    }
+}
+
+internal sealed class FakeSessionComposer : ISessionComposer
+{
+    public FakeSessionComposer(ComposedSession? current = null) => Current = current;
+
+    public ComposedSession? Current { get; set; }
+#pragma warning disable CS0067
+    public event Action? StateChanged;
+#pragma warning restore CS0067
+}
+
+internal static class ProgressionTestSupport
+{
+    public static LiveProgressionAdapter AdapterFor(
+        IActiveCharacterService activeChar,
+        IGameReportsService? reports = null,
+        FakePlayerProgressionState? progression = null,
+        ISessionComposer? session = null)
+    {
+        reports ??= new FakeGameReports(activeChar.ActiveCharacter);
+        progression ??= new FakePlayerProgressionState();
+        session ??= new FakeSessionComposer(activeChar.ActiveCharacter is { } snap
+            ? new ComposedSession(snap.Name, snap.Server, snap.ExportedAt, TimeSpan.Zero, $"{snap.Name}:test")
+            : null);
+        return new LiveProgressionAdapter(progression, reports, activeChar, session);
+    }
 }
 
 /// <summary>Captures the plan JSON Elrond hands off so B2 serialization is observable.</summary>

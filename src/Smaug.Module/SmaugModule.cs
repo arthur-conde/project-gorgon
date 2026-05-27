@@ -1,14 +1,12 @@
 using System.IO;
-using Mithril.GameState.Sessions;
+using Arda.Composition;
 using Mithril.Shared.DependencyInjection;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Smaug.Domain;
-using Smaug.Parsing;
 using Smaug.State;
 using Smaug.ViewModels;
 using Smaug.Views;
@@ -33,8 +31,6 @@ public sealed class SmaugModule : IMithrilModule
 
         services.AddMithrilSettings<SmaugSettings>(settingsPath, SmaugJsonContext.Default.SmaugSettings);
 
-        services.AddSingleton<VendorLogParser>();
-        services.AddSingleton<VendorSellContext>();
         services.AddSingleton<VendorCatalogService>();
         services.AddSingleton<StorageSellbackService>();
         services.AddSingleton<SellPlannerService>();
@@ -43,8 +39,8 @@ public sealed class SmaugModule : IMithrilModule
             Path.Combine(localApp, "Mithril", "Smaug"),
             sp.GetService<ICommunityCalibrationService>(),
             sp.GetRequiredService<SmaugSettings>().Calibration,
-            sp.GetService<IDiagnosticsSink>(),
-            sp.GetService<IGameSessionService>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Smaug"),
+            sp.GetService<ISessionComposer>()));
 
         services.AddSingleton<VendorCatalogViewModel>();
         services.AddSingleton<VendorShopViewModel>();

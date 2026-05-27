@@ -4,6 +4,7 @@ using System.Linq;
 using Elrond.Domain;
 using Elrond.Services;
 using Elrond.ViewModels;
+using static Elrond.Tests.ProgressionTestSupport;
 using FluentAssertions;
 using Mithril.Leveling;
 using Mithril.Planning;
@@ -256,7 +257,7 @@ public class SkillAdvisorViewModelTests
             ],
         };
         var engine = new SkillAdvisorEngine(refData);
-        var vm = new SkillAdvisorViewModel(engine, characterSvc, ReportsFor(characterSvc), refData, settings,
+        var vm = new SkillAdvisorViewModel(engine, characterSvc, AdapterFor(characterSvc, new FakeReportsAdapter(characterSvc)), refData, settings,
             Gen(refData, characterSvc));
 
         vm.QueryText.Should().Be("ORDER BY EffectiveXp DESC, RecipeName");
@@ -331,7 +332,7 @@ public class SkillAdvisorViewModelTests
         var engine = new SkillAdvisorEngine(refData);
 
         var act = () => new SkillAdvisorViewModel(
-            engine, characterSvc, ReportsFor(characterSvc), refData, new ElrondSettings(),
+            engine, characterSvc, AdapterFor(characterSvc, new FakeReportsAdapter(characterSvc)), refData, new ElrondSettings(),
             Gen(refData, characterSvc),
             () => throw new InvalidOperationException("import target resolved during construction"));
 
@@ -341,11 +342,7 @@ public class SkillAdvisorViewModelTests
 
     // #228 PR-B/B2: SkillAdvisorViewModel now hosts the Generate-plan child VM.
     private static GenerateLevelingPlanViewModel Gen(IReferenceDataService refData, IActiveCharacterService chr)
-        => new(chr, ReportsFor(chr), new CrossSkillPlanner(refData, new LevelingMath(refData), new RecipeExpander(refData)), refData);
-
-    /// <summary>Wraps an <see cref="IActiveCharacterService"/> as an <see cref="IGameReportsService"/>
-    /// for tests: GetCharacterSnapshot mirrors <c>ActiveCharacter</c>; the storage side returns empty.</summary>
-    private static IGameReportsService ReportsFor(IActiveCharacterService chr) => new FakeReportsAdapter(chr);
+        => new(AdapterFor(chr, new FakeReportsAdapter(chr)), new CrossSkillPlanner(refData, new LevelingMath(refData), new RecipeExpander(refData)), refData);
 
     private sealed class FakeReportsAdapter(IActiveCharacterService chr) : IGameReportsService
     {
@@ -383,7 +380,7 @@ public class SkillAdvisorViewModelTests
         var engine = new SkillAdvisorEngine(refData);
         importTarget = new FakeCraftListImportTarget();
         var captured = importTarget;
-        return new SkillAdvisorViewModel(engine, characterSvc, ReportsFor(characterSvc), refData, new ElrondSettings(),
+        return new SkillAdvisorViewModel(engine, characterSvc, AdapterFor(characterSvc, new FakeReportsAdapter(characterSvc)), refData, new ElrondSettings(),
             Gen(refData, characterSvc),
             () => captured);
     }
@@ -420,7 +417,7 @@ public class SkillAdvisorViewModelTests
 
         var settings = new ElrondSettings();
         var engine = new SkillAdvisorEngine(refData);
-        var vm = new SkillAdvisorViewModel(engine, characterSvc, ReportsFor(characterSvc), refData, settings,
+        var vm = new SkillAdvisorViewModel(engine, characterSvc, AdapterFor(characterSvc, new FakeReportsAdapter(characterSvc)), refData, settings,
             Gen(refData, characterSvc));
         return (vm, refData, characterSvc, settings);
     }

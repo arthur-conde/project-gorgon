@@ -22,6 +22,7 @@ public sealed record PinScene(
     IReadOnlyList<WedgeArc> Wedges,
     IReadOnlyList<PixelPoint> SurveyPins,
     IReadOnlyList<PixelPoint> MotherlodePins,
+    MotherlodeGuidanceCircle? MotherlodeGuidance,
     int? ActivePinIndex,
     ActivePinTreatmentSpec? ActiveTreatment,
     PinLayerStyle SurveyOuter,

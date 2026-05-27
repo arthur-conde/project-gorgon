@@ -1,6 +1,7 @@
+using Arda.Abstractions.Logs;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Mithril.Shared.Audio;
-using Mithril.WorldSim;
 using Samwise.Alarms;
 using Samwise.Parsing;
 using Samwise.State;
@@ -20,16 +21,16 @@ public class AlarmServiceTests
         FakeTime Time,
         FakeActiveCharacterService ActiveChar,
         SamwiseSettings Settings,
-        FakePlayerWorld? PlayerWorld);
+        TestDomainEventBus? Bus);
 
     private static Sut BuildSut(
         AlarmCollisionBehavior collision = AlarmCollisionBehavior.Replace,
-        FakePlayerWorld? playerWorld = null)
+        TestDomainEventBus? bus = null)
     {
         var cfg = new InMemoryCropConfig();
         var time = new FakeTime(Base);
         var ac = new FakeActiveCharacterService();
-        var sm = new GardenStateMachine(cfg, time, activeChar: ac, playerWorld: playerWorld);
+        var sm = new GardenStateMachine(cfg, time, activeChar: ac);
         ac.SetActiveCharacter("Hits", "");
 
         var settings = new SamwiseSettings();
@@ -39,8 +40,8 @@ public class AlarmServiceTests
         settings.Alarms.Rules[PlotStage.Thirsty].Enabled = true;
 
         var sink = new FakeAudioPlaybackSink();
-        var service = new AlarmService(sm, settings, sink, playerWorld);
-        return new Sut(service, sink, sm, time, ac, settings, playerWorld);
+        var service = new AlarmService(sm, settings, sink, bus: bus);
+        return new Sut(service, sink, sm, time, ac, settings, bus);
     }
 
     /// <summary>
@@ -478,26 +479,32 @@ public class AlarmServiceTests
     [Fact]
     public void OnPlotChanged_Replaying_DoesNotPlayAudio_AndDoesNotRaiseAlarmTriggered()
     {
-        var world = new FakePlayerWorld();
-        world.WorldClock.Mode = WorldMode.Replaying;
-        var s = BuildSut(playerWorld: world);
+        var bus = new TestDomainEventBus();
+        var s = BuildSut(bus: bus);
+        // Signal replay mode via CalendarTimeAdvanced with IsReplay=true.
+        bus.Publish(new CalendarTimeAdvanced(
+            DateTimeOffset.UtcNow,
+            new LogLineMetadata(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, IsReplay: true)));
         var triggered = new List<ActiveAlarm>();
         s.Service.AlarmTriggered += (_, a) => triggered.Add(a);
 
         RipenPlot(s, "1", "Carrot");
 
         s.Sink.Plays.Should().BeEmpty(
-            "principle 12 — audio playback is a user-facing projection that must not fire while the world is still draining replayed frames");
+            "principle 12 — audio playback is a user-facing projection that must not fire while IsReplay is true");
         triggered.Should().BeEmpty(
-            "the AlarmTriggered event is also a user-facing side effect (consumed by toast/inbox UIs) and is suppressed under Replaying");
+            "the AlarmTriggered event is also a user-facing side effect (consumed by toast/inbox UIs) and is suppressed during replay");
     }
 
     [Fact]
     public void OnPlotChanged_Live_FiresAudioAndAlarmTriggered()
     {
-        var world = new FakePlayerWorld();
-        world.WorldClock.Mode = WorldMode.Live;
-        var s = BuildSut(playerWorld: world);
+        var bus = new TestDomainEventBus();
+        var s = BuildSut(bus: bus);
+        // Signal live mode via CalendarTimeAdvanced with IsReplay=false.
+        bus.Publish(new CalendarTimeAdvanced(
+            DateTimeOffset.UtcNow,
+            new LogLineMetadata(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, IsReplay: false)));
         var triggered = new List<ActiveAlarm>();
         s.Service.AlarmTriggered += (_, a) => triggered.Add(a);
 
@@ -511,13 +518,11 @@ public class AlarmServiceTests
     [Fact]
     public void OnPlotChanged_Replaying_StillUpdatesFiredAtDedup()
     {
-        // State derivation is mode-agnostic — _firedAt is updated even under
-        // Replaying so a subsequent same-key transition (e.g., a duplicate
-        // log line during replay) does not blast the user when the mode
-        // transitions to Live.
-        var world = new FakePlayerWorld();
-        world.WorldClock.Mode = WorldMode.Replaying;
-        var s = BuildSut(playerWorld: world);
+        var bus = new TestDomainEventBus();
+        var s = BuildSut(bus: bus);
+        bus.Publish(new CalendarTimeAdvanced(
+            DateTimeOffset.UtcNow,
+            new LogLineMetadata(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, IsReplay: true)));
 
         RipenPlot(s, "1", "Carrot");
 
@@ -526,13 +531,9 @@ public class AlarmServiceTests
     }
 
     [Fact]
-    public void OnPlotChanged_NullPlayerWorld_FiresNormally()
+    public void OnPlotChanged_NullBus_FiresNormally()
     {
-        // Defensive default: when no IPlayerWorld is injected (e.g., partial
-        // composition tests or pre-#601 code paths), the _worldClock?.Mode
-        // null-conditional treats the world as Live so existing tests aren't
-        // broken by the guard.
-        var s = BuildSut(playerWorld: null);
+        var s = BuildSut(bus: null);
         var triggered = new List<ActiveAlarm>();
         s.Service.AlarmTriggered += (_, a) => triggered.Add(a);
 

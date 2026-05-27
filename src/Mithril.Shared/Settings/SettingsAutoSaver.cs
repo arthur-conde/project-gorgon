@@ -1,7 +1,7 @@
+using Microsoft.Extensions.Logging;
 using System.ComponentModel;
 using System.Windows.Threading;
 using Microsoft.Extensions.Hosting;
-using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shared.Settings;
 
@@ -9,7 +9,7 @@ public sealed class SettingsAutoSaver<T> : IHostedService, IDisposable where T :
 {
     private readonly ISettingsStore<T> _store;
     private readonly T _instance;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly DispatcherTimer _timer;
     private bool _dirty;
 
@@ -23,12 +23,12 @@ public sealed class SettingsAutoSaver<T> : IHostedService, IDisposable where T :
     public SettingsAutoSaver(
         ISettingsStore<T> store,
         T instance,
-        IDiagnosticsSink? diag = null,
+        ILogger? logger = null,
         TimeSpan? debounce = null)
     {
         _store = store;
         _instance = instance;
-        _diag = diag;
+        _logger = logger;
         _timer = new DispatcherTimer { Interval = debounce ?? TimeSpan.FromMilliseconds(500) };
         _timer.Tick += OnTick;
         _instance.PropertyChanged += OnChanged;
@@ -82,8 +82,7 @@ public sealed class SettingsAutoSaver<T> : IHostedService, IDisposable where T :
             // serialization / IO error in a settings type was invisible
             // (same foot-gun that hid the GandalfShiftSettings nested-INPC
             // bug for as long as it did).
-            _diag?.Warn("Settings.AutoSave",
-                $"Save failed for {typeof(T).Name}: {ex.GetType().Name}: {ex.Message}");
+            _logger?.LogWarning(ex, "Save failed for {SettingsType}: {ExceptionType}", typeof(T).Name, ex.GetType().Name);
         }
     }
 

@@ -1,27 +1,21 @@
 using System.IO;
+using Arda.Abstractions.Logs;
+using Arda.World.Player.Events;
 using FluentAssertions;
 using Gandalf.Domain;
 using Gandalf.Services;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.Shared.Settings;
-using Mithril.WorldSim;
-using Mithril.WorldSim.Player;
 using Xunit;
 
 namespace Gandalf.Tests;
 
 /// <summary>
-/// Call 3 / principle 12 acceptance tests for <see cref="TimerAlarmService"/>.
-///
-/// <para>Under <see cref="WorldMode.Replaying"/>, <c>OnTimerReady</c> must NOT
-/// fire user-facing side effects (audio playback, window flash). Upstream state
-/// derivation (the <c>_firedAt</c> dedup ledger) stays mode-agnostic so a
-/// transition to <see cref="WorldMode.Live"/> mid-session doesn't re-blast
-/// alarms the user already lived through.</para>
-///
-/// <para>The original sink-list source is the Call 3 ratification in
-/// <c>docs/world-simulator.md</c> §Decisions ratified post-#642 (resolves #676).</para>
+/// Acceptance tests for <see cref="TimerAlarmService"/> mode-gating.
+/// Post-Arda, the replay gate uses <c>_isReplaying</c> tracked via
+/// <see cref="CalendarTimeAdvanced"/> events on the
+/// <see cref="Arda.Contracts.IDomainEventSubscriber"/> bus.
 /// </summary>
 [Trait("Category", "FileIO")]
 [Collection("FileIO")]
@@ -49,26 +43,33 @@ public sealed class TimerAlarmServiceTests : IDisposable
         try { Directory.Delete(_dir, recursive: true); } catch { /* best-effort */ }
     }
 
+    private static LogLineMetadata Meta(DateTimeOffset at, bool isReplay = false) =>
+        new(at, DateTimeOffset.UtcNow, isReplay);
+
     [Fact]
     public void OnTimerReady_Replaying_DoesNotPlayAudio()
     {
         var sink = new RecordingAudioSink();
-        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Replaying } };
-        var (service, _, _, _) = BuildService(sink, world);
+        var bus = new TestDomainEventBus();
+        var t0 = new DateTimeOffset(2026, 5, 23, 10, 0, 0, TimeSpan.Zero);
+        var cal = new FakeCalendarState { LastTimestamp = t0 };
+        var (service, _, _, _) = BuildService(sink, cal, bus);
+
+        // Publish a replay-mode CalendarTimeAdvanced to set _isReplaying = true.
+        bus.Publish(new CalendarTimeAdvanced(t0, Meta(t0, isReplay: true)));
 
         service.OnTimerReady(this, MakeReadyArgs("key1"));
 
         sink.Plays.Should().BeEmpty(
-            "principle 12 — under WorldMode.Replaying the projection (audio + window flash) is suppressed; "
-            + "the user already lived through these events in real time");
+            "principle 12 — under replay the projection (audio + window flash) is suppressed");
     }
 
     [Fact]
     public void OnTimerReady_Live_PlaysAudio()
     {
         var sink = new RecordingAudioSink();
-        var world = new TestPlayerWorld { Clock = { Mode = WorldMode.Live } };
-        var (service, _, _, _) = BuildService(sink, world);
+        var bus = new TestDomainEventBus();
+        var (service, _, _, _) = BuildService(sink, calendarState: null, bus: bus);
 
         service.OnTimerReady(this, MakeReadyArgs("key1"));
 
@@ -78,14 +79,10 @@ public sealed class TimerAlarmServiceTests : IDisposable
     }
 
     [Fact]
-    public void OnTimerReady_NullPlayerWorld_PlaysAudio()
+    public void OnTimerReady_NullBus_PlaysAudio()
     {
-        // Defensive default: when no IPlayerWorld is injected (e.g., a
-        // partial-composition test or pre-#601 code path), the
-        // _worldClock?.Mode null-conditional treats the world as Live so
-        // existing call sites aren't broken by the guard.
         var sink = new RecordingAudioSink();
-        var (service, _, _, _) = BuildService(sink, playerWorld: null);
+        var (service, _, _, _) = BuildService(sink, calendarState: null, bus: null);
 
         service.OnTimerReady(this, MakeReadyArgs("key1"));
 
@@ -95,28 +92,21 @@ public sealed class TimerAlarmServiceTests : IDisposable
     [Fact]
     public void OnTimerReady_ReplayingThenLive_FiresOnceUnderLive()
     {
-        // Boundary transition shape: the same key fires once during replay
-        // drain (suppressed by the guard) and once during Live (normal
-        // fire). The _firedAt write happens before the guard so the
-        // refire-suppression window is honoured across the boundary;
-        // here the Live emission lands well past the 30s window so it
-        // fires cleanly.
         var sink = new RecordingAudioSink();
-        var world = new TestPlayerWorld
-        {
-            Clock = { Mode = WorldMode.Replaying, Now = new DateTimeOffset(2026, 5, 23, 10, 0, 0, TimeSpan.Zero) },
-        };
-        var (service, _, _, _) = BuildService(sink, world);
+        var bus = new TestDomainEventBus();
+        var t0 = new DateTimeOffset(2026, 5, 23, 10, 0, 0, TimeSpan.Zero);
+        var cal = new FakeCalendarState { LastTimestamp = t0 };
+        var (service, _, _, _) = BuildService(sink, cal, bus);
 
         // Replaying — suppressed.
+        bus.Publish(new CalendarTimeAdvanced(t0, Meta(t0, isReplay: true)));
         service.OnTimerReady(this, MakeReadyArgs("key1"));
         sink.Plays.Should().BeEmpty();
 
-        // Flip to Live and advance the world clock past the 30s
-        // refire-suppression window (the SUT reads _worldClock?.Now over
-        // the TimeProvider fallback).
-        world.Clock.Mode = WorldMode.Live;
-        world.Clock.Now += TimeSpan.FromSeconds(45);
+        // Flip to Live and advance past the 30s refire-suppression window.
+        var later = t0 + TimeSpan.FromSeconds(45);
+        cal.LastTimestamp = later;
+        bus.Publish(new CalendarTimeAdvanced(later, Meta(later)));
         service.OnTimerReady(this, MakeReadyArgs("key1"));
 
         sink.Plays.Should().HaveCount(1, "Live-mode emission past the suppression window must fire");
@@ -127,7 +117,8 @@ public sealed class TimerAlarmServiceTests : IDisposable
     private (TimerAlarmService Service, UserTimerSource Source, TimerDefinitionsService Defs, TimerProgressService Progress)
         BuildService(
             IAudioPlaybackSink sink,
-            IPlayerWorld? playerWorld,
+            FakeCalendarState? calendarState,
+            TestDomainEventBus? bus,
             TimeProvider? time = null)
     {
         var defStore = new JsonSettingsStore<GandalfDefinitions>(_defsPath,
@@ -150,12 +141,13 @@ public sealed class TimerAlarmServiceTests : IDisposable
         var settings = new GandalfSettings
         {
             AlarmEnabled = true,
-            FlashWindow = false,    // no Application.MainWindow available — keep the assertion focused on audio.
-            SoundFilePath = null,   // AudioPlayer falls back to beep on null; the fake sink records the call regardless.
+            FlashWindow = false,
+            SoundFilePath = null,
             AlarmVolume = 0.5,
         };
 
-        var service = new TimerAlarmService(source, settings, sink, time, playerWorld);
+        var service = new TimerAlarmService(source, settings, sink, time,
+            calendarState: calendarState, bus: bus);
         _disposables.Add(service);
         return (service, source, defsSvc, progressSvc);
     }
@@ -169,5 +161,4 @@ public sealed class TimerAlarmServiceTests : IDisposable
             ReadyAt = DateTimeOffset.UtcNow,
             SourceMetadata = null,
         };
-
 }

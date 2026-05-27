@@ -1,7 +1,7 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using Celebrimbor.ViewModels;
 using Celebrimbor.Views;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 
@@ -10,19 +10,19 @@ namespace Celebrimbor;
 public sealed class CelebrimborAugmentPoolPresenter : IAugmentPoolPresenter
 {
     private readonly IReferenceDataService _refData;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public CelebrimborAugmentPoolPresenter(IReferenceDataService refData, IDiagnosticsSink? diag = null)
+    public CelebrimborAugmentPoolPresenter(IReferenceDataService refData, ILogger? logger = null)
     {
         _refData = refData;
-        _diag = diag;
+        _logger = logger;
     }
 
     public void Show(string sourceLabel, string profileName, int? minTier = null, int? maxTier = null, string? recommendedSkill = null, int? craftingTargetLevel = null, int? rolledRarityRank = null, string? sourceEquipSlot = null, string? itemName = null)
     {
         if (string.IsNullOrWhiteSpace(profileName))
         {
-            _diag?.Warn("AugmentPool", "Show called with empty profile name.");
+            _logger?.LogWarning("Show called with empty profile name.");
             return;
         }
 

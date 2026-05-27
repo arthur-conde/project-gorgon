@@ -31,7 +31,7 @@ public sealed class PriceCalibrationTests
     public void AbsoluteKey_uses_the_favor_token_verbatim_not_canonicalised()
     {
         // #385 calibration audit guard. The favor token reaching the persisted
-        // key is the RAW VendorScreenOpened token (VendorLogParser.cs), never
+        // key is the RAW VendorScreenOpened token (from Arda L3), never
         // round-tripped through FavorTierExtensions.Parse/.ToToken. #385 keeps
         // it that way (canonicalising = a key-shape change ⇒ SchemaVersion bump,
         // out of scope). This pins the raw passthrough so a future migration is

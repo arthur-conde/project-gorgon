@@ -1,8 +1,8 @@
+using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
 using Arwen.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 
@@ -28,7 +28,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
     private readonly IActiveCharacterService _active;
     private readonly ISettingsStore<ArwenSettings> _settingsStore;
     private readonly ArwenSettings _settings;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public ArwenFavorFanoutMigration(
         string legacyDir,
@@ -37,7 +37,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
         IActiveCharacterService active,
         ISettingsStore<ArwenSettings> settingsStore,
         ArwenSettings settings,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _legacyPath = Path.Combine(legacyDir, "settings.json");
         _store = store;
@@ -45,13 +45,13 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
         _active = active;
         _settingsStore = settingsStore;
         _settings = settings;
-        _diag = diag;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _diag?.Warn("Arwen.Fanout", $"Fanout failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Fanout failed"); }
         return Task.CompletedTask;
     }
 
@@ -69,7 +69,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Arwen.Fanout", $"Legacy read failed: {ex.Message}");
+            _logger?.LogWarning(ex, "Legacy read failed");
             return;
         }
         if (legacy is null || legacy.FavorStates.Count == 0) return;
@@ -83,7 +83,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
                 Favor = new Dictionary<string, NpcFavorSnapshot>(legacy.FavorStates[name], StringComparer.Ordinal),
             },
             view: _view,
-            diag: _diag);
+            logger: _logger);
 
         if (unresolved.Count == 0)
         {
@@ -92,17 +92,16 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
             try
             {
                 _settingsStore.Save(_settings);
-                _diag?.Info("Arwen.Fanout", "FavorStates fanout complete; settings file trimmed.");
+                _logger?.LogInformation("FavorStates fanout complete; settings file trimmed.");
             }
             catch (Exception ex)
             {
-                _diag?.Warn("Arwen.Fanout", $"Settings rewrite failed: {ex.Message}");
+                _logger?.LogWarning(ex, "Settings rewrite failed");
             }
         }
         else
         {
-            _diag?.Info("Arwen.Fanout",
-                $"FavorStates retained for next-startup retry. Unresolved: {string.Join(", ", unresolved)}");
+            _logger?.LogInformation($"FavorStates retained for next-startup retry. Unresolved: {string.Join(", ", unresolved)}");
         }
     }
 }

@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
-using Mithril.GameState.Pins;
+using Arda.World.Player;
 
 namespace Legolas.ViewModels;
 
@@ -20,7 +20,7 @@ namespace Legolas.ViewModels;
 /// <para>#113 Layer 1: each solved slot is phrased relative to the nearest
 /// recognizable reference — the player's own measured spots
 /// (<see cref="MotherlodeStatus.Locations"/>), their current-area map pins
-/// (<see cref="IPlayerPinTracker"/>), and the area landmark/NPC gazetteer
+/// (<see cref="IMapPinState"/>), and the area landmark/NPC gazetteer
 /// (<see cref="IAreaCalibrationService.CurrentAreaReferences"/>) — because raw
 /// engine-unit coordinates are unactionable in a game with no coordinate
 /// readout. Both reference feeders are optional: absent (or area-mismatched)
@@ -31,25 +31,25 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     private readonly MotherlodeMeasurementCoordinator _coordinator;
     private readonly IRouteOptimizer _optimizer;
     private readonly MotherlodeFlowController _flow;
-    private readonly IPlayerPinTracker? _pinTracker;
+    private readonly IMapPinState? _pinState;
     private readonly IAreaCalibrationService? _areaCalibration;
     private readonly LegolasSettings? _settings;
 
-    private static readonly IReadOnlyList<MapPin> NoPins = Array.Empty<MapPin>();
+    private static readonly IReadOnlyCollection<MapPinEntry> NoPins = Array.Empty<MapPinEntry>();
     private static readonly IReadOnlyList<CalibrationReference> NoReferences = Array.Empty<CalibrationReference>();
 
     public MotherlodeViewModel(
         MotherlodeMeasurementCoordinator coordinator,
         IRouteOptimizer optimizer,
         MotherlodeFlowController flow,
-        IPlayerPinTracker? pinTracker = null,
+        IMapPinState? pinState = null,
         IAreaCalibrationService? areaCalibration = null,
         LegolasSettings? settings = null)
     {
         _coordinator = coordinator;
         _optimizer = optimizer;
         _flow = flow;
-        _pinTracker = pinTracker;
+        _pinState = pinState;
         _areaCalibration = areaCalibration;
         _settings = settings;
         _coordinator.Changed += OnCoordinatorChanged;
@@ -92,6 +92,15 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _locationCount;
     [ObservableProperty] private int _locationsWithFix;
     [ObservableProperty] private string? _guidance;
+
+    /// <summary>#506: committed measurement spots for the active treasure (not
+    /// per-map distance bindings). Guided overlay gates on this (≥1), not on
+    /// the three-spot solve minimum.</summary>
+    [ObservableProperty] private int _measurementSpotCount;
+
+    /// <summary>#506: relative phrase for the guided next spot when the area is
+    /// uncalibrated (or as wizard copy when calibrated).</summary>
+    [ObservableProperty] private string? _guidedSpotPhrase;
 
     /// <summary>Per-spot bound-reading tally, parallel to the measured spots —
     /// the passive multi-map shape surface ("Spot 1: 5 · Spot 2: 4").</summary>
@@ -145,7 +154,7 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     private void Rebuild()
     {
         var snap = _coordinator.Snapshot();
-        var pins = _pinTracker?.CurrentAreaPins ?? NoPins;
+        var pins = _pinState?.Pins ?? NoPins;
         var gazetteer = _areaCalibration?.CurrentAreaReferences ?? NoReferences;
 
         // "Next up" = the lowest route-ordered uncollected slot (fallback: list
@@ -172,6 +181,12 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
         LocationCount = snap.LocationCount;
         LocationsWithFix = snap.LocationsWithFix;
         Guidance = snap.Guidance;
+        MeasurementSpotCount = snap.MeasurementSpotCount;
+        GuidedSpotPhrase = snap.NextSpot?.RelativePhrase is { } phrase
+            ? $"Next spot: {phrase}"
+            : snap.NextSpot is not null
+                ? "Next spot: stand in the dashed ring on the map"
+                : null;
         ReadsPerLocation = snap.ReadsPerLocation;
         MapsDug = snap.MapsDug;
         CanUndo = snap.CanUndo;
@@ -253,7 +268,7 @@ public sealed class MotherlodeSlotViewModel
         var core = HasFix
             ? bearing?.ToDisplayString() ?? "located — no nearby reference"
             : DistanceCount < 3
-                ? $"locating… ({DistanceCount}/3 readings)"
+                ? $"locating… ({DistanceCount}/3 spots)"
                 : "locating…";
         HeadlineText = string.IsNullOrWhiteSpace(MapName) ? core : $"{MapName} — {core}";
 

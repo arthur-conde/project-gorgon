@@ -1,5 +1,5 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared;
-using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shell.Updates;
 
@@ -7,13 +7,13 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
 {
     private readonly MithrilUpdateManager _holder;
     private readonly IUpdateStatusService _status;
-    private readonly IDiagnosticsSink _diag;
+    private readonly ILogger _logger;
 
-    public VelopackUpdateChecker(MithrilUpdateManager holder, IUpdateStatusService status, IDiagnosticsSink diag)
+    public VelopackUpdateChecker(MithrilUpdateManager holder, IUpdateStatusService status, ILogger logger)
     {
         _holder = holder;
         _status = status;
-        _diag = diag;
+        _logger = logger;
     }
 
     public async Task CheckAsync(CancellationToken ct)
@@ -21,7 +21,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
         if (!_holder.IsAvailable)
         {
             _status.ReportNotApplicable();
-            _diag.Info("updates", $"Skipping update check — channel '{_holder.Channel.Name}' is not subject to Velopack updates.");
+            _logger.LogInformation($"Skipping update check — channel '{_holder.Channel.Name}' is not subject to Velopack updates.");
             return;
         }
 
@@ -39,7 +39,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
                     remotePublishedAt: null,
                     status: UpdateComparisonStatus.Identical,
                     releaseNotesUrl: null);
-                _diag.Info("updates", $"Build is up to date ({_status.Local.SemanticVersion}, channel={_holder.Channel.Name}).");
+                _logger.LogInformation($"Build is up to date ({_status.Local.SemanticVersion}, channel={_holder.Channel.Name}).");
                 return;
             }
 
@@ -50,7 +50,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
                 status: UpdateComparisonStatus.Behind,
                 releaseNotesUrl: $"{MithrilRepository.Url}/releases/tag/v{targetVersion}");
 
-            _diag.Info("updates", $"Update available: local={_status.Local.SemanticVersion} remote={targetVersion} channel={_holder.Channel.Name}");
+            _logger.LogInformation($"Update available: local={_status.Local.SemanticVersion} remote={targetVersion} channel={_holder.Channel.Name}");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -59,7 +59,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
         catch (Exception ex)
         {
             _status.ReportError(ex.Message);
-            _diag.Warn("updates", $"Update check failed: {ex.GetType().Name} {ex.Message}");
+            _logger.LogWarning(ex, "Update check failed: {ExceptionType} {Message}", ex.GetType().Name, ex.Message);
         }
     }
 }
