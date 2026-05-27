@@ -39,14 +39,10 @@ The Gourmand finding additionally surfaces an **adjacent gap**: the live
 "food eaten" signature requires a `ProcessAddEffects` channel that no
 GameState service owns today.
 
-The most concrete new Class A finding is **Smaug's
-`VendorSellContext.EntityToNpc` map** — a 4000-entry entityId→NpcKey rolling
-cache that is *exactly* what `INpcStateTracker`
-([#552](https://github.com/moumantai-gg/mithril/issues/552), in flight) is
-being built to own. The prior audit's
-[#580](https://github.com/moumantai-gg/mithril/issues/580) covered
-`CivicPrideLevel`; this finding is its uncovered sibling under the same #552
-umbrella.
+~~The most concrete new Class A finding was **Smaug's
+`VendorSellContext.EntityToNpc` map**~~ — **resolved:** the Arda `Npc` handler
+now owns entity→NPC resolution and enriches vendor events directly.
+`VendorSellContext` has been deleted.
 
 The biggest cluster the audit also surfaces — not as a fresh finding, but as
 confirmation of what the charter's three-channel rule
@@ -62,8 +58,8 @@ completeness but deferred to the existing architectural commitment.
 |---|---|---|---|---|---|
 | 1 | [Saruman/Settings/SarumanState.cs:17](../src/Saruman.Module/Settings/SarumanState.cs) | `Codebook: Dictionary<string, KnownWord>` (per-character) | Player's set of discovered Words of Power + their lifecycle state (Known / Spent, count, timestamps) | **A** | Propose `IPlayerWordOfPowerState` in `Mithril.GameState/WordsOfPower/`. Parallels `IPlayerRecipeState`/`IPlayerSkillState` — same shape (per-character unlocked-set parsed from `Player.log`). Single-consumer today, so this is anticipatory; not load-bearing yet. |
 | 2 | [Pippin/Domain/GourmandState.cs:47](../src/Pippin.Module/Domain/GourmandState.cs) | `EatenFoodsByInternalName: Dictionary<string, int>` (per-character) | Player's set of foods eaten (the Gourmand-skill input domain) | **A** | Same shape as #1. Live signature = `ProcessDeleteItem(<food>(...))` via `IInventoryView` (exists; pre-#602 this was `IInventoryService`) **+** `ProcessAddEffects([foodEffect],...)` on the same timestamp — the effects half requires a new GameState effects tracker (no `Effects/` submodule under `Mithril.GameState/` today). Snapshot report continues to feed the historical baseline (eats before Mithril was recording). Multi-PR lift; single-consumer today — anticipatory like #1. |
-| 3 | [Smaug/State/VendorSellContext.cs:23](../src/Smaug.Module/State/VendorSellContext.cs) | `EntityToNpc: Dictionary<int, string>` (4000-entry capped) | entityId → NpcKey mapping for resolving vendor screens | **A** | Lift into `INpcStateTracker` ([#552](https://github.com/moumantai-gg/mithril/issues/552), in flight). The #552 spec explicitly names "entityId↔NpcKey binding" as in-scope — this is the second uncovered Smaug state holder under that umbrella (the first, `CivicPrideLevel`, is already filed as [#580](https://github.com/moumantai-gg/mithril/issues/580)). |
-| 4 | [Smaug/State/VendorSellContext.cs:11](../src/Smaug.Module/State/VendorSellContext.cs) | `ActiveVendorEntityId / ActiveFavorTier / ActiveNpcKey` | Transient "which vendor screen am I in" context for sell attribution | **B** | Tier-2 signature candidate. Mirrors the Arwen/Gandalf prior-audit deferrals — defer to the #552 Tier-2 work. |
+| 3 | ~~[Smaug/State/VendorSellContext.cs:23](../src/Smaug.Module/State/VendorSellContext.cs)~~ | ~~`EntityToNpc: Dictionary<int, string>` (4000-entry capped)~~ | ~~entityId → NpcKey mapping for resolving vendor screens~~ | **A → Resolved** | **Retired.** The Arda `Npc` handler now owns interaction context (including entityId→NpcKey resolution) and enriches `VendorScreenOpened` / `VendorItemSold` events with the resolved NPC key. `VendorSellContext` deleted; Smaug reads NPC key directly from the enriched events. |
+| 4 | ~~[Smaug/State/VendorSellContext.cs:11](../src/Smaug.Module/State/VendorSellContext.cs)~~ | ~~`ActiveVendorEntityId / ActiveFavorTier / ActiveNpcKey`~~ | ~~Transient "which vendor screen am I in" context for sell attribution~~ | **B → Resolved** | **Retired.** Vendor session state (active NPC key, favor tier) now lives in the Arda `Npc` handler and is propagated via enriched `VendorItemSold` events. No module-side correlation needed. |
 | 5 | [Smaug/State/VendorCatalogService.cs:38](../src/Smaug.Module/State/VendorCatalogService.cs) | `_entries: IReadOnlyList<VendorCatalogEntry>` | Joined projection of CDN data × `IFavorLookupService` × Civic Pride | **C** | Pure projection; consumes services correctly. Module-specific catalog view. |
 | 6 | [Smaug/State/SellPlannerService.cs:50](../src/Smaug.Module/State/SellPlannerService.cs) / [StorageSellbackService.cs:49](../src/Smaug.Module/State/StorageSellbackService.cs) | `_ownedItems`, `_vendors` | Storage-export × NPC reference projections | **C** | In-charter; consumes `IActiveCharacterService`/`IReferenceDataService`. |
 | 7 | [Smaug/Domain/PriceCalibrationService.cs:48](../src/Smaug.Module/Domain/PriceCalibrationService.cs) | `_data: PriceCalibrationData` (observations + rate aggregates) | Player's vendor-price *calibration* | **C** | Smaug calibration domain (per charter — Smaug owns "sale min/maxing", "mining store states"). Module-specific. |
@@ -184,32 +180,17 @@ of an adjacent dependency:
 **Caveat:** single-consumer today (Pippin), so this lift buys mostly
 *anticipation* — same caveat as #1.
 
-### Finding 3 — Smaug's `VendorSellContext.EntityToNpc`
+### Finding 3 — ~~Smaug's `VendorSellContext.EntityToNpc`~~ (RESOLVED)
 
-A 4000-entry capped `Dictionary<int, string>` keyed by entityId → NpcKey,
-populated from `ProcessStartInteraction` log lines
-([VendorSellContext.cs:23](../src/Smaug.Module/State/VendorSellContext.cs)).
-Maintained module-side because Smaug needs entityId resolution to attribute
-vendor sells to the correct NPC.
-
-**Why Class A:** the
-[#552](https://github.com/moumantai-gg/mithril/issues/552) NPC service spec
-explicitly names "entityId↔NpcKey binding" as in-flight scope. Smaug's
-rolling entityId cache *is* a parallel rebuild of exactly that binding — its
-cap-and-trim eviction logic exists because the module doesn't have access to
-the canonical lifetime semantics the NPC tracker will own.
-
-**Recommended disposition:** retire when #552 lands. Smaug's call site
-(`VendorIngestionService` `NpcInteractionStarted` handler at
-[VendorIngestionService.cs:123](../src/Smaug.Module/State/VendorIngestionService.cs)
-→ `_context.RememberEntity`) becomes a no-op; `_context.OnVendorScreenOpened`
-switches from `EntityToNpc.TryGetValue` to an
-`INpcStateTracker.TryResolveNpcKey(entityId)` query.
-
-This is the prior audit's missing sibling:
-[#580](https://github.com/moumantai-gg/mithril/issues/580) covered
-`CivicPrideLevel`; this one covers the entityId map. Both ride the same
-#552 retirement vehicle.
+**Resolved.** `VendorSellContext` and its `EntityToNpc` map have been deleted.
+The Arda `Npc` handler (`Arda.World.Player/Internal/Npc.cs`) now owns the
+interaction context — it resolves entityId→NpcKey from the active
+`ProcessStartInteraction` and enriches `VendorScreenOpened` and
+`VendorItemSold` events with the resolved `NpcKey` and `FavorTier`.
+`VendorIngestionService` reads these fields directly from the enriched events
+with no module-side entity mapping. The three other Smaug services that
+consumed `CivicPrideLevel` from `VendorSellContext` now read it on demand from
+`IPlayerState.Skills`.
 
 ### Findings 5–7, 10, 17–19, 21, 23 — In-charter module state (Class C)
 
@@ -296,17 +277,11 @@ For owner consideration; *not filed by this audit*.
   sun-damage detection, Saruman's WoP effect side, future buff trackers)
   — worth scoping as its own issue ahead of the Gourmand-state lift.
   Pippin's snapshot report continues to feed the historical baseline.
-- **Class A follow-up #3**: *Extend
-  [#552](https://github.com/moumantai-gg/mithril/issues/552)'s
-  `INpcStateTracker` spec to cover Smaug's `EntityToNpc` rolling map.* The
-  entityId↔NpcKey binding is already named in-scope; this finding is the
-  second module-side cache (after
-  [#580](https://github.com/moumantai-gg/mithril/issues/580)'s
-  `CivicPrideLevel`) that retires when #552 lands. May not need a new issue
-  — folding the call-site retirement into #552's existing PR may suffice.
-- **Class B (deferred)**: `VendorSellContext` correlation pieces (#4) —
-  defer to the Tier-2 signature umbrella that will be filed under #552. No
-  new issue from this audit.
+- ~~**Class A follow-up #3**~~: **Resolved.** Smaug's `EntityToNpc` rolling
+  map and `VendorSellContext` have been retired. The Arda `Npc` handler owns
+  entity→NPC resolution and enriches vendor events directly.
+- ~~**Class B (deferred)**: `VendorSellContext` correlation pieces (#4)~~:
+  **Resolved.** Vendor session state now lives in the Arda `Npc` handler.
 
 ## Related work
 
