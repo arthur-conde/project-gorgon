@@ -17,6 +17,7 @@ internal sealed class StateResetHandler : IFrameHandler
     private readonly Inventory _inventory;
     private readonly Player _player;
     private readonly Npc _npc;
+    private readonly Vault _vault;
     private readonly Weather _weather;
     private readonly Session _session;
     private readonly Celestial _celestial;
@@ -26,13 +27,14 @@ internal sealed class StateResetHandler : IFrameHandler
     private readonly Quest _quest;
 
     public StateResetHandler(
-        Inventory inventory, Player player, Npc npc,
+        Inventory inventory, Player player, Npc npc, Vault vault,
         Weather weather, Session session, Celestial celestial, MapPins mapPins,
         Position position, Effects effects, Quest quest)
     {
         _inventory = inventory;
         _player = player;
         _npc = npc;
+        _vault = vault;
         _weather = weather;
         _session = session;
         _celestial = celestial;
@@ -49,6 +51,7 @@ internal sealed class StateResetHandler : IFrameHandler
             _inventory.Reset();
             _player.Reset();
             _npc.Reset();
+            _vault.Reset();
             _weather.Reset();
             _session.Reset();
             _celestial.Reset();
@@ -59,8 +62,9 @@ internal sealed class StateResetHandler : IFrameHandler
         }
         else
         {
-            // Area transition: Npc, weather, map pins, and position are per-area
+            // Area transition: Npc, vault, weather, map pins, and position are per-area
             _npc.Reset();
+            _vault.Reset();
             _weather.Reset();
             _mapPins.Reset();
             _position.Reset();

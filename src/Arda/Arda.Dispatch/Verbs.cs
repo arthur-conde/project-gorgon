@@ -71,6 +71,11 @@ public static class Verbs
     public const string ProcessEnableInteractors = "ProcessEnableInteractors";
     public const string ProcessTalkScreen = "ProcessTalkScreen";
 
+    // Vault verbs (Tier 1, multi-consumer: Bilbo, Arwen, accumulator)
+    public const string ProcessShowStorageVault = "ProcessShowStorageVault";
+    public const string ProcessAddToStorageVault = "ProcessAddToStorageVault";
+    public const string ProcessRemoveFromStorageVault = "ProcessRemoveFromStorageVault";
+
     // Book verb (multi-consumer: Pippin, Saruman/GameState, generic)
     public const string ProcessBook = "ProcessBook";
 

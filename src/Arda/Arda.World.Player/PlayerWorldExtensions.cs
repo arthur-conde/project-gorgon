@@ -76,6 +76,14 @@ public static class PlayerWorldExtensions
         builder.Services.AddSingleton<IPlayerState>(sp => sp.GetRequiredService<Internal.Player>());
         builder.Services.AddSingleton<ISkillState>(sp => sp.GetRequiredService<Internal.Player>());
 
+        // --- Vault handler (vault deposit/withdrawal correlation + stack correction) ---
+        builder.Services.AddSingleton(sp =>
+        {
+            var bus = sp.GetRequiredService<IDomainEventPublisher>();
+            var inventory = sp.GetRequiredService<Inventory>();
+            return new Vault(bus, inventory);
+        });
+
         // --- Npc handler (interaction context + gift correlation) ---
         // NPC keys (~200) use miss-cache-only interning like area keys.
         var npcPool = new InternPool(FrozenDictionary<string, string>.Empty);
@@ -180,6 +188,7 @@ public static class PlayerWorldExtensions
             var inventory = sp.GetRequiredService<Inventory>();
             var player = sp.GetRequiredService<Internal.Player>();
             var npc = sp.GetRequiredService<Npc>();
+            var vault = sp.GetRequiredService<Vault>();
             var weather = sp.GetRequiredService<Weather>();
             var session = sp.GetRequiredService<Session>();
             var celestial = sp.GetRequiredService<Celestial>();
@@ -192,9 +201,10 @@ public static class PlayerWorldExtensions
             // Map clears CurrentArea; StateResetHandler then resets downstream state.
             // DispatchTable preserves insertion order within a verb's handler list.
             RegisterHandler(registry, Verbs.LoadingLevel,
-                new StateResetHandler(inventory, player, npc, weather, session, celestial, mapPins, position, effects, quest));
+                new StateResetHandler(inventory, player, npc, vault, weather, session, celestial, mapPins, position, effects, quest));
 
             RegisterHandler(registry, Verbs.ProcessAddItem, new AddItemHandler(inventory));
+            RegisterHandler(registry, Verbs.ProcessAddItem, new VaultAddItemHandler(vault));
             RegisterHandler(registry, Verbs.ProcessDeleteItem, new DeleteItemHandler(inventory));
             RegisterHandler(registry, Verbs.ProcessUpdateItemCode, new UpdateItemCodeHandler(inventory));
 
@@ -205,6 +215,7 @@ public static class PlayerWorldExtensions
 
             RegisterHandler(registry, Verbs.ProcessStartInteraction, new StartInteractionHandler(npc));
             RegisterHandler(registry, Verbs.ProcessDeleteItem, new NpcDeleteItemHandler(npc));
+            RegisterHandler(registry, Verbs.ProcessDeleteItem, new VaultDeleteItemHandler(vault));
 
             RegisterHandler(registry, Verbs.ProcessDeltaFavor, new DeltaFavorHandler(npc));
 
@@ -238,6 +249,11 @@ public static class PlayerWorldExtensions
             RegisterHandler(registry, Verbs.ProcessVendorScreen, new VendorScreenHandler(npc));
             RegisterHandler(registry, Verbs.ProcessVendorAddItem, new VendorAddItemHandler(npc));
             RegisterHandler(registry, Verbs.ProcessVendorUpdateAvailableGold, new VendorGoldHandler(pub));
+
+            // --- Vault handlers (Tier 1, multi-consumer: Bilbo, Arwen, accumulator) ---
+            RegisterHandler(registry, Verbs.ProcessShowStorageVault, new VaultShowHandler(vault));
+            RegisterHandler(registry, Verbs.ProcessRemoveFromStorageVault, new VaultWithdrawHandler(vault));
+            RegisterHandler(registry, Verbs.ProcessAddToStorageVault, new VaultDepositHandler(vault));
 
             // --- Interaction/loot passthrough handlers (Tier 2, primary consumer: Gandalf) ---
             RegisterHandler(registry, Verbs.ProcessEndInteraction, new EndInteractionHandler(pub));

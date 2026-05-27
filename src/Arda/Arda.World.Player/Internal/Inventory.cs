@@ -85,6 +85,25 @@ internal sealed class Inventory : IInventoryState
     }
 
     /// <summary>
+    /// Corrects the stack size of an existing inventory entry. Called by the Vault
+    /// handler when <c>ProcessRemoveFromStorageVault</c> provides the authoritative
+    /// stack count (the game does not always emit <c>ProcessUpdateItemCode</c> after
+    /// vault withdrawals).
+    /// </summary>
+    internal void CorrectStackSize(long instanceId, int stackCount, LogLineMetadata metadata)
+    {
+        if (!_items.TryGetValue(instanceId, out var entry))
+            return;
+
+        var previousStackSize = entry.StackSize;
+        if (previousStackSize == stackCount)
+            return;
+
+        _items[instanceId] = entry with { StackSize = stackCount };
+        _bus.Publish(new InventoryItemUpdated(instanceId, stackCount, previousStackSize, metadata));
+    }
+
+    /// <summary>
     /// Args format: <c>(instanceId, code, bool)</c>
     /// Example: <c>(133343932, 1053077, True)</c>
     /// Stack size decode: <c>(code >> 16) + 1</c>
