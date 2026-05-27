@@ -10,7 +10,22 @@ namespace Arda.Dispatch;
 /// <para>
 /// Publish is synchronous — subscribers execute inline on the driver thread.
 /// A throwing subscriber is caught and logged; it does not prevent remaining
-/// subscribers from receiving the event.
+/// subscribers from receiving the event. <see cref="GrammarException"/> is the
+/// one carve-out — it propagates so <c>WorldDriver</c> can halt the pipeline,
+/// since a grammar drift means the in-memory world model is no longer
+/// trustworthy. Subscribers later in the fanout don't see the event in that
+/// case, which is intentional: there is no recovering from a grammar break.
+/// </para>
+/// <para>
+/// Caveat on a grammar break thrown by a subscriber: the exception unwinds
+/// through the publishing handler's frame, so <see cref="DispatchTable"/>
+/// attributes it to that handler rather than to the subscriber. Strict-mode
+/// halt is still correct (the world stops); tolerant mode will skip the
+/// publishing handler for this line, which is the wrong target. A diagnostic
+/// log warning captures the subscriber's identity before re-throw so the
+/// attribution can be reconstructed from logs. See
+/// <see href="https://github.com/moumantai-gg/mithril/issues/814">#814</see>
+/// finding #4 for the follow-up to make this structurally correct.
 /// </para>
 /// </summary>
 internal sealed class DomainEventBus : IDomainEventBus
@@ -84,11 +99,21 @@ internal sealed class DomainEventBus : IDomainEventBus
                 {
                     handler(domainEvent);
                 }
-                catch (GrammarException)
+                catch (GrammarException ex)
                 {
                     // Grammar break is the world-halt signal — must propagate
                     // out of the publish loop the same way DispatchTable lets
-                    // it escape the handler loop.
+                    // it escape the handler loop. We can't tell DispatchTable
+                    // that the throw came from a subscriber rather than from
+                    // the publishing handler, so log the subscriber's identity
+                    // here — the WorldDriver halt log will name the publishing
+                    // handler, and operators reconcile via this warning.
+                    logger.LogWarning(ex,
+                        "Subscriber {Target}.{Method} threw {Exception} handling {EventType} — grammar break will propagate via the publishing handler's frame",
+                        handler.Target?.GetType().Name ?? "(static)",
+                        handler.Method.Name,
+                        nameof(GrammarException),
+                        typeof(T).Name);
                     throw;
                 }
                 catch (Exception ex)
