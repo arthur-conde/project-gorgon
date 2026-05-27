@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Runtime.InteropServices;
 using System.Text;
+using Arda.Abstractions.Diagnostics;
 using Mithril.Shared.Diagnostics.Telemetry;
 using Serilog.Core;
 
@@ -141,7 +142,7 @@ internal sealed class PerfFileExporter : IDisposable
                 return;
             }
 
-            if (src == "Mithril.Arda.Ingest" && op == "batch.process")
+            if (src == ArdaActivitySources.Ingest.Name && op == "batch.process")
             {
                 _logger.Information(
                     "{Kind} source={Source} lines={LineCount} classified={ClassifiedCount} duration={DurationMs:F2}ms",
@@ -153,7 +154,7 @@ internal sealed class PerfFileExporter : IDisposable
                 return;
             }
 
-            if (src == "Mithril.Arda.Dispatch")
+            if (src == ArdaActivitySources.Dispatch.Name)
             {
                 switch (op)
                 {
@@ -177,7 +178,7 @@ internal sealed class PerfFileExporter : IDisposable
                 }
             }
 
-            if (src == "Mithril.Arda.Composition" && op.StartsWith("compose.", StringComparison.Ordinal))
+            if (src == ArdaActivitySources.Composition.Name && op.StartsWith("compose.", StringComparison.Ordinal))
             {
                 _logger.Information(
                     "{Kind} composer={Composer} event={EventType} duration={DurationMs:F2}ms",

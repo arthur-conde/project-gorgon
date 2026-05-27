@@ -621,6 +621,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "{FileName}.json fetch failed; keeping existing data", fileName);
+            // Update the activity's outcome tag so the emitted `ref_fetch` record matches
+            // the counter's `cdn_failed` outcome — otherwise the record looks like a tiny
+            // successful fetch (Outcome=cdn, Bytes=0) and analysts misread it.
+            act?.SetTag("outcome", "cdn_failed");
             act?.SetTag("bytes", 0L);
             Mithril.Shared.Diagnostics.Telemetry.MithrilMeters.Reference.FetchOutcome.Add(1,
                 new KeyValuePair<string, object?>("outcome", "cdn_failed"),

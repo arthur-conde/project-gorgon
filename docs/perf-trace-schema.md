@@ -182,7 +182,7 @@ Reference-data load in `ReferenceDataService`. All three load paths emit this ki
 | Property | Meaning |
 |---|---|
 | `File` | The reference data file name (`items`, `recipes`, `npcs`, …). |
-| `Outcome` | `cdn` (HTTP fetch succeeded), `cdn_failed` (HTTP attempt threw — no `ref_fetch` activity is emitted in this case; the failure surfaces as a `mithril.reference.fetch_outcome` counter sample only), `cache` (loaded from on-disk cache file), or `bundled` (fell back to the bundled JSON). |
+| `Outcome` | `cdn` (HTTP fetch succeeded), `cdn_failed` (HTTP attempt threw — `Bytes=0`, `DurationMs` is the failing-attempt wall-clock), `cache` (loaded from on-disk cache file), or `bundled` (fell back to the bundled JSON). |
 | `CacheHit` | `true` when `Outcome` is `cache`; `false` otherwise. Retained for backward-compat with pre-PR-B trace consumers that only branched on `CacheHit`. |
 | `DurationMs` | Wall-clock for the path that emitted the record (HTTP fetch, cache read, or bundled read). |
 | `Bytes` | Number of bytes read. `0` on the CDN-failure path (no body). |

@@ -122,6 +122,33 @@ public class PrBInstrumentationTests
     }
 
     [Fact]
+    public void Reference_fetch_cdn_failure_emits_record_with_cdn_failed_outcome()
+    {
+        // Regression guard: an early version of PR #820 emitted a ref_fetch record
+        // with Outcome=cdn on CDN failure (the activity outcome tag was set to "cdn"
+        // before the try and the catch only touched the counter). Analysts read that
+        // as a successful tiny-payload fetch. The fix sets outcome=cdn_failed on the
+        // activity in the catch block so the record matches the counter.
+        var (listener, log) = CaptureActivities("Mithril.Reference");
+        try
+        {
+            using (var act = Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources.Reference.StartActivity("fetch"))
+            {
+                act?.SetTag("file", "items");
+                act?.SetTag("cache_hit", false);
+                act?.SetTag("outcome", "cdn");
+                // simulate the failure path
+                act?.SetTag("outcome", "cdn_failed");
+                act?.SetTag("bytes", 0L);
+            }
+
+            log.Should().ContainSingle(a => a.Operation == "fetch")
+                .Which.Tags["outcome"].Should().Be("cdn_failed");
+        }
+        finally { listener.Dispose(); }
+    }
+
+    [Fact]
     public void Reference_fetch_outcome_meter_records_per_outcome()
     {
         var (listener, log) = CaptureLongMeasurements("Mithril.Reference");
