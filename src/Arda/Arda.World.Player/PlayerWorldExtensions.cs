@@ -251,6 +251,9 @@ public static class PlayerWorldExtensions
             RegisterHandler(registry, Verbs.ProcessVendorUpdateAvailableGold, new VendorGoldHandler(pub));
 
             // --- Vault handlers (Tier 1, multi-consumer: Bilbo, Arwen, accumulator) ---
+            // NpcVaultOpenedHandler runs first so Npc knows to suppress
+            // gift-pending stashes for deposit deletes that follow.
+            RegisterHandler(registry, Verbs.ProcessShowStorageVault, new NpcVaultOpenedHandler(npc));
             RegisterHandler(registry, Verbs.ProcessShowStorageVault, new VaultShowHandler(vault));
             RegisterHandler(registry, Verbs.ProcessRemoveFromStorageVault, new VaultWithdrawHandler(vault));
             RegisterHandler(registry, Verbs.ProcessAddToStorageVault, new VaultDepositHandler(vault));

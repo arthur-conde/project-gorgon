@@ -27,6 +27,7 @@ internal sealed class Npc : INpcState
 
     private (long EntityId, string NpcKey, long ItemInstanceId, LogLineMetadata Metadata)? _pendingDelete;
     private (string NpcKey, double Delta, LogLineMetadata Metadata)? _pendingDelta;
+    private bool _vaultOpen;
 
     public string? ActiveNpcKey { get; private set; }
     public long? ActiveEntityId { get; private set; }
@@ -52,6 +53,19 @@ internal sealed class Npc : INpcState
         _pendingDelta = null;
         _activeVendorNpcKey = null;
         _activeVendorFavorTier = null;
+        _vaultOpen = false;
+    }
+
+    /// <summary>
+    /// Track that a vault session has opened with the active NPC. While
+    /// open, item deletes are deposits — they must NOT enter the
+    /// gift-pending FSM, otherwise a positive favor delta from any later
+    /// source would fabricate a <c>GiftAccepted</c> referencing the
+    /// deposited item.
+    /// </summary>
+    internal void OnVaultOpened()
+    {
+        _vaultOpen = true;
     }
 
     /// <summary>
@@ -64,6 +78,7 @@ internal sealed class Npc : INpcState
         _pendingDelta = null;
         _activeVendorNpcKey = null;
         _activeVendorFavorTier = null;
+        _vaultOpen = false;
 
         var tok = new ArgTokenizer(args);
         tok.SkipOpen();
@@ -103,6 +118,7 @@ internal sealed class Npc : INpcState
         _pendingDelta = null;
         _activeVendorNpcKey = null;
         _activeVendorFavorTier = null;
+        _vaultOpen = false;
     }
 
     /// <summary>
@@ -130,6 +146,10 @@ internal sealed class Npc : INpcState
                 ActiveEntityId.Value, ActiveNpcKey, instanceId, delta.Delta, delta.Metadata));
             return;
         }
+
+        // Vault session open: this delete is a deposit being correlated by
+        // Vault.OnDeleteItem, not a gift. Don't stash it on the gift FSM.
+        if (_vaultOpen) return;
 
         _pendingDelete = (ActiveEntityId.Value, ActiveNpcKey, instanceId, metadata);
     }

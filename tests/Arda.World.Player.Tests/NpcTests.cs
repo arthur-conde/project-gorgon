@@ -186,6 +186,26 @@ public class NpcTests
             "non-positive delta clears the stashed delete; later positive delta has nothing to pair with");
     }
 
+    // ── Vault session suppresses gift-pending stash ─────────────────────
+
+    [Fact]
+    public void DeleteDuringVaultSession_DoesNotStashGiftPending()
+    {
+        // Banker NPC that also accepts gifts: open vault, then deposit, then
+        // (hypothetical) positive favor delta. Without the suppression the
+        // delete would stash on the gift FSM and the positive delta would
+        // fabricate a GiftAccepted referencing the deposited item.
+        DispatchInteraction("99999, 7, 1000, True, \"NPC_Banker\"");
+        _npc.OnVaultOpened();
+        DispatchDeleteItem(555555); // deposit
+
+        _bus.Clear();
+        DispatchDeltaFavor("99999, \"NPC_Banker\", 5, True");
+
+        _bus.Published<GiftAccepted>().Should().BeEmpty(
+            "items deleted during a vault session are deposits, not gifts");
+    }
+
     // ── Interning ───────────────────────────────────────────────────────
 
     [Fact]
