@@ -126,10 +126,6 @@ internal sealed class LogSourceTailer
             var bytesRead = fs.Read(rawBuf, _residual.Length, bytesToRead);
             var totalBytes = _residual.Length + bytesRead;
 
-            // EOF reached when we've read everything that was available at
-            // the time we sampled the file length.
-            _hasCaughtUp = (_offset + bytesRead) >= fileLength;
-
             var lastNl = FindLastNewline(rawBuf, totalBytes);
             if (lastNl < 0)
             {
@@ -140,8 +136,17 @@ internal sealed class LogSourceTailer
                 // file size.
                 _residual = rawBuf[..totalBytes];
                 _offset += bytesRead;
+                // Do NOT set _hasCaughtUp here: even if the file's tail
+                // coincides with our offset, no complete line has been
+                // emitted, so the coordinator must not flip IsReplay yet.
                 return default;
             }
+
+            // Caught up once we've consumed everything the file had at sample
+            // time AND have emitted at least one complete line. The lastNl>=0
+            // branch guarantees the latter; the former is bytesRead exhausting
+            // what was available.
+            _hasCaughtUp = (_offset + bytesRead) >= fileLength;
 
             var charCount = Encoding.UTF8.GetCharCount(rawBuf, 0, lastNl + 1);
             var charBuf = ArrayPool<char>.Shared.Rent(charCount);

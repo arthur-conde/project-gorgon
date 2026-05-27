@@ -189,6 +189,30 @@ public class LogSourceTailerTests : IDisposable
     }
 
     [Fact]
+    public void HasCaughtUp_PartialTrailingLine_StaysFalse()
+    {
+        File.WriteAllBytes(_tempFile, Encoding.UTF8.GetBytes("[14:30:05] Lin"));
+        var tailer = new LogSourceTailer(_tempFile);
+
+        var batch = tailer.ReadNew();
+        batch.IsEmpty.Should().BeTrue();
+        tailer.HasCaughtUp.Should().BeFalse(
+            "no complete line has been emitted yet; coordinators must not flip IsReplay until a real line is observed");
+
+        File.AppendAllText(_tempFile, "e1\n[14:30:06] Line2\n");
+        var batch2 = tailer.ReadNew();
+        try
+        {
+            batch2.LineCount.Should().Be(2);
+            tailer.HasCaughtUp.Should().BeTrue();
+        }
+        finally
+        {
+            batch2.Dispose();
+        }
+    }
+
+    [Fact]
     public void ReadNew_NoNewContent_ReturnsEmptyBatchAfterCatchUp()
     {
         File.WriteAllText(_tempFile, "[14:30:05] Line\n");
