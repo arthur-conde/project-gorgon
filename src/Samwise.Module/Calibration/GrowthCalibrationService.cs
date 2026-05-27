@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Samwise.Config;
 using Samwise.State;
@@ -190,8 +189,7 @@ public sealed class GrowthCalibrationService
         RecomputeSlotCapRates();
         Save();
 
-        _logger?.LogDiagnosticInfo("Samwise.Calibration",
-            $"Slot cap observed: family={e.Family} cap={e.ObservedCap} char={e.CharName}");
+        _logger?.LogInformation($"Slot cap observed: family={e.Family} cap={e.ObservedCap} char={e.CharName}");
 
         DataChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -217,7 +215,7 @@ public sealed class GrowthCalibrationService
     {
         if (string.IsNullOrEmpty(plot.CropType))
         {
-            _logger?.LogDiagnosticTrace("Samwise.Calibration", $"Plot {plot.PlotId} has no crop type — skipping");
+            _logger?.LogTrace($"Plot {plot.PlotId} has no crop type — skipping");
             return;
         }
 
@@ -232,8 +230,7 @@ public sealed class GrowthCalibrationService
         // under 10s is backfill-induced collapse or noise.
         if (effectiveSeconds < 10 || effectiveSeconds > 86_400)
         {
-            _logger?.LogDiagnosticTrace("Samwise.Calibration",
-                $"Plot {plot.PlotId} effective={effectiveSeconds:F1}s — out of range, skipping");
+            _logger?.LogTrace($"Plot {plot.PlotId} effective={effectiveSeconds:F1}s — out of range, skipping");
             return;
         }
 
@@ -253,8 +250,7 @@ public sealed class GrowthCalibrationService
         RecomputeRates();
         Save();
 
-        _logger?.LogDiagnosticInfo("Samwise.Calibration",
-            $"Growth observed: {plot.CropType} effective={effectiveSeconds:F1}s paused={totalPausedSeconds:F1}s ({phases.Count} phases)");
+        _logger?.LogInformation($"Growth observed: {plot.CropType} effective={effectiveSeconds:F1}s paused={totalPausedSeconds:F1}s ({phases.Count} phases)");
 
         DataChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -422,12 +418,11 @@ public sealed class GrowthCalibrationService
             var json = File.ReadAllBytes(_dataPath);
             _data = JsonSerializer.Deserialize(json, GrowthCalibrationJsonContext.Default.GrowthCalibrationData) ?? new();
             RecomputeRates();
-            _logger?.LogDiagnosticInfo("Samwise.Calibration",
-                $"Loaded {_data.Observations.Count} observations, {_data.Rates.Count} crop rates");
+            _logger?.LogInformation($"Loaded {_data.Observations.Count} observations, {_data.Rates.Count} crop rates");
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Samwise.Calibration", $"Failed to load calibration: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to load calibration");
             _data = new();
         }
     }
@@ -444,7 +439,7 @@ public sealed class GrowthCalibrationService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Samwise.Calibration", $"Failed to save calibration: {ex.Message}");
+            _logger?.LogWarning(ex, "Failed to save calibration");
         }
     }
 
@@ -515,7 +510,7 @@ public sealed class GrowthCalibrationService
     {
         var json = ExportJson(contributorNote);
         File.WriteAllText(path, json);
-        _logger?.LogDiagnosticInfo("Samwise.Calibration", $"Exported {_data.Observations.Count} observations to {path}");
+        _logger?.LogInformation($"Exported {_data.Observations.Count} observations to {path}");
     }
 
     public int ImportJson(string json, bool replaceExisting = false)
@@ -563,8 +558,7 @@ public sealed class GrowthCalibrationService
         }
 
         var incomingTotal = incoming.Observations.Count + incoming.PhaseTransitions.Count + incoming.SlotCapObservations.Count;
-        _logger?.LogDiagnosticInfo("Samwise.Calibration",
-            $"Imported {added} new observations ({incomingTotal - added} duplicates skipped)");
+        _logger?.LogInformation($"Imported {added} new observations ({incomingTotal - added} duplicates skipped)");
         return added;
     }
 

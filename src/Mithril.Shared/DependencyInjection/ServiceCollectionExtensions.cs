@@ -69,7 +69,7 @@ public static class ServiceCollectionExtensions
                 var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("GameReports");
                 return new GameReportsService(
                     () => gameConfig.ReportsDirectory,
-                    (category, message) => logger.LogDiagnosticWarn(category, message));
+                    (category, message) => logger.LogWarning("{Category} {Detail}", category, message));
             })
             .AddSingleton<IActiveCharacterService>(sp => new ActiveCharacterService(
                 sp.GetRequiredService<Game.GameConfig>(),

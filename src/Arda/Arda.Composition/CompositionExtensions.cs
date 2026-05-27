@@ -86,7 +86,9 @@ public static class CompositionExtensions
                     charactersRootDir,
                     "npc-state.json",
                     NpcStateSnapshotJsonContext.Default.NpcStateSnapshot,
-                    legacy: new NpcStateArwenMigration(charactersRootDir),
+                    legacy: new NpcStateArwenMigration(
+                        charactersRootDir,
+                        loggerFactory?.CreateLogger("Arda.NpcMigration")),
                     logger: loggerFactory?.CreateLogger("PerCharacterStore<NpcStateSnapshot>"));
             }
 
@@ -99,7 +101,10 @@ public static class CompositionExtensions
         {
             var bus = sp.GetRequiredService<IDomainEventBus>();
             var fallback = serverFallbackFactory?.Invoke(sp);
-            return new SessionComposer(bus, fallback);
+            var loggerFactory = sp.GetService<ILoggerFactory>();
+            return new SessionComposer(bus,
+                loggerFactory?.CreateLogger("Arda.Session"),
+                fallback);
         });
         services.AddSingleton<ISessionComposer>(sp => sp.GetRequiredService<SessionComposer>());
 

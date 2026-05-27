@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -37,10 +36,10 @@ public sealed class EffectsKindTarget : IReferenceKindTarget
         var row = _vm.AllEffects.FirstOrDefault(r => r.EnvelopeKey == internalName);
         if (row is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Effects.TrySelect '{internalName}' → not found (AllEffects={_vm.AllEffects.Count}).");
+            _logger?.LogTrace("Effects.TrySelect '{InternalName}' → not found (AllEffects={AllEffects}).", internalName, _vm.AllEffects.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Effects.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Effects.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible ListBox.
         _vm.QueryText = "";
         _vm.SelectedRow = row;

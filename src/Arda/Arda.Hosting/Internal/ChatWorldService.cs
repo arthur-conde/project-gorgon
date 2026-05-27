@@ -1,6 +1,7 @@
 using Arda.Dispatch;
 using Arda.Ingest.Coordinator;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Hosting.Internal;
 
@@ -10,15 +11,27 @@ namespace Arda.Hosting.Internal;
 internal sealed class ChatWorldService(
     ChatLogSource source,
     DispatchTable dispatchTable,
-    ReplayProgress progress) : BackgroundService
+    ReplayProgress progress,
+    ILogger<ChatWorldService> logger) : BackgroundService
 {
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var driver = new WorldDriver(
-            source,
-            dispatchTable,
-            onLiveTransition: () => progress.MarkComplete(ReplayProgress.SourceFamily.Chat));
+        logger.LogInformation("Chat world driver starting");
+        try
+        {
+            var driver = new WorldDriver(
+                source,
+                dispatchTable,
+                onLiveTransition: () => progress.MarkComplete(ReplayProgress.SourceFamily.Chat),
+                logger: logger,
+                sourceFamily: "Chat");
 
-        return driver.RunAsync(stoppingToken);
+            await driver.RunAsync(stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            logger.LogInformation("Chat world driver stopped");
+            throw;
+        }
     }
 }

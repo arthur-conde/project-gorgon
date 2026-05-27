@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.Windows;
 using Elrond.ViewModels;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 
 namespace Elrond.Services;
@@ -42,7 +41,7 @@ public sealed class ElrondSkillImportTarget : IElrondSkillImportTarget
     private void Apply(string skillKey)
     {
         if (_activator is not null && !_activator.Activate("elrond"))
-            _logger?.LogDiagnosticInfo("Elrond", "Deep-link import: module activator could not find 'elrond'.");
+            _logger?.LogInformation("Deep-link import: module activator could not find 'elrond'.");
         _vm.SelectSkillFromDeepLink(skillKey);
     }
 }

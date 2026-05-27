@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using System.Linq;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -35,10 +34,10 @@ public sealed class ProfileKindTarget : IReferenceKindTarget
             r => r.Kind == TreasureRowKind.Profile && r.InternalName == internalName);
         if (row is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Profile.TrySelect '{internalName}' → not found (AllRows={_vm.AllRows.Count}).");
+            _logger?.LogTrace("Profile.TrySelect '{InternalName}' → not found (AllRows={AllRows}).", internalName, _vm.AllRows.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Profile.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Profile.TrySelect '{InternalName}' → found, selecting.", internalName);
         _vm.QueryText = "";
         _vm.SelectedRow = row;
         return true;

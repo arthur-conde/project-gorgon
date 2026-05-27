@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -38,10 +37,10 @@ public sealed class LorebooksKindTarget : IReferenceKindTarget
         var row = _vm.AllLorebooks.FirstOrDefault(b => b.InternalName == internalName);
         if (row is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Lorebooks.TrySelect '{internalName}' → not found (AllLorebooks={_vm.AllLorebooks.Count}).");
+            _logger?.LogTrace("Lorebooks.TrySelect '{InternalName}' → not found (AllLorebooks={AllLorebooks}).", internalName, _vm.AllLorebooks.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Lorebooks.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Lorebooks.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible list.
         _vm.QueryText = "";
         _vm.SelectedLorebook = row;

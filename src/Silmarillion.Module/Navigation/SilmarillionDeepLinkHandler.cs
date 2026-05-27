@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 
@@ -29,7 +28,7 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
     {
         if (string.IsNullOrEmpty(subPath))
         {
-            logger?.LogDiagnosticInfo("DeepLink", "Rejected: silmarillion payload is empty.");
+            logger?.LogTrace("Rejected: silmarillion payload is empty.");
             return false;
         }
 
@@ -38,7 +37,7 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
         var parts = subPath.Split('/', 3);
         if (parts.Length != 2 || parts[0].Length == 0 || parts[1].Length == 0)
         {
-            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: silmarillion payload '{subPath}' must be '<kind>/<name>'.");
+            logger?.LogTrace("Rejected: silmarillion payload '{SubPath}' must be '<kind>/<name>'.", subPath);
             return false;
         }
 
@@ -57,20 +56,20 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
         // for item/recipe/npc/etc. routes.
         if (!DeepLinkPayload.IsValidEnvelopeKey(name))
         {
-            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: silmarillion name '{name}' failed validation.");
+            logger?.LogTrace("Rejected: silmarillion name '{Name}' failed validation.", name);
             return false;
         }
 
         if (!Enum.TryParse<EntityKind>(kind, ignoreCase: true, out var entityKind))
         {
-            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: silmarillion kind '{kind}' is not a known EntityKind.");
+            logger?.LogTrace("Rejected: silmarillion kind '{Kind}' is not a known EntityKind.", kind);
             return false;
         }
 
         var entityRef = new EntityRef(entityKind, name);
         if (!_navigator.CanOpen(entityRef))
         {
-            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: silmarillion kind '{kind}' has no registered target yet.");
+            logger?.LogTrace("Rejected: silmarillion kind '{Kind}' has no registered target yet.", kind);
             return false;
         }
 

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Core;
 using Serilog.Formatting.Compact;
@@ -69,14 +70,14 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
 
                 Volatile.Write(ref _logger, logger);
                 Volatile.Write(ref _currentSessionPath, sessionPath);
-                _diagLogger?.LogDiagnosticInfo("PerfTrace", $"Session started: {sessionPath}");
+                _diagLogger?.LogInformation($"Session started: {sessionPath}");
 
                 EmitSessionHeader(header);
                 notify = true;
             }
             catch (Exception ex)
             {
-                _diagLogger?.LogDiagnosticWarn("PerfTrace", $"Failed to start session: {ex.Message}");
+                _diagLogger?.LogWarning(ex, "Failed to start session");
                 _logger = null;
                 _currentSessionPath = null;
             }
@@ -98,7 +99,7 @@ public sealed class PerfTracer : IPerfTracer, IDisposable
         toDispose?.Dispose();
         if (finishedPath is not null)
         {
-            _diagLogger?.LogDiagnosticInfo("PerfTrace", $"Session stopped: {finishedPath}");
+            _diagLogger?.LogInformation($"Session stopped: {finishedPath}");
             IsActiveChanged?.Invoke(this, EventArgs.Empty);
         }
     }

@@ -40,8 +40,7 @@ public sealed class StartPerfTraceHotkey : IHotkeyCommand
     {
         if (!_settings.EnablePerfTrace)
         {
-            _logger.LogDiagnosticWarn("PerfTrace",
-                "Hotkey pressed but EnablePerfTrace=false — enable it in Settings first.");
+            _logger.LogWarning("Hotkey pressed but EnablePerfTrace=false — enable it in Settings first.");
             return Task.CompletedTask;
         }
 
@@ -49,12 +48,11 @@ public sealed class StartPerfTraceHotkey : IHotkeyCommand
         {
             var wasActive = _perf.IsActive;
             _perf.Toggle();
-            _logger.LogDiagnosticInfo("PerfTrace",
-                wasActive ? "Recording stopped." : "Recording started.");
+            _logger.LogInformation(wasActive ? "Recording stopped." : "Recording started.");
         }
         catch (Exception ex)
         {
-            _logger.LogDiagnosticError("PerfTrace", $"Toggle failed: {ex.Message}");
+            _logger.LogError(ex, "Toggle failed");
         }
         return Task.CompletedTask;
     }

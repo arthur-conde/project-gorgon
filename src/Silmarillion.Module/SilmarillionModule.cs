@@ -2,7 +2,6 @@ using System.IO;
 using MahApps.Metro.IconPacks;
 using Microsoft.Extensions.DependencyInjection;
 using Mithril.Shared.DependencyInjection;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Silmarillion.Navigation;

@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 
 namespace Celebrimbor.Services;
@@ -21,7 +20,7 @@ public sealed class CraftListDeepLinkHandler : IDeepLinkHandler
     {
         if (!PayloadPattern.IsMatch(subPath))
         {
-            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: list payload (len={subPath.Length}) failed validation.");
+            logger?.LogInformation($"Rejected: list payload (len={subPath.Length}) failed validation.");
             return false;
         }
         _target.ImportFromLinkPayload(subPath);

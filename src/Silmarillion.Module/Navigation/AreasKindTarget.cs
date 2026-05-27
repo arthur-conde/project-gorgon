@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -36,10 +35,10 @@ public sealed class AreasKindTarget : IReferenceKindTarget
         var row = _vm.AllAreas.FirstOrDefault(a => a.Key == internalName);
         if (row is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Areas.TrySelect '{internalName}' → not found (AllAreas={_vm.AllAreas.Count}).");
+            _logger?.LogTrace("Areas.TrySelect '{InternalName}' → not found (AllAreas={AllAreas}).", internalName, _vm.AllAreas.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Areas.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Areas.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible ListBox.
         _vm.QueryText = "";
         _vm.SelectedArea = row;

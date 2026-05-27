@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using Mithril.Shared;
-using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shell.Updates;
 
@@ -26,7 +25,7 @@ public sealed class VelopackUpdateApplier : IUpdateApplier
         {
             if (!_holder.IsAvailable || _holder.Pending is null)
             {
-                _logger.LogDiagnosticInfo("updates", "Apply requested but no pending update; opening releases page.");
+                _logger.LogInformation("Apply requested but no pending update; opening releases page.");
                 OpenReleasesPage();
                 return;
             }
@@ -36,15 +35,15 @@ public sealed class VelopackUpdateApplier : IUpdateApplier
             // browser instead of failing inside Velopack.
             if (!_holder.IsInstalled)
             {
-                _logger.LogDiagnosticInfo("updates", "Portable build — opening releases page instead of applying in place.");
+                _logger.LogInformation("Portable build — opening releases page instead of applying in place.");
                 OpenReleasesPage();
                 return;
             }
 
-            _logger.LogDiagnosticInfo("updates", $"Downloading update {_holder.Pending.TargetFullRelease.Version} (channel={_holder.Channel.Name}).");
+            _logger.LogInformation($"Downloading update {_holder.Pending.TargetFullRelease.Version} (channel={_holder.Channel.Name}).");
             await _holder.Manager.DownloadUpdatesAsync(_holder.Pending, cancelToken: ct).ConfigureAwait(false);
 
-            _logger.LogDiagnosticInfo("updates", "Restarting onto new version.");
+            _logger.LogInformation("Restarting onto new version.");
             // Calls Update.exe and terminates this process. WPF teardown does not happen —
             // settings persisted via the Closing handler in Program.cs Main() will not run.
             // The trade-off: the in-flight save in Program.cs's finally block still fires
@@ -58,7 +57,7 @@ public sealed class VelopackUpdateApplier : IUpdateApplier
         }
         catch (Exception ex)
         {
-            _logger.LogDiagnosticWarn("updates", $"Apply failed: {ex.GetType().Name} {ex.Message}. Falling back to releases page.");
+            _logger.LogWarning(ex, "Apply failed: {ExceptionType} {Message}. Falling back to releases page.", ex.GetType().Name, ex.Message);
             OpenReleasesPage();
         }
         finally

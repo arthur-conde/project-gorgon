@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shared.Modules;
 
@@ -39,12 +38,12 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
         if (string.IsNullOrWhiteSpace(uri)) return false;
         if (!Uri.TryCreate(uri, UriKind.Absolute, out var parsed))
         {
-            _logger?.LogDiagnosticInfo("DeepLink", $"Rejected: not a well-formed URI: '{uri}'.");
+            _logger?.LogInformation($"Rejected: not a well-formed URI: '{uri}'.");
             return false;
         }
         if (!string.Equals(parsed.Scheme, Scheme, StringComparison.OrdinalIgnoreCase))
         {
-            _logger?.LogDiagnosticInfo("DeepLink", $"Rejected: scheme '{parsed.Scheme}' is not 'mithril'.");
+            _logger?.LogInformation($"Rejected: scheme '{parsed.Scheme}' is not 'mithril'.");
             return false;
         }
 
@@ -53,7 +52,7 @@ public sealed class DeepLinkRouter : IDeepLinkRouter
 
         if (!_handlers.TryGetValue(action, out var handler))
         {
-            _logger?.LogDiagnosticInfo("DeepLink", $"Rejected: unknown action '{action}'.");
+            _logger?.LogInformation($"Rejected: unknown action '{action}'.");
             return false;
         }
         return handler.TryHandle(subPath, _logger);

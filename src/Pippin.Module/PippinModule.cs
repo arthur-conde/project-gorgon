@@ -36,8 +36,11 @@ public sealed class PippinModule : IMithrilModule
         services.AddMithrilSettings<PippinSettings>(settingsPath, PippinSettingsJsonContext.Default.PippinSettings);
 
         // Per-character persistence with a one-shot migration from the legacy flat file.
-        services.AddSingleton<ILegacyMigration<GourmandState>>(_ =>
-            new GourmandLegacyMigration(legacyPippinDir, GourmandStateJsonContext.Default.GourmandState));
+        services.AddSingleton<ILegacyMigration<GourmandState>>(sp =>
+            new GourmandLegacyMigration(
+                legacyPippinDir,
+                GourmandStateJsonContext.Default.GourmandState,
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()?.CreateLogger("Pippin")));
         services.AddPerCharacterModuleStore<GourmandState>(Id, GourmandStateJsonContext.Default.GourmandState);
 
         // Domain

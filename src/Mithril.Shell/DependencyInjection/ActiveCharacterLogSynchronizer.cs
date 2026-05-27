@@ -3,7 +3,6 @@ using Arda.Composition;
 using Arda.Contracts;
 using Arda.World.Player.Events;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;
 
 namespace Mithril.Shell.DependencyInjection;
@@ -40,7 +39,7 @@ internal sealed class ActiveCharacterLogSynchronizer : IHostedService, IDisposab
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger?.LogDiagnosticInfo("ActiveChar", "Subscribing to Arda SessionStarted + SessionEstablished");
+        _logger?.LogInformation("Subscribing to Arda SessionStarted + SessionEstablished");
         _sessionSub = _bus.Subscribe<SessionStarted>(OnSessionStarted);
         _establishedSub = _bus.Subscribe<SessionEstablished>(OnSessionEstablished);
         return Task.CompletedTask;

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 using Silmarillion.ViewModels;
@@ -41,10 +40,10 @@ public sealed class ItemsKindTarget : IReferenceKindTarget
         var item = _vm.AllItems.FirstOrDefault(i => i.InternalName == internalName);
         if (item is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Items.TrySelect '{internalName}' → not found (AllItems={_vm.AllItems.Count}).");
+            _logger?.LogTrace("Items.TrySelect '{InternalName}' → not found (AllItems={AllItems}).", internalName, _vm.AllItems.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Items.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Items.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target item isn't filtered out of the visible
         // ListBox — without this, a deep-link arriving while the user (or a previous
         // navigation) had a query in the box would set SelectedItem to a row that's

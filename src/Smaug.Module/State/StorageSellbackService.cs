@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using Arda.Composition;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.GameReports;
 using Smaug.Domain;
@@ -158,8 +157,7 @@ public sealed class StorageSellbackService
 
         _vendors = matches;
         VendorsChanged?.Invoke(this, EventArgs.Empty);
-        _logger?.LogDiagnosticInfo("Smaug.Sellback",
-            $"Rebuilt for {ActiveCharacter}: {matches.Count} vendors matched {report.Items.Count} stocked items.");
+        _logger?.LogInformation($"Rebuilt for {ActiveCharacter}: {matches.Count} vendors matched {report.Items.Count} stocked items.");
     }
 
     /// <summary>

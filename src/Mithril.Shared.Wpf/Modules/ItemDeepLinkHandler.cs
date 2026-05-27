@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Modules;
@@ -20,7 +19,7 @@ public sealed class ItemDeepLinkHandler : IDeepLinkHandler
     {
         if (!DeepLinkPayload.IsValidInternalName(subPath))
         {
-            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: item payload '{subPath}' failed validation.");
+            logger?.LogInformation($"Rejected: item payload '{subPath}' failed validation.");
             return false;
         }
         _navigator.Open(EntityRef.Item(subPath));

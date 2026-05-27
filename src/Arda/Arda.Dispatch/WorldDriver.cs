@@ -1,4 +1,5 @@
 using Arda.Abstractions.Logs;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Dispatch;
 
@@ -14,17 +15,24 @@ internal sealed class WorldDriver : IWorldDriver
     private readonly DispatchTable _dispatch;
     private readonly Action? _onLiveTransition;
     private readonly IReadOnlyList<ILineObserver> _observers;
+    private readonly ILogger? _logger;
+    private readonly string? _sourceFamily;
+    private long _lineCount;
 
     public WorldDriver(
         ILogLineSource source,
         DispatchTable dispatch,
         Action? onLiveTransition = null,
-        IReadOnlyList<ILineObserver>? observers = null)
+        IReadOnlyList<ILineObserver>? observers = null,
+        ILogger? logger = null,
+        string? sourceFamily = null)
     {
         _source = source;
         _dispatch = dispatch;
         _onLiveTransition = onLiveTransition;
         _observers = observers ?? [];
+        _logger = logger;
+        _sourceFamily = sourceFamily;
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -33,9 +41,14 @@ internal sealed class WorldDriver : IWorldDriver
 
         await foreach (var line in _source.Lines(ct))
         {
+            _lineCount++;
+
             if (!liveSignalled && !line.Metadata.IsReplay)
             {
                 liveSignalled = true;
+                _logger?.LogInformation(
+                    "Replay to live transition for {SourceFamily}",
+                    _sourceFamily ?? "unknown");
                 _onLiveTransition!();
             }
 
@@ -47,6 +60,17 @@ internal sealed class WorldDriver : IWorldDriver
         }
 
         if (!liveSignalled)
+        {
+            _logger?.LogWarning(
+                "Live transition forced at end of stream for {SourceFamily} ({LineCount} lines processed)",
+                _sourceFamily ?? "unknown",
+                _lineCount);
             _onLiveTransition!();
+        }
+
+        _logger?.LogInformation(
+            "World driver completed for {SourceFamily} ({LineCount} lines processed)",
+            _sourceFamily ?? "unknown",
+            _lineCount);
     }
 }

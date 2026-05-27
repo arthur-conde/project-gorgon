@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 
 namespace Legolas.Sharing;
@@ -21,7 +20,7 @@ public sealed class LegolasDeepLinkHandler : IDeepLinkHandler
     {
         if (!PayloadPattern.IsMatch(subPath))
         {
-            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: legolas payload (len={subPath.Length}) failed validation.");
+            logger?.LogInformation($"Rejected: legolas payload (len={subPath.Length}) failed validation.");
             return false;
         }
         _target.ImportFromLinkPayload(subPath);

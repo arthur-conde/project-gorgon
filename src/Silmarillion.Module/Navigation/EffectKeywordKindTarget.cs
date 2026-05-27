@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 
@@ -36,13 +35,13 @@ public sealed class EffectKeywordKindTarget : IReferenceKindTarget
     {
         if (string.IsNullOrEmpty(internalName))
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", "EffectKeyword.TrySelect '' → empty payload, leaving Effects tab unchanged.");
+            _logger?.LogTrace("EffectKeyword.TrySelect '' → empty payload, leaving Effects tab unchanged.");
             return false;
         }
 
         var escaped = internalName.Replace("\"", "\\\"");
         var query = $"Keywords CONTAINS \"{escaped}\"";
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"EffectKeyword.TrySelect '{internalName}' → QueryText='{query}'.");
+        _logger?.LogTrace("EffectKeyword.TrySelect '{InternalName}' → QueryText='{QueryText}'.", internalName, query);
         _vm.SelectedRow = null;
         _vm.QueryText = query;
         return true;

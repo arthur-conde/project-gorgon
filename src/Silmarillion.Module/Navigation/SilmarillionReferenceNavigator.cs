@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 
@@ -88,7 +87,7 @@ public sealed class SilmarillionReferenceNavigator : IReferenceNavigator
 
     public void Open(EntityRef reference)
     {
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Open kind={reference.Kind} name='{reference.InternalName}'.");
+        _logger?.LogTrace("Open kind={Kind} name='{InternalName}'.", reference.Kind, reference.InternalName);
 
         // Activate the host module BEFORE firing Navigated so SilmarillionViewModel
         // exists and is subscribed by the time the event reaches it. Without this,

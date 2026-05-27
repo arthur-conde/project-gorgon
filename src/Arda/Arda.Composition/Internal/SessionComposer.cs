@@ -3,6 +3,7 @@ using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Composition.Internal;
 
@@ -15,6 +16,7 @@ namespace Arda.Composition.Internal;
 internal sealed class SessionComposer : ISessionComposer, IDisposable
 {
     private readonly IDomainEventPublisher _bus;
+    private readonly ILogger? _logger;
     private readonly Func<string?>? _serverFallback;
     private IDisposable? _sessionSub;
     private IDisposable? _chatSub;
@@ -29,9 +31,10 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
     public ComposedSession? Current { get; private set; }
     public event Action? StateChanged;
 
-    public SessionComposer(IDomainEventBus bus, Func<string?>? serverFallback = null)
+    public SessionComposer(IDomainEventBus bus, ILogger? logger = null, Func<string?>? serverFallback = null)
     {
         _bus = bus;
+        _logger = logger;
         _serverFallback = serverFallback;
         _sessionSub = bus.Subscribe<SessionStarted>(OnSessionStarted);
         _chatSub = bus.Subscribe<ChatSessionIdentified>(OnChatSession);
@@ -39,6 +42,9 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
 
     private void OnSessionStarted(SessionStarted evt)
     {
+        _logger?.LogTrace(
+            "SessionStarted received for {Character}",
+            evt.CharacterName);
         _character = evt.CharacterName;
         _loggedInAt = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
         _lastMetadata = evt.Metadata;
@@ -47,6 +53,10 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
 
     private void OnChatSession(ChatSessionIdentified evt)
     {
+        _logger?.LogTrace(
+            "ChatSessionIdentified received for {Character} on {Server}",
+            evt.Character,
+            evt.Server);
         _server = evt.Server;
         _timezoneOffset = evt.TimezoneOffset;
         _hasChatBanner = true;
@@ -62,7 +72,23 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
             return;
 
         var sessionId = $"{_character}:{_loggedInAt:yyyyMMddHHmmss}";
-        var resolvedServer = _hasChatBanner ? _server : _serverFallback?.Invoke();
+        string? resolvedServer;
+        if (_hasChatBanner)
+        {
+            resolvedServer = _server;
+        }
+        else
+        {
+            resolvedServer = _serverFallback?.Invoke();
+            if (resolvedServer is not null)
+            {
+                _logger?.LogDebug(
+                    "Session {SessionId} using server fallback {Server}",
+                    sessionId,
+                    resolvedServer);
+            }
+        }
+
         var session = new ComposedSession(
             _character,
             resolvedServer,
@@ -71,6 +97,13 @@ internal sealed class SessionComposer : ISessionComposer, IDisposable
             sessionId);
 
         Current = session;
+        _logger?.LogInformation(
+            "Session established {SessionId} for {Character} on {Server} (HasChatBanner={HasChatBanner}, TimezoneOffset={TimezoneOffset})",
+            sessionId,
+            _character,
+            resolvedServer ?? "(none)",
+            _hasChatBanner,
+            _timezoneOffset);
         _bus.Publish(new SessionEstablished(session, _lastMetadata));
         StateChanged?.Invoke();
     }

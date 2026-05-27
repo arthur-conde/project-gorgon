@@ -4,7 +4,6 @@ using Arda.World.Player;
 using Arda.World.Player.Events;
 using Legolas.Domain;
 using Legolas.Flow;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
 namespace Legolas.Services;
@@ -247,13 +246,11 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             if (best is { } b)
             {
                 _session.Surveys[bestIdx] = b with { Collected = true };
-                _logger?.LogDiagnosticInfo("Legolas.Motherlode",
-                    $"Map consumed ({evt.InternalName}) — slot {bestIdx} collected; dug={_dugMaps}.");
+                _logger?.LogInformation($"Map consumed ({evt.InternalName}) — slot {bestIdx} collected; dug={_dugMaps}.");
             }
             else
             {
-                _logger?.LogDiagnosticInfo("Legolas.Motherlode",
-                    $"Map consumed ({evt.InternalName}) — dug={_dugMaps} (no measured slot to retire).");
+                _logger?.LogInformation($"Map consumed ({evt.InternalName}) — dug={_dugMaps} (no measured slot to retire).");
             }
             changed = true;
         }
@@ -312,8 +309,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             {
                 if (_sessionArea is not null && cur != _sessionArea)
                 {
-                    _logger?.LogDiagnosticInfo("Legolas.Motherlode",
-                        $"Area {_sessionArea} → {cur}: clearing in-flight measurement (dug count kept).");
+                    _logger?.LogInformation($"Area {_sessionArea} → {cur}: clearing in-flight measurement (dug count kept).");
                     ClearMeasurement();
                 }
                 _sessionArea = cur;
@@ -346,7 +342,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 {
                     _guidance = "No position for that reading — drop an @me pin " +
                                 "at the spot (best) before using, or relog.";
-                    _logger?.LogDiagnosticInfo("Legolas.Motherlode", "Use with no feeder fix in window.");
+                    _logger?.LogInformation("Use with no feeder fix in window.");
                 }
             }
             _open.LastUseAt = at;
@@ -368,12 +364,12 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         {
             if (_open is not { } o)
             {
-                _logger?.LogDiagnosticTrace("Legolas.Motherlode", $"Distance {metres}m with no open location — dropped.");
+                _logger?.LogTrace($"Distance {metres}m with no open location — dropped.");
                 return;
             }
             if ((at - o.LastUseAt).TotalSeconds > DistanceWindowSeconds)
             {
-                _logger?.LogDiagnosticTrace("Legolas.Motherlode", $"Distance {metres}m outside use window — dropped.");
+                _logger?.LogTrace($"Distance {metres}m outside use window — dropped.");
                 return;
             }
 
@@ -382,7 +378,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             var slot = SelectSlot(o);
             if (slot < 0)
             {
-                _logger?.LogDiagnosticTrace("Legolas.Motherlode", $"Distance {metres}m — no slot to bind — dropped.");
+                _logger?.LogTrace($"Distance {metres}m — no slot to bind — dropped.");
                 return;
             }
             var createdSlot = slot >= _session.Surveys.Count;

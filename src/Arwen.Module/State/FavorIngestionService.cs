@@ -5,7 +5,6 @@ using Arda.Contracts;
 
 using Arwen.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 using ArdaGiftAccepted = Arda.World.Player.Events.GiftAccepted;
@@ -41,8 +40,7 @@ public sealed class FavorIngestionService : BackgroundService
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger?.LogDiagnosticInfo("Arwen.Ingestion",
-            "Subscribing to Arda domain bus (GiftAccepted) for calibration");
+        _logger?.LogInformation("Subscribing to Arda domain bus (GiftAccepted) for calibration");
 
         _dispatcher = Application.Current?.Dispatcher;
 

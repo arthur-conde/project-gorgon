@@ -5,6 +5,7 @@ using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
 using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shell.DependencyInjection;
 
@@ -23,6 +24,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
     private readonly IDomainEventSubscriber _bus;
     private readonly IReplayProgress _replay;
     private readonly TimeProvider _time;
+    private readonly ILogger<WorldHealthView> _logger;
 
     private readonly object _gate = new();
     private DateTimeOffset? _playerTimestamp;
@@ -38,10 +40,12 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
     public WorldHealthView(
         IDomainEventSubscriber bus,
         IReplayProgress replay,
+        ILogger<WorldHealthView> logger,
         TimeProvider? time = null)
     {
         _bus = bus;
         _replay = replay;
+        _logger = logger;
         _time = time ?? TimeProvider.System;
     }
 
@@ -149,12 +153,16 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
     private void OnReplayProgressChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         bool changed = false;
+        bool playerWentLive = false;
+        bool chatWentLive = false;
         lock (_gate)
         {
             if (_replay.ReplayComplete.IsCompleted)
             {
                 if (!_playerLive || !_chatLive)
                 {
+                    playerWentLive = !_playerLive;
+                    chatWentLive = !_chatLive;
                     _playerLive = true;
                     _chatLive = true;
                     changed = true;
@@ -166,9 +174,16 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
                 var wasChatLive = _chatLive;
                 _playerLive = _replay.PlayerProgress >= 1.0;
                 _chatLive = _replay.ChatProgress >= 1.0;
+                playerWentLive = _playerLive && !wasPlayerLive;
+                chatWentLive = _chatLive && !wasChatLive;
                 changed = _playerLive != wasPlayerLive || _chatLive != wasChatLive;
             }
         }
+
+        if (playerWentLive)
+            _logger.LogInformation("Pipeline health: player family live");
+        if (chatWentLive)
+            _logger.LogInformation("Pipeline health: chat family live");
         if (changed) RaiseChanged();
     }
 
@@ -189,7 +204,36 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         return drift > WorldHealth.DriftWarningThreshold;
     }
 
-    private void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);
+    private void RaiseChanged()
+    {
+        DateTimeOffset? playerTs;
+        DateTimeOffset? chatTs;
+        bool playerLive;
+        bool chatLive;
+        lock (_gate)
+        {
+            playerTs = _playerTimestamp;
+            chatTs = _chatTimestamp;
+            playerLive = _playerLive;
+            chatLive = _chatLive;
+        }
+
+        LogDriftIfNeeded("Player", playerLive, playerTs);
+        LogDriftIfNeeded("Chat", chatLive, chatTs);
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void LogDriftIfNeeded(string family, bool live, DateTimeOffset? lastTimestamp)
+    {
+        if (!live || lastTimestamp is null) return;
+        var drift = _time.GetUtcNow() - lastTimestamp.Value;
+        if (drift <= WorldHealth.DriftWarningThreshold) return;
+        _logger.LogWarning(
+            "Pipeline drift for {Family}: {DriftSeconds:F0}s since last log timestamp {LastTimestamp}",
+            family,
+            drift.TotalSeconds,
+            lastTimestamp);
+    }
 
     public Task StopAsync(CancellationToken cancellationToken)
     {

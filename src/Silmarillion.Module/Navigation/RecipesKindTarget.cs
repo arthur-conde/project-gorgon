@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -33,10 +32,10 @@ public sealed class RecipesKindTarget : IReferenceKindTarget
         var row = _vm.AllRecipes.FirstOrDefault(r => r.Recipe.InternalName == internalName);
         if (row is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → not found (AllRecipes={_vm.AllRecipes.Count}).");
+            _logger?.LogTrace("Recipes.TrySelect '{InternalName}' → not found (AllRecipes={AllRecipes}).", internalName, _vm.AllRecipes.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Recipes.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible
         // ListBox. See ItemsKindTarget for the symptom — particularly relevant now that
         // the item-detail "Used as" keyword chip leaves an IngredientKeywords filter in

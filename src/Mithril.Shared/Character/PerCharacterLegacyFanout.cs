@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using System.IO;
-using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shared.Character;
 
@@ -58,8 +57,7 @@ public static class PerCharacterLegacyFanout
                 // file from being overwritten by a later re-run of a legacy blob that still
                 // happens to list the same character. Log so the silent skip is greppable —
                 // a surprising drop would otherwise be invisible.
-                logger?.LogDiagnosticWarn("LegacyFanout",
-                    $"Per-char file {path} already exists; legacy slice for {name} dropped.");
+                logger?.LogWarning($"Per-char file {path} already exists; legacy slice for {name} dropped.");
                 continue;
             }
             try
@@ -67,11 +65,11 @@ public static class PerCharacterLegacyFanout
                 var perChar = extractFor(name);
                 store.Save(name, server, perChar);
                 wroteAny = true;
-                logger?.LogDiagnosticInfo("LegacyFanout", $"Wrote {path}");
+                logger?.LogInformation($"Wrote {path}");
             }
             catch (Exception ex)
             {
-                logger?.LogDiagnosticWarn("LegacyFanout", $"Failed to split {name}: {ex.Message}");
+                logger?.LogWarning(ex, "Failed to split {Name}", name);
                 unresolved.Add(name);
             }
         }

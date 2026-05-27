@@ -4,7 +4,6 @@ using Arda.World.Player;
 using Arda.World.Player.Events;
 using Legolas.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 
 namespace Legolas.Services;
 
@@ -118,8 +117,7 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         }
         if (changed)
         {
-            _logger?.LogDiagnosticTrace("Legolas.CharacterPin",
-                _current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
+            _logger?.LogTrace(_current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
             Changed?.Invoke();
         }
     }
@@ -140,8 +138,7 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         }
         if (changed)
         {
-            _logger?.LogDiagnosticTrace("Legolas.CharacterPin",
-                _current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
+            _logger?.LogTrace(_current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
             Changed?.Invoke();
         }
     }
@@ -156,7 +153,7 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         }
         if (changed)
         {
-            _logger?.LogDiagnosticTrace("Legolas.CharacterPin", "cleared");
+            _logger?.LogTrace("cleared");
             Changed?.Invoke();
         }
     }

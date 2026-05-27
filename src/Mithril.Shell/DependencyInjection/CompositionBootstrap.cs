@@ -1,5 +1,6 @@
 using Arda.Composition;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shell.DependencyInjection;
 
@@ -16,9 +17,20 @@ internal sealed class CompositionBootstrap(
     ISessionComposer session,
     IInventoryAccumulatorState inventory,
     IPlayerProgressionState progression,
-    INpcStateTracker npcState) : IHostedService
+    INpcStateTracker npcState,
+    ILogger<CompositionBootstrap> logger) : IHostedService
 #pragma warning restore CS9113
 {
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        logger.LogInformation(
+            "L4 composition bootstrap resolved: Session={HasSession}, Inventory={HasInventory}, Progression={HasProgression}, NpcState={HasNpc}",
+            session is not null,
+            inventory is not null,
+            progression is not null,
+            npcState is not null);
+        return Task.CompletedTask;
+    }
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

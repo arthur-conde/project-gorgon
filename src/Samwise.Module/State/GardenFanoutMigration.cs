@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;
 
 namespace Samwise.State;
@@ -40,7 +39,7 @@ public sealed class GardenFanoutMigration : IHostedService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _logger?.LogDiagnosticWarn("Samwise.Fanout", $"Fanout failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Fanout failed"); }
         return Task.CompletedTask;
     }
 
@@ -58,7 +57,7 @@ public sealed class GardenFanoutMigration : IHostedService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Samwise.Fanout", $"Legacy read failed: {ex.Message}");
+            _logger?.LogWarning(ex, "Legacy read failed");
             return;
         }
         if (legacy is null || legacy.PlotsByChar.Count == 0)
@@ -80,7 +79,7 @@ public sealed class GardenFanoutMigration : IHostedService
         if (unresolved.Count == 0)
         {
             TryDeleteLegacy();
-            _logger?.LogDiagnosticInfo("Samwise.Fanout", "PlotsByChar fanout complete; legacy garden-state.json removed.");
+            _logger?.LogInformation("PlotsByChar fanout complete; legacy garden-state.json removed.");
         }
         else
         {
@@ -95,12 +94,11 @@ public sealed class GardenFanoutMigration : IHostedService
 
                 using var stream = File.Create(_legacyPath);
                 JsonSerializer.Serialize(stream, pruned, GardenStateJsonContext.Default.GardenState);
-                _logger?.LogDiagnosticInfo("Samwise.Fanout",
-                    $"Legacy trimmed to {unresolved.Count} unresolved char(s): {string.Join(", ", unresolved)}");
+                _logger?.LogInformation($"Legacy trimmed to {unresolved.Count} unresolved char(s): {string.Join(", ", unresolved)}");
             }
             catch (Exception ex)
             {
-                _logger?.LogDiagnosticWarn("Samwise.Fanout", $"Legacy rewrite failed: {ex.Message}");
+                _logger?.LogWarning(ex, "Legacy rewrite failed");
             }
         }
     }
@@ -113,7 +111,7 @@ public sealed class GardenFanoutMigration : IHostedService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Samwise.Fanout", $"Legacy delete failed: {ex.Message}");
+            _logger?.LogWarning(ex, "Legacy delete failed");
         }
     }
 }

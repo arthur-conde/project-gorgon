@@ -7,6 +7,7 @@ using Arda.Hosting;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mithril.Shell.DependencyInjection;
 using Xunit;
 
@@ -21,7 +22,7 @@ public sealed class WorldHealthViewTests : IAsyncLifetime
 
     public WorldHealthViewTests()
     {
-        _view = new WorldHealthView(_bus, _replay, _time);
+        _view = new WorldHealthView(_bus, _replay, NullLogger<WorldHealthView>.Instance, _time);
     }
 
     public Task InitializeAsync() => _view.StartAsync(CancellationToken.None);

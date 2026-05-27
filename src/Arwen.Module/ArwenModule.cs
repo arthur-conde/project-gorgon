@@ -5,7 +5,6 @@ using Arwen.ViewModels;
 using Arwen.Views;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
-using Mithril.Shared.Diagnostics;
 using Arda.Composition;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;

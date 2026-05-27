@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -33,10 +32,10 @@ public sealed class NpcsKindTarget : IReferenceKindTarget
         var row = _vm.AllNpcs.FirstOrDefault(r => r.InternalName == internalName);
         if (row is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Npcs.TrySelect '{internalName}' → not found (AllNpcs={_vm.AllNpcs.Count}).");
+            _logger?.LogTrace("Npcs.TrySelect '{InternalName}' → not found (AllNpcs={AllNpcs}).", internalName, _vm.AllNpcs.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Npcs.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Npcs.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible
         // ListBox. See ItemsKindTarget for the symptom.
         _vm.QueryText = "";

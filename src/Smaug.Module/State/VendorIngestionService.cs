@@ -4,7 +4,6 @@ using System.Windows.Threading;
 using Arda.Composition;
 using Arda.Contracts;
 using Arda.World.Player.Events;
-using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Smaug.Domain;
 
@@ -46,8 +45,7 @@ public sealed class VendorIngestionService : BackgroundService
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger?.LogDiagnosticInfo("Smaug",
-            "Subscribing to Arda domain bus for vendor events (VendorItemSold)");
+        _logger?.LogInformation("Subscribing to Arda domain bus for vendor events (VendorItemSold)");
 
         _dispatcher = Application.Current?.Dispatcher;
 
@@ -66,8 +64,7 @@ public sealed class VendorIngestionService : BackgroundService
         {
             if (string.IsNullOrEmpty(e.NpcKey) || string.IsNullOrEmpty(e.FavorTier))
             {
-                _logger?.LogDiagnosticTrace("Smaug.Parse",
-                    $"Sell of {e.InternalName} for {e.Price} skipped — no active vendor context");
+                _logger?.LogTrace($"Sell of {e.InternalName} for {e.Price} skipped — no active vendor context");
                 return;
             }
 

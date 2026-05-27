@@ -6,7 +6,6 @@ using Arda.World.Player.Events;
 using Gandalf.Domain;
 using Microsoft.Extensions.Hosting;
 using Mithril.Shared.Audio;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 using Mithril.Shared.Wpf;
 
@@ -62,8 +61,7 @@ public sealed class ShiftAlarmService : BackgroundService
     public override Task StartAsync(CancellationToken cancellationToken)
     {
         _subscription = _bus.Subscribe<TimeOfDayShifted>(OnShiftTransition);
-        _logger?.LogDiagnosticInfo("Gandalf.ShiftAlarm",
-            "Subscribed to Arda TimeOfDayShifted events");
+        _logger?.LogInformation("Subscribed to Arda TimeOfDayShifted events");
         return base.StartAsync(cancellationToken);
     }
 
@@ -135,8 +133,7 @@ public sealed class ShiftAlarmService : BackgroundService
         }
         if (def is null)
         {
-            _logger?.LogDiagnosticWarn("Gandalf.ShiftAlarm",
-                $"Received TimeOfDayShifted slug='{slug}' not in catalog; ignoring");
+            _logger?.LogWarning($"Received TimeOfDayShifted slug='{slug}' not in catalog; ignoring");
             return;
         }
 

@@ -1,7 +1,6 @@
 using System.IO;
 using Arda.Composition;
 using Mithril.Shared.DependencyInjection;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;

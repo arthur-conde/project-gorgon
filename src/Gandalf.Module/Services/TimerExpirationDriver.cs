@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using Arda.Contracts;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Hosting;
-using Mithril.Shared.Diagnostics;
 
 namespace Gandalf.Services;
 
@@ -48,13 +47,11 @@ internal sealed class TimerExpirationDriver : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger?.LogDiagnosticWarn("Gandalf.ExpirationDriver",
-                    $"CheckExpirations threw on tick {evt.Metadata.Timestamp:o}: {ex.Message}");
+                _logger?.LogWarning(ex, "CheckExpirations threw on tick {Timestamp:o}", evt.Metadata.Timestamp);
             }
         });
 
-        _logger?.LogDiagnosticInfo("Gandalf.ExpirationDriver",
-            "Subscribed to Arda CalendarTimeAdvanced events");
+        _logger?.LogInformation("Subscribed to Arda CalendarTimeAdvanced events");
 
         return base.StartAsync(cancellationToken);
     }

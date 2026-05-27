@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Windows;
 using Legolas.Domain;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Sharing;
@@ -46,7 +45,7 @@ public sealed class LegolasShareImportTarget : ILegolasShareImportTarget
     {
         if (!ShareCodec.TryDecodePayload(base64UrlPayload, out var json, out var error))
         {
-            _logger?.LogDiagnosticInfo("Legolas", $"Share link decode failed: {error}");
+            _logger?.LogInformation($"Share link decode failed: {error}");
             return;
         }
 
@@ -57,12 +56,12 @@ public sealed class LegolasShareImportTarget : ILegolasShareImportTarget
         }
         catch (JsonException ex)
         {
-            _logger?.LogDiagnosticInfo("Legolas", $"Share link payload is not valid LegolasSharePayload JSON: {ex.Message}");
+            _logger?.LogInformation($"Share link payload is not valid LegolasSharePayload JSON: {ex.Message}");
             return;
         }
         if (payload is null)
         {
-            _logger?.LogDiagnosticInfo("Legolas", "Share link payload deserialized to null.");
+            _logger?.LogInformation("Share link payload deserialized to null.");
             return;
         }
 
@@ -76,11 +75,11 @@ public sealed class LegolasShareImportTarget : ILegolasShareImportTarget
     private void Show(LegolasSharePayload payload)
     {
         if (_activator is not null && !_activator.Activate("legolas"))
-            _logger?.LogDiagnosticInfo("Legolas", "Deep-link import: module activator could not find 'legolas'.");
+            _logger?.LogInformation("Deep-link import: module activator could not find 'legolas'.");
 
         if (_dialogs is null || _settings is null)
         {
-            _logger?.LogDiagnosticInfo("Legolas", "Share import: no dialog service or settings registered; cannot open dialog.");
+            _logger?.LogInformation("Share import: no dialog service or settings registered; cannot open dialog.");
             return;
         }
 

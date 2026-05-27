@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Arda.World.Player;
 using Samwise.Config;
@@ -100,7 +99,7 @@ public sealed class GardenStateMachine
             }
         }
         _seedToCrop = map;
-        _logger?.LogDiagnosticTrace("Samwise.SeedMap", $"Built seed→crop map with {map.Count} entries");
+        _logger?.LogTrace($"Built seed→crop map with {map.Count} entries");
     }
 
     public string? CurrentCharacter => _currentChar;
@@ -174,20 +173,19 @@ public sealed class GardenStateMachine
         var crop = ResolveCropFromDisplayName(pcr.SeedDisplayName);
         if (crop is null)
         {
-            _logger?.LogDiagnosticTrace("Samwise.Cap", $"Can't resolve crop from seed '{pcr.SeedDisplayName}'");
+            _logger?.LogTrace($"Can't resolve crop from seed '{pcr.SeedDisplayName}'");
             return;
         }
         if (!_config.Current.Crops.TryGetValue(crop, out var def))
         {
-            _logger?.LogDiagnosticTrace("Samwise.Cap", $"Crop '{crop}' not in config — slot family unknown");
+            _logger?.LogTrace($"Crop '{crop}' not in config — slot family unknown");
             return;
         }
         var family = def.SlotFamily;
         if (string.IsNullOrEmpty(family)) return;
 
         var count = CountFamilyPlots(_currentChar, family);
-        _logger?.LogDiagnosticInfo("Samwise.Cap",
-            $"Cap reached: family={family} char={_currentChar} count={count} (trigger={pcr.SeedDisplayName})");
+        _logger?.LogInformation($"Cap reached: family={family} char={_currentChar} count={count} (trigger={pcr.SeedDisplayName})");
 
         SlotCapObserved?.Invoke(this, new SlotCapObservedArgs(_currentChar, family, count, pcr.Timestamp));
     }
@@ -248,7 +246,7 @@ public sealed class GardenStateMachine
         plots[plotId] = plot;
         _pendingPlant = (plotId, _currentChar, now);
 
-        _logger?.LogDiagnosticInfo("Samwise.Plant", $"plot={plotId} char={_currentChar} cropGuess=(pending)");
+        _logger?.LogInformation($"plot={plotId} char={_currentChar} cropGuess=(pending)");
         RaisePlotChanged(plot, null, PlotStage.Planted);
     }
 
@@ -279,8 +277,7 @@ public sealed class GardenStateMachine
         plot.CropType = crop;
         plot.UpdatedAt = now;
         _pendingPlant = null;
-        _logger?.LogDiagnosticInfo("Samwise.Plant",
-            $"resolved plot={pending.PlotId} crop={crop} via itemId={itemId}");
+        _logger?.LogInformation($"resolved plot={pending.PlotId} crop={crop} via itemId={itemId}");
         RaisePlotChanged(plot, plot.Stage, plot.Stage);
     }
 

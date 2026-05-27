@@ -360,8 +360,7 @@ public sealed class LootSource : ITimerSource, IDisposable
     public void OnDefeatCooldownActive(string npcDisplayName, DateTime timestampUtc)
     {
         if (string.IsNullOrEmpty(npcDisplayName)) return;
-        _logger?.LogDiagnosticTrace("Gandalf.Loot",
-            $"Cooldown still active for {npcDisplayName.Trim()} at {timestampUtc:O}");
+        _logger?.LogTrace($"Cooldown still active for {npcDisplayName.Trim()} at {timestampUtc:O}");
     }
 
     /// <summary>

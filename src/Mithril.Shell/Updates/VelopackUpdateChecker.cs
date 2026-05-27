@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using Mithril.Shared;
-using Mithril.Shared.Diagnostics;
 
 namespace Mithril.Shell.Updates;
 
@@ -22,7 +21,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
         if (!_holder.IsAvailable)
         {
             _status.ReportNotApplicable();
-            _logger.LogDiagnosticInfo("updates", $"Skipping update check — channel '{_holder.Channel.Name}' is not subject to Velopack updates.");
+            _logger.LogInformation($"Skipping update check — channel '{_holder.Channel.Name}' is not subject to Velopack updates.");
             return;
         }
 
@@ -40,7 +39,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
                     remotePublishedAt: null,
                     status: UpdateComparisonStatus.Identical,
                     releaseNotesUrl: null);
-                _logger.LogDiagnosticInfo("updates", $"Build is up to date ({_status.Local.SemanticVersion}, channel={_holder.Channel.Name}).");
+                _logger.LogInformation($"Build is up to date ({_status.Local.SemanticVersion}, channel={_holder.Channel.Name}).");
                 return;
             }
 
@@ -51,7 +50,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
                 status: UpdateComparisonStatus.Behind,
                 releaseNotesUrl: $"{MithrilRepository.Url}/releases/tag/v{targetVersion}");
 
-            _logger.LogDiagnosticInfo("updates", $"Update available: local={_status.Local.SemanticVersion} remote={targetVersion} channel={_holder.Channel.Name}");
+            _logger.LogInformation($"Update available: local={_status.Local.SemanticVersion} remote={targetVersion} channel={_holder.Channel.Name}");
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -60,7 +59,7 @@ public sealed class VelopackUpdateChecker : IUpdateChecker
         catch (Exception ex)
         {
             _status.ReportError(ex.Message);
-            _logger.LogDiagnosticWarn("updates", $"Update check failed: {ex.GetType().Name} {ex.Message}");
+            _logger.LogWarning(ex, "Update check failed: {ExceptionType} {Message}", ex.GetType().Name, ex.Message);
         }
     }
 }

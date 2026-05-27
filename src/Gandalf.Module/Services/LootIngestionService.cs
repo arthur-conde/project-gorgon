@@ -3,7 +3,6 @@ using Arda.Contracts;
 using Arda.World.Player.Events;
 using Gandalf.Parsing;
 using Microsoft.Extensions.Hosting;
-using Mithril.Shared.Diagnostics;
 
 namespace Gandalf.Services;
 
@@ -24,8 +23,6 @@ namespace Gandalf.Services;
 /// </summary>
 public sealed class LootIngestionService : BackgroundService
 {
-    private const string DiagCategory = "Gandalf.Loot";
-
     private readonly IDomainEventSubscriber _bus;
     private readonly LootBracketTracker _bracket;
     private readonly BossKillCreditParser _bossKill;
@@ -53,7 +50,7 @@ public sealed class LootIngestionService : BackgroundService
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger?.LogDiagnosticInfo(DiagCategory, "Subscribing to Arda domain events for loot ingestion");
+        _logger?.LogInformation("Subscribing to Arda domain events for loot ingestion");
 
         _subscriptions.Add(_bus.Subscribe<InteractionStarted>(evt =>
         {
@@ -145,6 +142,6 @@ public sealed class LootIngestionService : BackgroundService
     {
         if (_firstObservationLogged) return;
         _firstObservationLogged = true;
-        _logger?.LogDiagnosticInfo(DiagCategory, "First loot-source event observed this session");
+        _logger?.LogInformation("First loot-source event observed this session");
     }
 }

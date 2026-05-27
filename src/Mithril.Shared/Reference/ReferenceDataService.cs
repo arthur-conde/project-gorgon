@@ -525,7 +525,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         _ = Task.Run(async () =>
         {
             try { await RefreshAllAsync(CancellationToken.None); }
-            catch (Exception ex) { _logger?.LogDiagnosticWarn("Reference", $"Background refresh failed: {ex.Message}"); }
+            catch (Exception ex) { _logger?.LogWarning(ex, "Background reference refresh failed"); }
         });
     }
 
@@ -556,12 +556,12 @@ public sealed class ReferenceDataService : IReferenceDataService
                 var parsed = parser(json);
                 swapper(parsed, meta);
                 ReportUnknowns(fileName, parsed!, meta.CdnVersion);
-                _logger?.LogDiagnosticInfo("Reference", $"Loaded {fileName} from cache ({meta.CdnVersion}).");
+                _logger?.LogInformation("Loaded {FileName} from cache ({CdnVersion})", fileName, meta.CdnVersion);
                 return;
             }
             catch (Exception ex)
             {
-                _logger?.LogDiagnosticWarn("Reference", $"{fileName} cache load failed, falling back to bundled: {ex.Message}");
+                _logger?.LogWarning(ex, "{FileName} cache load failed, falling back to bundled", fileName);
             }
         }
 
@@ -569,7 +569,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         var bundledMetaPath = Path.Combine(_bundledDir, $"{fileName}.meta.json");
         if (!File.Exists(bundledPath))
         {
-            _logger?.LogDiagnosticWarn("Reference", $"Bundled {fileName}.json missing at {bundledPath}.");
+            _logger?.LogWarning("Bundled {FileName}.json missing at {BundledPath}", fileName, bundledPath);
             return;
         }
         var bundledMeta = TryLoadMetadata(bundledMetaPath, ReferenceFileSource.Bundled);
@@ -577,7 +577,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         var bundledParsed = parser(bundledJson);
         swapper(bundledParsed, bundledMeta);
         ReportUnknowns(fileName, bundledParsed!, bundledMeta.CdnVersion);
-        _logger?.LogDiagnosticInfo("Reference", $"Loaded {fileName} from bundled ({bundledMeta.CdnVersion}).");
+        _logger?.LogInformation("Loaded {FileName} from bundled ({CdnVersion})", fileName, bundledMeta.CdnVersion);
     }
 
     private async Task RefreshFileAsync<T>(
@@ -590,7 +590,7 @@ public sealed class ReferenceDataService : IReferenceDataService
                       ?? GetSnapshot(fileName).CdnVersion
                       ?? FallbackCdnVersion;
         var url = $"{CdnRoot}{version}/data/{fileName}.json";
-        _logger?.LogDiagnosticInfo("Reference", $"Refreshing {fileName} from {url}.");
+        _logger?.LogInformation("Refreshing {FileName} from {Url}", fileName, url);
 
         byte[] body;
         var fetchSw = System.Diagnostics.Stopwatch.StartNew();
@@ -602,7 +602,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Reference", $"{fileName}.json fetch failed ({ex.Message}); keeping existing data.");
+            _logger?.LogWarning(ex, "{FileName}.json fetch failed; keeping existing data", fileName);
             _perf?.EmitRefFetch(fileName, cacheHit: false, durationMs: fetchSw.Elapsed.TotalMilliseconds, bytes: 0);
             return;
         }
@@ -637,7 +637,7 @@ public sealed class ReferenceDataService : IReferenceDataService
             swapper(parsed, meta);
             ReportUnknowns(fileName, parsed!, meta.CdnVersion);
         }, ct).ConfigureAwait(false);
-        _logger?.LogDiagnosticInfo("Reference", $"{fileName}.json refreshed: version {version}.");
+        _logger?.LogInformation("{FileName}.json refreshed: version {CdnVersion}", fileName, version);
         FileUpdated?.Invoke(this, fileName);
     }
 
@@ -662,7 +662,7 @@ public sealed class ReferenceDataService : IReferenceDataService
         }
         catch (Exception ex)
         {
-            _logger.LogDiagnosticWarn("Reference", $"{fileName} unknown-walk threw: {ex.Message}");
+            _logger.LogWarning(ex, "{FileName} unknown-walk threw", fileName);
             return;
         }
 
@@ -671,14 +671,20 @@ public sealed class ReferenceDataService : IReferenceDataService
         var truncated = reports.Count > MaxUnknownReportsPerFile;
         var visible = truncated ? reports.Take(MaxUnknownReportsPerFile) : reports;
         foreach (var u in visible)
-            _logger.LogDiagnosticWarn(
-                "Reference",
-                $"{fileName} (v{cdnVersion}): unknown {u.BaseTypeName} discriminator '{u.DiscriminatorValue}' at {u.Path}");
+            _logger.LogWarning(
+                "{FileName} (v{CdnVersion}): unknown {BaseTypeName} discriminator '{DiscriminatorValue}' at {Path}",
+                fileName,
+                cdnVersion,
+                u.BaseTypeName,
+                u.DiscriminatorValue,
+                u.Path);
 
         if (truncated)
-            _logger.LogDiagnosticWarn(
-                "Reference",
-                $"{fileName} (v{cdnVersion}): additional unknowns truncated; first {MaxUnknownReportsPerFile} reported.");
+            _logger.LogWarning(
+                "{FileName} (v{CdnVersion}): additional unknowns truncated; first {MaxReports} reported",
+                fileName,
+                cdnVersion,
+                MaxUnknownReportsPerFile);
     }
 
     // ── Per-type load entry points ───────────────────────────────────────

@@ -1,7 +1,7 @@
-using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Mithril.Shared.Diagnostics;
 using MelLogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Mithril.Shared.DependencyInjection;

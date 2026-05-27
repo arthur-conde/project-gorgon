@@ -1,6 +1,7 @@
 using Arda.Dispatch;
 using Arda.Ingest.Coordinator;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Hosting.Internal;
 
@@ -11,16 +12,28 @@ internal sealed class PlayerWorldService(
     PlayerLogSource source,
     DispatchTable dispatchTable,
     ReplayProgress progress,
-    IReadOnlyList<ILineObserver> lineObservers) : BackgroundService
+    IReadOnlyList<ILineObserver> lineObservers,
+    ILogger<PlayerWorldService> logger) : BackgroundService
 {
-    protected override Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var driver = new WorldDriver(
-            source,
-            dispatchTable,
-            onLiveTransition: () => progress.MarkComplete(ReplayProgress.SourceFamily.Player),
-            observers: lineObservers);
+        logger.LogInformation("Player world driver starting");
+        try
+        {
+            var driver = new WorldDriver(
+                source,
+                dispatchTable,
+                onLiveTransition: () => progress.MarkComplete(ReplayProgress.SourceFamily.Player),
+                observers: lineObservers,
+                logger: logger,
+                sourceFamily: "Player");
 
-        return driver.RunAsync(stoppingToken);
+            await driver.RunAsync(stoppingToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            logger.LogInformation("Player world driver stopped");
+            throw;
+        }
     }
 }

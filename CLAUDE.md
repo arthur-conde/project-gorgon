@@ -89,6 +89,7 @@ DI is composed via extension methods in `Mithril.Shared/DependencyInjection/Serv
 - **Settings**: `ISettingsStore<T>` / `JsonSettingsStore<T>` with `System.Text.Json` source-generated contexts; `SettingsAutoSaver<T>` for periodic persistence
 - **Hotkeys**: OS-level Win32 hotkey registration; modules provide `IHotkeyCommand` implementations; `HotkeyConflictDetector` validates uniqueness
 - **Diagnostics**: `ILogger` via `DiagnosticsLoggerProvider` (ring buffer, Rx live stream, Serilog compact-JSON file)
+- **Logging**: inject `ILoggerFactory.CreateLogger("Subsystem")` (e.g. `"Arda.Player"`, `"Reference"`, `"Samwise"`) so diagnostics UI category filters stay stable. Use MEL message templates with named properties (`LogInformation("Loaded {FileName} from cache ({CdnVersion})", …)`), not `$"…"` interpolation. Levels: `Trace` = per-event/hot-path; `Information` = lifecycle milestones; `Warning` = recovered/degraded; `Error` = failure + exception. Use [`ThrottledWarn`](src/Mithril.Shared/Diagnostics/ThrottledWarn.cs) on hot ingest paths. Require `ILogger` on `BackgroundService` / `IHostedService` and Arda pipeline types; `ILogger?` only for optional WPF/import targets.
 - **Query system**: SQL-like filtering over data models — `MithrilDataGrid`/`MithrilQueryBox` (tabular UI), `QueryFilter` attached behaviour (any `ItemsControl`), `QueryableSource<T>` (VM-side, headless). See [docs/query-system.md](docs/query-system.md) before adding new filter UI.
 
 ### Patterns to Follow

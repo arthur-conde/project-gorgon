@@ -5,7 +5,6 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Icons;
@@ -238,7 +237,7 @@ public sealed class IconCacheService : IIconCacheService
             using var resp = await _http.GetAsync(url);
             if (!resp.IsSuccessStatusCode)
             {
-                _logger?.LogDiagnosticWarn("Icons", $"Download failed for icon {iconId}: HTTP {(int)resp.StatusCode}");
+                _logger?.LogWarning($"Download failed for icon {iconId}: HTTP {(int)resp.StatusCode}");
                 MarkFailed(iconId);
                 return;
             }
@@ -260,7 +259,7 @@ public sealed class IconCacheService : IIconCacheService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Icons", $"Download failed for icon {iconId}: {ex.Message}");
+            _logger?.LogWarning(ex, "Download failed for icon {IconId}", iconId);
             MarkFailed(iconId);
         }
         finally

@@ -3,7 +3,6 @@ using System.IO;
 using System.Text.Json;
 using Arwen.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 
@@ -52,7 +51,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _logger?.LogDiagnosticWarn("Arwen.Fanout", $"Fanout failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Fanout failed"); }
         return Task.CompletedTask;
     }
 
@@ -70,7 +69,7 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Arwen.Fanout", $"Legacy read failed: {ex.Message}");
+            _logger?.LogWarning(ex, "Legacy read failed");
             return;
         }
         if (legacy is null || legacy.FavorStates.Count == 0) return;
@@ -93,17 +92,16 @@ public sealed class ArwenFavorFanoutMigration : IHostedService
             try
             {
                 _settingsStore.Save(_settings);
-                _logger?.LogDiagnosticInfo("Arwen.Fanout", "FavorStates fanout complete; settings file trimmed.");
+                _logger?.LogInformation("FavorStates fanout complete; settings file trimmed.");
             }
             catch (Exception ex)
             {
-                _logger?.LogDiagnosticWarn("Arwen.Fanout", $"Settings rewrite failed: {ex.Message}");
+                _logger?.LogWarning(ex, "Settings rewrite failed");
             }
         }
         else
         {
-            _logger?.LogDiagnosticInfo("Arwen.Fanout",
-                $"FavorStates retained for next-startup retry. Unresolved: {string.Join(", ", unresolved)}");
+            _logger?.LogInformation($"FavorStates retained for next-startup retry. Unresolved: {string.Join(", ", unresolved)}");
         }
     }
 }

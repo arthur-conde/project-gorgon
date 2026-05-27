@@ -59,11 +59,10 @@ public sealed class ThrottledWarn
             var suppressed = _suppressed;
             _suppressed = 0;
             _nextAllowed = now + _window;
-            _logger.LogDiagnosticWarn(
-                _category,
-                suppressed > 0
-                    ? $"{message} (+{suppressed} similar suppressed in last {_window.TotalSeconds:0}s)"
-                    : message);
+            var text = suppressed > 0
+                ? $"{message} (+{suppressed} similar suppressed in last {_window.TotalSeconds:0}s)"
+                : message;
+            _logger.LogWarning("{Message}", text);
         }
     }
 }

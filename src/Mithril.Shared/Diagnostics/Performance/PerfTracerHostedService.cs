@@ -82,7 +82,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        try { StopInternal(); } catch (Exception ex) { _logger?.LogDiagnosticWarn("PerfTrace", $"Stop on shutdown failed: {ex.Message}"); }
+        try { StopInternal(); } catch (Exception ex) { _logger?.LogWarning(ex, "Stop on shutdown failed"); }
         return Task.CompletedTask;
     }
 
@@ -103,7 +103,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             _uiDispatcher = Application.Current?.Dispatcher;
             if (_uiDispatcher is null)
             {
-                _logger?.LogDiagnosticWarn("PerfTrace", "Cannot start: no WPF Application yet.");
+                _logger?.LogWarning("Cannot start: no WPF Application yet.");
                 return;
             }
 
@@ -118,7 +118,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("PerfTrace", $"StartInternal failed: {ex.Message}");
+            _logger?.LogWarning(ex, "StartInternal failed");
             try { _tracer.StopSession(); } catch { }
         }
     }
@@ -134,10 +134,10 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
                 else d.Invoke(DetachHooks);
             }
         }
-        catch (Exception ex) { _logger?.LogDiagnosticWarn("PerfTrace", $"DetachHooks failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "DetachHooks failed"); }
 
         try { _tracer.StopSession(); }
-        catch (Exception ex) { _logger?.LogDiagnosticWarn("PerfTrace", $"StopSession failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "StopSession failed"); }
     }
 
     // ── Hook lifecycle (UI thread) ─────────────────────────────────────────
@@ -358,7 +358,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("PerfTrace", $"Counter tick failed: {ex.Message}");
+            _logger?.LogWarning(ex, "Counter tick failed");
         }
     }
 

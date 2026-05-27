@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using System.Windows;
 using Celebrimbor.ViewModels;
 using Celebrimbor.Views;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Wpf;
 
@@ -23,7 +22,7 @@ public sealed class CelebrimborAugmentPoolPresenter : IAugmentPoolPresenter
     {
         if (string.IsNullOrWhiteSpace(profileName))
         {
-            _logger?.LogDiagnosticWarn("AugmentPool", "Show called with empty profile name.");
+            _logger?.LogWarning("Show called with empty profile name.");
             return;
         }
 

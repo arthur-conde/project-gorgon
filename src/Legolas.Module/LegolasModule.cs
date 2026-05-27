@@ -3,7 +3,6 @@ using Arda.Contracts;
 using Arda.World.Player;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
 using Mithril.Shared.Modules;

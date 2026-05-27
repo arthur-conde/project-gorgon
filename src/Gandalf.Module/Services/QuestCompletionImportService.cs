@@ -4,7 +4,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Gandalf.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;
 
 namespace Gandalf.Services;
@@ -69,7 +68,7 @@ public sealed class QuestCompletionImportService : IHostedService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _logger?.LogDiagnosticWarn("Gandalf.QuestCompletionImport", $"Failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Failed"); }
         return Task.CompletedTask;
     }
 
@@ -94,8 +93,7 @@ public sealed class QuestCompletionImportService : IHostedService
             var (character, server) = ParseSlug(Path.GetFileName(charDir));
             if (string.IsNullOrEmpty(character) || string.IsNullOrEmpty(server))
             {
-                _logger?.LogDiagnosticWarn("Gandalf.QuestCompletionImport",
-                    $"Could not parse character/server from slug {Path.GetFileName(charDir)}; skipping.");
+                _logger?.LogWarning($"Could not parse character/server from slug {Path.GetFileName(charDir)}; skipping.");
                 continue;
             }
 
@@ -147,8 +145,7 @@ public sealed class QuestCompletionImportService : IHostedService
                 _derivedStore.Save(character, server, derived);
                 totalImported += imported;
                 charactersTouched++;
-                _logger?.LogDiagnosticInfo("Gandalf.QuestCompletionImport",
-                    $"Imported {imported} quest-completion anchors for {character} ({server}) → DerivedTimerProgressService.");
+                _logger?.LogInformation($"Imported {imported} quest-completion anchors for {character} ({server}) → DerivedTimerProgressService.");
 
                 if (string.Equals(character, activeName, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(server, activeServer, StringComparison.OrdinalIgnoreCase))
@@ -172,8 +169,7 @@ public sealed class QuestCompletionImportService : IHostedService
 
         if (charactersTouched > 0)
         {
-            _logger?.LogDiagnosticInfo("Gandalf.QuestCompletionImport",
-                $"Migration complete: {totalImported} anchors across {charactersTouched} character(s); quests.json files retired.");
+            _logger?.LogInformation($"Migration complete: {totalImported} anchors across {charactersTouched} character(s); quests.json files retired.");
         }
     }
 
@@ -186,7 +182,7 @@ public sealed class QuestCompletionImportService : IHostedService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Gandalf.QuestCompletionImport", $"Read failed for {path}: {ex.Message}");
+            _logger?.LogWarning(ex, "Read failed for {Path}", path);
             return null;
         }
     }
@@ -201,7 +197,7 @@ public sealed class QuestCompletionImportService : IHostedService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Gandalf.QuestCompletionImport", $"Retire failed for {path}: {ex.Message}");
+            _logger?.LogWarning(ex, "Retire failed for {Path}", path);
         }
     }
 

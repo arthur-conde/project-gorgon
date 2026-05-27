@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -38,10 +37,10 @@ public sealed class StorageVaultsKindTarget : IReferenceKindTarget
         var row = _vm.AllVaults.FirstOrDefault(v => v.EnvelopeKey == internalName);
         if (row is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"StorageVaults.TrySelect '{internalName}' → not found (AllVaults={_vm.AllVaults.Count}).");
+            _logger?.LogTrace("StorageVaults.TrySelect '{InternalName}' → not found (AllVaults={AllVaults}).", internalName, _vm.AllVaults.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"StorageVaults.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("StorageVaults.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible list.
         _vm.QueryText = "";
         _vm.SelectedVault = row;

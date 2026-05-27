@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Xunit;
 
@@ -21,7 +22,7 @@ public sealed class DiagnosticsLoggerProviderGoldenLineTests
             using (var provider = new DiagnosticsLoggerProvider(dir))
             {
                 var logger = provider.CreateLogger("GoldenTest");
-                logger.LogDiagnosticInfo("GoldenTest", "hello mcp");
+                logger.LogInformation("hello mcp");
             }
 
             var file = Directory.GetFiles(dir, "mithril-*.json").Single();

@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using System.Windows;
 using Celebrimbor.Domain;
 using Celebrimbor.ViewModels;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 
@@ -72,7 +71,7 @@ public sealed class CraftListImportTarget : ICraftListImportTarget
         // Bring the Celebrimbor tab forward first so the dialog owner is the right window and
         // the user sees the list populate after confirming.
         if (_activator is not null && !_activator.Activate("celebrimbor"))
-            _logger?.LogDiagnosticInfo("Celebrimbor", "Craft-list import: module activator could not find 'celebrimbor'.");
+            _logger?.LogInformation("Craft-list import: module activator could not find 'celebrimbor'.");
 
         _picker.PromptAndApply(result, dialogTitleSuffix);
     }

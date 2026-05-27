@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 
 namespace Elrond.Services;
@@ -25,7 +24,7 @@ public sealed class ElrondDeepLinkHandler : IDeepLinkHandler
     {
         if (!PayloadPattern.IsMatch(subPath))
         {
-            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: elrond payload '{subPath}' failed validation.");
+            logger?.LogInformation($"Rejected: elrond payload '{subPath}' failed validation.");
             return false;
         }
         _target.ImportFromLinkPayload(subPath);

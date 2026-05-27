@@ -1,7 +1,6 @@
 using System.Windows;
 using Arda.Contracts;
 using Arda.World.Player.Events;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -77,14 +76,19 @@ public sealed class GardenIngestionService : BackgroundService
 
         if (logger is not null)
         {
-            state.PlotChanged += (_, e) => logger.LogDiagnosticInfo("Samwise.State",
-                $"{e.Plot.CharName}/{e.Plot.PlotId} {e.OldStage?.ToString() ?? "-"} → {e.NewStage} ({e.Plot.CropType ?? "?"})");
+            state.PlotChanged += (_, e) => logger.LogTrace(
+                "{CharName}/{PlotId} {OldStage} → {NewStage} ({CropType})",
+                e.Plot.CharName,
+                e.Plot.PlotId,
+                e.OldStage?.ToString() ?? "-",
+                e.NewStage,
+                e.Plot.CropType ?? "?");
         }
     }
 
     public override async Task StartAsync(CancellationToken cancellationToken)
     {
-        _logger?.LogDiagnosticInfo("Samwise", "Loading persisted state and subscribing to Arda domain bus (eager attach)");
+        _logger?.LogInformation("Loading persisted state and subscribing to Arda domain bus (eager attach)");
 
         try
         {
@@ -94,9 +98,9 @@ public sealed class GardenIngestionService : BackgroundService
                 foreach (var (charName, plots) in loaded)
                     _state.HydrateCharacter(charName, plots);
             });
-            _logger?.LogDiagnosticInfo("Samwise", $"Hydrated {loaded.Count} character(s)");
+            _logger?.LogInformation("Hydrated {Count} character(s)", loaded.Count);
         }
-        catch (Exception ex) { _logger?.LogDiagnosticWarn("Samwise", $"Failed to load state: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Failed to load state"); }
 
         _setPetOwnerSub = _bus.Subscribe<SetPetOwnerFrame>(OnSetPetOwner);
         _appearanceSub = _bus.Subscribe<AppearanceLoopFrame>(OnAppearanceLoop);
@@ -139,7 +143,7 @@ public sealed class GardenIngestionService : BackgroundService
         var ge = new SetPetOwner(
             evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow,
             evt.EntityId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -149,7 +153,7 @@ public sealed class GardenIngestionService : BackgroundService
             evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow,
             evt.ModelName.ToString(),
             evt.Scale);
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -162,7 +166,7 @@ public sealed class GardenIngestionService : BackgroundService
             evt.Description.ToString(),
             evt.Action.ToString(),
             evt.Scale);
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -172,7 +176,7 @@ public sealed class GardenIngestionService : BackgroundService
             evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow,
             evt.EntityId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             evt.Name);
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -181,14 +185,14 @@ public sealed class GardenIngestionService : BackgroundService
         var ge = new UpdateItemCode(
             evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow,
             evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
     private void OnScreenTextError(ScreenTextErrorFrame evt)
     {
         var ge = new ScreenTextError(evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow);
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -197,7 +201,7 @@ public sealed class GardenIngestionService : BackgroundService
         var ge = new PlantingCapReached(
             evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow,
             evt.SeedDisplayName.ToString());
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -207,7 +211,7 @@ public sealed class GardenIngestionService : BackgroundService
             evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow,
             evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             evt.InternalName);
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -216,7 +220,7 @@ public sealed class GardenIngestionService : BackgroundService
         var ge = new DeleteItem(
             evt.Metadata.Timestamp?.UtcDateTime ?? DateTime.UtcNow,
             evt.InstanceId.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 
@@ -230,7 +234,7 @@ public sealed class GardenIngestionService : BackgroundService
         var ge = TryProjectGardeningXp(evt);
         if (ge is null) return;
 
-        _logger?.LogDiagnosticTrace("Samwise.Parse", Describe(ge));
+        _logger?.LogTrace(Describe(ge));
         DispatchInventory(() => _state.Apply(ge));
     }
 

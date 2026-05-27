@@ -6,7 +6,6 @@ using Arda.World.Player.Events;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.ViewModels;
-using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;
 
 namespace Legolas.Services;
@@ -97,7 +96,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _screenTextSub = _bus.Subscribe<ScreenTextObserved>(OnScreenTextObserved);
         _areaChangedSub = _bus.Subscribe<AreaChanged>(OnAreaChanged);
 
-        _logger?.LogDiagnosticInfo("Legolas.PlayerLog", "Subscribed to Arda domain events");
+        _logger?.LogInformation("Subscribed to Arda domain events");
 
         return base.StartAsync(cancellationToken);
     }

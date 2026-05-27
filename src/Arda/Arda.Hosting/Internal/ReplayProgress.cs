@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Hosting.Internal;
 
@@ -9,12 +10,15 @@ namespace Arda.Hosting.Internal;
 internal sealed class ReplayProgress : IReplayProgress
 {
     private readonly TaskCompletionSource _replayComplete = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly ILogger? _logger;
     private readonly object _lock = new();
 
     private double _playerProgress;
     private double _chatProgress;
     private bool _playerDone;
     private bool _chatDone;
+
+    public ReplayProgress(ILogger<ReplayProgress>? logger = null) => _logger = logger;
 
     public double PlayerProgress => _playerProgress;
     public double ChatProgress => _chatProgress;
@@ -66,11 +70,22 @@ internal sealed class ReplayProgress : IReplayProgress
         }
 
         if (firePlayer)
+        {
+            _logger?.LogInformation("Player replay complete");
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(PlayerProgress)));
+        }
+
         if (fireChat)
+        {
+            _logger?.LogInformation("Chat replay complete");
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ChatProgress)));
+        }
+
         if (fireComplete)
+        {
+            _logger?.LogInformation("All source families replay complete");
             _replayComplete.TrySetResult();
+        }
     }
 
     internal enum SourceFamily { Player, Chat }

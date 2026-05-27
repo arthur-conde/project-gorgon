@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 
@@ -32,13 +31,13 @@ public sealed class EffectByStackingTypeKindTarget : IReferenceKindTarget
     {
         if (string.IsNullOrEmpty(internalName))
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", "EffectByStackingType.TrySelect '' → empty payload, leaving Effects tab unchanged.");
+            _logger?.LogTrace("EffectByStackingType.TrySelect '' → empty payload, leaving Effects tab unchanged.");
             return false;
         }
 
         var escaped = internalName.Replace("\"", "\\\"");
         var query = $"StackingType = \"{escaped}\"";
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"EffectByStackingType.TrySelect '{internalName}' → QueryText='{query}'.");
+        _logger?.LogTrace("EffectByStackingType.TrySelect '{InternalName}' → QueryText='{QueryText}'.", internalName, query);
         _vm.SelectedRow = null;
         _vm.QueryText = query;
         return true;

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
 using Silmarillion.Views;
@@ -33,10 +32,10 @@ public sealed class AbilityKindTarget : IReferenceKindTarget
         var row = _vm.AllAbilities.FirstOrDefault(r => r.InternalName == internalName);
         if (row is null)
         {
-            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Abilities.TrySelect '{internalName}' → not found (AllAbilities={_vm.AllAbilities.Count}).");
+            _logger?.LogTrace("Abilities.TrySelect '{InternalName}' → not found (AllAbilities={AllAbilities}).", internalName, _vm.AllAbilities.Count);
             return false;
         }
-        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Abilities.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogTrace("Abilities.TrySelect '{InternalName}' → found, selecting.", internalName);
         // Clear any residual filter so the target row isn't filtered out of the visible ListBox.
         _vm.QueryText = "";
         _vm.SelectedRow = row;

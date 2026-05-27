@@ -3,7 +3,6 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Gandalf.Domain;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Microsoft.Extensions.Hosting;
 
@@ -40,7 +39,7 @@ public sealed class GandalfAreaFlattenMigration : IHostedService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _logger?.LogDiagnosticWarn("Gandalf.AreaFlatten", $"Failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Failed"); }
         return Task.CompletedTask;
     }
 
@@ -83,7 +82,6 @@ public sealed class GandalfAreaFlattenMigration : IHostedService
 
         var serialized = root.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_defsPath, serialized);
-        _logger?.LogDiagnosticInfo("Gandalf.AreaFlatten",
-            $"Migrated {migrated} timer definition(s) from v{schemaVersion} to v{GandalfDefinitions.Version}.");
+        _logger?.LogInformation($"Migrated {migrated} timer definition(s) from v{schemaVersion} to v{GandalfDefinitions.Version}.");
     }
 }

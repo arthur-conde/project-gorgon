@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using Arda.Contracts;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 
@@ -112,11 +111,16 @@ internal sealed class SessionAgreementComposer : IHostedService, IAttentionSourc
         var dedupKey = (sid, _chatBannerAt);
         if (!_emittedWarnings.Add(dedupKey)) return;
 
-        _logger?.LogDiagnosticWarn(DiagnosticCategory,
-            $"Player.log banner server '{_playerServer}' disagrees with chat banner server '{_chatServer}' " +
-            $"for character '{_playerCharacter}' (session id '{sid}', chat banner at {_chatBannerAt:O}). " +
+        _logger?.LogWarning(
+            "Player.log banner server '{PlayerServer}' disagrees with chat banner server '{ChatServer}' " +
+            "for character '{Character}' (session id '{SessionId}', chat banner at {ChatBannerAt:O}). " +
             "The Player.log-derived server identity remains authoritative for downstream services; " +
-            "this warning surfaces only as a cross-source consistency check.");
+            "this warning surfaces only as a cross-source consistency check.",
+            _playerServer,
+            _chatServer,
+            _playerCharacter,
+            sid,
+            _chatBannerAt);
 
         Changed?.Invoke(this, EventArgs.Empty);
     }

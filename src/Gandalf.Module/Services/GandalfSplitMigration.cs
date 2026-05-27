@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Gandalf.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Microsoft.Extensions.Hosting;
@@ -52,7 +51,7 @@ public sealed class GandalfSplitMigration : IHostedService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _logger?.LogDiagnosticWarn("Gandalf.SplitMigration", $"Failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Failed"); }
         return Task.CompletedTask;
     }
 
@@ -92,8 +91,7 @@ public sealed class GandalfSplitMigration : IHostedService
                     if (!string.Equals(existing.Name, timer.Name, StringComparison.Ordinal) ||
                         existing.Duration != timer.Duration)
                     {
-                        _logger?.LogDiagnosticInfo("Gandalf.SplitMigration",
-                            $"Timer id {timer.Id} diverged across characters; kept newer '{existing.Name}' ({existing.Duration}), discarded '{timer.Name}' ({timer.Duration}).");
+                        _logger?.LogInformation($"Timer id {timer.Id} diverged across characters; kept newer '{existing.Name}' ({existing.Duration}), discarded '{timer.Name}' ({timer.Duration}).");
                     }
                 }
             }
@@ -118,15 +116,13 @@ public sealed class GandalfSplitMigration : IHostedService
                 };
             }
             _progressStore.Save(candidate.Character, candidate.Server, progress);
-            _logger?.LogDiagnosticInfo("Gandalf.SplitMigration",
-                $"Rewrote {candidate.Character}/{candidate.Server} as v2 progress ({progress.ByTimerId.Count} entries).");
+            _logger?.LogInformation($"Rewrote {candidate.Character}/{candidate.Server} as v2 progress ({progress.ByTimerId.Count} entries).");
         }
 
         // Step 3: invalidate any already-cached progress so live readers pick up the new shape.
         _progressView.Invalidate();
 
-        _logger?.LogDiagnosticInfo("Gandalf.SplitMigration",
-            $"Split complete: {defs.Timers.Count} definitions across {candidates.Count(c => !c.IsV2)} migrated characters.");
+        _logger?.LogInformation($"Split complete: {defs.Timers.Count} definitions across {candidates.Count(c => !c.IsV2)} migrated characters.");
     }
 
     private List<Candidate> CollectCandidates()
@@ -183,7 +179,7 @@ public sealed class GandalfSplitMigration : IHostedService
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Gandalf.SplitMigration", $"Legacy read failed for {path}: {ex.Message}");
+            _logger?.LogWarning(ex, "Legacy read failed for {Path}", path);
             return (false, null);
         }
     }

@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.ComponentModel;
 using Mithril.GameReports;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 
 namespace Mithril.Shared.Character;

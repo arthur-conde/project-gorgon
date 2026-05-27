@@ -225,8 +225,7 @@ public sealed class ItemCollectionTracker : BackgroundService
             var summary = string.Join(", ",
                 unmatched.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
                     .Select(kv => $"{kv.Key} x{kv.Value}"));
-            _logger?.LogDiagnosticTrace("Legolas.PendingAdds",
-                $"survey ended ({t.Trigger}); unmatched pending Adds dropped: {summary}");
+            _logger?.LogTrace($"survey ended ({t.Trigger}); unmatched pending Adds dropped: {summary}");
         }
     }
 

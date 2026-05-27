@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Character;
 
 namespace Arda.Composition.Internal;
@@ -8,7 +9,7 @@ namespace Arda.Composition.Internal;
 /// favor dictionary on first load. Does not delete the source file — Arwen may still
 /// reference it during the transition period.
 /// </summary>
-internal sealed class NpcStateArwenMigration(string charactersRootDir)
+internal sealed class NpcStateArwenMigration(string charactersRootDir, ILogger? logger = null)
     : ILegacyMigration<NpcStateSnapshot>
 {
     public bool TryMigrate(string character, string server, out NpcStateSnapshot migrated, out string legacyPath)
@@ -59,13 +60,33 @@ internal sealed class NpcStateArwenMigration(string charactersRootDir)
                 }
             }
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
+            logger?.LogWarning(ex,
+                "NPC state Arwen migration failed for {Character}/{Server}: invalid JSON at {LegacyPath}",
+                character,
+                server,
+                arwenPath);
             return false;
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            logger?.LogWarning(ex,
+                "NPC state Arwen migration failed for {Character}/{Server}: IO error at {LegacyPath}",
+                character,
+                server,
+                arwenPath);
             return false;
+        }
+
+        if (migrated.Npcs.Count > 0)
+        {
+            logger?.LogInformation(
+                "NPC state Arwen migration loaded {NpcCount} NPCs for {Character}/{Server} from {LegacyPath}",
+                migrated.Npcs.Count,
+                character,
+                server,
+                arwenPath);
         }
 
         return migrated.Npcs.Count > 0;

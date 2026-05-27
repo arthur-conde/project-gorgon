@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using System.IO;
 using Gandalf.Domain;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Game;
 
 namespace Gandalf.Services;
@@ -170,7 +169,7 @@ public sealed class TimerProgressService : IDisposable
                 try { File.Delete(path); }
                 catch (Exception ex)
                 {
-                    _logger?.LogDiagnosticWarn("Gandalf.Progress", $"Failed to delete {path}: {ex.Message}");
+                    _logger?.LogWarning(ex, "Failed to delete {Path}", path);
                 }
             }
 

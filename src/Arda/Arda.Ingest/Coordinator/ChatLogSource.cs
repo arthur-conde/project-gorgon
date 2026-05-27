@@ -4,6 +4,7 @@ using Arda.Abstractions.Logs;
 using Arda.Ingest.Classification;
 using Arda.Ingest.Clock;
 using Arda.Ingest.Tailer;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Ingest.Coordinator;
 
@@ -11,25 +12,6 @@ namespace Arda.Ingest.Coordinator;
 /// Source coordinator for the Chat log family (Chat-yy-mm-dd.log files).
 /// Implements <see cref="ILogLineSource"/> by enumerating date-ordered chat
 /// log files in the <c>ChatLogs/</c> directory and tailing the most recent.
-/// <para>
-/// Responsibilities:
-/// <list type="bullet">
-///   <item><b>Directory enumeration.</b> Scans <c>ChatLogs/</c> for files
-///   matching <c>Chat-yy-mm-dd.log</c>. Files are processed in filename
-///   order (lexicographic sort is chronological for this format).</item>
-///   <item><b>Midnight rollover.</b> When a new chat file appears (the date
-///   rolled over), the coordinator finishes the current file and switches to
-///   the new one.</item>
-///   <item><b>Session-bounded replay.</b> Replays from the most recent login
-///   banner forward (principle 9), not the entire <c>ChatLogs/</c> archive.</item>
-///   <item><b>IsReplay stamping.</b> Historical files are replayed with
-///   <c>IsReplay = true</c>. When the coordinator reaches the tail of the
-///   most recent file, <c>IsReplay</c> flips to <c>false</c>.</item>
-///   <item><b>Single active tailer.</b> Only one file handle is open at a
-///   time. Historical files are read to completion and closed before the
-///   next opens.</item>
-/// </list>
-/// </para>
 /// </summary>
 internal sealed class ChatLogSource : ILogLineSource
 {
@@ -38,19 +20,23 @@ internal sealed class ChatLogSource : ILogLineSource
     private readonly ChatLogClock _clock;
     private readonly BatchProcessor _processor;
     private readonly TimeSpan _pollInterval;
+    private readonly ILogger? _logger;
 
     private bool _reachedLive;
+    private bool _warnedMissingDir;
 
     public ChatLogSource(
         string chatLogDirectory,
         TimeProvider time,
-        TimeSpan? pollInterval = null)
+        TimeSpan? pollInterval = null,
+        ILogger? logger = null)
     {
         _chatLogDirectory = chatLogDirectory ?? throw new ArgumentNullException(nameof(chatLogDirectory));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _clock = new ChatLogClock();
         _processor = new BatchProcessor(new LineClassifier(_clock), time);
         _pollInterval = pollInterval ?? TimeSpan.FromMilliseconds(500);
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -59,11 +45,15 @@ internal sealed class ChatLogSource : ILogLineSource
     {
         var files = GetOrderedChatFiles();
         var (startFileIndex, startOffset) = ChatSessionStartScanner.ResolveSessionStart(files);
+        _logger?.LogDebug(
+            "Chat session replay start at file index {FileIndex} offset {ByteOffset}",
+            startFileIndex,
+            startOffset);
 
-        // Replay from session-start banner through files before the live tail.
         for (var i = startFileIndex; i < files.Length - 1 && !ct.IsCancellationRequested; i++)
         {
-            var tailer = new LogSourceTailer(files[i]);
+            _logger?.LogInformation("Replaying chat file {Path}", files[i]);
+            var tailer = new LogSourceTailer(files[i], _logger);
             if (i == startFileIndex && startOffset > 0)
                 tailer.Offset = startOffset;
 
@@ -84,6 +74,12 @@ internal sealed class ChatLogSource : ILogLineSource
         {
             while (!ct.IsCancellationRequested)
             {
+                if (!Directory.Exists(_chatLogDirectory) && !_warnedMissingDir)
+                {
+                    _warnedMissingDir = true;
+                    _logger?.LogWarning("Chat log directory missing at {Path}", _chatLogDirectory);
+                }
+
                 files = GetOrderedChatFiles();
                 if (files.Length > 0) break;
                 await Task.Delay(_pollInterval, _time, ct).ConfigureAwait(false);
@@ -92,9 +88,9 @@ internal sealed class ChatLogSource : ILogLineSource
             if (ct.IsCancellationRequested) yield break;
         }
 
-        // Tail the most recent file (live).
         var currentFile = files[^1];
-        var liveTailer = new LogSourceTailer(currentFile);
+        _logger?.LogInformation("Tailing chat file {Path}", currentFile);
+        var liveTailer = new LogSourceTailer(currentFile, _logger);
         if (startFileIndex == files.Length - 1 && startOffset > 0)
             liveTailer.Offset = startOffset;
 
@@ -102,20 +98,23 @@ internal sealed class ChatLogSource : ILogLineSource
         {
             var results = _processor.ProcessBatch(liveTailer, isReplay: !_reachedLive);
 
-            // Transition to live: flip once the tailer's offset reaches EOF.
-            // Checked after every read (not only on empty batches) so that
-            // IsReplay transitions correctly even if data arrives every cycle.
             if (!_reachedLive && liveTailer.HasCaughtUp)
+            {
                 _reachedLive = true;
+                _logger?.LogInformation("Chat log reached live (IsReplay=false)");
+            }
 
             if (results is null)
             {
-                // Check if a new file appeared (midnight rollover).
                 var latestFiles = GetOrderedChatFiles();
                 if (latestFiles.Length > 0 && latestFiles[^1] != currentFile)
                 {
+                    _logger?.LogInformation(
+                        "Chat midnight rollover: {OldPath} → {NewPath}",
+                        currentFile,
+                        latestFiles[^1]);
                     currentFile = latestFiles[^1];
-                    liveTailer = new LogSourceTailer(currentFile);
+                    liveTailer = new LogSourceTailer(currentFile, _logger);
                 }
 
                 await Task.Delay(_pollInterval, _time, ct).ConfigureAwait(false);
@@ -130,15 +129,8 @@ internal sealed class ChatLogSource : ILogLineSource
         }
     }
 
-    // "Timezone Offset " is 16 chars; the value is -?H:mm:ss or -?HH:mm:ss (8–9 chars + trailing '.')
     private const string TimezoneOffsetMarker = "Timezone Offset ";
 
-    /// <summary>
-    /// If the line is a chat login banner, extract the timezone offset and
-    /// apply it to the clock. This is an L0 concern: the clock needs the
-    /// offset before subsequent lines are classified. The banner line itself
-    /// uses the prior offset (acceptable — it's the first line of a session).
-    /// </summary>
     private void TryApplyBannerOffset(string log)
     {
         if (log.Length < 5 || log[0] != '*')
@@ -152,7 +144,6 @@ internal sealed class ChatLogSource : ILogLineSource
         var offsetStart = markerIdx + TimezoneOffsetMarker.Length;
         var remaining = span[offsetStart..];
 
-        // Strip trailing '.' if present
         if (remaining.Length > 0 && remaining[^1] == '.')
             remaining = remaining[..^1];
 
@@ -171,7 +162,6 @@ internal sealed class ChatLogSource : ILogLineSource
             s = s[1..];
         }
 
-        // Expected: H:mm:ss or HH:mm:ss
         var firstColon = s.IndexOf(':');
         if (firstColon < 1) return false;
 
@@ -196,9 +186,6 @@ internal sealed class ChatLogSource : ILogLineSource
         if (!Directory.Exists(_chatLogDirectory))
             return [];
 
-        // The glob "Chat-??-??-??.log" matches non-digit characters too.
-        // Post-filter with a structural check on the filename to ensure only
-        // properly-named date-based files are processed.
         return Directory.GetFiles(_chatLogDirectory, "Chat-??-??-??.log")
             .Where(IsValidChatFileName)
             .OrderBy(f => f, StringComparer.Ordinal)
@@ -208,7 +195,6 @@ internal sealed class ChatLogSource : ILogLineSource
     private static bool IsValidChatFileName(string path)
     {
         var name = Path.GetFileNameWithoutExtension(path).AsSpan();
-        // Expected: "Chat-yy-mm-dd" (13 chars)
         if (name.Length != 13) return false;
         return char.IsAsciiDigit(name[5]) && char.IsAsciiDigit(name[6])
             && char.IsAsciiDigit(name[8]) && char.IsAsciiDigit(name[9])

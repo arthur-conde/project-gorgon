@@ -4,6 +4,7 @@ using Arda.Hosting.Internal;
 using Arda.Ingest.Coordinator;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Hosting;
 
@@ -30,12 +31,14 @@ public static class ArdaServiceCollectionExtensions
         services.AddSingleton(sp => new PlayerLogSource(
             options.LogDirectory,
             sp.GetService<TimeProvider>() ?? TimeProvider.System,
-            pollInterval));
+            pollInterval,
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Arda.Player")));
 
         services.AddSingleton(sp => new ChatLogSource(
             chatDir,
             sp.GetService<TimeProvider>() ?? TimeProvider.System,
-            pollInterval));
+            pollInterval,
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Arda.Chat")));
 
         // Event bus (shared across both driver families)
         services.AddSingleton<DomainEventBus>();
@@ -44,7 +47,8 @@ public static class ArdaServiceCollectionExtensions
         services.AddSingleton<IDomainEventPublisher>(sp => sp.GetRequiredService<DomainEventBus>());
 
         // Replay progress (shared, bindable from WPF splash)
-        services.AddSingleton<ReplayProgress>();
+        services.AddSingleton(sp =>
+            new ReplayProgress(sp.GetService<ILogger<ReplayProgress>>()));
         services.AddSingleton<IReplayProgress>(sp => sp.GetRequiredService<ReplayProgress>());
 
         // Background services (L2 drivers)

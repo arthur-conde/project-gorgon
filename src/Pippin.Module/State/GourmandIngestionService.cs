@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Threading;
 using Arda.Contracts;
 using Mithril.Shared.Character;
-using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Pippin.Domain;
 using Pippin.Parsing;
@@ -49,14 +48,12 @@ public sealed class GourmandIngestionService : BackgroundService
         if (_view.Current is not null)
         {
             try { await _stateService.LoadAsync(cancellationToken).ConfigureAwait(false); }
-            catch (Exception ex) { _logger?.LogDiagnosticWarn("Pippin", $"Failed to load state: {ex.Message}"); }
-            _logger?.LogDiagnosticInfo("Pippin",
-                "State hydrated for active character — subscribed to Arda domain bus (FoodsConsumedReport)");
+            catch (Exception ex) { _logger?.LogWarning(ex, "Failed to load state"); }
+            _logger?.LogInformation("State hydrated for active character — subscribed to Arda domain bus (FoodsConsumedReport)");
         }
         else
         {
-            _logger?.LogDiagnosticInfo("Pippin",
-                "No persisted active character — subscribed to Arda domain bus eagerly; hydrate deferred");
+            _logger?.LogInformation("No persisted active character — subscribed to Arda domain bus eagerly; hydrate deferred");
         }
 
         _dispatcher = Application.Current?.Dispatcher;
@@ -80,8 +77,7 @@ public sealed class GourmandIngestionService : BackgroundService
 
         void Apply()
         {
-            _logger?.LogDiagnosticTrace("Pippin.Parse",
-                $"FoodsConsumedReport with {foods.Count} entries (replay={report.Metadata.IsReplay})");
+            _logger?.LogTrace($"FoodsConsumedReport with {foods.Count} entries (replay={report.Metadata.IsReplay})");
             var evt = new Parsing.FoodsConsumedReport(ts.UtcDateTime, foods);
             _state.Apply(evt);
         }

@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.Windows;
 using Mithril.Reference.Models.Items;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
 namespace Mithril.Shared.Wpf;
@@ -31,13 +30,13 @@ public sealed class ItemDetailPresenter : IItemDetailPresenter
     {
         if (string.IsNullOrWhiteSpace(internalName))
         {
-            _logger?.LogDiagnosticWarn("ItemDetail", "Show called with empty internal name.");
+            _logger?.LogWarning("Show called with empty internal name.");
             return;
         }
 
         if (!_refData.ItemsByInternalName.TryGetValue(internalName, out var item))
         {
-            _logger?.LogDiagnosticInfo("ItemDetail", $"Item '{internalName}' not found in reference data; nothing to show.");
+            _logger?.LogInformation($"Item '{internalName}' not found in reference data; nothing to show.");
             return;
         }
 

@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
 using Microsoft.Extensions.Hosting;
 
 namespace Mithril.Shared.Character;
@@ -47,7 +46,7 @@ public sealed class CharacterPresenceService : IHostedService, ICharacterPresenc
         try { return _store.Load(character, server).LastActiveAt; }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Presence", $"Read failed for {character}/{server}: {ex.Message}");
+            _logger?.LogWarning(ex, "Read failed for {Character}/{Server}", character, server);
             return null;
         }
     }
@@ -77,7 +76,7 @@ public sealed class CharacterPresenceService : IHostedService, ICharacterPresenc
         }
         catch (Exception ex)
         {
-            _logger?.LogDiagnosticWarn("Presence", $"Stamp failed for {character}/{server}: {ex.Message}");
+            _logger?.LogWarning(ex, "Stamp failed for {Character}/{Server}", character, server);
         }
     }
 

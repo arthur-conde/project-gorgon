@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Windows;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Sharing;
 using Pippin.Domain;
@@ -35,7 +34,7 @@ public sealed class PippinShareImportTarget : IPippinShareImportTarget
     {
         if (!ShareCodec.TryDecodePayload(base64UrlPayload, out var json, out var error))
         {
-            _logger?.LogDiagnosticInfo("Pippin", $"Share link decode failed: {error}");
+            _logger?.LogInformation($"Share link decode failed: {error}");
             return;
         }
 
@@ -46,12 +45,12 @@ public sealed class PippinShareImportTarget : IPippinShareImportTarget
         }
         catch (JsonException ex)
         {
-            _logger?.LogDiagnosticInfo("Pippin", $"Share link payload is not valid PippinSharePayload JSON: {ex.Message}");
+            _logger?.LogInformation($"Share link payload is not valid PippinSharePayload JSON: {ex.Message}");
             return;
         }
         if (payload is null)
         {
-            _logger?.LogDiagnosticInfo("Pippin", "Share link payload deserialized to null.");
+            _logger?.LogInformation("Share link payload deserialized to null.");
             return;
         }
 
@@ -65,7 +64,7 @@ public sealed class PippinShareImportTarget : IPippinShareImportTarget
     private void Show(PippinSharePayload payload)
     {
         if (_activator is not null && !_activator.Activate("pippin"))
-            _logger?.LogDiagnosticInfo("Pippin", "Deep-link import: module activator could not find 'pippin'.");
+            _logger?.LogInformation("Deep-link import: module activator could not find 'pippin'.");
 
         var vm = new SharedProgressViewModel(payload, _catalog);
         var window = new SharedProgressWindow(vm)

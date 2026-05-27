@@ -3,6 +3,7 @@ using Arda.Abstractions.Logs;
 using Arda.Ingest.Classification;
 using Arda.Ingest.Clock;
 using Arda.Ingest.Tailer;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Ingest.Coordinator;
 
@@ -35,19 +36,23 @@ internal sealed class PlayerLogSource : ILogLineSource
     private readonly PlayerLogClock _clock;
     private readonly BatchProcessor _processor;
     private readonly TimeSpan _pollInterval;
+    private readonly ILogger? _logger;
 
     private bool _reachedLive;
+    private bool _warnedMissingLog;
 
     public PlayerLogSource(
         string logDirectory,
         TimeProvider time,
-        TimeSpan? pollInterval = null)
+        TimeSpan? pollInterval = null,
+        ILogger? logger = null)
     {
         _logDirectory = logDirectory ?? throw new ArgumentNullException(nameof(logDirectory));
         _time = time ?? throw new ArgumentNullException(nameof(time));
         _clock = new PlayerLogClock(time);
         _processor = new BatchProcessor(new LineClassifier(_clock), time);
         _pollInterval = pollInterval ?? TimeSpan.FromMilliseconds(250);
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -60,7 +65,8 @@ internal sealed class PlayerLogSource : ILogLineSource
         // Phase 1: Read Player-prev.log if it exists.
         if (File.Exists(prevLogPath))
         {
-            var prevTailer = new LogSourceTailer(prevLogPath);
+            _logger?.LogInformation("Replaying {Path}", prevLogPath);
+            var prevTailer = new LogSourceTailer(prevLogPath, _logger);
             var anchored = false;
 
             while (!ct.IsCancellationRequested)
@@ -75,21 +81,26 @@ internal sealed class PlayerLogSource : ILogLineSource
         }
 
         // Phase 2: Tail Player.log (live).
-        var tailer = new LogSourceTailer(playerLogPath);
+        _logger?.LogInformation("Tailing {Path}", playerLogPath);
+        var tailer = new LogSourceTailer(playerLogPath, _logger);
         var liveAnchored = false;
 
         while (!ct.IsCancellationRequested)
         {
+            if (!File.Exists(playerLogPath) && !_warnedMissingLog)
+            {
+                _warnedMissingLog = true;
+                _logger?.LogWarning("Player log file missing at {Path}", playerLogPath);
+            }
+
             var results = _processor.ProcessBatch(
                 tailer, isReplay: !_reachedLive, _clock, ref liveAnchored);
 
-            // Transition to live: flip once the tailer's offset reaches EOF.
-            // This is checked after every read (not only on empty batches) to
-            // handle the case where new data arrives every poll cycle — without
-            // this, IsReplay would remain true indefinitely if the game writes
-            // faster than the tailer drains.
             if (!_reachedLive && tailer.HasCaughtUp)
+            {
                 _reachedLive = true;
+                _logger?.LogInformation("Player log reached live (IsReplay=false)");
+            }
 
             if (results is null)
             {

@@ -3,7 +3,6 @@ using System.Text.Json;
 using System.Windows;
 using Celebrimbor.ViewModels;
 using Mithril.Planning;
-using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 
 namespace Celebrimbor.Services;
@@ -40,7 +39,7 @@ public sealed class SavedLevelingPlanImportTarget : ISavedLevelingPlanImportTarg
     {
         if (string.IsNullOrWhiteSpace(planJson))
         {
-            _logger?.LogDiagnosticInfo("Celebrimbor", $"Plan import from \"{source}\": empty payload, dropped.");
+            _logger?.LogInformation($"Plan import from \"{source}\": empty payload, dropped.");
             return;
         }
 
@@ -51,13 +50,13 @@ public sealed class SavedLevelingPlanImportTarget : ISavedLevelingPlanImportTarg
         }
         catch (JsonException ex)
         {
-            _logger?.LogDiagnosticInfo("Celebrimbor", $"Plan import from \"{source}\": invalid JSON ({ex.Message}), dropped.");
+            _logger?.LogInformation($"Plan import from \"{source}\": invalid JSON ({ex.Message}), dropped.");
             return;
         }
 
         if (plan is null || plan.Phases.Count == 0)
         {
-            _logger?.LogDiagnosticInfo("Celebrimbor", $"Plan import from \"{source}\": no phases, dropped.");
+            _logger?.LogInformation($"Plan import from \"{source}\": no phases, dropped.");
             return;
         }
 
@@ -65,9 +64,9 @@ public sealed class SavedLevelingPlanImportTarget : ISavedLevelingPlanImportTarg
         {
             _store.Upsert(plan);
             if (_activator is not null && !_activator.Activate("celebrimbor"))
-                _logger?.LogDiagnosticInfo("Celebrimbor", "Plan import: module activator could not find 'celebrimbor'.");
+                _logger?.LogInformation("Plan import: module activator could not find 'celebrimbor'.");
             _plans.SurfaceImported(plan.Id);
-            _logger?.LogDiagnosticInfo("Celebrimbor", $"Imported leveling plan \"{plan.Skill} → {plan.GoalLevel}\" from \"{source}\".");
+            _logger?.LogInformation($"Imported leveling plan \"{plan.Skill} → {plan.GoalLevel}\" from \"{source}\".");
         });
     }
 

@@ -1,6 +1,7 @@
 using System.Buffers;
 using System.Text;
 using Arda.Ingest.Internal;
+using Microsoft.Extensions.Logging;
 
 namespace Arda.Ingest.Tailer;
 
@@ -31,13 +32,15 @@ namespace Arda.Ingest.Tailer;
 internal sealed class LogSourceTailer
 {
     private readonly string _path;
+    private readonly ILogger? _logger;
     private long _offset;
     private byte[] _residual = [];
     private bool _hasCaughtUp;
 
-    public LogSourceTailer(string path)
+    public LogSourceTailer(string path, ILogger? logger = null)
     {
         _path = path ?? throw new ArgumentNullException(nameof(path));
+        _logger = logger;
     }
 
     /// <summary>The file path being tailed.</summary>
@@ -97,6 +100,11 @@ internal sealed class LogSourceTailer
 
         if (fileLength < _offset)
         {
+            _logger?.LogWarning(
+                "Log file rotation detected at {Path} (offset {OldOffset}, new length {NewLength})",
+                _path,
+                _offset,
+                fileLength);
             _offset = 0;
             _residual = [];
             _hasCaughtUp = false;
