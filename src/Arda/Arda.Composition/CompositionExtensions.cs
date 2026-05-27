@@ -45,6 +45,7 @@ public static class CompositionExtensions
             }
 
             return new InventoryComposer(bus, store,
+                sp.GetService<IGrammarBreakSignal>(),
                 loggerFactory?.CreateLogger("InventoryComposer"));
         });
         services.AddSingleton<IInventoryAccumulatorState>(sp =>
@@ -69,6 +70,7 @@ public static class CompositionExtensions
             var resolver = recipeKeyResolverFactory?.Invoke(sp);
 
             return new PlayerProgressionComposer(bus, playerState, store, resolver,
+                sp.GetService<IGrammarBreakSignal>(),
                 loggerFactory?.CreateLogger("PlayerProgressionComposer"));
         });
         services.AddSingleton<IPlayerProgressionState>(sp =>
@@ -93,6 +95,7 @@ public static class CompositionExtensions
             }
 
             return new NpcStateComposer(bus, npcStore,
+                sp.GetService<IGrammarBreakSignal>(),
                 loggerFactory?.CreateLogger("NpcStateComposer"));
         });
         services.AddSingleton<INpcStateTracker>(sp => sp.GetRequiredService<NpcStateComposer>());

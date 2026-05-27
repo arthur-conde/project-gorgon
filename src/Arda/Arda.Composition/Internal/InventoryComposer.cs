@@ -25,6 +25,7 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
 
     private readonly IDomainEventBus _bus;
     private readonly PerCharacterStore<AccumulatorSnapshot>? _store;
+    private readonly IGrammarBreakSignal? _grammarSignal;
     private readonly ILogger? _logger;
 
     // ── Correlation state ─────────────────────────────────────────────────
@@ -50,10 +51,12 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
     public InventoryComposer(
         IDomainEventBus bus,
         PerCharacterStore<AccumulatorSnapshot>? store = null,
+        IGrammarBreakSignal? grammarSignal = null,
         ILogger? logger = null)
     {
         _bus = bus;
         _store = store;
+        _grammarSignal = grammarSignal;
         _logger = logger;
 
         _addSub = bus.Subscribe<InventoryItemAdded>(OnItemAdded);
@@ -257,6 +260,14 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
     {
         if (_store is null || _currentCharacter is null || _currentServer is null)
             return;
+
+        if (_grammarSignal?.IsRaised == true)
+        {
+            _logger?.LogWarning(
+                "Skipping accumulator snapshot save for {Character}/{Server}: grammar break in this session",
+                _currentCharacter, _currentServer);
+            return;
+        }
 
         var snapshot = new AccumulatorSnapshot();
         foreach (var (id, item) in _items)

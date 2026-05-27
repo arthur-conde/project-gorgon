@@ -17,6 +17,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
 {
     private readonly IDomainEventBus _bus;
     private readonly PerCharacterStore<NpcStateSnapshot>? _store;
+    private readonly IGrammarBreakSignal? _grammarSignal;
     private readonly ILogger? _logger;
 
     private readonly Dictionary<string, NpcRecord> _npcs = new(StringComparer.Ordinal);
@@ -36,10 +37,12 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
     public NpcStateComposer(
         IDomainEventBus bus,
         PerCharacterStore<NpcStateSnapshot>? store = null,
+        IGrammarBreakSignal? grammarSignal = null,
         ILogger? logger = null)
     {
         _bus = bus;
         _store = store;
+        _grammarSignal = grammarSignal;
         _logger = logger;
 
         _interactionSub = bus.Subscribe<InteractionStarted>(OnInteractionStarted);
@@ -217,6 +220,14 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
     {
         if (_store is null || _currentCharacter is null || _currentServer is null)
             return;
+
+        if (_grammarSignal?.IsRaised == true)
+        {
+            _logger?.LogWarning(
+                "Skipping NPC state snapshot save for {Character}/{Server}: grammar break in this session",
+                _currentCharacter, _currentServer);
+            return;
+        }
 
         var snapshot = new NpcStateSnapshot();
         foreach (var (key, record) in _npcs)
