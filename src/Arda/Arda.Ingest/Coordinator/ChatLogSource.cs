@@ -20,6 +20,8 @@ namespace Arda.Ingest.Coordinator;
 ///   <item><b>Midnight rollover.</b> When a new chat file appears (the date
 ///   rolled over), the coordinator finishes the current file and switches to
 ///   the new one.</item>
+///   <item><b>Session-bounded replay.</b> Replays from the most recent login
+///   banner forward (principle 9), not the entire <c>ChatLogs/</c> archive.</item>
 ///   <item><b>IsReplay stamping.</b> Historical files are replayed with
 ///   <c>IsReplay = true</c>. When the coordinator reaches the tail of the
 ///   most recent file, <c>IsReplay</c> flips to <c>false</c>.</item>
@@ -56,11 +58,15 @@ internal sealed class ChatLogSource : ILogLineSource
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         var files = GetOrderedChatFiles();
+        var (startFileIndex, startOffset) = ChatSessionStartScanner.ResolveSessionStart(files);
 
-        // Process all historical files (all except the last).
-        for (var i = 0; i < files.Length - 1 && !ct.IsCancellationRequested; i++)
+        // Replay from session-start banner through files before the live tail.
+        for (var i = startFileIndex; i < files.Length - 1 && !ct.IsCancellationRequested; i++)
         {
             var tailer = new LogSourceTailer(files[i]);
+            if (i == startFileIndex && startOffset > 0)
+                tailer.Offset = startOffset;
+
             while (!ct.IsCancellationRequested)
             {
                 var results = _processor.ProcessBatch(tailer, isReplay: true);
@@ -89,6 +95,8 @@ internal sealed class ChatLogSource : ILogLineSource
         // Tail the most recent file (live).
         var currentFile = files[^1];
         var liveTailer = new LogSourceTailer(currentFile);
+        if (startFileIndex == files.Length - 1 && startOffset > 0)
+            liveTailer.Offset = startOffset;
 
         while (!ct.IsCancellationRequested)
         {

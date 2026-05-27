@@ -3,6 +3,7 @@ using Arda.Composition;
 using Arda.Contracts.State.Health;
 using Arda.Hosting;
 using Arda.Wpf;
+using Arda.World.Chat;
 using Arda.World.Player;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
@@ -132,7 +133,8 @@ public static class ShellComposition
                 {
                     var catalog = sp.GetRequiredService<IShiftCatalog>();
                     return catalog.Shifts.Select(s => (s.Slug, s.StartHour)).ToList();
-                });
+                })
+            .AddChatWorld();
 
         services.AddSingleton<InventoryProjection>();
 
