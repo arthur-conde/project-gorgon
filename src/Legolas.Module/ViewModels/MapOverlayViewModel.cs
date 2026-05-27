@@ -48,7 +48,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _motherlode = motherlode;
         _characterPin = characterPin;
         if (_motherlode is not null)
-            _motherlode.Changed += NotifyMotherlodeGuidanceChanged;
+            _motherlode.Changed += () => PostToUi(NotifyMotherlodeGuidanceChanged);
         if (_areaCalibration is not null)
             _areaCalibration.Changed += (_, _) => NotifyMotherlodeGuidanceChanged();
         if (_pinCal is not null)
