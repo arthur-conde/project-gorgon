@@ -39,7 +39,7 @@ internal sealed class WorldDriver : IWorldDriver
     {
         var liveSignalled = _onLiveTransition is null;
 
-        await foreach (var line in _source.Lines(ct))
+        await foreach (var line in _source.Lines(ct).WithCancellation(ct))
         {
             _lineCount++;
 
@@ -59,7 +59,12 @@ internal sealed class WorldDriver : IWorldDriver
             _dispatch.Dispatch(parsed, line.Log, line.Metadata);
         }
 
-        if (!liveSignalled)
+        // Only force a live transition if the source ran genuinely dry
+        // (finite stream — typical of tests). On cancellation the live
+        // signal would resolve replay-complete latches and trigger
+        // flush-on-replay subscribers (e.g. PerCharacterStore) to write
+        // a partial snapshot, so we must not fire it during shutdown.
+        if (!liveSignalled && !ct.IsCancellationRequested)
         {
             _logger?.LogWarning(
                 "Live transition forced at end of stream for {SourceFamily} ({LineCount} lines processed)",

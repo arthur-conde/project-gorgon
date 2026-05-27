@@ -92,6 +92,24 @@ public class WorldDriverTests
         await act.Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task RunAsync_CancelledMidReplay_DoesNotForceLiveTransition()
+    {
+        var fired = false;
+        var table = BuildTable();
+        using var cts = new CancellationTokenSource();
+        var driver = new WorldDriver(new InfiniteReplaySource(cts), table, () => fired = true);
+
+        var run = driver.RunAsync(cts.Token);
+        // Let the source yield a few replay lines, then cancel.
+        await Task.Delay(50);
+        cts.Cancel();
+        try { await run; } catch (OperationCanceledException) { }
+
+        fired.Should().BeFalse(
+            "cancellation during replay must not resolve replay-complete latches — that would trigger flush-on-replay subscribers to write partial snapshots");
+    }
+
     private static LogLine MakeLine(string log, bool isReplay)
         => new(log, new LogLineMetadata(Now, Now, isReplay));
 
@@ -121,6 +139,19 @@ public class WorldDriverTests
                 yield return line;
             }
             await Task.CompletedTask;
+        }
+    }
+
+    private sealed class InfiniteReplaySource(CancellationTokenSource externalCts) : ILogLineSource
+    {
+        public async IAsyncEnumerable<LogLine> Lines(
+            [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            while (!ct.IsCancellationRequested && !externalCts.IsCancellationRequested)
+            {
+                yield return MakeLine("LocalPlayer: ProcessReplay()", isReplay: true);
+                try { await Task.Delay(5, ct); } catch (OperationCanceledException) { yield break; }
+            }
         }
     }
 
