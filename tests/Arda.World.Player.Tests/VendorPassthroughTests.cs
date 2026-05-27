@@ -25,10 +25,7 @@ public class VendorPassthroughTests
 
     private void ArmNpcInteraction(string npcKey, long entityId = 12307)
     {
-        _npc.OnStartInteraction(
-            $"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(),
-            $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")",
-            Meta());
+        _npc.OnStartInteraction($"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(), default, $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")", Meta());
         _bus.Clear();
     }
 
@@ -40,7 +37,7 @@ public class VendorPassthroughTests
         var handler = new VendorScreenHandler(_npc);
         var args = "(-162, Comfortable, 5000, 1779404053485, 10000, \"desc\", [], stuff)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorScreenOpened>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(-162);
@@ -57,7 +54,7 @@ public class VendorPassthroughTests
         ArmNpcInteraction("NPC_Therese", entityId: 14564);
 
         var handler = new VendorScreenHandler(_npc);
-        handler.Handle("(14564, Neutral, 3926, 1779404053485, 4000)".AsSpan(), "", Meta());
+        handler.Handle("(14564, Neutral, 3926, 1779404053485, 4000)".AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorScreenOpened>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(14564);
@@ -71,7 +68,7 @@ public class VendorPassthroughTests
         ArmNpcInteraction("NPC_Therese", entityId: 14564);
 
         var handler = new VendorScreenHandler(_npc);
-        handler.Handle("(99999, Neutral, 3926, 1779404053485, 4000)".AsSpan(), "", Meta());
+        handler.Handle("(99999, Neutral, 3926, 1779404053485, 4000)".AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorScreenOpened>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(99999);
@@ -84,7 +81,7 @@ public class VendorPassthroughTests
         var handler = new VendorScreenHandler(_npc);
         var args = "(-999, Neutral, 0, 1779404053485, 5000)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorScreenOpened>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(-999);
@@ -101,7 +98,7 @@ public class VendorPassthroughTests
         var handler = new VendorAddItemHandler(_npc);
         var args = "(250, SwordNovice(12345), True)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorItemSold>().Should().ContainSingle().Which;
         e.Price.Should().Be(250);
@@ -115,11 +112,11 @@ public class VendorPassthroughTests
     public void VendorAddItem_WithVendorSession_EnrichesNpcKeyAndFavorTier()
     {
         ArmNpcInteraction("NPC_Johen", entityId: 9999);
-        _npc.OnVendorScreen("(9999, Friendly, 5000, 1779404053485, 8000)".AsSpan(), "", Meta());
+        _npc.OnVendorScreen("(9999, Friendly, 5000, 1779404053485, 8000)".AsSpan(), default, "", Meta());
         _bus.Clear();
 
         var handler = new VendorAddItemHandler(_npc);
-        handler.Handle("(250, SwordNovice(12345), True)".AsSpan(), "", Meta());
+        handler.Handle("(250, SwordNovice(12345), True)".AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorItemSold>().Should().ContainSingle().Which;
         e.Price.Should().Be(250);
@@ -135,7 +132,7 @@ public class VendorPassthroughTests
         var handler = new VendorAddItemHandler(_npc);
         var args = "(999999, RareItem(8888), False)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorItemSold>().Should().ContainSingle().Which;
         e.Price.Should().Be(999999);
@@ -149,7 +146,7 @@ public class VendorPassthroughTests
         var handler = new VendorAddItemHandler(_npc);
         var args = "(250, NoParenthesis, True)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         _bus.Published<VendorItemSold>().Should().BeEmpty();
     }
@@ -162,7 +159,7 @@ public class VendorPassthroughTests
         var handler = new VendorGoldHandler(_bus);
         var args = "(4500, 1779404053485, 10000)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorGoldUpdated>().Should().ContainSingle().Which;
         e.RemainingGold.Should().Be(4500);
@@ -176,7 +173,7 @@ public class VendorPassthroughTests
         var handler = new VendorGoldHandler(_bus);
         var args = "(0, 0, 0)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         var e = _bus.Published<VendorGoldUpdated>().Should().ContainSingle().Which;
         e.RemainingGold.Should().Be(0);

@@ -9,6 +9,6 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class VaultWithdrawHandler(Vault vault) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-        => vault.OnRemoveFromStorageVault(args, sourceLog, metadata);
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+        => vault.OnRemoveFromStorageVault(args, verb, sourceLog, metadata);
 }

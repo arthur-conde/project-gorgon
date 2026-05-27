@@ -34,18 +34,18 @@ internal sealed class MapPins : IMapPinState
 
     internal void Reset() => _pins.Clear();
 
-    private void OnAdd(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnAdd(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        if (!TryParsePin(args, out var x, out var z, out var label, out var shape, out var color))
+        if (!TryParsePin(args, verb, sourceLog, out var x, out var z, out var label, out var shape, out var color))
             return;
 
         _pins.Add(new MapPinEntry(x, z, label, shape, color));
         _bus.Publish(new MapPinAdded(x, z, label, shape, color, metadata));
     }
 
-    private void OnRemove(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnRemove(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        if (!TryParsePin(args, out var x, out var z, out var label, out _, out _))
+        if (!TryParsePin(args, verb, sourceLog, out var x, out var z, out var label, out _, out _))
             return;
 
         for (var i = _pins.Count - 1; i >= 0; i--)
@@ -67,6 +67,8 @@ internal sealed class MapPins : IMapPinState
     /// </summary>
     private static bool TryParsePin(
         ReadOnlySpan<char> args,
+        ReadOnlySpan<char> verb,
+        string sourceLog,
         out double x, out double z,
         out string label, out int shape, out int color)
     {
@@ -88,7 +90,7 @@ internal sealed class MapPins : IMapPinState
             prefix = prefix[..^1];
 
         // Parse A, shape, color from the prefix via comma split
-        var prefixTok = new ArgTokenizer(prefix);
+        var prefixTok = new ArgTokenizer(prefix, verb, sourceLog);
         prefixTok.Skip(1); // A (opaque)
 
         var shapeSpan = prefixTok.NextTokenSpan();
@@ -108,7 +110,7 @@ internal sealed class MapPins : IMapPinState
         var coords = afterOpen[..nestedClose];
 
         // Parse x, y, z from the coordinate triple
-        var coordTok = new ArgTokenizer(coords);
+        var coordTok = new ArgTokenizer(coords, verb, sourceLog);
         var xSpan = coordTok.NextTokenSpan();
         if (!double.TryParse(xSpan, NumberStyles.Float, CultureInfo.InvariantCulture, out x))
             return false;
@@ -137,13 +139,13 @@ internal sealed class MapPins : IMapPinState
 
     private sealed class AddVerb(MapPins owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnAdd(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnAdd(args, verb, sourceLog, metadata);
     }
 
     private sealed class RemoveVerb(MapPins owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnRemove(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnRemove(args, verb, sourceLog, metadata);
     }
 }

@@ -8,6 +8,6 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class AddItemHandler(Inventory inventory) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
         => inventory.OnAddItem(args, sourceLog, metadata);
 }

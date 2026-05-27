@@ -24,7 +24,7 @@ public class BookPassthroughTests
         var sourceLine = """LocalPlayer: ProcessBook("Skill Info", "Foods Consumed:\n\n  Guava: 42\n  Apple: 10", "icon", "SkillReport")""";
         var args = """("Skill Info", "Foods Consumed:\n\n  Guava: 42\n  Apple: 10", "icon", "SkillReport")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         _bus.Published<WordOfPowerDiscovered>().Should().BeEmpty();
         _bus.Published<BookOpened>().Should().BeEmpty();
@@ -42,7 +42,7 @@ public class BookPassthroughTests
         var sourceLine = $"""LocalPlayer: ProcessBook("You discovered a word of power!", "{body}", "icon")""";
         var args = $"""("You discovered a word of power!", "{body}", "icon")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         _bus.Published<FoodsConsumedReport>().Should().BeEmpty();
         _bus.Published<BookOpened>().Should().BeEmpty();
@@ -60,7 +60,7 @@ public class BookPassthroughTests
         var sourceLine = $"""LocalPlayer: ProcessBook("You discovered a word of power!", "{body}", "icon")""";
         var args = $"""("You discovered a word of power!", "{body}", "icon")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var e = _bus.Published<WordOfPowerDiscovered>().Should().ContainSingle().Which;
         e.Code.ToString().Should().Be("XYZZY");
@@ -77,7 +77,7 @@ public class BookPassthroughTests
         var sourceLine = """LocalPlayer: ProcessBook("Some Book Title", "Book body content here", "icon")""";
         var args = """("Some Book Title", "Book body content here", "icon")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         _bus.Published<FoodsConsumedReport>().Should().BeEmpty();
         _bus.Published<WordOfPowerDiscovered>().Should().BeEmpty();
@@ -93,7 +93,7 @@ public class BookPassthroughTests
         var sourceLine = """LocalPlayer: ProcessBook("MyTitle", "MyBody", "icon")""";
         var args = sourceLine.AsSpan()["LocalPlayer: ProcessBook".Length..];
 
-        handler.Handle(args, sourceLine, Meta());
+        handler.Handle(args, default, sourceLine, Meta());
 
         var e = _bus.Published<BookOpened>().Should().ContainSingle().Which;
         e.Title.ToString().Should().Be("MyTitle");

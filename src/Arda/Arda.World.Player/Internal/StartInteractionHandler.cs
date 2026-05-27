@@ -8,6 +8,6 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class StartInteractionHandler(Npc npc) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-        => npc.OnStartInteraction(args, sourceLog, metadata);
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+        => npc.OnStartInteraction(args, verb, sourceLog, metadata);
 }

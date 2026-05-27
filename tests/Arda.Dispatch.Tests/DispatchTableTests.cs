@@ -125,7 +125,7 @@ public class DispatchTableTests
 
     private sealed class TestHandler(Action<ReadOnlySpan<char>> onHandle) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
             => onHandle(args);
     }
 }

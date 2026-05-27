@@ -32,10 +32,7 @@ public class NpcGiftCorrelationTests
 
     private void ArmNpcInteraction(string npcKey, long entityId = 12307)
     {
-        _npc.OnStartInteraction(
-            $"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(),
-            $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")",
-            Meta());
+        _npc.OnStartInteraction($"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(), default, $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")", Meta());
         _bus.Clear();
     }
 
@@ -44,8 +41,7 @@ public class NpcGiftCorrelationTests
             $"LocalPlayer: ProcessDeleteItem({instanceId})", Meta());
 
     private void DeltaFavor(string npcKey, double delta) =>
-        _npc.OnDeltaFavor($"(12307, \"{npcKey}\", {delta}, True)".AsSpan(),
-            $"LocalPlayer: ProcessDeltaFavor(12307, \"{npcKey}\", {delta}, True)", Meta());
+        _npc.OnDeltaFavor($"(12307, \"{npcKey}\", {delta}, True)".AsSpan(), default, $"LocalPlayer: ProcessDeltaFavor(12307, \"{npcKey}\", {delta}, True)", Meta());
 
     // ── Delete-first correlation ─────────────────────────────────────────
 

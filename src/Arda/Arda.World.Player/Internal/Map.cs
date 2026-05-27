@@ -37,7 +37,7 @@ internal sealed class Map : IFrameHandler, IAreaState
         _areaPool = areaPool;
     }
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         // InitializingArea args start with '(' (instance id prefix).
         // LOADING_LEVEL args are either empty or a bare area key.

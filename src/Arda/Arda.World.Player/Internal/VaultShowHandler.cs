@@ -8,6 +8,6 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class VaultShowHandler(Vault vault) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-        => vault.OnShowStorageVault(args, sourceLog, metadata);
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+        => vault.OnShowStorageVault(args, verb, sourceLog, metadata);
 }

@@ -42,9 +42,9 @@ internal sealed class Effects : IEffectsState
     /// <summary>
     /// <c>ProcessAddEffects(targetCharId, sourceCharId, "[catalogId1, catalogId2, ...]", bool)</c>
     /// </summary>
-    private void OnAdd(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnAdd(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         tok.Skip(1); // targetCharId
@@ -79,9 +79,9 @@ internal sealed class Effects : IEffectsState
     /// <summary>
     /// <c>ProcessUpdateEffectName(targetCharId, instanceId, "displayName")</c>
     /// </summary>
-    private void OnUpdateName(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnUpdateName(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         tok.Skip(1); // targetCharId
@@ -124,9 +124,9 @@ internal sealed class Effects : IEffectsState
     /// <summary>
     /// <c>ProcessRemoveEffects(targetCharId, [instanceId1, instanceId2, ...])</c>
     /// </summary>
-    private void OnRemove(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnRemove(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         tok.Skip(1); // targetCharId
@@ -193,19 +193,19 @@ internal sealed class Effects : IEffectsState
 
     private sealed class AddVerb(Effects owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnAdd(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnAdd(args, verb, sourceLog, metadata);
     }
 
     private sealed class RemoveVerb(Effects owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnRemove(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnRemove(args, verb, sourceLog, metadata);
     }
 
     private sealed class UpdateNameVerb(Effects owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnUpdateName(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnUpdateName(args, verb, sourceLog, metadata);
     }
 }

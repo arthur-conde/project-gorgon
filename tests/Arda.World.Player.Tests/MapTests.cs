@@ -36,7 +36,7 @@ public class MapTests
         ReadOnlySpan<char> args = string.IsNullOrEmpty(areaArg)
             ? ReadOnlySpan<char>.Empty
             : areaArg.AsSpan();
-        _map.Handle(args, source, meta ?? Meta());
+        _map.Handle(args, default, source, meta ?? Meta());
     }
 
     /// <summary>
@@ -47,7 +47,7 @@ public class MapTests
         var source = $"!!! Initializing area! (502934): {areaKey}";
         // Args for InitializingArea: everything after "!!! Initializing area! "
         var args = $"(502934): {areaKey}".AsSpan();
-        _map.Handle(args, source, meta ?? Meta());
+        _map.Handle(args, default, source, meta ?? Meta());
     }
 
     [Fact]
@@ -140,21 +140,21 @@ public class MapTests
         var map = new Map(_bus, pool);
 
         var source1 = "LOADING LEVEL AreaSerbule";
-        map.Handle("AreaSerbule".AsSpan(), source1, Meta());
+        map.Handle("AreaSerbule".AsSpan(), default, source1, Meta());
         var initSource = "!!! Initializing area! (502934): AreaSerbule";
-        map.Handle("(502934): AreaSerbule".AsSpan(), initSource, Meta());
+        map.Handle("(502934): AreaSerbule".AsSpan(), default, initSource, Meta());
 
         var first = map.CurrentArea;
 
         var source2 = "LOADING LEVEL AreaCasino";
-        map.Handle("AreaCasino".AsSpan(), source2, Meta());
+        map.Handle("AreaCasino".AsSpan(), default, source2, Meta());
         var initSource2 = "!!! Initializing area! (100): AreaCasino";
-        map.Handle("(100): AreaCasino".AsSpan(), initSource2, Meta());
+        map.Handle("(100): AreaCasino".AsSpan(), default, initSource2, Meta());
 
         var source3 = "LOADING LEVEL AreaSerbule";
-        map.Handle("AreaSerbule".AsSpan(), source3, Meta());
+        map.Handle("AreaSerbule".AsSpan(), default, source3, Meta());
         var initSource3 = "!!! Initializing area! (502934): AreaSerbule";
-        map.Handle("(502934): AreaSerbule".AsSpan(), initSource3, Meta());
+        map.Handle("(502934): AreaSerbule".AsSpan(), default, initSource3, Meta());
 
         var second = map.CurrentArea;
 
@@ -221,7 +221,7 @@ public class MapTests
     [Fact]
     public void MalformedInitializingArea_NoColonSpace_IsIgnored()
     {
-        _map.Handle("(502934)AreaSerbule".AsSpan(), "malformed", Meta());
+        _map.Handle("(502934)AreaSerbule".AsSpan(), default, "malformed", Meta());
 
         _map.CurrentArea.Should().BeNull();
         _bus.Published<AreaChanged>().Should().BeEmpty();

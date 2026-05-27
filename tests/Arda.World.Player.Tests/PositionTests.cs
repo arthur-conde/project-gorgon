@@ -23,12 +23,12 @@ public class PositionTests
 
     private void DispatchNewPosition(string args)
     {
-        _position.Handle(args.AsSpan(), $"LocalPlayer: ProcessNewPosition{args}", Meta());
+        _position.Handle(args.AsSpan(), default, $"LocalPlayer: ProcessNewPosition{args}", Meta());
     }
 
     private void DispatchAddPlayer(string args)
     {
-        _position.Handle(args.AsSpan(), $"LocalPlayer: ProcessAddPlayer{args}", Meta());
+        _position.Handle(args.AsSpan(), default, $"LocalPlayer: ProcessAddPlayer{args}", Meta());
     }
 
     // --- ProcessNewPosition: nested tuple ((x, y, z), ...) ---
@@ -183,7 +183,7 @@ public class PositionTests
     {
         var ts = new DateTimeOffset(2026, 5, 26, 12, 0, 0, TimeSpan.Zero);
         var meta = new LogLineMetadata(ts, DateTimeOffset.UtcNow, false);
-        _position.Handle("((1, 2, 3), (0, 0, 0, 0))".AsSpan(), "source", meta);
+        _position.Handle("((1, 2, 3), (0, 0, 0, 0))".AsSpan(), default, "source", meta);
 
         _position.MeasuredAt.Should().Be(ts);
     }
@@ -193,7 +193,7 @@ public class PositionTests
     {
         var readOn = DateTimeOffset.UtcNow;
         var meta = new LogLineMetadata(null, readOn, false);
-        _position.Handle("((1, 2, 3), (0, 0, 0, 0))".AsSpan(), "source", meta);
+        _position.Handle("((1, 2, 3), (0, 0, 0, 0))".AsSpan(), default, "source", meta);
 
         _position.MeasuredAt.Should().Be(readOn);
     }
@@ -237,7 +237,7 @@ public class PositionTests
     public void Metadata_IsReplay_Preserved()
     {
         var meta = new LogLineMetadata(DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, true);
-        _position.Handle("((1, 2, 3), (0, 0, 0, 0))".AsSpan(), "source", meta);
+        _position.Handle("((1, 2, 3), (0, 0, 0, 0))".AsSpan(), default, "source", meta);
 
         _bus.Published<PlayerPositionChanged>().Should().ContainSingle()
             .Which.Metadata.IsReplay.Should().BeTrue();

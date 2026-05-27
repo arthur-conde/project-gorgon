@@ -25,7 +25,7 @@ public class ChatInventoryTests
     public void ParsesSingleItem()
     {
         var line = "[Status] Apple added to inventory.";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         var evt = _bus.Published<ChatInventoryObserved>().Should().ContainSingle().Which;
         evt.DisplayName.Should().Be("Apple");
@@ -36,7 +36,7 @@ public class ChatInventoryTests
     public void ParsesItemWithCount()
     {
         var line = "[Status] Iron Ore x3 added to inventory.";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         var evt = _bus.Published<ChatInventoryObserved>().Should().ContainSingle().Which;
         evt.DisplayName.Should().Be("Iron Ore");
@@ -47,7 +47,7 @@ public class ChatInventoryTests
     public void ParsesItemWithLargeCount()
     {
         var line = "[Status] Arrow x250 added to inventory.";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         var evt = _bus.Published<ChatInventoryObserved>().Should().ContainSingle().Which;
         evt.DisplayName.Should().Be("Arrow");
@@ -58,7 +58,7 @@ public class ChatInventoryTests
     public void ItemNameWithSpaces_NoCount()
     {
         var line = "[Status] Goblin Cap added to inventory.";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         var evt = _bus.Published<ChatInventoryObserved>().Should().ContainSingle().Which;
         evt.DisplayName.Should().Be("Goblin Cap");
@@ -69,7 +69,7 @@ public class ChatInventoryTests
     public void NonInventoryStatusLine_IsIgnored()
     {
         var line = "[Status] The Iron Vein is 25m east and 30m north";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         _bus.Published<ChatInventoryObserved>().Should().BeEmpty();
     }
@@ -78,7 +78,7 @@ public class ChatInventoryTests
     public void EmptyMiddle_IsIgnored()
     {
         var line = "[Status]  added to inventory.";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         _bus.Published<ChatInventoryObserved>().Should().BeEmpty();
     }

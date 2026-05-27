@@ -44,9 +44,9 @@ internal sealed class Vault
     /// <summary>
     /// Args format: <c>(entityId, storageId, label, flavorText, slotCount, ...)</c>
     /// </summary>
-    internal void OnShowStorageVault(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    internal void OnShowStorageVault(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var entityId = tok.NextLong();
@@ -121,9 +121,9 @@ internal sealed class Vault
     /// Correlates with the preceding <c>ProcessAddItem</c>, corrects inventory stack size,
     /// and emits <see cref="VaultWithdrawal"/>.
     /// </summary>
-    internal void OnRemoveFromStorageVault(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    internal void OnRemoveFromStorageVault(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var entityId = tok.NextLong();
@@ -154,9 +154,9 @@ internal sealed class Vault
     /// Args format: <c>(entityId, -1, slotIndex, InternalName(instanceId))</c>
     /// Correlates with the preceding <c>ProcessDeleteItem</c> and emits <see cref="VaultDeposit"/>.
     /// </summary>
-    internal void OnAddToStorageVault(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    internal void OnAddToStorageVault(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var entityId = tok.NextLong();

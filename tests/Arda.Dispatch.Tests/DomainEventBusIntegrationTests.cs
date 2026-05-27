@@ -13,7 +13,7 @@ public class DomainEventBusIntegrationTests
 
     private sealed class PublishingHandler(IDomainEventPublisher bus) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
         {
             bus.Publish(new TestEventA(42, "from-handler"));
         }

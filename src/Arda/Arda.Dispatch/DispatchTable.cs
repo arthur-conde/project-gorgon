@@ -42,7 +42,7 @@ internal sealed class DispatchTable
         {
             try
             {
-                handler.Handle(parsed.Args, sourceLog, metadata);
+                handler.Handle(parsed.Args, parsed.Verb, sourceLog, metadata);
             }
             catch (Exception ex)
             {

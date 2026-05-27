@@ -28,7 +28,7 @@ public class SessionTests
     private void Dispatch(string charName, long entityId = 99, string charId = "12345")
     {
         var args = $"({entityId}, 7, \"{charId}\", \"{charName}\", 100.0, 0.0, 200.0, 1.5)".AsSpan();
-        _session.Handle(args, "source", Meta());
+        _session.Handle(args, default, "source", Meta());
     }
 
     [Fact]

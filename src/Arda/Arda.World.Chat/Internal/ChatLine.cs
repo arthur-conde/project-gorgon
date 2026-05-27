@@ -17,7 +17,7 @@ internal sealed class ChatLine : IFrameHandler
 
     public ChatLine(IDomainEventPublisher bus) => _bus = bus;
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         if (args.Length < 3 || args[0] != '[')
             return;

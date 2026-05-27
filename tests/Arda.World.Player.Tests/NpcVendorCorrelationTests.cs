@@ -31,18 +31,15 @@ public class NpcVendorCorrelationTests
 
     private void ArmNpcInteraction(string npcKey, long entityId = 12307)
     {
-        _npc.OnStartInteraction(
-            $"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(),
-            $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")",
-            Meta());
+        _npc.OnStartInteraction($"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(), default, $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")", Meta());
         _bus.Clear();
     }
 
     private void OpenVendorScreen(long entityId, string favorTier, long gold = 3926, long cap = 4000) =>
-        _npc.OnVendorScreen($"({entityId}, {favorTier}, {gold}, 1779404053485, {cap})".AsSpan(), "", Meta());
+        _npc.OnVendorScreen($"({entityId}, {favorTier}, {gold}, 1779404053485, {cap})".AsSpan(), default, "", Meta());
 
     private void SellItem(long price, string internalName, long instanceId) =>
-        _npc.OnVendorAddItem($"({price}, {internalName}({instanceId}), True)".AsSpan(), "", Meta());
+        _npc.OnVendorAddItem($"({price}, {internalName}({instanceId}), True)".AsSpan(), default, "", Meta());
 
     // ── Full flow: interaction → screen → sell ────────────────────────────
 

@@ -40,7 +40,7 @@ public class VaultTests
         _bus.Clear();
 
         // ProcessRemoveFromStorageVault corrects to 93
-        _vault.OnRemoveFromStorageVault("(30346037, -1, 54162830, 93)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(30346037, -1, 54162830, 93)".AsSpan(), default, "", Meta());
 
         _inventory.Items[54162830].StackSize.Should().Be(93);
     }
@@ -52,7 +52,7 @@ public class VaultTests
         _vault.OnAddItem("(Diamond(87037617), -1, False)".AsSpan(), "", Meta());
         _bus.Clear();
 
-        _vault.OnRemoveFromStorageVault("(30346037, -1, 87037617, 5)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(30346037, -1, 87037617, 5)".AsSpan(), default, "", Meta());
 
         _bus.Published<InventoryItemUpdated>().Should().ContainSingle()
             .Which.Should().BeEquivalentTo(new
@@ -70,7 +70,7 @@ public class VaultTests
         _vault.OnAddItem("(Amethyst(54162830), 132, True)".AsSpan(), "", Meta());
         _bus.Clear();
 
-        _vault.OnRemoveFromStorageVault("(30346037, -1, 54162830, 93)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(30346037, -1, 54162830, 93)".AsSpan(), default, "", Meta());
 
         _bus.Published<VaultWithdrawal>().Should().ContainSingle()
             .Which.Should().BeEquivalentTo(new
@@ -90,7 +90,7 @@ public class VaultTests
         _bus.Clear();
 
         // Stack count = 1, same as what ProcessAddItem already set
-        _vault.OnRemoveFromStorageVault("(999, -1, 111, 1)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(999, -1, 111, 1)".AsSpan(), default, "", Meta());
 
         _bus.Published<InventoryItemUpdated>().Should().BeEmpty();
         _bus.Published<VaultWithdrawal>().Should().ContainSingle();
@@ -103,7 +103,7 @@ public class VaultTests
         _inventory.OnAddItem("(Gem(222), -1, False)".AsSpan(), "", Meta());
         _bus.Clear();
 
-        _vault.OnRemoveFromStorageVault("(999, -1, 222, 10)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(999, -1, 222, 10)".AsSpan(), default, "", Meta());
 
         // Stack size still corrected via Inventory.CorrectStackSize
         _inventory.Items[222].StackSize.Should().Be(10);
@@ -116,7 +116,7 @@ public class VaultTests
     public void Withdrawal_UnknownInstanceId_NoStackCorrection()
     {
         // No ProcessAddItem — instance not in inventory
-        _vault.OnRemoveFromStorageVault("(999, -1, 999999, 50)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(999, -1, 999999, 50)".AsSpan(), default, "", Meta());
 
         _bus.Published<InventoryItemUpdated>().Should().BeEmpty();
         _bus.Published<VaultWithdrawal>().Should().ContainSingle();
@@ -135,7 +135,7 @@ public class VaultTests
         _bus.Clear();
 
         // ProcessAddToStorageVault correlates with the pending delete
-        _vault.OnAddToStorageVault("(30346037, -1, 5, Moonstone(333))".AsSpan(), "", Meta());
+        _vault.OnAddToStorageVault("(30346037, -1, 5, Moonstone(333))".AsSpan(), default, "", Meta());
 
         _bus.Published<VaultDeposit>().Should().ContainSingle()
             .Which.Should().BeEquivalentTo(new
@@ -151,7 +151,7 @@ public class VaultTests
     public void Deposit_WithoutPrecedingDeleteItem_StillEmits()
     {
         // No ProcessDeleteItem seen by Vault — but ProcessAddToStorageVault still fires
-        _vault.OnAddToStorageVault("(30346037, -1, 2, Ruby(444))".AsSpan(), "", Meta());
+        _vault.OnAddToStorageVault("(30346037, -1, 2, Ruby(444))".AsSpan(), default, "", Meta());
 
         _bus.Published<VaultDeposit>().Should().ContainSingle()
             .Which.Should().BeEquivalentTo(new
@@ -168,9 +168,7 @@ public class VaultTests
     [Fact]
     public void ShowStorageVault_EmitsVaultOpenedEvent()
     {
-        _vault.OnShowStorageVault(
-            "(30346037, 100, \"My Vault\", \"A storage vault.\", 30, System.Collections.Generic.List`1[Item], , , , , 0)".AsSpan(),
-            "", Meta());
+        _vault.OnShowStorageVault("(30346037, 100, \"My Vault\", \"A storage vault.\", 30, System.Collections.Generic.List`1[Item], , , , , 0)".AsSpan(), default, "", Meta());
 
         _bus.Published<VaultOpened>().Should().ContainSingle()
             .Which.Should().BeEquivalentTo(new
@@ -185,15 +183,13 @@ public class VaultTests
     [Fact]
     public void ShowStorageVault_SetsVaultEntityForSubsequentEvents()
     {
-        _vault.OnShowStorageVault(
-            "(12345, 200, \"Saddlebag\", \"Your saddlebag.\", 16, System.Collections.Generic.List`1[Item], , , , , 0)".AsSpan(),
-            "", Meta());
+        _vault.OnShowStorageVault("(12345, 200, \"Saddlebag\", \"Your saddlebag.\", 16, System.Collections.Generic.List`1[Item], , , , , 0)".AsSpan(), default, "", Meta());
 
         _inventory.OnAddItem("(Gold(555), -1, False)".AsSpan(), "", Meta());
         _vault.OnAddItem("(Gold(555), -1, False)".AsSpan(), "", Meta());
         _bus.Clear();
 
-        _vault.OnRemoveFromStorageVault("(99999, -1, 555, 100)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(99999, -1, 555, 100)".AsSpan(), default, "", Meta());
 
         // VaultEntityId comes from the ProcessShowStorageVault session, not the verb arg
         _bus.Published<VaultWithdrawal>().Should().ContainSingle()
@@ -213,7 +209,7 @@ public class VaultTests
 
         // After reset, the pending add should be gone — withdrawal still corrects
         // via direct inventory lookup, but pending name resolution is cleared
-        _vault.OnRemoveFromStorageVault("(999, -1, 666, 20)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(999, -1, 666, 20)".AsSpan(), default, "", Meta());
 
         _inventory.Items[666].StackSize.Should().Be(20);
         // Name resolved from inventory state (not pending)
@@ -224,9 +220,7 @@ public class VaultTests
     [Fact]
     public void Reset_ClearsVaultSession()
     {
-        _vault.OnShowStorageVault(
-            "(12345, 200, \"Vault\", \"desc\", 16, System.Collections.Generic.List`1[Item], , , , , 0)".AsSpan(),
-            "", Meta());
+        _vault.OnShowStorageVault("(12345, 200, \"Vault\", \"desc\", 16, System.Collections.Generic.List`1[Item], , , , , 0)".AsSpan(), default, "", Meta());
 
         _vault.Reset();
 
@@ -234,7 +228,7 @@ public class VaultTests
         _vault.OnAddItem("(Item(777), -1, False)".AsSpan(), "", Meta());
         _bus.Clear();
 
-        _vault.OnRemoveFromStorageVault("(99999, -1, 777, 3)".AsSpan(), "", Meta());
+        _vault.OnRemoveFromStorageVault("(99999, -1, 777, 3)".AsSpan(), default, "", Meta());
 
         // After reset, vault entity falls back to the arg from ProcessRemoveFromStorageVault
         _bus.Published<VaultWithdrawal>().Should().ContainSingle()

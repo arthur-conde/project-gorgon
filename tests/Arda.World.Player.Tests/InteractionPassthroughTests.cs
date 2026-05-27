@@ -23,7 +23,7 @@ public class InteractionPassthroughTests
         var handler = new EndInteractionHandler(_bus);
         var args = "(-158)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         var e = _bus.Published<InteractionEnded>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(-158);
@@ -35,7 +35,7 @@ public class InteractionPassthroughTests
         var handler = new EndInteractionHandler(_bus);
         var args = "(42)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         _bus.Published<InteractionEnded>().Should().ContainSingle()
             .Which.EntityId.Should().Be(42);
@@ -50,7 +50,7 @@ public class InteractionPassthroughTests
         var sourceLine = """LocalPlayer: ProcessDoDelayLoop(3, Gather, "Collecting Fruit...", 0, AbortIfAttacked, IsInteractorDelayLoop)""";
         var args = """(3, Gather, "Collecting Fruit...", 0, AbortIfAttacked, IsInteractorDelayLoop)""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var e = _bus.Published<DelayLoopStarted>().Should().ContainSingle().Which;
         e.Seconds.Should().Be(3.0);
@@ -65,7 +65,7 @@ public class InteractionPassthroughTests
         var sourceLine = """LocalPlayer: ProcessDoDelayLoop(1.5, Eat, "Using Ranalon Salad", 5820, AbortIfAttacked)""";
         var args = """(1.5, Eat, "Using Ranalon Salad", 5820, AbortIfAttacked)""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var e = _bus.Published<DelayLoopStarted>().Should().ContainSingle().Which;
         e.Seconds.Should().BeApproximately(1.5, 0.001);
@@ -80,7 +80,7 @@ public class InteractionPassthroughTests
         var sourceLine = """LocalPlayer: ProcessDoDelayLoop(10, UseTeleportationCircle, "Recalling Other Places", 3713, AbortIfAttacked)""";
         var args = sourceLine.AsSpan()["LocalPlayer: ProcessDoDelayLoop".Length..];
 
-        handler.Handle(args, sourceLine, Meta());
+        handler.Handle(args, default, sourceLine, Meta());
 
         var e = _bus.Published<DelayLoopStarted>().Should().ContainSingle().Which;
         e.Verb.ToString().Should().Be("UseTeleportationCircle");
@@ -96,7 +96,7 @@ public class InteractionPassthroughTests
         var sourceLine = """LocalPlayer: ProcessWaitInteraction(-2, 500, "Filling Water Bottles...", "...")""";
         var args = """(-2, 500, "Filling Water Bottles...", "...")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var e = _bus.Published<InteractionWaiting>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(-2);
@@ -110,7 +110,7 @@ public class InteractionPassthroughTests
         var sourceLine = """LocalPlayer: ProcessWaitInteraction(-45, 500, "", "")""";
         var args = """(-45, 500, "", "")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var e = _bus.Published<InteractionWaiting>().Should().ContainSingle().Which;
         e.EntityId.Should().Be(-45);
@@ -126,7 +126,7 @@ public class InteractionPassthroughTests
         var sourceLine = """LocalPlayer: ProcessScreenText(CombatInfo, "You earned 5 Combat Wisdom: Killed Olugax")""";
         var args = """(CombatInfo, "You earned 5 Combat Wisdom: Killed Olugax")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         _bus.Published<ScreenTextErrorFrame>().Should().BeEmpty();
         var e = _bus.Published<ScreenTextObserved>().Should().ContainSingle().Which;
@@ -141,7 +141,7 @@ public class InteractionPassthroughTests
         var sourceLine = """LocalPlayer: ProcessScreenText(ImportantInfo, "Iron Ore x3 collected!")""";
         var args = """(ImportantInfo, "Iron Ore x3 collected!")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         _bus.Published<ScreenTextErrorFrame>().Should().BeEmpty();
         var e = _bus.Published<ScreenTextObserved>().Should().ContainSingle().Which;
@@ -156,7 +156,7 @@ public class InteractionPassthroughTests
         var sourceLine = """LocalPlayer: ProcessScreenText(GeneralInfo, "You've already looted this chest!")""";
         var args = """(GeneralInfo, "You've already looted this chest!")""";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         _bus.Published<ScreenTextErrorFrame>().Should().BeEmpty();
         var e = _bus.Published<ScreenTextObserved>().Should().ContainSingle().Which;
@@ -169,7 +169,7 @@ public class InteractionPassthroughTests
         var handler = new ScreenTextHandler(_bus);
         var args = """(ErrorMessage, "Something went wrong")""";
 
-        handler.Handle(args.AsSpan(), args, Meta());
+        handler.Handle(args.AsSpan(), default, args, Meta());
 
         _bus.Published<ScreenTextErrorFrame>().Should().ContainSingle();
         _bus.Published<ScreenTextObserved>().Should().ContainSingle(
