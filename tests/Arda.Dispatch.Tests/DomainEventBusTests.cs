@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
@@ -103,6 +104,79 @@ public class DomainEventBusTests
 
         received.Should().Equal(1, 3);
     }
+
+    // NOTE: This test pins the subscriber-attribution warning that DomainEventBus
+    // emits before re-throwing a GrammarException — operators rely on it to
+    // reconstruct the actual source of a grammar break, since DispatchTable
+    // attributes the throw to the publishing handler's frame. Delete this test
+    // (and the corresponding LogWarning in DomainEventBus.Publish) when the
+    // structural fix in moumantai-gg/mithril#817 lands.
+    [Fact]
+    public void Publish_SubscriberThrowsGrammarException_PropagatesAndLogsSubscriberIdentity()
+    {
+        var recorder = new RecordingLogger();
+        var bus = new DomainEventBus(recorder);
+
+        var subscriber = new GrammarThrowingSubscriber();
+        bus.Subscribe<TestEvent>(subscriber.OnEvent);
+
+        var act = () => bus.Publish(new TestEvent(99));
+
+        act.Should().Throw<GrammarException>()
+            .WithMessage("*Grammar drift on verb ProcessTest*");
+
+        recorder.Records.Should().ContainSingle(r => r.Level == LogLevel.Warning)
+            .Which.State.Should().Match<IReadOnlyList<KeyValuePair<string, object?>>>(
+                pairs =>
+                    pairs.Any(p => p.Key == "Target" && Equals(p.Value, nameof(GrammarThrowingSubscriber)))
+                    && pairs.Any(p => p.Key == "Method" && Equals(p.Value, nameof(GrammarThrowingSubscriber.OnEvent)))
+                    && pairs.Any(p => p.Key == "EventType" && Equals(p.Value, nameof(TestEvent))));
+    }
+
+    private sealed class GrammarThrowingSubscriber
+    {
+        public void OnEvent(TestEvent evt)
+            => throw new GrammarException(
+                verb: "ProcessTest",
+                sourceLine: "LocalPlayer: ProcessTest(\"x\")",
+                tokenExcerpt: "x",
+                parserHint: "subscriber bug — synthetic");
+    }
+
+    private sealed class RecordingLogger : ILogger<DomainEventBus>
+    {
+        public List<LogRecord> Records { get; } = [];
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            // Capture the structured state (the named-parameter pairs MEL builds
+            // from the message template). Snapshot-list rather than holding TState
+            // by reference since some loggers reuse the buffer.
+            var pairs = state as IReadOnlyList<KeyValuePair<string, object?>>
+                ?? [new KeyValuePair<string, object?>("{OriginalFormat}", formatter(state, exception))];
+            Records.Add(new LogRecord(logLevel, pairs.ToList(), exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
+    }
+
+    private sealed record LogRecord(
+        LogLevel Level,
+        IReadOnlyList<KeyValuePair<string, object?>> State,
+        Exception? Exception);
 
     [Fact]
     public void Subscribe_AfterPublish_ReceivesSubsequentEvents()

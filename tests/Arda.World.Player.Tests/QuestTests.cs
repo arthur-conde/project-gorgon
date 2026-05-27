@@ -49,7 +49,7 @@ public class QuestTests
         _bus.Published<QuestOffered>().Should().BeEmpty();
     }
 
-    private sealed class SpyEventBus : IDomainEventBus
+    private sealed class SpyEventBus : IDomainEventSubscriber, IDomainEventPublisher
     {
         private readonly Dictionary<Type, List<object>> _published = [];
 

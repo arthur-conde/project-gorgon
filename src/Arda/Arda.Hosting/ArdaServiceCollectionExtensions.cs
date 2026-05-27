@@ -40,9 +40,11 @@ public static class ArdaServiceCollectionExtensions
             pollInterval,
             sp.GetService<ILoggerFactory>()?.CreateLogger("Arda.Chat")));
 
-        // Event bus (shared across both driver families)
+        // Event bus (shared across both driver families). The composite interface
+        // (IDomainEventBus, internal to Arda.Dispatch) is intentionally not
+        // registered — external consumers depend on the narrow halves so the
+        // type system enforces the pub/sub split.
         services.AddSingleton<DomainEventBus>();
-        services.AddSingleton<IDomainEventBus>(sp => sp.GetRequiredService<DomainEventBus>());
         services.AddSingleton<IDomainEventSubscriber>(sp => sp.GetRequiredService<DomainEventBus>());
         services.AddSingleton<IDomainEventPublisher>(sp => sp.GetRequiredService<DomainEventBus>());
 

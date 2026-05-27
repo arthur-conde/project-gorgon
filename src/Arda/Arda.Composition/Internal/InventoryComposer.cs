@@ -1,4 +1,5 @@
 using Arda.Composition.Events;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
@@ -23,7 +24,7 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
     private static readonly TimeSpan RetentionPeriod = TimeSpan.FromDays(30);
     private const int MaxPending = 64;
 
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _publisher;
     private readonly PerCharacterStore<AccumulatorSnapshot>? _store;
     private readonly IGrammarBreakSignal? _grammarSignal;
     private readonly ILogger? _logger;
@@ -49,22 +50,23 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
     public event Action? StateChanged;
 
     public InventoryComposer(
-        IDomainEventBus bus,
+        IDomainEventSubscriber subscriber,
+        IDomainEventPublisher publisher,
         PerCharacterStore<AccumulatorSnapshot>? store = null,
         IGrammarBreakSignal? grammarSignal = null,
         ILogger? logger = null)
     {
-        _bus = bus;
+        _publisher = publisher;
         _store = store;
         _grammarSignal = grammarSignal;
         _logger = logger;
 
-        _addSub = bus.Subscribe<InventoryItemAdded>(OnItemAdded);
-        _chatSub = bus.Subscribe<ChatInventoryObserved>(OnChatObserved);
-        _updatedSub = bus.Subscribe<InventoryItemUpdated>(OnItemUpdated);
-        _removedSub = bus.Subscribe<InventoryItemRemoved>(OnItemRemoved);
-        _resolvedSub = bus.Subscribe<InventoryItemResolved>(OnItemResolved);
-        _sessionSub = bus.Subscribe<SessionEstablished>(OnSessionEstablished);
+        _addSub = subscriber.Subscribe<InventoryItemAdded>(OnItemAdded);
+        _chatSub = subscriber.Subscribe<ChatInventoryObserved>(OnChatObserved);
+        _updatedSub = subscriber.Subscribe<InventoryItemUpdated>(OnItemUpdated);
+        _removedSub = subscriber.Subscribe<InventoryItemRemoved>(OnItemRemoved);
+        _resolvedSub = subscriber.Subscribe<InventoryItemResolved>(OnItemResolved);
+        _sessionSub = subscriber.Subscribe<SessionEstablished>(OnSessionEstablished);
     }
 
     // ── Correlation (unchanged logic) ─────────────────────────────────────
@@ -81,7 +83,7 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
             if (delta.Duration() <= CorrelationWindow)
             {
                 _pendingChats.Remove(node);
-                _bus.Publish(new InventoryItemResolved(
+                _publisher.Publish(new InventoryItemResolved(
                     added.InstanceId,
                     added.InternalName,
                     chat.DisplayName,
@@ -107,7 +109,7 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
             if (delta.Duration() <= CorrelationWindow)
             {
                 _pendingAdds.Remove(node);
-                _bus.Publish(new InventoryItemResolved(
+                _publisher.Publish(new InventoryItemResolved(
                     add.InstanceId,
                     add.InternalName,
                     chat.DisplayName,

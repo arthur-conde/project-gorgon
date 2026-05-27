@@ -23,7 +23,7 @@ public class InventoryComposerTests : IDisposable
 
     public InventoryComposerTests()
     {
-        _composer = new InventoryComposer(_bus);
+        _composer = new InventoryComposer(_bus, _bus);
         _bus.Subscribe<InventoryItemResolved>(e => _resolved.Add(e));
     }
 
@@ -127,7 +127,7 @@ public class InventoryComposerTests : IDisposable
 
         var warningCount = 0;
         var logger = new CountingLogger(level => { if (level == LogLevel.Warning) warningCount++; });
-        using var composer = new InventoryComposer(_bus, store: null, logger: logger);
+        using var composer = new InventoryComposer(_bus, _bus, store: null, logger: logger);
 
         // 64 fill MaxPending; subsequent 64 each evict the oldest.
         for (var i = 0; i < 128; i++)
@@ -204,7 +204,7 @@ public class InventoryComposerTests : IDisposable
                 AccumulatorSnapshotJsonContext.Default.AccumulatorSnapshot);
 
             // composer1 sees player+chat traffic, then disposes (flushes to disk).
-            using (var composer1 = new InventoryComposer(_bus, store))
+            using (var composer1 = new InventoryComposer(_bus, _bus, store))
             {
                 var session = new ComposedSession("Alice", "Server1",
                     BaseTime, TimeSpan.Zero, "Alice:20260526120000");
@@ -215,7 +215,7 @@ public class InventoryComposerTests : IDisposable
             }
 
             // composer2 starts cold against the same store; session-establish triggers load.
-            using var composer2 = new InventoryComposer(_bus, store);
+            using var composer2 = new InventoryComposer(_bus, _bus, store);
             var session2 = new ComposedSession("Alice", "Server1",
                 BaseTime.AddHours(1), TimeSpan.Zero, "Alice:20260526130000");
             _bus.Publish(new SessionEstablished(session2, Meta(BaseTime.AddHours(1))));
@@ -267,7 +267,7 @@ public class InventoryComposerTests : IDisposable
             };
             store.Save("Alice", "Server1", snapshot);
 
-            using var composer = new InventoryComposer(_bus, store);
+            using var composer = new InventoryComposer(_bus, _bus, store);
             var session = new ComposedSession("Alice", "Server1",
                 BaseTime, TimeSpan.Zero, "Alice:20260526120000");
             _bus.Publish(new SessionEstablished(session, Meta(BaseTime)));

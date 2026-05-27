@@ -1,4 +1,5 @@
 using Arda.Composition.Internal;
+using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.World.Player;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,7 +32,8 @@ public static class CompositionExtensions
     {
         services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var subscriber = sp.GetRequiredService<IDomainEventSubscriber>();
+            var publisher = sp.GetRequiredService<IDomainEventPublisher>();
             var loggerFactory = sp.GetService<ILoggerFactory>();
 
             PerCharacterStore<AccumulatorSnapshot>? store = null;
@@ -44,7 +46,7 @@ public static class CompositionExtensions
                     logger: loggerFactory?.CreateLogger("PerCharacterStore<AccumulatorSnapshot>"));
             }
 
-            return new InventoryComposer(bus, store,
+            return new InventoryComposer(subscriber, publisher, store,
                 sp.GetService<IGrammarBreakSignal>(),
                 loggerFactory?.CreateLogger("InventoryComposer"));
         });
@@ -53,7 +55,8 @@ public static class CompositionExtensions
 
         services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var subscriber = sp.GetRequiredService<IDomainEventSubscriber>();
+            var publisher = sp.GetRequiredService<IDomainEventPublisher>();
             var playerState = sp.GetRequiredService<IPlayerState>();
             var loggerFactory = sp.GetService<ILoggerFactory>();
 
@@ -69,7 +72,7 @@ public static class CompositionExtensions
 
             var resolver = recipeKeyResolverFactory?.Invoke(sp);
 
-            return new PlayerProgressionComposer(bus, playerState, store, resolver,
+            return new PlayerProgressionComposer(subscriber, publisher, playerState, store, resolver,
                 sp.GetService<IGrammarBreakSignal>(),
                 loggerFactory?.CreateLogger("PlayerProgressionComposer"));
         });
@@ -78,7 +81,8 @@ public static class CompositionExtensions
 
         services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var subscriber = sp.GetRequiredService<IDomainEventSubscriber>();
+            var publisher = sp.GetRequiredService<IDomainEventPublisher>();
             var loggerFactory = sp.GetService<ILoggerFactory>();
 
             PerCharacterStore<NpcStateSnapshot>? npcStore = null;
@@ -94,7 +98,7 @@ public static class CompositionExtensions
                     logger: loggerFactory?.CreateLogger("PerCharacterStore<NpcStateSnapshot>"));
             }
 
-            return new NpcStateComposer(bus, npcStore,
+            return new NpcStateComposer(subscriber, publisher, npcStore,
                 sp.GetService<IGrammarBreakSignal>(),
                 loggerFactory?.CreateLogger("NpcStateComposer"));
         });
@@ -102,10 +106,11 @@ public static class CompositionExtensions
 
         services.AddSingleton(sp =>
         {
-            var bus = sp.GetRequiredService<IDomainEventBus>();
+            var subscriber = sp.GetRequiredService<IDomainEventSubscriber>();
+            var publisher = sp.GetRequiredService<IDomainEventPublisher>();
             var fallback = serverFallbackFactory?.Invoke(sp);
             var loggerFactory = sp.GetService<ILoggerFactory>();
-            return new SessionComposer(bus,
+            return new SessionComposer(subscriber, publisher,
                 loggerFactory?.CreateLogger("Arda.Session"),
                 fallback);
         });

@@ -23,7 +23,7 @@ public class NpcStateComposerTests : IDisposable
 
     public NpcStateComposerTests()
     {
-        _composer = new NpcStateComposer(_bus);
+        _composer = new NpcStateComposer(_bus, _bus);
         _bus.Subscribe<NpcStateChanged>(e => _stateChangedEvents.Add(e));
     }
 
@@ -262,7 +262,7 @@ public class NpcStateComposerTests : IDisposable
                 "npc-state.json",
                 NpcStateSnapshotJsonContext.Default.NpcStateSnapshot);
 
-            using (var composer1 = new NpcStateComposer(_bus, store))
+            using (var composer1 = new NpcStateComposer(_bus, _bus, store))
             {
                 var session = new ComposedSession("Alice", "Server1",
                     T0, TimeSpan.Zero, "Alice:20260526120000");
@@ -273,7 +273,7 @@ public class NpcStateComposerTests : IDisposable
                     12307, "Comfortable", 48637, 50000, GoldResetTime, "NPC_Marna", Meta(T0.AddSeconds(2))));
             }
 
-            using var composer2 = new NpcStateComposer(_bus, store);
+            using var composer2 = new NpcStateComposer(_bus, _bus, store);
 
             var session2 = new ComposedSession("Alice", "Server1",
                 T0.AddHours(1), TimeSpan.Zero, "Alice:20260526130000");
@@ -304,7 +304,7 @@ public class NpcStateComposerTests : IDisposable
                 "npc-state.json",
                 NpcStateSnapshotJsonContext.Default.NpcStateSnapshot);
 
-            using var composer = new NpcStateComposer(_bus, store);
+            using var composer = new NpcStateComposer(_bus, _bus, store);
 
             var aliceSession = new ComposedSession("Alice", "Server1",
                 T0, TimeSpan.Zero, "Alice:20260526120000");
@@ -345,7 +345,7 @@ public class NpcStateComposerTests : IDisposable
                 "npc-state.json",
                 NpcStateSnapshotJsonContext.Default.NpcStateSnapshot);
 
-            using (var composer1 = new NpcStateComposer(_bus, store))
+            using (var composer1 = new NpcStateComposer(_bus, _bus, store))
             {
                 var session = new ComposedSession("Alice", "Server1",
                     T0, TimeSpan.Zero, "Alice:20260526120000");
@@ -354,7 +354,7 @@ public class NpcStateComposerTests : IDisposable
                 _bus.Publish(new InteractionStarted(5000, "NPC_Tadion", 200, true, Meta(T0.AddSeconds(2))));
             }
 
-            using var composer2 = new NpcStateComposer(_bus, store);
+            using var composer2 = new NpcStateComposer(_bus, _bus, store);
             var session2 = new ComposedSession("Alice", "Server1",
                 T0.AddHours(1), TimeSpan.Zero, "Alice:20260526130000");
             _bus.Publish(new SessionEstablished(session2, Meta(T0.AddHours(1))));

@@ -25,6 +25,7 @@ public class PlayerProgressionComposerTests : IDisposable
     {
         _composer = new PlayerProgressionComposer(
             _bus,
+            _bus,
             _playerState,
             recipeKeyResolver: id => $"recipe_{id}");
         _bus.Subscribe<SkillProgressionChanged>(e => _progressionEvents.Add(e));
@@ -192,6 +193,7 @@ public class PlayerProgressionComposerTests : IDisposable
     {
         using var composer = new PlayerProgressionComposer(
             _bus,
+            _bus,
             _playerState,
             recipeKeyResolver: id => id == 42 ? "RawMeatLoaf" : null);
 
@@ -211,7 +213,7 @@ public class PlayerProgressionComposerTests : IDisposable
     [Fact]
     public void NoRecipeKeyResolver_FallsBackToFormatting()
     {
-        using var composer = new PlayerProgressionComposer(_bus, _playerState);
+        using var composer = new PlayerProgressionComposer(_bus, _bus, _playerState);
 
         _playerState.SetRecipes(new Dictionary<int, RecipeEntry>
         {
@@ -292,7 +294,7 @@ public class PlayerProgressionComposerTests : IDisposable
                 ProgressionSnapshotJsonContext.Default.ProgressionSnapshot);
 
             using (var composer1 = new PlayerProgressionComposer(
-                _bus, _playerState, store, id => $"recipe_{id}"))
+                _bus, _bus, _playerState, store, id => $"recipe_{id}"))
             {
                 var session = new ComposedSession("Alice", "Server1",
                     T0, TimeSpan.Zero, "Alice:20260526120000");
@@ -315,7 +317,7 @@ public class PlayerProgressionComposerTests : IDisposable
             _playerState.SetRecipes(new Dictionary<int, RecipeEntry>());
 
             using var composer2 = new PlayerProgressionComposer(
-                _bus, _playerState, store, id => $"recipe_{id}");
+                _bus, _bus, _playerState, store, id => $"recipe_{id}");
 
             var session2 = new ComposedSession("Alice", "Server1",
                 T0.AddHours(1), TimeSpan.Zero, "Alice:20260526130000");
@@ -346,7 +348,7 @@ public class PlayerProgressionComposerTests : IDisposable
                 ProgressionSnapshotJsonContext.Default.ProgressionSnapshot);
 
             using (var composer1 = new PlayerProgressionComposer(
-                _bus, _playerState, store, id => $"recipe_{id}"))
+                _bus, _bus, _playerState, store, id => $"recipe_{id}"))
             {
                 var session = new ComposedSession("Alice", "Server1",
                     T0, TimeSpan.Zero, "Alice:20260526120000");
@@ -367,7 +369,7 @@ public class PlayerProgressionComposerTests : IDisposable
             });
 
             using var composer2 = new PlayerProgressionComposer(
-                _bus, _playerState, store, id => $"recipe_{id}");
+                _bus, _bus, _playerState, store, id => $"recipe_{id}");
 
             _bus.Publish(new SkillsLoaded(1, Meta(T0.AddHours(1))));
 

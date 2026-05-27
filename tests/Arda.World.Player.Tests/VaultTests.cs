@@ -237,7 +237,7 @@ public class VaultTests
 
     // ── SpyEventBus ──────────────────────────────────────────────────────
 
-    private sealed class SpyEventBus : IDomainEventBus
+    private sealed class SpyEventBus : IDomainEventSubscriber, IDomainEventPublisher
     {
         private readonly Dictionary<Type, List<object>> _published = [];
 

@@ -16,7 +16,7 @@ namespace Arda.Composition.Internal;
 /// </summary>
 internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
 {
-    private readonly IDomainEventBus _bus;
+    private readonly IDomainEventPublisher _publisher;
     private readonly PerCharacterStore<NpcStateSnapshot>? _store;
     private readonly IGrammarBreakSignal? _grammarSignal;
     private readonly ILogger? _logger;
@@ -36,21 +36,22 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
     public event Action? StateChanged;
 
     public NpcStateComposer(
-        IDomainEventBus bus,
+        IDomainEventSubscriber subscriber,
+        IDomainEventPublisher publisher,
         PerCharacterStore<NpcStateSnapshot>? store = null,
         IGrammarBreakSignal? grammarSignal = null,
         ILogger? logger = null)
     {
-        _bus = bus;
+        _publisher = publisher;
         _store = store;
         _grammarSignal = grammarSignal;
         _logger = logger;
 
-        _interactionSub = bus.Subscribe<InteractionStarted>(OnInteractionStarted);
-        _vendorScreenSub = bus.Subscribe<VendorScreenOpened>(OnVendorScreenOpened);
-        _vendorGoldSub = bus.Subscribe<VendorGoldUpdated>(OnVendorGoldUpdated);
-        _giftSub = bus.Subscribe<GiftAccepted>(OnGiftAccepted);
-        _sessionSub = bus.Subscribe<SessionEstablished>(OnSessionEstablished);
+        _interactionSub = subscriber.Subscribe<InteractionStarted>(OnInteractionStarted);
+        _vendorScreenSub = subscriber.Subscribe<VendorScreenOpened>(OnVendorScreenOpened);
+        _vendorGoldSub = subscriber.Subscribe<VendorGoldUpdated>(OnVendorGoldUpdated);
+        _giftSub = subscriber.Subscribe<GiftAccepted>(OnGiftAccepted);
+        _sessionSub = subscriber.Subscribe<SessionEstablished>(OnSessionEstablished);
     }
 
     public NpcRecord? GetNpc(string npcKey)
@@ -89,7 +90,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 LastSeenAt: now);
         }
 
-        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
+        _publisher.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
         StateChanged?.Invoke();
     }
 
@@ -129,7 +130,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 LastSeenAt: now);
         }
 
-        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
+        _publisher.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
         StateChanged?.Invoke();
     }
 
@@ -166,7 +167,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 LastSeenAt: now);
         }
 
-        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
+        _publisher.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
         StateChanged?.Invoke();
     }
 
@@ -199,7 +200,7 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
                 LastSeenAt: now);
         }
 
-        _bus.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
+        _publisher.Publish(new NpcStateChanged(npcKey, _npcs[npcKey], e.Metadata));
         StateChanged?.Invoke();
     }
 

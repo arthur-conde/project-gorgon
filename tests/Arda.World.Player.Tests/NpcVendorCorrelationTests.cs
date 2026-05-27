@@ -189,7 +189,7 @@ public class NpcVendorCorrelationTests
 
     // ── SpyBus ───────────────────────────────────────────────────────────
 
-    private sealed class SpyBus : IDomainEventBus
+    private sealed class SpyBus : IDomainEventSubscriber, IDomainEventPublisher
     {
         private readonly Dictionary<Type, List<object>> _published = [];
 

@@ -68,15 +68,26 @@ internal sealed class WorldDriver : IWorldDriver
 
 That is the entire L2 implementation. One class, one method, four lines of body.
 
-### `IDomainEventBus` (replacement for `IWorldEventBus`)
+### `IDomainEventPublisher` / `IDomainEventSubscriber` (replacement for `IWorldEventBus`)
+
+The bus surface is split into two narrow halves so handlers can only publish and
+modules can only subscribe — the type system enforces the no-back-edge rule.
 
 ```csharp
-public interface IDomainEventBus
+public interface IDomainEventSubscriber
 {
     IDisposable Subscribe<T>(Action<T> handler) where T : struct;
+}
+
+public interface IDomainEventPublisher
+{
     void Publish<T>(T domainEvent) where T : struct;
 }
 ```
+
+Both halves resolve to the same `DomainEventBus` singleton (one bus per
+pipeline). The composite `IDomainEventBus` interface still exists but is
+internal to `Arda.Dispatch` — no external code references it.
 
 Key differences from the legacy `IWorldEventBus`:
 - No `Frame<T>` wrapper — domain events carry their own `LogLineMetadata` field
@@ -94,13 +105,14 @@ flowchart LR
         Driver["WorldDriver.RunAsync"] -->|"line.Log.AsSpan()"| Extractor["VerbExtractor"]
         Extractor -->|"verbSpan"| Table["DispatchTable"]
         Table -->|"args span + metadata"| Handlers["IFrameHandler implementations"]
-        Handlers -->|"Publish T"| Bus["IDomainEventBus"]
+        Handlers -->|"Publish T"| Bus["IDomainEventPublisher"]
     end
     subgraph ModuleConsumers ["Modules"]
-        Bus -->|"Subscribe T"| Samwise["Samwise"]
-        Bus -->|"Subscribe T"| Arwen["Arwen"]
-        Bus -->|"Subscribe T"| Bilbo["Bilbo"]
+        Sub["IDomainEventSubscriber"] -->|"Subscribe T"| Samwise["Samwise"]
+        Sub -->|"Subscribe T"| Arwen["Arwen"]
+        Sub -->|"Subscribe T"| Bilbo["Bilbo"]
     end
+    Bus -.->|"same DomainEventBus singleton"| Sub
     Source --> Driver
 ```
 
@@ -120,7 +132,7 @@ Design for the verb-keyed dispatch layer. Sits between L2 (world driver) and the
 1. Verb extraction from `LogLine.Log`
 2. Handler registry (verb → handler list)
 3. Frame deserialization (positional arg tokenizing on span)
-4. Emission of domain events via `IDomainEventBus`
+4. Emission of domain events via `IDomainEventPublisher`
 
 ## Verb extraction
 
@@ -384,7 +396,8 @@ sealed class PassthroughHandler<TFrame> : IFrameHandler
 
 ## World.out subscription surface
 
-Modules subscribe to typed events through `IDomainEventSubscriber` (the subscribe-only half of `IDomainEventBus`; the publish-only half is `IDomainEventPublisher`, injected by handlers and composers):
+Modules subscribe to typed events through `IDomainEventSubscriber`; handlers
+and composers that need to publish take `IDomainEventPublisher`:
 
 ```csharp
 public interface IDomainEventSubscriber
@@ -396,8 +409,6 @@ public interface IDomainEventPublisher
 {
     void Publish<T>(T domainEvent) where T : struct;
 }
-
-public interface IDomainEventBus : IDomainEventSubscriber, IDomainEventPublisher { }
 
 // Inside GardenStateMachine (module-owned)
 public GardenStateMachine(IDomainEventSubscriber bus)
@@ -461,7 +472,8 @@ Arda.Contracts/
     Chat/                     — IChatSessionState
     Composition/              — IInventoryAccumulatorState, IPlayerProgressionState, INpcStateTracker, ISessionComposer
     Health/                   — IWorldHealthView (replaces legacy LogStreamAttentionSource)
-  IDomainEventBus.cs          — split into IDomainEventPublisher / IDomainEventSubscriber
+  IDomainEventPublisher.cs    — publish-only half (used by handlers, composers)
+  IDomainEventSubscriber.cs   — subscribe-only half (used by modules, composers)
 
 Arda.Dispatch/
   Arda.Dispatch.csproj        — references Arda.Abstractions + Arda.Contracts
@@ -601,7 +613,7 @@ Pure hosting package. References `Arda.Dispatch`, `Arda.Ingest`, `Microsoft.Exte
 1. **DI composition** — a single `AddArda(this IServiceCollection, ArdaOptions)` extension that wires:
    - `PlayerLogSource` + `ChatLogSource` (from Arda.Ingest)
    - `DispatchTable` + handler registrations (from Arda.Dispatch)
-   - `IDomainEventBus` implementation
+   - `DomainEventBus` implementation (registered as `IDomainEventPublisher` + `IDomainEventSubscriber`)
    - `IWorldDriver` instances (one per source family)
    - `BackgroundService` wrappers that call `IWorldDriver.RunAsync`
 
