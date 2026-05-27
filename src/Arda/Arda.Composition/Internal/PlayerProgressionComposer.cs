@@ -105,7 +105,7 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
         };
         _skills = newDict;
 
-        _bus.Publish(new SkillProgressionChanged(evt.SkillKey, enriched, evt.XpGained));
+        _bus.Publish(new SkillProgressionChanged(evt.SkillKey, enriched, evt.XpGained, evt.Metadata));
         StateChanged?.Invoke();
     }
 
@@ -208,7 +208,7 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Failed to save progression snapshot for {Character}/{Server}",
+            _logger?.LogError(ex, "Failed to save progression snapshot for {Character}/{Server}",
                 character, server);
         }
     }

@@ -110,6 +110,7 @@ public class PlayerProgressionComposerTests : IDisposable
         _progressionEvents[0].SkillKey.Should().Be("Tanning");
         _progressionEvents[0].XpGained.Should().Be(577);
         _progressionEvents[0].Skill.Level.Should().Be(31);
+        _progressionEvents[0].Metadata.Timestamp.Should().Be(T0);
     }
 
     [Fact]

@@ -291,7 +291,10 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Failed to save accumulator snapshot for {Character}/{Server}",
+            // Persisting a stale baseline means the next session double-counts
+            // deltas — the exact divergence the grammar-halt feature was built
+            // to prevent. Error-level so Sentry sees it.
+            _logger?.LogError(ex, "Failed to save accumulator snapshot for {Character}/{Server}",
                 _currentCharacter, _currentServer);
         }
     }
