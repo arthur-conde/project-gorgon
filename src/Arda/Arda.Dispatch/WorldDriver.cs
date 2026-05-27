@@ -90,21 +90,24 @@ internal sealed class WorldDriver : IWorldDriver
             }
             catch (GrammarException ex)
             {
+                var details = new GrammarBreak(
+                    _sourceFamily ?? "unknown",
+                    ex.Verb,
+                    ex.SourceLine,
+                    ex.TokenExcerpt,
+                    ex.ParserHint,
+                    _time.GetUtcNow());
+
                 if (_tolerantGrammar)
                 {
+                    _grammarSignal?.MarkObserved(details);
                     _logger?.LogWarning(
                         "Tolerant grammar mode: skipping line on {SourceFamily} (verb={Verb}, hint={Hint})",
                         _sourceFamily ?? "unknown", ex.Verb, ex.ParserHint);
                     continue;
                 }
 
-                _grammarSignal?.Raise(new GrammarBreak(
-                    _sourceFamily ?? "unknown",
-                    ex.Verb,
-                    ex.SourceLine,
-                    ex.TokenExcerpt,
-                    ex.ParserHint,
-                    _time.GetUtcNow()));
+                _grammarSignal?.Raise(details);
 
                 _logger?.LogError(ex,
                     "Grammar break halted {SourceFamily} driver (verb={Verb}, hint={Hint})",

@@ -58,6 +58,40 @@ public class HaltedSnapshotSkipTests : IDisposable
     }
 
     [Fact]
+    public void TolerantObservedBreak_GatesSnapshotWrite()
+    {
+        // Tolerant mode (MITHRIL_GRAMMAR_TOLERANT=1) does not raise the signal,
+        // it only marks the break as observed. Composer snapshots must still be
+        // gated — otherwise a developer who forgets to clear the env var
+        // silently corrupts persisted state on next launch.
+        var signal = new TestGrammarSignal();
+        var store = new PerCharacterStore<AccumulatorSnapshot>(
+            _root, "inventory-accumulator.json",
+            AccumulatorSnapshotJsonContext.Default.AccumulatorSnapshot);
+
+        var bus = new DomainEventBus(NullLogger<DomainEventBus>.Instance);
+        var composer = new InventoryComposer(bus, store, signal);
+
+        var session = new ComposedSession("Alice", "Serbule", BaseTime, TimeSpan.Zero, "alice-session");
+        bus.Publish(new SessionEstablished(session, Meta(BaseTime)));
+        bus.Publish(new InventoryItemAdded(1001, "item_sword", Meta(BaseTime.AddMilliseconds(50))));
+
+        // Tolerant observation — IsRaised stays false but HasObservedBreak flips true.
+        signal.ObserveBreak("ProcessAddItem", "boom");
+        signal.IsRaised.Should().BeFalse("tolerant mode never raises");
+        signal.HasObservedBreak.Should().BeTrue("tolerant mode marks the break as observed");
+
+        var nextSession = new ComposedSession("Bob", "Serbule", BaseTime, TimeSpan.Zero, "bob-session");
+        bus.Publish(new SessionEstablished(nextSession, Meta(BaseTime.AddSeconds(1))));
+
+        composer.Dispose();
+
+        var aliceFile = Path.Combine(_root, PerCharacterStore<AccumulatorSnapshot>.Slug("Alice", "Serbule"), "inventory-accumulator.json");
+        File.Exists(aliceFile).Should().BeFalse(
+            "tolerant mode must still gate persistence — the in-memory state is divergent and writing it to disk poisons the next launch");
+    }
+
+    [Fact]
     public void NoHalt_FlushesInventoryComposerSnapshotOnSessionSwitch()
     {
         var signal = new TestGrammarSignal();
@@ -87,15 +121,33 @@ public class HaltedSnapshotSkipTests : IDisposable
     private sealed class TestGrammarSignal : IGrammarBreakSignal
     {
         public GrammarBreak? Current { get; private set; }
-        public bool IsRaised => Current is not null;
+        public bool IsRaised { get; private set; }
+        public bool HasObservedBreak => ObservedCount > 0;
+        public int ObservedCount { get; private set; }
         public event EventHandler? Raised;
+        public event EventHandler? ObservedBreakChanged;
+
         public void Raise(GrammarBreak breakDetails)
         {
+            var first = !IsRaised;
             Current ??= breakDetails;
-            Raised?.Invoke(this, EventArgs.Empty);
+            IsRaised = true;
+            ObservedCount++;
+            ObservedBreakChanged?.Invoke(this, EventArgs.Empty);
+            if (first) Raised?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void MarkObserved(GrammarBreak breakDetails)
+        {
+            Current ??= breakDetails;
+            ObservedCount++;
+            ObservedBreakChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public void RaiseBreak(string verb, string hint) =>
             Raise(new GrammarBreak("Player", verb, "src", "tok", hint, DateTimeOffset.UtcNow));
+
+        public void ObserveBreak(string verb, string hint) =>
+            MarkObserved(new GrammarBreak("Player", verb, "src", "tok", hint, DateTimeOffset.UtcNow));
     }
 }

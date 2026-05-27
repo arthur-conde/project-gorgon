@@ -261,10 +261,10 @@ internal sealed class InventoryComposer : IInventoryAccumulatorState, IDisposabl
         if (_store is null || _currentCharacter is null || _currentServer is null)
             return;
 
-        if (_grammarSignal?.IsRaised == true)
+        if (_grammarSignal?.HasObservedBreak == true)
         {
             _logger?.LogWarning(
-                "Skipping accumulator snapshot save for {Character}/{Server}: grammar break in this session",
+                "Skipping accumulator snapshot save for {Character}/{Server}: grammar break observed in this session",
                 _currentCharacter, _currentServer);
             return;
         }

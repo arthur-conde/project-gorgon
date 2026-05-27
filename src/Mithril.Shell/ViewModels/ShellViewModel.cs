@@ -207,6 +207,8 @@ public sealed partial class ShellViewModel : ObservableObject
                         $"Chat: {chat.Mode} · {chat.FrameCount:N0} frames · drift {chat.Drift.TotalSeconds:0.0}s";
 
         IsHalted = _health.IsHalted;
+        IsTolerantBreakActive = _health.IsTolerantBreakActive;
+        ObservedBreakCount = _health.ObservedBreakCount;
         GrammarBreak = brk;
         HaltBannerVerb = brk?.Verb ?? "";
         HaltBannerHint = brk?.ParserHint ?? "";
@@ -307,6 +309,8 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty] private string _healthTooltip = "";
 
     [ObservableProperty] private bool _isHalted;
+    [ObservableProperty] private bool _isTolerantBreakActive;
+    [ObservableProperty] private int _observedBreakCount;
     [ObservableProperty] private GrammarBreak? _grammarBreak;
     [ObservableProperty] private string _haltBannerVerb = "";
     [ObservableProperty] private string _haltBannerHint = "";

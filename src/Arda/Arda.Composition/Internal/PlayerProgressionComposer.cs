@@ -173,10 +173,10 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
         if (!CanPersist)
             return;
 
-        if (_grammarSignal?.IsRaised == true)
+        if (_grammarSignal?.HasObservedBreak == true)
         {
             _logger?.LogWarning(
-                "Skipping progression snapshot save for {Character}/{Server}: grammar break in this session",
+                "Skipping progression snapshot save for {Character}/{Server}: grammar break observed in this session",
                 _currentCharacter, _currentServer);
             return;
         }

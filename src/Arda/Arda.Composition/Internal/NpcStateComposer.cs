@@ -221,10 +221,10 @@ internal sealed class NpcStateComposer : INpcStateTracker, IDisposable
         if (_store is null || _currentCharacter is null || _currentServer is null)
             return;
 
-        if (_grammarSignal?.IsRaised == true)
+        if (_grammarSignal?.HasObservedBreak == true)
         {
             _logger?.LogWarning(
-                "Skipping NPC state snapshot save for {Character}/{Server}: grammar break in this session",
+                "Skipping NPC state snapshot save for {Character}/{Server}: grammar break observed in this session",
                 _currentCharacter, _currentServer);
             return;
         }

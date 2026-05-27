@@ -59,7 +59,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         get
         {
             lock (_gate)
-                return Snapshot(_playerTimestamp, _playerFrames, _playerLive, _break is not null);
+                return Snapshot(_playerTimestamp, _playerFrames, _playerLive, _grammarSignal.IsRaised);
         }
     }
 
@@ -68,13 +68,13 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         get
         {
             lock (_gate)
-                return Snapshot(_chatTimestamp, _chatFrames, _chatLive, _break is not null);
+                return Snapshot(_chatTimestamp, _chatFrames, _chatLive, _grammarSignal.IsRaised);
         }
     }
 
     public bool AllLive
     {
-        get { lock (_gate) return _playerLive && _chatLive && _break is null; }
+        get { lock (_gate) return _playerLive && _chatLive && !_grammarSignal.IsRaised; }
     }
 
     public GrammarBreak? Break
@@ -84,8 +84,15 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
 
     public bool IsHalted
     {
-        get { lock (_gate) return _break is not null; }
+        get { lock (_gate) return _grammarSignal.IsRaised; }
     }
+
+    public bool IsTolerantBreakActive
+    {
+        get { lock (_gate) return _grammarSignal.HasObservedBreak && !_grammarSignal.IsRaised; }
+    }
+
+    public int ObservedBreakCount => _grammarSignal.ObservedCount;
 
     public event EventHandler? Changed;
 
@@ -116,6 +123,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
 
         _replay.PropertyChanged += OnReplayProgressChanged;
         _grammarSignal.Raised += OnGrammarBreakRaised;
+        _grammarSignal.ObservedBreakChanged += OnGrammarBreakObserved;
 
         if (_replay.ReplayComplete.IsCompleted)
         {
@@ -144,6 +152,17 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         _logger.LogError(
             "Arda pipeline halted on grammar drift: verb {Verb}, hint {Hint}",
             current.Verb, current.ParserHint);
+        RaiseChanged();
+    }
+
+    private void OnGrammarBreakObserved(object? sender, EventArgs e)
+    {
+        // Tolerant-mode observations populate Break (first one wins) so the
+        // shell banner can render verb/hint context without going through
+        // IsRaised. RaiseChanged() then refreshes ObservedBreakCount.
+        var current = _grammarSignal.Current;
+        if (current is null) return;
+        lock (_gate) _break ??= current;
         RaiseChanged();
     }
 
@@ -282,6 +301,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         _disposed = true;
         _replay.PropertyChanged -= OnReplayProgressChanged;
         _grammarSignal.Raised -= OnGrammarBreakRaised;
+        _grammarSignal.ObservedBreakChanged -= OnGrammarBreakObserved;
         foreach (var sub in _subscriptions) sub.Dispose();
         _subscriptions.Clear();
     }

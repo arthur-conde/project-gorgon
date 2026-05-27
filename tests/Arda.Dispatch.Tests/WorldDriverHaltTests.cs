@@ -105,9 +105,17 @@ public class WorldDriverHaltTests
             grammarSignal: signal,
             tolerantGrammar: true);
 
+        var observed = 0;
+        signal.ObservedBreakChanged += (_, _) => observed++;
+
         await driver.RunAsync(CancellationToken.None);
 
         signal.IsRaised.Should().BeFalse("tolerant mode suppresses the halt signal");
+        signal.HasObservedBreak.Should().BeTrue(
+            "tolerant mode still marks breaks as observed so composer snapshots stay gated");
+        signal.ObservedCount.Should().Be(1, "one malformed line in this run");
+        signal.Current!.Verb.Should().Be("ProcessAddItem");
+        observed.Should().Be(1, "ObservedBreakChanged fires once per tolerant observation");
         processed.Should().Be(1, "the second (well-formed) line still runs through the handler");
     }
 

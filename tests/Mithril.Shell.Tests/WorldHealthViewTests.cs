@@ -29,12 +29,27 @@ public sealed class WorldHealthViewTests : IAsyncLifetime
     private sealed class FakeGrammarBreakSignal : IGrammarBreakSignal
     {
         public GrammarBreak? Current { get; private set; }
-        public bool IsRaised => Current is not null;
+        public bool IsRaised { get; private set; }
+        public bool HasObservedBreak => ObservedCount > 0;
+        public int ObservedCount { get; private set; }
         public event EventHandler? Raised;
+        public event EventHandler? ObservedBreakChanged;
+
         public void Raise(GrammarBreak breakDetails)
         {
+            var first = !IsRaised;
             Current ??= breakDetails;
-            Raised?.Invoke(this, EventArgs.Empty);
+            IsRaised = true;
+            ObservedCount++;
+            ObservedBreakChanged?.Invoke(this, EventArgs.Empty);
+            if (first) Raised?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void MarkObserved(GrammarBreak breakDetails)
+        {
+            Current ??= breakDetails;
+            ObservedCount++;
+            ObservedBreakChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 
