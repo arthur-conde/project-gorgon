@@ -25,7 +25,11 @@ public sealed record SkillAnalysis(
     IReadOnlyList<RecipeAnalysis> Recipes,
     IReadOnlyList<XpMilestone> Milestones,
     int? GoalLevel = null,
-    bool IsUmbrellaSection = false);
+    bool IsUmbrellaSection = false)
+{
+    /// <summary><see cref="CurrentLevel"/> + <see cref="CurrentBonusLevels"/> — matches PG UI.</summary>
+    public int EffectiveLevel => CurrentLevel + CurrentBonusLevels;
+}
 
 /// <summary>
 /// One recipe's analysis for a given cookbook section + character. <see cref="RewardSkill"/>

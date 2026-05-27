@@ -102,7 +102,8 @@ public class LiveProgressionAdapterTests
         var reports = new MutableFakeGameReports(Export);
         var live = new FakePlayerProgressionState();
         var active = new FakeActiveChar(Export);
-        var adapter = new LiveProgressionAdapter(live, reports, active);
+        var adapter = new LiveProgressionAdapter(live, reports, active, new FakeSessionComposer(
+            new ComposedSession(Export.Name, Export.Server, Export.ExportedAt, TimeSpan.Zero, "test")));
 
         var count = 0;
         adapter.Changed += () => count++;
@@ -124,14 +125,34 @@ public class LiveProgressionAdapterTests
         CharacterSnapshot? export,
         FakePlayerProgressionState? live,
         string name = "Galadriel",
-        string server = "Eltibule")
+        string server = "Eltibule",
+        ComposedSession? session = null)
     {
         live ??= new FakePlayerProgressionState();
         var reports = new FakeGameReports(export);
         IActiveCharacterService active = export is not null
             ? new FakeActiveChar(export)
             : new NamedFakeActiveChar(name, server);
-        return (new LiveProgressionAdapter(live, reports, active), live);
+        session ??= new ComposedSession(name, server, DateTimeOffset.UtcNow, TimeSpan.Zero, $"{name}:test");
+        var sessionComposer = new FakeSessionComposer(session);
+        return (new LiveProgressionAdapter(live, reports, active, sessionComposer), live);
+    }
+
+    [Fact]
+    public void LiveIgnored_WhenActiveCharacterDiffersFromSession()
+    {
+        var live = new FakePlayerProgressionState();
+        live.SetSkill("Cooking", 99);
+
+        var export = Export;
+        var active = new FakeActiveChar(export);
+        var session = new FakeSessionComposer(new ComposedSession("OtherChar", "Eltibule", DateTimeOffset.UtcNow, TimeSpan.Zero, "x"));
+        var adapter = new LiveProgressionAdapter(live, new FakeGameReports(export), active, session);
+
+        var snap = adapter.GetMergedSnapshot();
+
+        adapter.LastDataSource.Should().Be(ProgressionDataSource.ExportOnly);
+        snap!.Skills["Cooking"].Level.Should().Be(10);
     }
 
     private sealed class NamedFakeActiveChar(string name, string server) : IActiveCharacterService

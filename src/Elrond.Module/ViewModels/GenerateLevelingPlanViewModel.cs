@@ -1,4 +1,6 @@
 using System.Text.Json;
+using System.Windows;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Elrond.Services;
@@ -56,7 +58,14 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
         RefreshSnapshot();
     }
 
-    private void OnProgressionChanged() => RefreshSnapshot();
+    private void OnProgressionChanged()
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+            RefreshSnapshot();
+        else
+            dispatcher.InvokeAsync(RefreshSnapshot, DispatcherPriority.Normal);
+    }
 
     // ── Snapshot (embedded initial state) ────────────────────────────────
     [ObservableProperty] private bool _hasActiveCharacter;
@@ -160,7 +169,7 @@ public sealed partial class GenerateLevelingPlanViewModel : ObservableObject
             return;
         }
 
-        CurrentLevel = snap.Skills.TryGetValue(SelectedSkill, out var cs) ? cs.Level : null;
+        CurrentLevel = snap.Skills.TryGetValue(SelectedSkill, out var cs) ? cs.EffectiveLevel : null;
 
         if (GoalLevel is not { } goal)
         {

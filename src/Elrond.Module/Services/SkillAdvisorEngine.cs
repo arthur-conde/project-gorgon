@@ -96,11 +96,12 @@ public sealed class SkillAdvisorEngine
 
         var sectionLevel = sectionCharSkill.Level;
         var sectionBonusLevels = sectionCharSkill.BonusLevels;
+        var sectionEffectiveLevel = sectionCharSkill.EffectiveLevel;
         var sectionCurrentXp = sectionCharSkill.XpTowardNextLevel;
         var sectionXpNeeded = sectionCharSkill.XpNeededForNextLevel;
 
         long sectionXpRemaining;
-        if (goalLevel is { } goal && goal > sectionLevel)
+        if (goalLevel is { } goal && goal > sectionEffectiveLevel)
             sectionXpRemaining = ComputeXpToGoal(sectionKey, sectionLevel, sectionCurrentXp, sectionXpNeeded, goal);
         else
             sectionXpRemaining = sectionXpNeeded - sectionCurrentXp;
@@ -118,15 +119,15 @@ public sealed class SkillAdvisorEngine
             // if the character hasn't learned the reward skill yet.
             var rewardSkill = recipe.RewardSkill ?? "";
             character.Skills.TryGetValue(rewardSkill, out var rewardCharSkill);
-            var rewardLevel = rewardCharSkill?.Level ?? 0;
+            var rewardLevel = rewardCharSkill?.EffectiveLevel ?? 0;
 
             // Gating skill = recipe.Skill (paired with SkillLevelReq). For most recipes this
             // matches the section, but in umbrella sections (Phrenology files Phrenology_Goblins,
             // Cooking files Fishing-rewarding fish stew) the gate sits on a different skill.
-            // Read the player's level there so the "Craftable only" filter compares apples to apples.
+            // Use effective level (raw + bonus) so craftability matches the in-game gate.
             var gatingSkillLevel = !string.IsNullOrEmpty(recipe.Skill)
                 && character.Skills.TryGetValue(recipe.Skill!, out var gatingCharSkill)
-                    ? gatingCharSkill.Level
+                    ? gatingCharSkill.EffectiveLevel
                     : 0;
 
             var internalName = recipe.InternalName ?? "";
@@ -212,7 +213,7 @@ public sealed class SkillAdvisorEngine
                 craftedOutputs,
                 RewardSkill: rewardSkill,
                 RewardSkillDisplayName: rewardSkillDisplayName,
-                RewardSkillCurrentLevel: rewardCharSkill?.Level ?? 0,
+                RewardSkillCurrentLevel: rewardCharSkill?.EffectiveLevel ?? 0,
                 RewardSkillCurrentXp: rewardCharSkill?.XpTowardNextLevel ?? 0,
                 RewardSkillXpNeededForNextLevel: rewardCharSkill?.XpNeededForNextLevel ?? 0,
                 RewardSkillDiffersFromSection: rewardDiffersFromSection,
@@ -248,7 +249,7 @@ public sealed class SkillAdvisorEngine
             sectionXpRemaining,
             recipeAnalyses,
             milestones,
-            goalLevel is { } g && g > sectionLevel ? goalLevel : null,
+            goalLevel is { } g && g > sectionEffectiveLevel ? goalLevel : null,
             IsUmbrellaSection: isUmbrellaSection);
     }
 

@@ -89,16 +89,30 @@ internal sealed class FakePlayerProgressionState : IPlayerProgressionState
     }
 }
 
+internal sealed class FakeSessionComposer : ISessionComposer
+{
+    public FakeSessionComposer(ComposedSession? current = null) => Current = current;
+
+    public ComposedSession? Current { get; set; }
+#pragma warning disable CS0067
+    public event Action? StateChanged;
+#pragma warning restore CS0067
+}
+
 internal static class ProgressionTestSupport
 {
     public static LiveProgressionAdapter AdapterFor(
         IActiveCharacterService activeChar,
         IGameReportsService? reports = null,
-        FakePlayerProgressionState? progression = null)
+        FakePlayerProgressionState? progression = null,
+        ISessionComposer? session = null)
     {
         reports ??= new FakeGameReports(activeChar.ActiveCharacter);
         progression ??= new FakePlayerProgressionState();
-        return new LiveProgressionAdapter(progression, reports, activeChar);
+        session ??= new FakeSessionComposer(activeChar.ActiveCharacter is { } snap
+            ? new ComposedSession(snap.Name, snap.Server, snap.ExportedAt, TimeSpan.Zero, $"{snap.Name}:test")
+            : null);
+        return new LiveProgressionAdapter(progression, reports, activeChar, session);
     }
 }
 

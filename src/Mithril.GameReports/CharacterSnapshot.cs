@@ -18,4 +18,12 @@ public sealed record CharacterSkill(
     int Level,
     int BonusLevels,
     long XpTowardNextLevel,
-    long XpNeededForNextLevel);
+    long XpNeededForNextLevel)
+{
+    /// <summary>
+    /// Level shown in-game and used for recipe gates (<c>raw + bonus</c>).
+    /// <see cref="Level"/> alone is the progression track; <see cref="BonusLevels"/>
+    /// is gear/buff-derived and volatile.
+    /// </summary>
+    public int EffectiveLevel => Level + BonusLevels;
+}

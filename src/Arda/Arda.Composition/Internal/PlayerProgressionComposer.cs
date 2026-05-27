@@ -160,10 +160,19 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
         LoadFromDisk();
     }
 
+    private bool CanPersist =>
+        _store is not null
+        && !string.IsNullOrEmpty(_currentCharacter)
+        && !string.IsNullOrEmpty(_currentServer);
+
     private void FlushToDisk()
     {
-        if (_store is null || _currentCharacter is null || _currentServer is null)
+        if (!CanPersist)
             return;
+
+        var store = _store!;
+        var character = _currentCharacter!;
+        var server = _currentServer!;
 
         var snapshot = new ProgressionSnapshot();
         foreach (var (key, skill) in _skills)
@@ -184,32 +193,36 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
 
         try
         {
-            _store.Save(_currentCharacter, _currentServer, snapshot);
+            store.Save(character, server, snapshot);
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Failed to save progression snapshot for {Character}/{Server}",
-                _currentCharacter, _currentServer);
+                character, server);
         }
     }
 
     private void LoadFromDisk()
     {
-        if (_store is null || _currentCharacter is null || _currentServer is null)
+        if (!CanPersist)
         {
             StateChanged?.Invoke();
             return;
         }
 
+        var store = _store!;
+        var character = _currentCharacter!;
+        var server = _currentServer!;
+
         try
         {
-            var snapshot = _store.Load(_currentCharacter, _currentServer);
+            var snapshot = store.Load(character, server);
             MergePersistedBaseline(snapshot);
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Failed to load progression snapshot for {Character}/{Server}",
-                _currentCharacter, _currentServer);
+                character, server);
         }
 
         StateChanged?.Invoke();

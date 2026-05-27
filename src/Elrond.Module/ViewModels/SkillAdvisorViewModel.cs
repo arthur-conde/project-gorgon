@@ -194,11 +194,11 @@ public sealed partial class SkillAdvisorViewModel
     public string SectionLevelText => Analysis switch
     {
         null => "—",
-        var a => a.CurrentLevel.ToString(),
+        var a => a.EffectiveLevel.ToString(),
     };
     public string SectionBonusLevelsText => Analysis switch
     {
-        { CurrentBonusLevels: > 0 } a => $" ({a.CurrentBonusLevels} from bonuses)",
+        { CurrentBonusLevels: > 0 } a => $" ({a.CurrentLevel} + {a.CurrentBonusLevels} bonus)",
         _ => string.Empty,
     };
     public string SectionCurrentXpText => Analysis switch
@@ -484,7 +484,7 @@ public sealed partial class SkillAdvisorViewModel
                 return new SkillNode(
                     Key: k,
                     DisplayName: displayName,
-                    CurrentLevel: charSkill.Level,
+                    CurrentLevel: charSkill.EffectiveLevel,
                     CurrentXp: charSkill.XpTowardNextLevel,
                     XpNeededForNextLevel: charSkill.XpNeededForNextLevel);
             })
@@ -525,7 +525,7 @@ public sealed partial class SkillAdvisorViewModel
 
         var active = ActiveCharacterSnapshot;
         SelectedSkillLevel = active is not null && active.Skills.TryGetValue(skillKey, out var charSkill)
-            ? charSkill.Level
+            ? charSkill.EffectiveLevel
             : null;
     }
 

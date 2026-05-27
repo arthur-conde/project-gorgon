@@ -8,28 +8,39 @@ namespace Elrond.Services;
 /// Merges live <see cref="IPlayerProgressionState"/> (Arda L4) with character-export
 /// snapshots from <see cref="IGameReportsService"/>. Live values win on overlap;
 /// export fills gaps for skills/recipes never mentioned in the current session.
+/// Live data is only applied when it matches the current <see cref="ISessionComposer"/>
+/// session (the logged-in character from Player.log).
 /// </summary>
 public sealed class LiveProgressionAdapter : IDisposable
 {
+    private static readonly IReadOnlyDictionary<string, EnrichedSkill> EmptySkills =
+        new Dictionary<string, EnrichedSkill>(StringComparer.Ordinal);
+    private static readonly IReadOnlyDictionary<string, int> EmptyRecipes =
+        new Dictionary<string, int>(StringComparer.Ordinal);
+
     private readonly IPlayerProgressionState _progression;
     private readonly IGameReportsService _gameReports;
     private readonly IActiveCharacterService _activeChar;
+    private readonly ISessionComposer _session;
 
     public LiveProgressionAdapter(
         IPlayerProgressionState progression,
         IGameReportsService gameReports,
-        IActiveCharacterService activeChar)
+        IActiveCharacterService activeChar,
+        ISessionComposer session)
     {
         _progression = progression;
         _gameReports = gameReports;
         _activeChar = activeChar;
+        _session = session;
 
         _progression.StateChanged += OnSourceChanged;
         _gameReports.CharacterSnapshotsChanged += OnReportsChanged;
         _activeChar.ActiveCharacterChanged += OnActiveCharacterChanged;
+        _session.StateChanged += OnSourceChanged;
     }
 
-    /// <summary>Fires when live progression, exports, or active character identity changes.</summary>
+    /// <summary>Fires when live progression, exports, session, or active character changes.</summary>
     public event Action? Changed;
 
     /// <summary>How the current merged snapshot was produced.</summary>
@@ -41,11 +52,12 @@ public sealed class LiveProgressionAdapter : IDisposable
     /// </summary>
     public CharacterSnapshot? GetMergedSnapshot()
     {
-        var name = _activeChar.ActiveCharacterName;
-        var server = _activeChar.ActiveServer;
+        var session = _session.Current;
+        var name = _activeChar.ActiveCharacterName ?? session?.CharacterName;
+        var server = _activeChar.ActiveServer ?? session?.Server;
         var export = _gameReports.GetCharacterSnapshot(name, server);
-        var liveSkills = _progression.Skills;
-        var liveRecipes = _progression.RecipeCompletions;
+        var (liveSkills, liveRecipes) = ResolveLiveState(session, name);
+
         var hasLive = liveSkills.Count > 0 || liveRecipes.Count > 0;
 
         if (export is null && !hasLive)
@@ -75,9 +87,10 @@ public sealed class LiveProgressionAdapter : IDisposable
     {
         get
         {
-            var export = _gameReports.GetCharacterSnapshot(
-                _activeChar.ActiveCharacterName, _activeChar.ActiveServer);
-            return export?.ExportedAt;
+            var session = _session.Current;
+            var name = _activeChar.ActiveCharacterName ?? session?.CharacterName;
+            var server = _activeChar.ActiveServer ?? session?.Server;
+            return _gameReports.GetCharacterSnapshot(name, server)?.ExportedAt;
         }
     }
 
@@ -86,8 +99,12 @@ public sealed class LiveProgressionAdapter : IDisposable
     {
         get
         {
+            var session = _session.Current;
+            var name = _activeChar.ActiveCharacterName ?? session?.CharacterName;
+            var (liveSkills, _) = ResolveLiveState(session, name);
+
             DateTimeOffset? latest = null;
-            foreach (var skill in _progression.Skills.Values)
+            foreach (var skill in liveSkills.Values)
             {
                 if (latest is null || skill.MeasuredAt > latest)
                     latest = skill.MeasuredAt;
@@ -101,6 +118,7 @@ public sealed class LiveProgressionAdapter : IDisposable
         _progression.StateChanged -= OnSourceChanged;
         _gameReports.CharacterSnapshotsChanged -= OnReportsChanged;
         _activeChar.ActiveCharacterChanged -= OnActiveCharacterChanged;
+        _session.StateChanged -= OnSourceChanged;
     }
 
     private void OnSourceChanged() => Changed?.Invoke();
@@ -108,6 +126,23 @@ public sealed class LiveProgressionAdapter : IDisposable
     private void OnReportsChanged(object? sender, EventArgs e) => Changed?.Invoke();
 
     private void OnActiveCharacterChanged(object? sender, EventArgs e) => Changed?.Invoke();
+
+    /// <summary>
+    /// Live progression is keyed to the Arda session character. When the shell's active
+    /// selection disagrees, do not blend live skills onto another character's export.
+    /// </summary>
+    private (IReadOnlyDictionary<string, EnrichedSkill> Skills, IReadOnlyDictionary<string, int> Recipes)
+        ResolveLiveState(ComposedSession? session, string? activeName)
+    {
+        if (session is { } s
+            && !string.IsNullOrEmpty(activeName)
+            && !string.Equals(s.CharacterName, activeName, StringComparison.OrdinalIgnoreCase))
+        {
+            return (EmptySkills, EmptyRecipes);
+        }
+
+        return (_progression.Skills, _progression.RecipeCompletions);
+    }
 
     private static CharacterSnapshot Merge(
         CharacterSnapshot export,

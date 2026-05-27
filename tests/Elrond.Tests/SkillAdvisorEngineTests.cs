@@ -405,6 +405,29 @@ public class SkillAdvisorEngineTests
     }
 
     [Fact]
+    public void Analyze_UsesEffectiveLevelForGatingAndDropOff()
+    {
+        var refData = new FakeRefData();
+        refData.AddSkill("Alchemy", 1, false, "TestTable", 25);
+        refData.AddXpTable("TestTable", Enumerable.Repeat(100L, 60).ToArray());
+        refData.AddRecipe("recipe_potion", "Test Potion", "TestPotion", "Alchemy", 25, "Alchemy", 50, 100,
+            dropOffLevel: 20, dropOffPct: 0.5, dropOffRate: 1);
+
+        var character = MakeCharacter(
+            skills: new Dictionary<string, CharacterSkill>
+            {
+                ["Alchemy"] = new(23, 4, 682, 990),
+            },
+            recipes: new Dictionary<string, int> { ["TestPotion"] = 1 });
+
+        var analysis = new SkillAdvisorEngine(refData).Analyze("Alchemy", character)!;
+
+        analysis.EffectiveLevel.Should().Be(27);
+        analysis.Recipes.Single().GatingSkillCurrentLevel.Should().Be(27,
+            because: "craft gate compares in-game effective level, not raw alone");
+    }
+
+    [Fact]
     public void Analyze_BuildsMilestones()
     {
         var refData = new FakeRefData();
