@@ -72,7 +72,11 @@ internal sealed class SessionAgreementComposer : IHostedService, IAttentionSourc
         lock (_gate)
         {
             _playerCharacter = evt.CharacterName;
-            _playerServer = null; // no server from player side yet
+            // Arda does not parse the Player.log preamble (Servers: [...],
+            // EVENT(Ok): connected) — server identity comes from the chat
+            // banner or the IActiveCharacterService export fallback.
+            // See #511 deliverable 7 for the deferred preamble-recovery work.
+            _playerServer = null;
             var loggedInAt = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
             _sessionId = $"{evt.CharacterName}:{loggedInAt:yyyyMMddHHmmss}";
             CheckAgreementLocked();
