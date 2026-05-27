@@ -112,6 +112,8 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetRequiredService<LegolasSettings>(),
                 sp.GetService<ICharacterPinAnchor>(),
                 sp.GetService<IAreaState>(),
+                sp.GetService<IMapPinState>(),
+                sp.GetService<IAreaCalibrationService>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas.Motherlode")));
 
         services.AddSingleton<LegolasReportService>(sp => new LegolasReportService(

@@ -16,9 +16,15 @@ namespace Legolas.Services;
 /// <param name="Locations">The shared ordered Pᵢ set — one entry per spot the
 /// player measured at. Includes fix-less rows (Confidence 0) so a row index
 /// lines up with <see cref="MotherlodeSurvey.DistancesByLocation"/>.</param>
-/// <param name="ReadsPerLocation">Per-spot count of bound distance readings
-/// (parallel to <see cref="Locations"/>) — the passive multi-map shape
-/// surface ("Spot 1: 5 · Spot 2: 4").</param>
+/// <param name="ReadsPerLocation">Per-spot count of bound <b>map distances</b>
+/// at that measurement spot (parallel to <see cref="Locations"/>) — the passive
+/// multi-map shape surface ("Spot 1: 5 · Spot 2: 4"). This is <em>not</em> the
+/// #506 "measurement spot" count; see <see cref="MeasurementSpotCount"/>.</param>
+/// <param name="MeasurementSpotCount">Committed stand-and-read locations with
+/// ≥1 bound distance for the active treasure (#506) — the guided-mode gate
+/// uses this, not the three-spot solve minimum.</param>
+/// <param name="NextSpot">Guided next measurement waypoint (#506), or null when
+/// no spots are committed yet.</param>
 /// <param name="MapsDug">Count of motherlode maps consumed this session (each
 /// <c>ProcessDeleteItem</c> of a motherlode map = one treasure found). The
 /// session summary is this + elapsed time; loot is a documented data ceiling
@@ -31,6 +37,8 @@ public sealed record MotherlodeStatus(
     IReadOnlyList<MotherlodePositionSample> Locations,
     string? Guidance,
     IReadOnlyList<int> ReadsPerLocation,
+    int MeasurementSpotCount,
+    MotherlodeGuidance? NextSpot,
     int MapsDug,
     bool CanUndo);
 
@@ -69,6 +77,12 @@ public sealed record MotherlodeStatus(
 /// and retires the next uncollected slot. Position is temporally paired from
 /// the highest-confidence feeder; the <c>@me</c>/character-named pin (#497) is
 /// the intended high-accuracy per-read source.</para>
+///
+/// <para><b>#506 guided measurement.</b> A <em>measurement spot</em> is one
+/// committed stand-and-read location (<see cref="MotherlodeStatus.MeasurementSpotCount"/>),
+/// not a per-map distance binding (<see cref="MotherlodeStatus.ReadsPerLocation"/>).
+/// The overlay waypoint appears after ≥1 spot; GDOP scoring needs ≥2; the
+/// treasure solve still needs ≥3 (<see cref="ResolveSlot"/> unchanged).</para>
 /// </summary>
 public sealed class MotherlodeMeasurementCoordinator : IDisposable
 {
@@ -117,6 +131,8 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     private readonly MotherlodeFlowController _flow;
     private readonly ICharacterPinAnchor? _characterPin;
     private readonly IAreaState? _areaState;
+    private readonly IMapPinState? _pinState;
+    private readonly IAreaCalibrationService? _areaCalibration;
     private readonly ILogger? _logger;
     private readonly IReferenceDataService? _refData;
     private readonly LegolasSettings? _settings;
@@ -163,6 +179,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     private OpenLocation? _open;
     private DateTimeOffset? _lastUseAt;
     private string? _guidance;
+    private MotherlodeGuidance? _nextSpot;
 
     public event Action? Changed;
 
@@ -174,12 +191,16 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         LegolasSettings? settings = null,
         ICharacterPinAnchor? characterPin = null,
         IAreaState? areaState = null,
+        IMapPinState? pinState = null,
+        IAreaCalibrationService? areaCalibration = null,
         ILogger? logger = null)
     {
         _solver = solver;
         _flow = flow;
         _characterPin = characterPin;
         _areaState = areaState;
+        _pinState = pinState;
+        _areaCalibration = areaCalibration;
         _refData = refData;
         _settings = settings;
         _logger = logger;
@@ -252,6 +273,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             {
                 _logger?.LogInformation($"Map consumed ({evt.InternalName}) — dug={_dugMaps} (no measured slot to retire).");
             }
+            RecomputeNextSpot();
             changed = true;
         }
         if (changed) Raise();
@@ -390,6 +412,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             ResolveSlot(slot);
             _undo.Push(new ReadUndo(o.RowIndex, slot, prev, createdSlot, createdRow));
             if (DetectBatchDivergence() is { } div) _guidance = div;
+            RecomputeNextSpot();
         }
         _flow.NoteMeasurement("motherlode-distance");
         Raise();
@@ -435,6 +458,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         _lastUseAt = null;
         _latestFix = null;
         _guidance = null;
+        _nextSpot = null;
         _pendingUseName = null;
         _undo.Clear();
     }
@@ -502,6 +526,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             // Recompute the contract warning (clears a stale one the bad read
             // raised; null = no issue).
             _guidance = DetectBatchDivergence();
+            RecomputeNextSpot();
         }
         Raise();
         return true;
@@ -519,6 +544,10 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 { last = _session.LocationSamples[i].World; break; }
 
             var reads = ReadsPerLocation(rows);
+            var activeSlot = ActiveSlotIndex();
+            var spotCount = activeSlot >= 0
+                ? MotherlodeGuidancePlanner.CountMeasurementSpots(_session, activeSlot)
+                : 0;
             return new MotherlodeStatus(
                 rows,
                 withFix,
@@ -527,6 +556,8 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 _session.LocationSamples.ToArray(),
                 _guidance,
                 reads,
+                spotCount,
+                _nextSpot,
                 _dugMaps,
                 _undo.Count > 0);
         }
@@ -627,6 +658,40 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         };
         if (r.Guidance is { } g) _guidance = g;
         else if (r.Quality == MultilaterationQuality.Solved) _guidance = null;
+    }
+
+    /// <summary>First uncollected working slot, else -1.</summary>
+    private int ActiveSlotIndex()
+    {
+        for (var i = 0; i < _session.Surveys.Count; i++)
+            if (!_session.Surveys[i].Collected) return i;
+        return -1;
+    }
+
+    /// <summary>
+    /// #506: guided next spot for the active treasure. Uses measurement-spot
+    /// count (≥1 shows overlay), not the three-spot solve gate.
+    /// </summary>
+    private void RecomputeNextSpot()
+    {
+        var slot = ActiveSlotIndex();
+        if (slot < 0)
+        {
+            _nextSpot = null;
+            return;
+        }
+
+        var survey = _session.Surveys[slot];
+        var spots = MotherlodeGuidancePlanner.CountMeasurementSpots(_session, slot);
+        if (spots == 0 || survey.Collected || survey.Quality == MultilaterationQuality.Solved)
+        {
+            _nextSpot = null;
+            return;
+        }
+
+        var pins = _pinState?.Pins ?? Array.Empty<MapPinEntry>();
+        var gazetteer = _areaCalibration?.CurrentAreaReferences ?? Array.Empty<CalibrationReference>();
+        _nextSpot = MotherlodeGuidancePlanner.Plan(_session, slot, spots, pins, gazetteer);
     }
 
     private int[] ReadsPerLocation(int rows)

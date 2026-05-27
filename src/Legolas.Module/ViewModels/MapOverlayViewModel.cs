@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Legolas.Domain;
 using Legolas.Flow;
+using Legolas.Rendering;
 using Legolas.Services;
 
 namespace Legolas.ViewModels;
@@ -46,6 +47,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         _areaCalibration = areaCalibration;
         _motherlode = motherlode;
         _characterPin = characterPin;
+        if (_motherlode is not null)
+            _motherlode.Changed += NotifyMotherlodeGuidanceChanged;
+        if (_areaCalibration is not null)
+            _areaCalibration.Changed += (_, _) => NotifyMotherlodeGuidanceChanged();
         if (_pinCal is not null)
             _pinCal.PropertyChanged += (_, e) =>
             {
@@ -137,6 +142,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 OnPropertyChanged(nameof(PlayerMarkerPixel));
                 OnPropertyChanged(nameof(PlayerAnchorStatus));
                 OnPropertyChanged(nameof(IsPlayerAnchorStatusVisible));
+                NotifyMotherlodeGuidanceChanged();
                 RebuildAllWedges();
             }
             else if (e.PropertyName is nameof(SessionState.CurrentMapZoom))
@@ -151,6 +157,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                 // anchor" rule and avoids surprising motion on a stamp re-edit.
                 OnPropertyChanged(nameof(PlayerMarkerPixel));
                 OnPropertyChanged(nameof(MotherlodeMarkerPixels));
+                NotifyMotherlodeGuidanceChanged();
                 OnPropertyChanged(nameof(IsZoomMismatchWarningVisible));
                 // Re-resolve the projected Survey GPS anchor — its pixel was
                 // derived through the calibration too.
@@ -840,6 +847,47 @@ public sealed partial class MapOverlayViewModel : ObservableObject
                     (list ??= new()).Add(cal.ProjectWorld(w, zoom));
             return list ?? (IReadOnlyList<PixelPoint>)Array.Empty<PixelPoint>();
         }
+    }
+
+    /// <summary>
+    /// #506: dashed tolerance ring on the overlay (calibration-gated). Empty when
+    /// uncalibrated — use <see cref="MotherlodeGuidancePhrase"/> instead.
+    /// </summary>
+    public MotherlodeGuidanceCircle? MotherlodeGuidanceOverlay
+    {
+        get
+        {
+            if (_session.Mode != SessionMode.Motherlode
+                || _motherlode is null
+                || _areaCalibration?.CurrentCalibration is not { } cal)
+                return null;
+
+            var next = _motherlode.Snapshot().NextSpot;
+            if (next is null) return null;
+
+            var zoom = _session.CurrentMapZoom;
+            var center = cal.ProjectWorld(next.SuggestedWorld, zoom);
+            var zoomFactor = zoom > 1e-6 && cal.CalibrationZoom > 1e-6
+                ? zoom / cal.CalibrationZoom
+                : 1.0;
+            var radiusPx = next.ToleranceRadiusMetres * cal.Scale * zoomFactor;
+            return new MotherlodeGuidanceCircle(center, radiusPx, _brushes.RouteLine.Color);
+        }
+    }
+
+    /// <summary>
+    /// #506: relative phrase for the guided next spot (~80 m NE of …). Works
+    /// without calibration; shown in the wizard when the overlay ring cannot.
+    /// </summary>
+    public string? MotherlodeGuidancePhrase =>
+        _session.Mode == SessionMode.Motherlode && _motherlode is not null
+            ? _motherlode.Snapshot().NextSpot?.RelativePhrase
+            : null;
+
+    private void NotifyMotherlodeGuidanceChanged()
+    {
+        OnPropertyChanged(nameof(MotherlodeGuidanceOverlay));
+        OnPropertyChanged(nameof(MotherlodeGuidancePhrase));
     }
 
     /// <summary>

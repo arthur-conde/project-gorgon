@@ -37,6 +37,7 @@ internal static class PinSceneRenderer
         DrawActiveSegment(scene, rt, factory, brushes);
         DrawSurveyPins(scene, rt, factory, brushes);
         DrawMotherlodePins(scene, rt, factory, brushes);
+        DrawMotherlodeGuidance(scene, rt, factory, brushes);
         DrawPlayerAnchor(scene, rt, factory, brushes);
         // #495: the calibration-validation reference markers are no longer
         // drawn here — they moved to a WPF ItemsControl layered over this
@@ -54,6 +55,25 @@ internal static class PinSceneRenderer
         for (var i = 0; i < scene.MotherlodePins.Count; i++)
             DrawPin(rt, factory, brushes, scene.MotherlodePins[i],
                 scene.SurveyOuter, scene.SurveyCenter, scene.SurveyOuterDiameter);
+    }
+
+    private static void DrawMotherlodeGuidance(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    {
+        if (scene.MotherlodeGuidance is not { } g || g.RadiusPixels <= 0) return;
+        var stroke = brushes.Get(g.StrokeColor);
+        if (stroke is null) return;
+
+        using var dashStyle = CreateDashStyle(factory, new[] { 6f, 4f }, dashOffset: 0f);
+        var cx = (float)g.Center.X;
+        var cy = (float)g.Center.Y;
+        var r = (float)g.RadiusPixels;
+        var ellipse = new Ellipse(new Vector2(cx, cy), r, r);
+        rt.DrawEllipse(ellipse, stroke, 2f, dashStyle);
+
+        // Centre tick — visible even when the ring is large.
+        const float tick = 5f;
+        rt.DrawLine(new Vector2(cx - tick, cy), new Vector2(cx + tick, cy), stroke, 2f, dashStyle);
+        rt.DrawLine(new Vector2(cx, cy - tick), new Vector2(cx, cy + tick), stroke, 2f, dashStyle);
     }
 
     private static void DrawPlayerAnchor(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)

@@ -237,6 +237,24 @@
                         </TextBlock.Style>
                     </TextBlock>
 
+                    <!-- #506: guided next measurement spot (≥1 committed spot). -->
+                    <Border Margin="0,0,0,12" Padding="10,8" CornerRadius="4"
+                            Background="{StaticResource AccentSoftBrush}">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding GuidedSpotPhrase}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding GuidedSpotPhrase}" TextWrapping="Wrap"
+                                   FontSize="{DynamicResource AppFontSizeBody}"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                    </Border>
+
                     <Border Margin="0,0,0,12" Padding="10,8" CornerRadius="4"
                             Background="{StaticResource AccentSoftBrush}">
                         <Border.Style>
@@ -945,7 +963,7 @@
 
                 <!-- MotherlodeMeasuring — no readings yet. -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=MotherlodeMeasuring}">
-                    <TextBlock Text="Click your metal-slab maps at three or more well-separated spots — readings are picked up automatically. For best accuracy, log out and back in at each spot before using the maps."
+                    <TextBlock Text="Click your metal-slab maps at three or more well-separated spots — distances are picked up automatically. After your first spot, the map overlay shows where to stand next (dashed ring). For best accuracy, log out and back in at each spot before using the maps."
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,20"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />
@@ -961,7 +979,7 @@
 
                 <!-- MotherlodeLocating — readings in, nothing solved yet. -->
                 <StackPanel Visibility="{Binding CurrentStep, Converter={x:Static controls:EnumMatchConverter.ToVisibility}, ConverterParameter=MotherlodeLocating}">
-                    <TextBlock Text="Keep clicking your maps at new, well-separated spots — each treasure needs at least three readings from different places. Relog at each spot for the best fix."
+                    <TextBlock Text="Keep clicking your maps at new, well-separated spots — each treasure needs at least three measurement spots. Follow the dashed ring on the map (or the relative hint below) for the next best place to stand. Relog at each spot for the best fix."
                                TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" Margin="0,0,0,20"
                                FontSize="{DynamicResource AppFontSizeBody}"
                                Foreground="{StaticResource TextSecondaryBrush}" />

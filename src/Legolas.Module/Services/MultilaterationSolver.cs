@@ -288,6 +288,13 @@ public sealed class MultilaterationSolver : IMultilaterationSolver
         return sw > 0 ? Math.Sqrt(swr2 / sw) : double.PositiveInfinity;
     }
 
+    /// <summary>
+    /// Dimensionless GDOP at <paramref name="m"/> for the sample geometry (#506
+    /// next-spot scoring shares the same metric as the solve gate).
+    /// </summary>
+    public static double ComputeGdop(IReadOnlyList<MultilaterationSample> s, (double X, double Z) m) =>
+        Gdop(s, m);
+
     // GDOP from the unweighted line-of-sight geometry: G = Σ JᵢᵀJᵢ with unit
     // Jᵢ, so √trace(G⁻¹) is the classic dimensionless dilution.
     private static double Gdop(IReadOnlyList<MultilaterationSample> s, (double X, double Z) m)

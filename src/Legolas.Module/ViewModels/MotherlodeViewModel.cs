@@ -93,6 +93,15 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
     [ObservableProperty] private int _locationsWithFix;
     [ObservableProperty] private string? _guidance;
 
+    /// <summary>#506: committed measurement spots for the active treasure (not
+    /// per-map distance bindings). Guided overlay gates on this (≥1), not on
+    /// the three-spot solve minimum.</summary>
+    [ObservableProperty] private int _measurementSpotCount;
+
+    /// <summary>#506: relative phrase for the guided next spot when the area is
+    /// uncalibrated (or as wizard copy when calibrated).</summary>
+    [ObservableProperty] private string? _guidedSpotPhrase;
+
     /// <summary>Per-spot bound-reading tally, parallel to the measured spots —
     /// the passive multi-map shape surface ("Spot 1: 5 · Spot 2: 4").</summary>
     [ObservableProperty] private IReadOnlyList<int> _readsPerLocation = Array.Empty<int>();
@@ -172,6 +181,12 @@ public sealed partial class MotherlodeViewModel : ObservableObject, IDisposable
         LocationCount = snap.LocationCount;
         LocationsWithFix = snap.LocationsWithFix;
         Guidance = snap.Guidance;
+        MeasurementSpotCount = snap.MeasurementSpotCount;
+        GuidedSpotPhrase = snap.NextSpot?.RelativePhrase is { } phrase
+            ? $"Next spot: {phrase}"
+            : snap.NextSpot is not null
+                ? "Next spot: stand in the dashed ring on the map"
+                : null;
         ReadsPerLocation = snap.ReadsPerLocation;
         MapsDug = snap.MapsDug;
         CanUndo = snap.CanUndo;
@@ -253,7 +268,7 @@ public sealed class MotherlodeSlotViewModel
         var core = HasFix
             ? bearing?.ToDisplayString() ?? "located — no nearby reference"
             : DistanceCount < 3
-                ? $"locating… ({DistanceCount}/3 readings)"
+                ? $"locating… ({DistanceCount}/3 spots)"
                 : "locating…";
         HeadlineText = string.IsNullOrWhiteSpace(MapName) ? core : $"{MapName} — {core}";
 
