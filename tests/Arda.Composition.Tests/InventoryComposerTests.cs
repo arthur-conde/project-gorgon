@@ -8,6 +8,7 @@ using Arda.World.Player.Events;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Mithril.Shared.Character;
 using Xunit;
 
 namespace Arda.Composition.Tests;
@@ -189,5 +190,95 @@ public class InventoryComposerTests : IDisposable
 
         _resolved.Should().ContainSingle()
             .Which.Metadata.Should().Be(playerMeta);
+    }
+
+    [Fact]
+    public void PersistenceRoundTrip_RestoresAccumulator()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"mithril-inv-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new PerCharacterStore<AccumulatorSnapshot>(
+                tempDir,
+                "inventory-accumulator.json",
+                AccumulatorSnapshotJsonContext.Default.AccumulatorSnapshot);
+
+            // composer1 sees player+chat traffic, then disposes (flushes to disk).
+            using (var composer1 = new InventoryComposer(_bus, store))
+            {
+                var session = new ComposedSession("Alice", "Server1",
+                    BaseTime, TimeSpan.Zero, "Alice:20260526120000");
+                _bus.Publish(new SessionEstablished(session, Meta(BaseTime)));
+
+                _bus.Publish(new InventoryItemAdded(2001, "item_sword", Meta(BaseTime.AddSeconds(1))));
+                _bus.Publish(new ChatInventoryObserved("Iron Sword", 1, Meta(BaseTime.AddSeconds(1).AddMilliseconds(50))));
+            }
+
+            // composer2 starts cold against the same store; session-establish triggers load.
+            using var composer2 = new InventoryComposer(_bus, store);
+            var session2 = new ComposedSession("Alice", "Server1",
+                BaseTime.AddHours(1), TimeSpan.Zero, "Alice:20260526130000");
+            _bus.Publish(new SessionEstablished(session2, Meta(BaseTime.AddHours(1))));
+
+            composer2.Items.Should().ContainKey(2001L);
+            composer2.Items[2001L].InternalName.Should().Be("item_sword");
+            composer2.Items[2001L].DisplayName.Should().Be("Iron Sword",
+                "the chat-side display name resolved before the snapshot was written");
+            composer2.Items[2001L].IsRemoved.Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PersistenceRoundTrip_SkipsExpiredSoftDeletes()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), $"mithril-inv-{Guid.NewGuid():N}");
+        try
+        {
+            var store = new PerCharacterStore<AccumulatorSnapshot>(
+                tempDir,
+                "inventory-accumulator.json",
+                AccumulatorSnapshotJsonContext.Default.AccumulatorSnapshot);
+
+            // Pre-seed: one soft-deleted item past the 30-day retention window,
+            // one within it. Only the in-window one should survive the reload.
+            var snapshot = new AccumulatorSnapshot();
+            snapshot.Entries[3001L] = new AccumulatorSnapshot.PersistedEntry
+            {
+                InternalName = "item_old",
+                IsRemoved = true,
+                RemovedAt = DateTimeOffset.UtcNow.AddDays(-45),
+                FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-60),
+                LastUpdatedAt = DateTimeOffset.UtcNow.AddDays(-45),
+                StackSize = 0,
+            };
+            snapshot.Entries[3002L] = new AccumulatorSnapshot.PersistedEntry
+            {
+                InternalName = "item_recent",
+                IsRemoved = true,
+                RemovedAt = DateTimeOffset.UtcNow.AddDays(-7),
+                FirstSeenAt = DateTimeOffset.UtcNow.AddDays(-10),
+                LastUpdatedAt = DateTimeOffset.UtcNow.AddDays(-7),
+                StackSize = 0,
+            };
+            store.Save("Alice", "Server1", snapshot);
+
+            using var composer = new InventoryComposer(_bus, store);
+            var session = new ComposedSession("Alice", "Server1",
+                BaseTime, TimeSpan.Zero, "Alice:20260526120000");
+            _bus.Publish(new SessionEstablished(session, Meta(BaseTime)));
+
+            composer.Items.Should().NotContainKey(3001L, "soft-deleted >30d ago is past retention");
+            composer.Items.Should().ContainKey(3002L, "soft-deleted within 30d is retained");
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+                Directory.Delete(tempDir, recursive: true);
+        }
     }
 }
