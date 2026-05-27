@@ -1,3 +1,4 @@
+using Arda.Contracts.State.Health;
 using Arda.Dispatch;
 using Arda.Ingest.Coordinator;
 using Microsoft.Extensions.Hosting;
@@ -37,6 +38,21 @@ internal sealed class ChatWorldService(
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             logger.LogInformation("Chat world driver stopped");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // See PlayerWorldService for the rationale — a non-shutdown crash
+            // here would leave the player driver running against a frozen
+            // pipeline with no banner.
+            logger.LogError(ex, "Chat world driver crashed unexpectedly");
+            grammarSignal.Raise(new GrammarBreak(
+                SourceFamily: "Chat",
+                Verb: "(driver crashed)",
+                SourceLine: "",
+                TokenExcerpt: "",
+                ParserHint: $"{ex.GetType().Name}: {ex.Message}",
+                At: time.GetUtcNow()));
             throw;
         }
     }

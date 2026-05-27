@@ -1,3 +1,4 @@
+using Arda.Contracts.State.Health;
 using Arda.Dispatch;
 using Arda.Ingest.Coordinator;
 using Microsoft.Extensions.Hosting;
@@ -39,6 +40,26 @@ internal sealed class PlayerWorldService(
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
             logger.LogInformation("Player world driver stopped");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Anything escaping RunAsync that isn't shutdown — file-I/O blip,
+            // bug in a non-grammar code path, or an OCE from a linked token
+            // that wasn't the host stoppingToken — would otherwise terminate
+            // this BackgroundService while the companion chat driver kept
+            // running. Half-dead pipeline with no banner. Raise a synthetic
+            // grammar break so the companion driver halts cooperatively and
+            // the shell banner surfaces, then propagate so the host also sees
+            // the failure.
+            logger.LogError(ex, "Player world driver crashed unexpectedly");
+            grammarSignal.Raise(new GrammarBreak(
+                SourceFamily: "Player",
+                Verb: "(driver crashed)",
+                SourceLine: "",
+                TokenExcerpt: "",
+                ParserHint: $"{ex.GetType().Name}: {ex.Message}",
+                At: time.GetUtcNow()));
             throw;
         }
     }
