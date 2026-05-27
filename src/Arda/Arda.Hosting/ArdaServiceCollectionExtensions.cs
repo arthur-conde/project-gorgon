@@ -46,6 +46,10 @@ public static class ArdaServiceCollectionExtensions
         services.AddSingleton<IDomainEventSubscriber>(sp => sp.GetRequiredService<DomainEventBus>());
         services.AddSingleton<IDomainEventPublisher>(sp => sp.GetRequiredService<DomainEventBus>());
 
+        // Grammar-break signal (one-shot, halts both drivers on grammar drift)
+        services.AddSingleton<IGrammarBreakSignal>(sp =>
+            new GrammarBreakSignal(sp.GetService<ILogger<GrammarBreakSignal>>()));
+
         // Replay progress (shared, bindable from WPF splash)
         services.AddSingleton(sp =>
             new ReplayProgress(sp.GetService<ILogger<ReplayProgress>>()));
