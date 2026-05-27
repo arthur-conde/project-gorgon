@@ -109,6 +109,19 @@ internal sealed class ChatLogSource : ILogLineSource
                 var latestFiles = GetOrderedChatFiles();
                 if (latestFiles.Length > 0 && latestFiles[^1] != currentFile)
                 {
+                    // Drain any final flush PG wrote to the previous-day file
+                    // after we detected EOF but before we switched tailers —
+                    // chat lines that arrived in that window are otherwise lost.
+                    var tailResults = _processor.ProcessBatch(liveTailer, isReplay: !_reachedLive);
+                    if (tailResults is not null)
+                    {
+                        foreach (var line in tailResults)
+                        {
+                            TryApplyBannerOffset(line.Log);
+                            yield return line;
+                        }
+                    }
+
                     _logger?.LogInformation(
                         "Chat midnight rollover: {OldPath} → {NewPath}",
                         currentFile,
