@@ -84,6 +84,9 @@ internal sealed class PlayerLogSource : ILogLineSource
         _logger?.LogInformation("Tailing {Path}", playerLogPath);
         var tailer = new LogSourceTailer(playerLogPath, _logger);
         var liveAnchored = false;
+        DateTime? creationTimeUtc = File.Exists(playerLogPath)
+            ? File.GetCreationTimeUtc(playerLogPath)
+            : null;
 
         while (!ct.IsCancellationRequested)
         {
@@ -91,6 +94,52 @@ internal sealed class PlayerLogSource : ILogLineSource
             {
                 _warnedMissingLog = true;
                 _logger?.LogWarning("Player log file missing at {Path}", playerLogPath);
+            }
+
+            // Mid-session rotation: PG crashed/restarted, moved Player.log →
+            // Player-prev.log and created a fresh Player.log. If the new file
+            // grows past the old offset before this poll, LogSourceTailer's
+            // length<offset truncation branch won't fire — we'd silently skip
+            // the login banner + ProcessLoadSkills/Recipes burst.
+            if (File.Exists(playerLogPath))
+            {
+                var currentCreation = File.GetCreationTimeUtc(playerLogPath);
+                if (creationTimeUtc.HasValue && currentCreation != creationTimeUtc.Value)
+                {
+                    _logger?.LogInformation(
+                        "Player.log rotated mid-session at {Path} (creation {Old:O} → {New:O}); draining prev and reopening",
+                        playerLogPath, creationTimeUtc.Value, currentCreation);
+
+                    // The bytes the old tailer was reading were renamed under
+                    // us to Player-prev.log, so seek to the old tailer's offset
+                    // in prev to pick up any final lines written between our
+                    // last poll and the rotation.
+                    if (File.Exists(prevLogPath))
+                    {
+                        var drainTailer = new LogSourceTailer(prevLogPath, _logger)
+                        {
+                            Offset = tailer.Offset
+                        };
+                        while (true)
+                        {
+                            var drained = _processor.ProcessBatch(
+                                drainTailer, isReplay: !_reachedLive, _clock, ref liveAnchored);
+                            if (drained is null) break;
+                            foreach (var line in drained)
+                                yield return line;
+                        }
+                    }
+
+                    _clock.Reset();
+                    tailer = new LogSourceTailer(playerLogPath, _logger);
+                    liveAnchored = false;
+                    _reachedLive = false;
+                    creationTimeUtc = currentCreation;
+                }
+                else if (!creationTimeUtc.HasValue)
+                {
+                    creationTimeUtc = currentCreation;
+                }
             }
 
             var results = _processor.ProcessBatch(
