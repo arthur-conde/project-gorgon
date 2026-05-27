@@ -29,10 +29,13 @@ World Internal Pipe
 * a chain of state machines that interpret changes
 
 ```csharp
-struct FrameMetadata
+// LogLineMetadata — minimal; no structural position data.
+// See log-source.md for rationale.
+struct LogLineMetadata
 {
-   string? Actor;
-   string
+   DateTimeOffset? Timestamp;
+   DateTimeOffset ReadOn;
+   bool IsReplay;
 }
 
 interface ISimulationFrame
@@ -71,6 +74,8 @@ interface IStateMachine
 }
 ```
 
+**Frame deserialization** is an L3 concern. The dispatch layer invokes a registered transform for the verb, passing the envelope's line content as a `ReadOnlySpan<char>`. The transform tokenizes arguments positionally on the span and allocates strings only for values it stores in state. String interning against reference data POCOs (area keys, item names, skill names) reduces allocations for known identifiers.
+
 World sim flow
 1. An envelope arrives from the [log source](log-source.md) from the log source
 2. World filters are collected and applied against the envelope
@@ -83,15 +88,17 @@ World sim flow
 5. A frame is pushed into world.in
  - world boundary -
 7. A frame is read from world.in to the world's state machine pipe, world.px
-8. For every state machine in the world, the frame is passed
-   1. The state machine processes the frame, or does nothing
+8. The frame type is looked up to find all state machines that want the message
+9. The frame is dispatched to the set of state machines in step 8.
+   1. The state machine processes the frame
    2. The state machine emits a domain event through the world's output pipe, or world.out
  - world boundary -
-9. Domain events exit on world out
+10. Domain events exit on world out
  - composition boundary - 
-10. Composers consume domain events from world, chat, access reports, or read reference data and format it for the user
+11. Composers consume domain events from world, chat, access reports, or read reference data and format it for the user
 
 Suggested state machines:
+The logs needed are not complete or definitive.
 * World
    * NPC
       * Inputs
@@ -100,12 +107,11 @@ Suggested state machines:
    * Outputs
          * Gifts
    * Map
-      * Inputs
-         * System: LOADING LEVEL AreaEltibule
+      * Inputs (all timestamped `[HH:MM:SS]` lines)
+         * LOADING LEVEL {AreaKey}
+         * !!! Initializing area! ({id}): {AreaKey}
+         * ProcessAddPlayer (contains spawn position — `SPAWNING LOCAL PLAYER AT` is redundant engine echo)
          * ProcessMapPinAdd
-         * ProcessAddPlayer
-         * System: !!! Initializing area! (502934): AreaEltibule
-         * System: SPAWNING LOCAL PLAYER AT (1165.34, 128.22, 2912.12)
          * ProcessMapFx
       * Outputs
          * Player Position Set
