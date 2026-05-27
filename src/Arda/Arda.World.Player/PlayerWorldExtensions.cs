@@ -256,6 +256,10 @@ public static class PlayerWorldExtensions
             RegisterHandler(registry, Verbs.ProcessAddToStorageVault, new VaultDepositHandler(vault));
 
             // --- Interaction/loot passthrough handlers (Tier 2, primary consumer: Gandalf) ---
+            // Order matters: NpcEndInteractionHandler must clear Npc state
+            // BEFORE the passthrough EndInteractionHandler publishes
+            // InteractionEnded — subscribers must see a clean Npc state.
+            RegisterHandler(registry, Verbs.ProcessEndInteraction, new NpcEndInteractionHandler(npc));
             RegisterHandler(registry, Verbs.ProcessEndInteraction, new EndInteractionHandler(pub));
             RegisterHandler(registry, Verbs.ProcessDoDelayLoop, new DelayLoopHandler(pub));
             RegisterHandler(registry, Verbs.ProcessWaitInteraction, new WaitInteractionHandler(pub));

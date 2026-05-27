@@ -91,6 +91,21 @@ internal sealed class Npc : INpcState
     }
 
     /// <summary>
+    /// Clear interaction context and pending gift / vendor state at dialogue
+    /// close. Without this, a stale <see cref="ActiveNpcKey"/> would let a
+    /// subsequent inventory delete re-enter the gift FSM and a positive
+    /// favor delta from any later source would fabricate a <c>GiftAccepted</c>.
+    /// </summary>
+    internal void OnEndInteraction(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    {
+        ClearInteraction();
+        _pendingDelete = null;
+        _pendingDelta = null;
+        _activeVendorNpcKey = null;
+        _activeVendorFavorTier = null;
+    }
+
+    /// <summary>
     /// Correlate item deletion during active NPC interaction as a gift attempt.
     /// If a pending favor delta already arrived, emit <see cref="GiftAccepted"/>
     /// immediately; otherwise stash the delete as pending.
@@ -135,7 +150,13 @@ internal sealed class Npc : INpcState
         var delta = tok.NextDouble();
 
         if (delta <= 0)
+        {
+            // A non-positive delta inside the active interaction cannot
+            // belong to a future positive delta — clear any stashed pending
+            // delete so a later unrelated gift can't fabricate GiftAccepted.
+            _pendingDelete = null;
             return;
+        }
 
         if (ActiveNpcKey is null)
             return;

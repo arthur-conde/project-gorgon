@@ -135,6 +135,57 @@ public class NpcTests
         _bus.Published<GiftAccepted>().Should().BeEmpty();
     }
 
+    // ── ProcessEndInteraction clears pending state (regression: phantom gifts) ──
+
+    private void DispatchEndInteraction(long entityId)
+    {
+        var args = $"({entityId})";
+        _npc.OnEndInteraction(args.AsSpan(), $"LocalPlayer: ProcessEndInteraction{args}", Meta());
+    }
+
+    private void DispatchDeltaFavor(string deltaFavorArgs)
+    {
+        var line = $"LocalPlayer: ProcessDeltaFavor({deltaFavorArgs})";
+        _npc.OnDeltaFavor($"({deltaFavorArgs})".AsSpan(), line, Meta());
+    }
+
+    [Fact]
+    public void EndInteraction_ClearsActiveContextAndPendingDelete()
+    {
+        DispatchInteraction("12307, 7, 2405.813, True, \"NPC_Joe\"");
+        DispatchDeleteItem(84741837); // stash pending
+        DispatchEndInteraction(12307);
+
+        _npc.ActiveNpcKey.Should().BeNull();
+
+        // A later interaction with a different NPC + positive delta must NOT
+        // resurrect the prior pending delete.
+        DispatchInteraction("99999, 7, 100, True, \"NPC_Other\"");
+        _bus.Clear();
+        DispatchDeltaFavor("99999, \"NPC_Other\", 25, True");
+
+        _bus.Published<GiftAccepted>().Should().BeEmpty(
+            "ProcessEndInteraction cleared the stashed delete; the new delta must not fabricate a gift");
+    }
+
+    [Fact]
+    public void NegativeDeltaInSameInteraction_ClearsPendingDelete()
+    {
+        DispatchInteraction("12307, 7, 2405.813, True, \"NPC_Joe\"");
+        DispatchDeleteItem(84741837); // stash pending
+
+        // Failed gift (delta <= 0) inside the same interaction
+        DispatchDeltaFavor("12307, \"NPC_Joe\", 0, True");
+
+        _bus.Clear();
+        // A later positive delta in the SAME interaction must NOT pair with
+        // the cleared pending delete.
+        DispatchDeltaFavor("12307, \"NPC_Joe\", 25, True");
+
+        _bus.Published<GiftAccepted>().Should().BeEmpty(
+            "non-positive delta clears the stashed delete; later positive delta has nothing to pair with");
+    }
+
     // ── Interning ───────────────────────────────────────────────────────
 
     [Fact]
