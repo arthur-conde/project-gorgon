@@ -1,4 +1,6 @@
 using System.Collections.Frozen;
+using System.Diagnostics;
+using Arda.Abstractions.Diagnostics;
 using Arda.Abstractions.Logs;
 using Microsoft.Extensions.Logging;
 
@@ -50,7 +52,27 @@ internal sealed class DispatchTable
             return;
 
         if (!_lookup.TryGetValue(parsed.Verb, out var handlers))
+        {
+            // Counter only — emitting a span for every uncovered line would explode the
+            // span volume on noisy log sources. Tags keep this aggregable per (verb, src).
+            ArdaMeters.VerbUnhandled.Add(1,
+                new KeyValuePair<string, object?>("verb", parsed.Verb.ToString()));
             return;
+        }
+
+        // Per-verb span. Gated on Activity.Current so we only pay span allocation when
+        // a parent (e.g. WorldDriver.world_driver) is open — that's the signal that
+        // a listener is actually attached and wants per-line timing.
+        Activity? activity = null;
+        if (Activity.Current is not null)
+        {
+            activity = ArdaActivitySources.Dispatch.StartActivity("dispatch_verb");
+            activity?.SetTag("verb", parsed.Verb.ToString());
+            activity?.SetTag("handler.count", (long)handlers.Length);
+        }
+
+        try
+        {
 
         foreach (var handler in handlers)
         {
@@ -70,6 +92,12 @@ internal sealed class DispatchTable
                     "Handler {Handler} threw on verb {Verb}: {Excerpt}",
                     handler.GetType().Name, parsed.Verb.ToString(), Excerpt(sourceLog));
             }
+        }
+
+        }
+        finally
+        {
+            activity?.Dispose();
         }
     }
 

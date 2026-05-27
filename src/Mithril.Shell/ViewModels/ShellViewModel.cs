@@ -60,7 +60,7 @@ public sealed partial class ShellViewModel : ObservableObject
 
     private readonly ModuleGates _gates;
     private readonly DispatcherTimer _gameClockTimer;
-    private readonly IPerfTracer _perf;
+    private readonly IPerfRecorder _perf;
     private readonly IWorldHealthView _health;
 
     public ShellViewModel(
@@ -75,7 +75,7 @@ public sealed partial class ShellViewModel : ObservableObject
         IAttentionAggregator attention,
         IGameClock gameClock,
         IShiftCatalog shiftCatalog,
-        IPerfTracer perf,
+        IPerfRecorder perf,
         IWorldHealthView health)
     {
         _services = services;
@@ -434,15 +434,28 @@ public sealed partial class ShellViewModel : ObservableObject
 
     private void ActivateModule(ModuleEntry entry)
     {
-        var sw = System.Diagnostics.Stopwatch.StartNew();
+        using var act = Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources.ShellModules.StartActivity("activate");
+        act?.SetTag("module.id", entry.Module.Id);
 
         SelectedModule = entry;
-        _gates.For(entry.Module.Id).Open();          // Lazy modules wake up here
-        var view = (System.Windows.Controls.Control)_services.GetRequiredService(entry.Module.ViewType);
+
+        // gate.open and view.resolve are the two halves of a module activation;
+        // splitting them tells us which half dominates when a lazy module is slow.
+        using (var gateAct = Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources.ShellModules.StartActivity("gate.open"))
+        {
+            gateAct?.SetTag("module.id", entry.Module.Id);
+            _gates.For(entry.Module.Id).Open();          // Lazy modules wake up here
+        }
+
+        System.Windows.Controls.Control view;
+        using (var viewAct = Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources.ShellModules.StartActivity("view.resolve"))
+        {
+            viewAct?.SetTag("module.id", entry.Module.Id);
+            view = (System.Windows.Controls.Control)_services.GetRequiredService(entry.Module.ViewType);
+        }
+
         ActiveContent = view;
         _settings.ActiveModuleId = entry.Module.Id;
         StatusText = entry.Module.DisplayName;
-
-        _perf.EmitModuleActivated(entry.Module.Id, sw.Elapsed.TotalMilliseconds);
     }
 }

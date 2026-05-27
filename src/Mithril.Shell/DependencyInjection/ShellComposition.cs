@@ -69,7 +69,7 @@ public static class ShellComposition
             .AddSingleton<IActiveCharacterPersistence>(o.ShellSettings)
             .AddSingleton(o.GameConfig)
             .AddMithrilLogging(o.LogDir)
-            .AddMithrilPerfTrace(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
+            .AddMithrilPerfRecorder(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
             .AddMithrilGameServices()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)

@@ -244,7 +244,7 @@ public static class Program
             // their StartAsync per #695 Call 1).
             if (shellSettings.EnablePerfTrace && shellSettings.AutoStartPerfTrace)
             {
-                try { host.Services.GetRequiredService<PerfTracerHostedService>().Toggle(); }
+                try { host.Services.GetRequiredService<PerfRecorderHostedService>().Toggle(); }
                 catch (Exception ex) { Boot($"perf auto-start failed: {ex.Message}"); }
             }
 

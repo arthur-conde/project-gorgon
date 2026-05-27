@@ -36,6 +36,7 @@ public static class ShellServiceCollectionExtensions
     public static IServiceCollection AddMithrilModules(
         this IServiceCollection services, Action<string>? log = null)
     {
+        using var activity = Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources.ShellModules.StartActivity("discover");
         var modulesDir = Path.Combine(AppContext.BaseDirectory, "modules");
         var modules = new List<IMithrilModule>();
 
@@ -68,6 +69,7 @@ public static class ShellServiceCollectionExtensions
         }
 
         services.AddSingleton(new DiscoveredModules(modules));
+        activity?.SetTag("discovered_count", (long)modules.Count);
         return services;
     }
 
@@ -119,7 +121,7 @@ public static class ShellServiceCollectionExtensions
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger("Shell")))
             .AddSingleton<IHotkeyCommand>(sp => new StartPerfTraceHotkey(
                 sp.GetRequiredService<ShellSettings>(),
-                sp.GetRequiredService<PerfTracerHostedService>(),
+                sp.GetRequiredService<PerfRecorderHostedService>(),
                 sp.GetRequiredService<ILoggerFactory>().CreateLogger("PerfTrace")));
 
     public static IServiceCollection AddMithrilShellViews(this IServiceCollection services) =>

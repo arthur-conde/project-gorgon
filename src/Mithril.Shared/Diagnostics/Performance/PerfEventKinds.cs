@@ -19,4 +19,15 @@ public static class PerfEventKinds
     public const string Scope = "scope";
     public const string ModuleActivated = "module_activated";
     public const string RefFetch = "ref_fetch";
+
+    // PR B additions — Arda + module-discovery + refdata-outcome + GameState counters.
+    public const string ArdaBatch = "arda_batch";
+    public const string ArdaDispatch = "arda_dispatch";
+    public const string ArdaWorldDriver = "arda_world_driver";
+    public const string ArdaCompose = "arda_compose";
+    public const string ModuleDiscover = "module_discover";
+    public const string GateOpen = "gate_open";
+    public const string ViewResolve = "view_resolve";
+    public const string RefFetchOutcome = "ref_fetch_outcome";
+    public const string MeterCounter = "meter_counter";
 }

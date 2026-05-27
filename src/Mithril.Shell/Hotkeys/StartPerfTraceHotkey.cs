@@ -16,12 +16,12 @@ namespace Mithril.Shell.Hotkeys;
 public sealed class StartPerfTraceHotkey : IHotkeyCommand
 {
     private readonly ShellSettings _settings;
-    private readonly PerfTracerHostedService _perf;
+    private readonly PerfRecorderHostedService _perf;
     private readonly ILogger _logger;
 
     public StartPerfTraceHotkey(
         ShellSettings settings,
-        PerfTracerHostedService perf,
+        PerfRecorderHostedService perf,
         ILogger logger)
     {
         _settings = settings;

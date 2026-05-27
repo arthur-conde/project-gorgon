@@ -30,23 +30,32 @@ Every line is a CompactJson record from Serilog. The base fields are:
 
 The discriminator is **`Kind`** — one of the constants in [`PerfEventKinds`](../src/Mithril.Shared/Diagnostics/Performance/PerfEventKinds.cs). All filtering should key off `Kind`.
 
-## What's instrumented today
+## Producer model
 
-Not every event kind has a producer yet — the schema defines the vocabulary; the codebase decides what gets emitted. Current state (PR [#196](https://github.com/moumantai-gg/mithril/pull/196)):
+Producers emit via `System.Diagnostics.ActivitySource` and `System.Diagnostics.Metrics.Meter` (BCL), using the canonical statics in [`Mithril.Shared.Diagnostics.Telemetry`](../src/Mithril.Shared/Diagnostics/Telemetry/) (and [`Arda.Abstractions.Diagnostics`](../src/Arda/Arda.Abstractions/Diagnostics/) for the Arda pipeline, which can't depend on `Mithril.Shared`). The recorder's internal listener — [`PerfFileExporter`](../src/Mithril.Shared/Diagnostics/Performance/PerfFileExporter.cs) — subscribes to every source/meter whose name starts with `"Mithril."` and maps emits to the JSON-lines schema below. The on-disk shape is preserved across the producer-API migration; consumers (mithril-logs MCP server, jq recipes) don't change.
+
+## What's instrumented today
 
 | Kind | Producer | Status |
 |---|---|---|
-| `session_header` | [`PerfTracer.EmitSessionHeader`](../src/Mithril.Shared/Diagnostics/Performance/PerfTracer.cs) | Always emitted on session start |
-| `frame_summary` / `frame` / `stall` | [`PerfTracerHostedService` + `CompositionTarget.Rendering`](../src/Mithril.Shared/Diagnostics/Performance/PerfTracerHostedService.cs) | Attached while session active |
-| `dispatcher` | `PerfTracerHostedService` + `Dispatcher.Hooks` | Attached while session active |
-| `counter` / `gc` | `PerfTracerHostedService` + `System.Threading.Timer` (1Hz) | Running while session active |
+| `session_header` | [`PerfRecorder.Start`](../src/Mithril.Shared/Diagnostics/Performance/PerfRecorder.cs) | Always emitted on session start |
+| `frame_summary` / `frame` / `stall` | [`PerfRecorderHostedService` + `CompositionTarget.Rendering`](../src/Mithril.Shared/Diagnostics/Performance/PerfRecorderHostedService.cs) | Attached while session active |
+| `dispatcher` | `PerfRecorderHostedService` + `Dispatcher.Hooks` | Attached while session active |
+| `counter` / `gc` | `PerfRecorderHostedService` + `System.Threading.Timer` (1Hz) | Running while session active |
 | `binding_error` | [`BindingErrorTraceListener`](../src/Mithril.Shared/Diagnostics/Performance/BindingErrorTraceListener.cs) | Attached while session active |
-| `input_latency` | `PerfTracerHostedService` + `InputManager.PreProcessInput` | Attached while session active |
+| `input_latency` | `PerfRecorderHostedService` + `InputManager.PreProcessInput` | Attached while session active |
 | `module_activated` | [`ShellViewModel.ActivateModule`](../src/Mithril.Shell/ViewModels/ShellViewModel.cs) | Fires on every activation (initial + tab clicks) |
-| `ref_fetch` | [`ReferenceDataService.RefreshFileAsync`](../src/Mithril.Shared/Reference/ReferenceDataService.cs) | Fires per CDN fetch attempt; cache-hit path not yet wrapped |
-| `scope` | _none_ | **No producers yet.** The `IPerfTracer.Scope(name, tags)` API exists for modules to adopt at suspected hot paths; the deferred candidate list (log-line dispatch, `TtlObservableCollection.Reconcile`, etc.) hasn't been wired. A trace with **zero `scope` events is the expected default**, not a wiring bug. |
+| `gate_open` / `view_resolve` | `ShellViewModel.ActivateModule` (child spans) | Per activation; split tells which half of activation dominates |
+| `module_discover` | [`ShellServiceCollectionExtensions.AddMithrilModules`](../src/Mithril.Shell/DependencyInjection/ShellServiceCollectionExtensions.cs) | Once at startup; carries `discovered_count` |
+| `ref_fetch` | [`ReferenceDataService`](../src/Mithril.Shared/Reference/ReferenceDataService.cs) — CDN refresh + cache-hit + bundled-fallback | All three paths instrumented; `outcome` tag distinguishes |
+| `arda_batch` | [`BatchProcessor.ProcessBatch`](../src/Arda/Arda.Ingest/Coordinator/BatchProcessor.cs) (L0/L1) | Per batch read from a log tailer |
+| `arda_world_driver` | [`WorldDriver.RunAsync`](../src/Arda/Arda.Dispatch/WorldDriver.cs) (L2) | One long-running span per driver run (per source family) |
+| `arda_dispatch` | [`DispatchTable.Dispatch`](../src/Arda/Arda.Dispatch/DispatchTable.cs) (L2) | Per dispatched line; gated on `Activity.Current` so zero-cost when no recording session |
+| `arda_compose` | [`DomainEventBus.Publish`](../src/Arda/Arda.Dispatch/DomainEventBus.cs) (L4 and below) | One span per subscriber-callback per published event; gated on `ActivitySource.HasListeners()` |
+| `meter_counter` | All `Meter`-counter producers (Arda lines/verb-unmatched/grammar-break, reference fetch_outcome, domain-event-published) | Sums per (instrument, tag-set) flushed once per second |
+| `scope` | _ad-hoc_ | Fallback record kind for any `Mithril.*` Activity that doesn't match a dedicated dispatch arm. |
 
-If you read a trace and a kind you expected is missing, check the producer column first — `scope` and `cache-hit ref_fetch` are the two known gaps today.
+If you read a trace and a kind you expected is missing, check the producer column first.
 
 ## Event kinds
 
@@ -168,14 +177,94 @@ Cost of the first activation of a module — the `_gates.For(...).Open()` plus t
 
 ### `ref_fetch`
 
-CDN refresh in `ReferenceDataService.RefreshFileAsync`. Captures network/disk time per file.
+Reference-data load in `ReferenceDataService`. All three load paths emit this kind — distinguish via `Outcome`.
 
 | Property | Meaning |
 |---|---|
 | `File` | The reference data file name (`items`, `recipes`, `npcs`, …). |
-| `CacheHit` | Always `false` today — only the HTTP fetch path is wrapped. Reserved for future cache-hit instrumentation. |
-| `DurationMs` | Wall-clock for the HTTP fetch (or until failure). |
-| `Bytes` | Response body size, `0` on failure. |
+| `Outcome` | `cdn` (HTTP fetch succeeded), `cdn_failed` (HTTP attempt threw — no `ref_fetch` activity is emitted in this case; the failure surfaces as a `mithril.reference.fetch_outcome` counter sample only), `cache` (loaded from on-disk cache file), or `bundled` (fell back to the bundled JSON). |
+| `CacheHit` | `true` when `Outcome` is `cache`; `false` otherwise. Retained for backward-compat with pre-PR-B trace consumers that only branched on `CacheHit`. |
+| `DurationMs` | Wall-clock for the path that emitted the record (HTTP fetch, cache read, or bundled read). |
+| `Bytes` | Number of bytes read. `0` on the CDN-failure path (no body). |
+
+### `gate_open`
+
+Child of `module_activated`. Time spent in `ModuleGate.For(id).Open()` — the lazy-module wake-up half of activation.
+
+| Property | Meaning |
+|---|---|
+| `ModuleId` | The module's `Id`. |
+| `DurationMs` | Wall-clock for `Open()`. Cheap for eager modules (already open); for lazy modules this is when their hosted services start. |
+
+### `view_resolve`
+
+Child of `module_activated`. Time spent resolving the module's view from DI (`_services.GetRequiredService(ViewType)`).
+
+| Property | Meaning |
+|---|---|
+| `ModuleId` | The module's `Id`. |
+| `DurationMs` | Wall-clock for DI resolution + view construction. First-activation cost lives here for modules with eager `View` ctors. |
+
+### `module_discover`
+
+Module assembly scan in `AddMithrilModules`. One record per shell start.
+
+| Property | Meaning |
+|---|---|
+| `DiscoveredCount` | Number of `IMithrilModule` implementations found in the `modules/` folder. |
+| `DurationMs` | Wall-clock for the assembly load + reflection scan. Slow scans are usually I/O on the `modules/` directory. |
+
+### `arda_batch`
+
+Per batch read by `BatchProcessor.ProcessBatch` (Arda L0/L1) — covers the tailer→classification stage for one polling cycle.
+
+| Property | Meaning |
+|---|---|
+| `Source` | The log file path being tailed (e.g. `…/Player.log`, `…/ChatLogs/Global.log`). |
+| `LineCount` | Raw lines read from the tailer in this batch (pre-classification). |
+| `ClassifiedCount` | Lines that survived classification and were forwarded to L2. The difference is uninteresting noise (chat-styling lines that aren't structured events). |
+| `DurationMs` | Wall-clock for classify-the-whole-batch. Worth examining if a batch contains many lines — classification is per-line. |
+
+### `arda_world_driver`
+
+One long-running span per Arda driver run (typically one per session per source family — player + chat). Wraps the entire L2 dispatch loop.
+
+| Property | Meaning |
+|---|---|
+| `SourceFamily` | `player` or `chat`. |
+| `LineCount` | Total lines pulled through the loop before completion. |
+| `Halted` | `true` if a grammar break stopped the loop early; otherwise the loop ran to source-exhaustion or cancellation. |
+| `DurationMs` | Wall-clock for the loop. Mostly dominated by waiting for new lines from the tailer — interpret in combination with `LineCount` for throughput. |
+
+### `arda_dispatch`
+
+Per-line dispatch through `DispatchTable` (Arda L2). Only emitted when a recording session is attached — gated on `Activity.Current` being non-null so the no-listener path stays allocation-free.
+
+| Property | Meaning |
+|---|---|
+| `Verb` | The verb token extracted from the line (e.g. `ProcessAddItem`). |
+| `HandlerCount` | Number of handlers registered for this verb (1 for most, several for cross-cutting verbs). |
+| `DurationMs` | Wall-clock for invoking all handlers. Slow dispatches with `HandlerCount > 1` warrant per-handler instrumentation (deferred from PR B — see [#818](https://github.com/moumantai-gg/mithril/issues/818)). |
+
+### `arda_compose`
+
+Per subscriber-callback invocation through `DomainEventBus.Publish` (Arda L4 and below). One record per (event, subscriber) pair — gated on `ActivitySource.HasListeners()` so the cost is one volatile read when no recording session is attached.
+
+| Property | Meaning |
+|---|---|
+| `Composer` | The subscriber's target type name (e.g. `InventoryComposer`, `SessionComposer`, `NpcStateComposer`). |
+| `EventType` | The event struct's name (e.g. `InventoryItemAdded`, `SessionEstablished`). |
+| `DurationMs` | Wall-clock for the single subscriber invocation. Sum over a session per `Composer` to find which composer dominates. |
+
+### `meter_counter`
+
+Aggregated `System.Diagnostics.Metrics.Meter` counter sum, flushed once per second per (instrument, tag-set). Covers PR B's counters: Arda lines/verb-unmatched/grammar-break/verb-unhandled/domain-event-published, reference fetch-outcome, and any future counters added via the `Mithril.*` Meter prefix.
+
+| Property | Meaning |
+|---|---|
+| `Instrument` | The OTel instrument name (`mithril.arda.lines_parsed`, `mithril.reference.fetch_outcome`, …). |
+| `Sum` | Sum of measurements within the 1-second flush window. |
+| `Tags` | Object containing the tag-set the measurements share (e.g. `{"source":"player"}`, `{"outcome":"cache","file":"items"}`). |
 
 ## Reading a trace
 
@@ -190,7 +279,7 @@ $Path = "$env:LocalAppData\Mithril\Shell\perf\perf-20260511-143301.jsonl"
 Before concluding "kind X is missing, the wiring is broken," rule out these analysis-side traps. Most "zero events" findings turn out to be one of them:
 
 - **Capital-K `Kind`.** Serilog's CompactJsonFormatter preserves the case of the template placeholder. The trace JSON has `"Kind":"…"`, `"ModuleId":"…"`, `"DurationMs":…` — capital first letter on every property. A filter like `jq 'select(.kind=="module_activated")'` (lowercase `kind`) returns zero results even when events exist. Use `.Kind`. Same for all other properties.
-- **The kind isn't instrumented yet.** Check [What's instrumented today](#whats-instrumented-today). `scope` has no producers today; `ref_fetch` only fires on the HTTP path, not on cache hits.
+- **The kind isn't instrumented yet.** Check [What's instrumented today](#whats-instrumented-today). `scope` is the fallback bucket for any `Mithril.*` Activity that doesn't match a dedicated dispatch arm — empty by default, populates only when a producer adopts a not-yet-mapped source/op pair.
 - **The session didn't cover the event-generating window.** Hotkey-toggled sessions start *after* the shell is up — the initial `module_activated` fires during `ShellViewModel` construction and is therefore missed. Only subsequent tab clicks produce `module_activated` in that mode. Use `autoStartPerfTrace=true` if you want the first activation captured.
 - **Autostart silently didn't fire.** If `enablePerfTrace=true` and `autoStartPerfTrace=true` aren't both in `shell.json` *before* the process starts, the autostart check at [`Program.cs`](../src/Mithril.Shell/Program.cs) skips. The regular diagnostics log will tell you — grep `%LocalAppData%\Mithril\Shell\logs\mithril-*.json` for `Session started:` dated to that run.
 - **Sanity-check the file with a literal grep first.** Before reaching for jq, run a case-sensitive plain-text search for the kind string. If the literal string appears, the events exist and your jq filter has a bug. If it doesn't appear, the event isn't being produced (or wasn't produced during your session window).

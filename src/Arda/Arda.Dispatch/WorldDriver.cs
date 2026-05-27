@@ -1,3 +1,4 @@
+using Arda.Abstractions.Diagnostics;
 using Arda.Abstractions.Logs;
 using Arda.Contracts.State.Health;
 using Microsoft.Extensions.Logging;
@@ -58,6 +59,13 @@ internal sealed class WorldDriver : IWorldDriver
         var liveSignalled = _onLiveTransition is null;
         var halted = false;
 
+        // One long-running span per driver run. When no listener is attached
+        // StartActivity returns null and the per-line cost stays ~zero.
+        using var driverActivity = ArdaActivitySources.Dispatch.StartActivity("world_driver");
+        driverActivity?.SetTag("source.family", _sourceFamily ?? "unknown");
+
+        var sourceTag = new KeyValuePair<string, object?>("source", _sourceFamily ?? "unknown");
+
         await foreach (var line in _source.Lines(ct).WithCancellation(ct))
         {
             if (_grammarSignal?.IsRaised == true)
@@ -70,6 +78,7 @@ internal sealed class WorldDriver : IWorldDriver
             }
 
             _lineCount++;
+            ArdaMeters.LinesParsed.Add(1, sourceTag);
 
             if (!liveSignalled && !line.Metadata.IsReplay)
             {
@@ -84,6 +93,10 @@ internal sealed class WorldDriver : IWorldDriver
                 observer.Observe(line.Log, line.Metadata);
 
             var parsed = VerbExtractor.Parse(line.Log.AsSpan());
+            if (parsed.IsEmpty)
+            {
+                ArdaMeters.VerbUnmatched.Add(1, sourceTag);
+            }
             try
             {
                 if (_tolerantGrammar)
@@ -111,6 +124,9 @@ internal sealed class WorldDriver : IWorldDriver
                     _time.GetUtcNow());
 
                 _grammarSignal?.Raise(details);
+                ArdaMeters.GrammarBreak.Add(1,
+                    sourceTag,
+                    new KeyValuePair<string, object?>("verb", ex.Verb));
 
                 _logger?.LogError(ex,
                     "Grammar break halted {SourceFamily} driver (verb={Verb}, hint={Hint})",
@@ -131,6 +147,9 @@ internal sealed class WorldDriver : IWorldDriver
                 ex.ParserHint,
                 _time.GetUtcNow());
             _grammarSignal?.MarkObserved(details);
+            ArdaMeters.GrammarBreak.Add(1,
+                sourceTag,
+                new KeyValuePair<string, object?>("verb", ex.Verb));
             _logger?.LogWarning(
                 "Tolerant grammar mode: skipping handler {Handler} on {SourceFamily} (verb={Verb}, hint={Hint})",
                 handler.GetType().Name, _sourceFamily ?? "unknown", ex.Verb, ex.ParserHint);
@@ -150,6 +169,9 @@ internal sealed class WorldDriver : IWorldDriver
                 _lineCount);
             _onLiveTransition!();
         }
+
+        driverActivity?.SetTag("line_count", _lineCount);
+        driverActivity?.SetTag("halted", halted);
 
         _logger?.LogInformation(
             "World driver completed for {SourceFamily} ({LineCount} lines processed, halted={Halted})",

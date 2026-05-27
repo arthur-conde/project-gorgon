@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Mithril.Shared.Character;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 
@@ -20,11 +21,14 @@ namespace Mithril.Shared.Diagnostics.Performance;
 ///
 /// The <see cref="Toggle"/> method is the entry point the hotkey calls; it
 /// composes the <see cref="SessionHeader"/>, hands off to
-/// <see cref="IPerfTracer"/>, then wires the hooks on the UI dispatcher.
+/// <see cref="IPerfRecorder"/>, then wires the hooks on the UI dispatcher.
+/// While attached, hooks emit via <see cref="MithrilActivitySources"/> +
+/// <see cref="MithrilMeters"/> — the recorder's file exporter listens and
+/// writes the JSON-lines schema.
 /// </summary>
-public sealed class PerfTracerHostedService : IHostedService, IDisposable
+public sealed class PerfRecorderHostedService : IHostedService, IDisposable
 {
-    private readonly IPerfTracer _tracer;
+    private readonly IPerfRecorder _recorder;
     private readonly ILogger? _logger;
     private readonly IActiveCharacterService _activeChar;
     private readonly IReadOnlyList<IMithrilModule> _modules;
@@ -36,13 +40,11 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
 
     // Frame timing
     private long _lastFrameTicks;
-    private readonly List<double> _frameWindow = new(capacity: 128);
-    private DateTime _frameWindowStart;
     private const double StallThresholdMs = FrameStats.DefaultStallThresholdMs;
 
     // Dispatcher queue tracking
     private int _queueDepth;
-    private readonly Dictionary<DispatcherOperation, (long startTicks, int depthAtStart)> _opStarts = new();
+    private readonly Dictionary<DispatcherOperation, (long startTicks, int depthAtStart, Activity? activity)> _opStarts = new();
 
     // Rolling 200ms window of recent dispatcher op completions, used to attribute
     // stalls. Both Rendering and OperationCompleted run on the UI dispatcher so a
@@ -51,9 +53,8 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
     private static readonly long StallWindowTicks =
         (long)(Stopwatch.Frequency * (StallAttribution.WindowMs / 1000.0));
 
-    // Input latency: stamp on PreProcessInput, close on next Rendering
-    private long _pendingInputTicks;
-    private string? _pendingInputKind;
+    // Input latency: open an activity on PreProcessInput, close on next Rendering
+    private Activity? _pendingInputActivity;
 
     // GC polling
     private int _lastGen0;
@@ -64,14 +65,14 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
     private System.Threading.Timer? _counterTimer;
     private BindingErrorTraceListener? _bindingListener;
 
-    public PerfTracerHostedService(
-        IPerfTracer tracer,
+    public PerfRecorderHostedService(
+        IPerfRecorder recorder,
         IActiveCharacterService activeChar,
         IEnumerable<IMithrilModule> modules,
         Func<bool> verboseFrameEvents,
         ILogger? logger = null)
     {
-        _tracer = tracer;
+        _recorder = recorder;
         _activeChar = activeChar;
         _modules = modules.ToList();
         _verboseFrameEvents = verboseFrameEvents;
@@ -87,12 +88,12 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
     }
 
     /// <summary>True if currently recording. Used by the hotkey to label the toast.</summary>
-    public bool IsActive => _tracer.IsActive;
+    public bool IsActive => _recorder.IsActive;
 
     /// <summary>Flip recording state. Always called from the UI dispatcher (hotkey marshals there).</summary>
     public void Toggle()
     {
-        if (_tracer.IsActive) StopInternal();
+        if (_recorder.IsActive) StopInternal();
         else StartInternal();
     }
 
@@ -108,8 +109,8 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             }
 
             var header = BuildSessionHeader();
-            _tracer.StartSession(header);
-            if (!_tracer.IsActive) return; // session start failed; tracer already logged
+            _recorder.Start(header);
+            if (!_recorder.IsActive) return; // session start failed; recorder already logged
 
             // Hooks must be wired on the UI thread because CompositionTarget /
             // DispatcherHooks bind to the calling thread's dispatcher.
@@ -119,7 +120,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "StartInternal failed");
-            try { _tracer.StopSession(); } catch { }
+            try { _recorder.Stop(); } catch { }
         }
     }
 
@@ -136,8 +137,8 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         }
         catch (Exception ex) { _logger?.LogWarning(ex, "DetachHooks failed"); }
 
-        try { _tracer.StopSession(); }
-        catch (Exception ex) { _logger?.LogWarning(ex, "StopSession failed"); }
+        try { _recorder.Stop(); }
+        catch (Exception ex) { _logger?.LogWarning(ex, "Stop failed"); }
     }
 
     // ── Hook lifecycle (UI thread) ─────────────────────────────────────────
@@ -153,14 +154,13 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             _uiDispatcher.Hooks.OperationCompleted += OnDispatcherOperationCompleted;
             InputManager.Current.PreProcessInput += OnPreProcessInput;
 
-            _bindingListener = new BindingErrorTraceListener(_tracer);
+            _bindingListener = new BindingErrorTraceListener();
             PresentationTraceSources.DataBindingSource.Listeners.Add(_bindingListener);
             PresentationTraceSources.DataBindingSource.Switch.Level = SourceLevels.Error;
 
             _lastGen0 = GC.CollectionCount(0);
             _lastGen1 = GC.CollectionCount(1);
             _lastGen2 = GC.CollectionCount(2);
-            _frameWindowStart = DateTime.UtcNow;
             _lastFrameTicks = 0;
 
             _counterTimer = new System.Threading.Timer(OnCounterTick, null,
@@ -193,14 +193,13 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             try { _counterTimer?.Dispose(); } catch { }
             _counterTimer = null;
 
-            // Flush any pending frame-window aggregate
-            FlushFrameWindow();
-
+            // Close any in-flight dispatcher activities so we don't leak Activity instances.
+            foreach (var kv in _opStarts) { try { kv.Value.activity?.Dispose(); } catch { } }
             _opStarts.Clear();
             _recentOps.Clear();
             _queueDepth = 0;
-            _pendingInputTicks = 0;
-            _pendingInputKind = null;
+            try { _pendingInputActivity?.Dispose(); } catch { }
+            _pendingInputActivity = null;
 
             _hooksAttached = false;
         }
@@ -217,44 +216,35 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             var stall = intervalMs > StallThresholdMs;
 
             // Input → render latency. Closed on the first frame after the input
-            // was stamped, then cleared so a long render doesn't get charged to
-            // the next input.
-            if (_pendingInputTicks != 0)
+            // was stamped; the activity's Duration is the latency.
+            if (_pendingInputActivity is not null)
             {
-                var latencyMs = (now - _pendingInputTicks) * 1000.0 / Stopwatch.Frequency;
-                _tracer.EmitInputLatency(_pendingInputKind ?? "unknown", latencyMs);
-                _pendingInputTicks = 0;
-                _pendingInputKind = null;
+                try { _pendingInputActivity.Dispose(); } catch { }
+                _pendingInputActivity = null;
             }
 
-            if (stall)
-            {
-                var attribution = StallAttribution.Classify(SumRecentOpRunMs(now));
-                _tracer.EmitFrame(intervalMs, stall: true, currentOp: null, attribution: attribution);
-            }
-            else if (_verboseFrameEvents())
-            {
-                _tracer.EmitFrame(intervalMs, stall: false, currentOp: null, attribution: null);
-            }
+            // Always feed the frame-interval histogram; the exporter windows it
+            // into a frame_summary record each second.
+            MithrilMeters.Wpf.FrameIntervalMs.Record(intervalMs,
+                new KeyValuePair<string, object?>("stall", stall));
 
-            _frameWindow.Add(intervalMs);
-            if (DateTime.UtcNow - _frameWindowStart >= TimeSpan.FromSeconds(1))
-                FlushFrameWindow();
+            // Individual frame records: only on stall OR verbose mode, to keep the
+            // file small. The exporter maps these to {stall} or {frame} kinds based
+            // on the tag value.
+            if (stall || _verboseFrameEvents())
+            {
+                using var act = MithrilActivitySources.Wpf.StartActivity("frame");
+                if (act is not null)
+                {
+                    act.SetTag("interval_ms", intervalMs);
+                    act.SetTag("stall", stall);
+                    act.SetTag("op", "");
+                    if (stall) act.SetTag("attribution",
+                        StallAttribution.Classify(SumRecentOpRunMs(now)));
+                }
+            }
         }
         _lastFrameTicks = now;
-    }
-
-    private void FlushFrameWindow()
-    {
-        if (_frameWindow.Count == 0)
-        {
-            _frameWindowStart = DateTime.UtcNow;
-            return;
-        }
-        var summary = FrameStats.Compute(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(_frameWindow));
-        _tracer.EmitFrameSummary(summary.Count, summary.MeanMs, summary.P50Ms, summary.P95Ms, summary.MaxMs, summary.StallCount);
-        _frameWindow.Clear();
-        _frameWindowStart = DateTime.UtcNow;
     }
 
     // ── Dispatcher hooks ──────────────────────────────────────────────────
@@ -262,11 +252,19 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
     private void OnDispatcherOperationStarted(object? sender, DispatcherHookEventArgs e)
     {
         // OperationStarted fires when the operation begins executing — at that
-        // point queue depth is "ops still pending behind me" + me. Track
-        // simple in-flight count via Started/Completed deltas; not exact for
-        // priority ordering but a good proxy.
+        // point queue depth is "ops still pending behind me" + me. Track simple
+        // in-flight count via Started/Completed deltas; not exact for priority
+        // ordering but a good proxy.
         Interlocked.Increment(ref _queueDepth);
-        _opStarts[e.Operation] = (Stopwatch.GetTimestamp(), _queueDepth);
+        var depthAtStart = _queueDepth;
+        var activity = MithrilActivitySources.Wpf.StartActivity("dispatcher");
+        if (activity is not null)
+        {
+            activity.SetTag("priority", e.Operation.Priority.ToString());
+            activity.SetTag("wait_ms", 0.0);
+            activity.SetTag("depth", (long)depthAtStart);
+        }
+        _opStarts[e.Operation] = (Stopwatch.GetTimestamp(), depthAtStart, activity);
     }
 
     private void OnDispatcherOperationCompleted(object? sender, DispatcherHookEventArgs e)
@@ -284,13 +282,8 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         while (_recentOps.Count > 0 && _recentOps.Peek().ticks < cutoff)
             _recentOps.Dequeue();
 
-        // We don't have a "queued at" timestamp from the public hooks API, so
-        // wait time is reported as 0 — analysts can infer it from queueDepthAtStart.
-        _tracer.EmitDispatcher(
-            priority: e.Operation.Priority.ToString(),
-            waitMs: 0.0,
-            runMs: runMs,
-            queueDepthAtStart: start.depthAtStart);
+        // Stopping the activity captures run_ms as Activity.Duration.
+        try { start.activity?.Dispose(); } catch { }
     }
 
     /// <summary>
@@ -316,15 +309,16 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         if (input is null) return;
         // Only first stamp per "frame window" — multiple input events in the
         // same render tick coalesce to one latency measurement.
-        if (_pendingInputTicks != 0) return;
+        if (_pendingInputActivity is not null) return;
 
         string kind;
         if (input is MouseEventArgs) kind = "mouse";
         else if (input is KeyEventArgs) kind = "key";
         else return; // ignore stylus/touch/tablet for now
 
-        _pendingInputTicks = Stopwatch.GetTimestamp();
-        _pendingInputKind = kind;
+        var act = MithrilActivitySources.Wpf.StartActivity("input_latency");
+        act?.SetTag("kind", kind);
+        _pendingInputActivity = act;
     }
 
     // ── 1Hz counters + GC ─────────────────────────────────────────────────
@@ -333,32 +327,43 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
     {
         try
         {
-            if (!_tracer.IsActive) return;
-
             var gen0 = GC.CollectionCount(0);
             var gen1 = GC.CollectionCount(1);
             var gen2 = GC.CollectionCount(2);
-            if (gen2 > _lastGen2) _tracer.EmitGc(2, 0.0);
-            else if (gen1 > _lastGen1) _tracer.EmitGc(1, 0.0);
-            else if (gen0 > _lastGen0) _tracer.EmitGc(0, 0.0);
+            if (gen2 > _lastGen2) EmitGc(2);
+            else if (gen1 > _lastGen1) EmitGc(1);
+            else if (gen0 > _lastGen0) EmitGc(0);
             _lastGen0 = gen0;
             _lastGen1 = gen1;
             _lastGen2 = gen2;
 
             using var proc = Process.GetCurrentProcess();
             var wsMb = proc.WorkingSet64 / (1024L * 1024L);
-            _tracer.EmitCounter(
-                workingSetMB: wsMb,
-                gen0: gen0,
-                gen1: gen1,
-                gen2: gen2,
-                threads: proc.Threads.Count,
-                handles: proc.HandleCount,
-                dispatcherQueueDepth: Volatile.Read(ref _queueDepth));
+            using var act = MithrilActivitySources.Wpf.StartActivity("counter");
+            if (act is not null)
+            {
+                act.SetTag("working_set_mb", wsMb);
+                act.SetTag("gen0", (long)gen0);
+                act.SetTag("gen1", (long)gen1);
+                act.SetTag("gen2", (long)gen2);
+                act.SetTag("threads", (long)proc.Threads.Count);
+                act.SetTag("handles", (long)proc.HandleCount);
+                act.SetTag("queue_depth", (long)Volatile.Read(ref _queueDepth));
+            }
         }
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "Counter tick failed");
+        }
+    }
+
+    private static void EmitGc(int generation)
+    {
+        using var act = MithrilActivitySources.Wpf.StartActivity("gc");
+        if (act is not null)
+        {
+            act.SetTag("generation", (long)generation);
+            act.SetTag("duration_ms", 0.0);
         }
     }
 

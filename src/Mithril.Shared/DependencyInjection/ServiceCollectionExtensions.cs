@@ -23,31 +23,37 @@ namespace Mithril.Shared.DependencyInjection;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// Register the opt-in perf-trace harness: an <see cref="IPerfTracer"/>
-    /// singleton (writes per-session JSON-lines files to <paramref name="perfDirectory"/>)
-    /// plus a <see cref="PerfTracerHostedService"/> that owns the WPF hooks
-    /// (CompositionTarget, Dispatcher.Hooks, InputManager, GC polling, counters,
-    /// binding errors) and toggles them on/off in sync with session state.
+    /// Register the opt-in perf-recording harness: an <see cref="IPerfRecorder"/>
+    /// singleton (writes per-session JSON-lines files to <paramref name="perfDirectory"/>
+    /// while a session is active) plus a <see cref="PerfRecorderHostedService"/>
+    /// that owns the WPF hooks (CompositionTarget, Dispatcher.Hooks, InputManager,
+    /// GC polling, counters, binding errors) and toggles them on/off in sync with
+    /// session state.
+    ///
+    /// Producers emit via <see cref="Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources"/>
+    /// + <see cref="Mithril.Shared.Diagnostics.Telemetry.MithrilMeters"/> — the
+    /// recorder's internal listener serialises them into the JSON-lines schema
+    /// documented in <c>docs/perf-trace-schema.md</c>.
     ///
     /// <paramref name="verboseFrameEventsAccessor"/> is a late-bound read of the
     /// shell setting so flipping <c>ShellSettings.VerboseFrameEvents</c> takes
     /// effect mid-session without a restart.
     /// </summary>
-    public static IServiceCollection AddMithrilPerfTrace(
+    public static IServiceCollection AddMithrilPerfRecorder(
         this IServiceCollection services,
         string perfDirectory,
         Func<IServiceProvider, Func<bool>> verboseFrameEventsAccessor)
     {
-        services.AddSingleton<IPerfTracer>(sp => new PerfTracer(
+        services.AddSingleton<IPerfRecorder>(sp => new PerfRecorder(
             perfDirectory,
             sp.GetRequiredService<ILoggerFactory>().CreateLogger("PerfTrace")));
-        services.AddSingleton<PerfTracerHostedService>(sp => new PerfTracerHostedService(
-            sp.GetRequiredService<IPerfTracer>(),
+        services.AddSingleton<PerfRecorderHostedService>(sp => new PerfRecorderHostedService(
+            sp.GetRequiredService<IPerfRecorder>(),
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetServices<Mithril.Shared.Modules.IMithrilModule>(),
             verboseFrameEventsAccessor(sp),
             sp.GetRequiredService<ILoggerFactory>().CreateLogger("PerfTrace")));
-        services.AddHostedService(sp => sp.GetRequiredService<PerfTracerHostedService>());
+        services.AddHostedService(sp => sp.GetRequiredService<PerfRecorderHostedService>());
         return services;
     }
 
@@ -138,8 +144,7 @@ public static class ServiceCollectionExtensions
             .AddSingleton<IReferenceDataService>(sp => new ReferenceDataService(
                 cacheDirectory,
                 sp.GetRequiredService<HttpClient>(),
-                sp.GetRequiredService<ILoggerFactory>().CreateLogger("Reference"),
-                perf: sp.GetService<IPerfTracer>()))
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("Reference")))
             .AddSingleton<IEntityNameResolver, ReferenceDataEntityNameResolver>();
 
     public static IServiceCollection AddMithrilCommunityCalibration(this IServiceCollection services, string cacheDirectory) =>

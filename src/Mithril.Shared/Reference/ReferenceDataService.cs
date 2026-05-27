@@ -49,7 +49,6 @@ public sealed class ReferenceDataService : IReferenceDataService
     private readonly string _bundledDir;
     private readonly HttpClient _http;
     private readonly ILogger? _logger;
-    private readonly IPerfTracer? _perf;
 
     /// <summary>
     /// Map from bundled-file base name (e.g. <c>"quests"</c>) to the
@@ -298,12 +297,11 @@ public sealed class ReferenceDataService : IReferenceDataService
         new Dictionary<string, StorageVault>(StringComparer.Ordinal);
     private ReferenceFileSnapshot _storageVaultsSnapshot;
 
-    public ReferenceDataService(string cacheDir, HttpClient http, ILogger? logger = null, string? bundledDir = null, IPerfTracer? perf = null)
+    public ReferenceDataService(string cacheDir, HttpClient http, ILogger? logger = null, string? bundledDir = null)
     {
         _cacheDir = cacheDir;
         _http = http;
         _logger = logger;
-        _perf = perf;
         _bundledDir = bundledDir ?? Path.Combine(AppContext.BaseDirectory, "Reference", "BundledData");
 
         _specsByBaseName = ParserRegistry.Discover()
@@ -549,14 +547,22 @@ public sealed class ReferenceDataService : IReferenceDataService
 
         if (File.Exists(cachePath))
         {
+            using var cacheActivity = Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources.Reference.StartActivity("fetch");
+            cacheActivity?.SetTag("file", fileName);
+            cacheActivity?.SetTag("cache_hit", true);
+            cacheActivity?.SetTag("outcome", "cache");
             try
             {
                 var meta = TryLoadMetadata(cacheMetaPath, ReferenceFileSource.Cache);
                 var json = File.ReadAllText(cachePath);
+                cacheActivity?.SetTag("bytes", (long)json.Length);
                 var parsed = parser(json);
                 swapper(parsed, meta);
                 ReportUnknowns(fileName, parsed!, meta.CdnVersion);
                 _logger?.LogInformation("Loaded {FileName} from cache ({CdnVersion})", fileName, meta.CdnVersion);
+                Mithril.Shared.Diagnostics.Telemetry.MithrilMeters.Reference.FetchOutcome.Add(1,
+                    new KeyValuePair<string, object?>("outcome", "cache"),
+                    new KeyValuePair<string, object?>("file", fileName));
                 return;
             }
             catch (Exception ex)
@@ -572,12 +578,21 @@ public sealed class ReferenceDataService : IReferenceDataService
             _logger?.LogWarning("Bundled {FileName}.json missing at {BundledPath}", fileName, bundledPath);
             return;
         }
+
+        using var bundledActivity = Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources.Reference.StartActivity("fetch");
+        bundledActivity?.SetTag("file", fileName);
+        bundledActivity?.SetTag("cache_hit", false);
+        bundledActivity?.SetTag("outcome", "bundled");
         var bundledMeta = TryLoadMetadata(bundledMetaPath, ReferenceFileSource.Bundled);
         var bundledJson = File.ReadAllText(bundledPath);
+        bundledActivity?.SetTag("bytes", (long)bundledJson.Length);
         var bundledParsed = parser(bundledJson);
         swapper(bundledParsed, bundledMeta);
         ReportUnknowns(fileName, bundledParsed!, bundledMeta.CdnVersion);
         _logger?.LogInformation("Loaded {FileName} from bundled ({CdnVersion})", fileName, bundledMeta.CdnVersion);
+        Mithril.Shared.Diagnostics.Telemetry.MithrilMeters.Reference.FetchOutcome.Add(1,
+            new KeyValuePair<string, object?>("outcome", "bundled"),
+            new KeyValuePair<string, object?>("file", fileName));
     }
 
     private async Task RefreshFileAsync<T>(
@@ -593,7 +608,10 @@ public sealed class ReferenceDataService : IReferenceDataService
         _logger?.LogInformation("Refreshing {FileName} from {Url}", fileName, url);
 
         byte[] body;
-        var fetchSw = System.Diagnostics.Stopwatch.StartNew();
+        using var act = Mithril.Shared.Diagnostics.Telemetry.MithrilActivitySources.Reference.StartActivity("fetch");
+        act?.SetTag("file", fileName);
+        act?.SetTag("cache_hit", false);
+        act?.SetTag("outcome", "cdn");
         try
         {
             using var resp = await _http.GetAsync(url, ct).ConfigureAwait(false);
@@ -603,10 +621,16 @@ public sealed class ReferenceDataService : IReferenceDataService
         catch (Exception ex)
         {
             _logger?.LogWarning(ex, "{FileName}.json fetch failed; keeping existing data", fileName);
-            _perf?.EmitRefFetch(fileName, cacheHit: false, durationMs: fetchSw.Elapsed.TotalMilliseconds, bytes: 0);
+            act?.SetTag("bytes", 0L);
+            Mithril.Shared.Diagnostics.Telemetry.MithrilMeters.Reference.FetchOutcome.Add(1,
+                new KeyValuePair<string, object?>("outcome", "cdn_failed"),
+                new KeyValuePair<string, object?>("file", fileName));
             return;
         }
-        _perf?.EmitRefFetch(fileName, cacheHit: false, durationMs: fetchSw.Elapsed.TotalMilliseconds, bytes: body.LongLength);
+        act?.SetTag("bytes", body.LongLength);
+        Mithril.Shared.Diagnostics.Telemetry.MithrilMeters.Reference.FetchOutcome.Add(1,
+            new KeyValuePair<string, object?>("outcome", "cdn"),
+            new KeyValuePair<string, object?>("file", fileName));
 
         var meta = new ReferenceFileMetadata
         {
