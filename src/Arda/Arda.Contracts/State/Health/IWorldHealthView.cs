@@ -17,8 +17,18 @@ public interface IWorldHealthView
     bool AllLive { get; }
 
     /// <summary>
+    /// Non-null when the Arda pipeline has halted on a grammar drift. The shell
+    /// surfaces a blocking banner in this state; module tabs continue to render
+    /// whatever state they accumulated pre-halt but no new events arrive.
+    /// </summary>
+    GrammarBreak? Break { get; }
+
+    /// <summary>True when <see cref="Break"/> is non-null.</summary>
+    bool IsHalted { get; }
+
+    /// <summary>
     /// Fires after any health state mutation. Consumers should re-read the
-    /// <see cref="Player"/> and <see cref="Chat"/> properties.
+    /// <see cref="Player"/>, <see cref="Chat"/>, and <see cref="Break"/> properties.
     /// </summary>
     event EventHandler? Changed;
 }

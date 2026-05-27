@@ -23,5 +23,11 @@ public enum WorldMode
     Replaying,
 
     /// <summary>Caught up; tailing live log output.</summary>
-    Live
+    Live,
+
+    /// <summary>
+    /// Halted on a <c>GrammarException</c>. The driver has stopped consuming;
+    /// the world model is frozen at the last successfully-processed line.
+    /// </summary>
+    Halted
 }

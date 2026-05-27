@@ -1,5 +1,6 @@
 using Arda.Contracts;
 using Arda.Contracts.State.Health;
+using Arda.Dispatch;
 using Arda.Hosting;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
@@ -23,6 +24,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
 
     private readonly IDomainEventSubscriber _bus;
     private readonly IReplayProgress _replay;
+    private readonly IGrammarBreakSignal _grammarSignal;
     private readonly TimeProvider _time;
     private readonly ILogger<WorldHealthView> _logger;
 
@@ -33,6 +35,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
     private long _chatFrames;
     private bool _playerLive;
     private bool _chatLive;
+    private GrammarBreak? _break;
 
     private readonly List<IDisposable> _subscriptions = [];
     private bool _disposed;
@@ -40,11 +43,13 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
     public WorldHealthView(
         IDomainEventSubscriber bus,
         IReplayProgress replay,
+        IGrammarBreakSignal grammarSignal,
         ILogger<WorldHealthView> logger,
         TimeProvider? time = null)
     {
         _bus = bus;
         _replay = replay;
+        _grammarSignal = grammarSignal;
         _logger = logger;
         _time = time ?? TimeProvider.System;
     }
@@ -54,7 +59,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         get
         {
             lock (_gate)
-                return Snapshot(_playerTimestamp, _playerFrames, _playerLive);
+                return Snapshot(_playerTimestamp, _playerFrames, _playerLive, _break is not null);
         }
     }
 
@@ -63,13 +68,23 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         get
         {
             lock (_gate)
-                return Snapshot(_chatTimestamp, _chatFrames, _chatLive);
+                return Snapshot(_chatTimestamp, _chatFrames, _chatLive, _break is not null);
         }
     }
 
     public bool AllLive
     {
-        get { lock (_gate) return _playerLive && _chatLive; }
+        get { lock (_gate) return _playerLive && _chatLive && _break is null; }
+    }
+
+    public GrammarBreak? Break
+    {
+        get { lock (_gate) return _break; }
+    }
+
+    public bool IsHalted
+    {
+        get { lock (_gate) return _break is not null; }
     }
 
     public event EventHandler? Changed;
@@ -100,6 +115,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         _subscriptions.Add(_bus.Subscribe<ChatSessionIdentified>(OnChatSession));
 
         _replay.PropertyChanged += OnReplayProgressChanged;
+        _grammarSignal.Raised += OnGrammarBreakRaised;
 
         if (_replay.ReplayComplete.IsCompleted)
         {
@@ -110,7 +126,25 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
             }
         }
 
+        // If a break was already raised before subscription, surface it.
+        if (_grammarSignal.Current is { } existing)
+        {
+            lock (_gate) _break = existing;
+            RaiseChanged();
+        }
+
         return Task.CompletedTask;
+    }
+
+    private void OnGrammarBreakRaised(object? sender, EventArgs e)
+    {
+        var current = _grammarSignal.Current;
+        if (current is null) return;
+        lock (_gate) _break = current;
+        _logger.LogError(
+            "Arda pipeline halted on grammar drift: verb {Verb}, hint {Hint}",
+            current.Verb, current.ParserHint);
+        RaiseChanged();
     }
 
     private void OnCalendarAdvanced(CalendarTimeAdvanced evt)
@@ -187,14 +221,15 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         if (changed) RaiseChanged();
     }
 
-    private WorldHealth Snapshot(DateTimeOffset? ts, long frames, bool live)
+    private WorldHealth Snapshot(DateTimeOffset? ts, long frames, bool live, bool halted)
     {
         var drift = ts is not null
             ? _time.GetUtcNow() - ts.Value
             : TimeSpan.Zero;
         if (drift < TimeSpan.Zero) drift = TimeSpan.Zero;
 
-        return new WorldHealth(ts, frames, live ? WorldMode.Live : WorldMode.Replaying, drift);
+        var mode = halted ? WorldMode.Halted : (live ? WorldMode.Live : WorldMode.Replaying);
+        return new WorldHealth(ts, frames, mode, drift);
     }
 
     private bool DriftExceeds(DateTimeOffset? ts)
@@ -246,6 +281,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         if (_disposed) return;
         _disposed = true;
         _replay.PropertyChanged -= OnReplayProgressChanged;
+        _grammarSignal.Raised -= OnGrammarBreakRaised;
         foreach (var sub in _subscriptions) sub.Dispose();
         _subscriptions.Clear();
     }
