@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using Arda.Contracts.State.Health;
+using Arda.Dispatch;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
@@ -195,14 +196,20 @@ public sealed partial class ShellViewModel : ObservableObject
     {
         var player = _health.Player;
         var chat = _health.Chat;
+        var brk = _health.Break;
 
-        PipelineModeText = _health.AllLive ? "LIVE" : "REPLAY";
+        PipelineModeText = _health.IsHalted ? "HALTED" : (_health.AllLive ? "LIVE" : "REPLAY");
         PlayerDriftText = FormatDrift(player);
         ChatDriftText = FormatDrift(chat);
         IsHealthDegraded = _health.AllLive &&
             (player.Drift > WorldHealth.DriftWarningThreshold || chat.Drift > WorldHealth.DriftWarningThreshold);
         HealthTooltip = $"Player: {player.Mode} · {player.FrameCount:N0} frames · drift {player.Drift.TotalSeconds:0.0}s\n" +
                         $"Chat: {chat.Mode} · {chat.FrameCount:N0} frames · drift {chat.Drift.TotalSeconds:0.0}s";
+
+        IsHalted = _health.IsHalted;
+        GrammarBreak = brk;
+        HaltBannerVerb = brk?.Verb ?? "";
+        HaltBannerHint = brk?.ParserHint ?? "";
     }
 
     private static string FormatDrift(WorldHealth h)
@@ -299,8 +306,19 @@ public sealed partial class ShellViewModel : ObservableObject
     [ObservableProperty] private bool _isHealthDegraded;
     [ObservableProperty] private string _healthTooltip = "";
 
+    [ObservableProperty] private bool _isHalted;
+    [ObservableProperty] private GrammarBreak? _grammarBreak;
+    [ObservableProperty] private string _haltBannerVerb = "";
+    [ObservableProperty] private string _haltBannerHint = "";
+
     [RelayCommand]
     private void DismissUpdate() => _updateStatus.Dismiss();
+
+    [RelayCommand]
+    private void CloseShell()
+    {
+        System.Windows.Application.Current?.Shutdown();
+    }
 
     [RelayCommand]
     private async Task ApplyUpdateAsync()

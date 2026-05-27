@@ -22,6 +22,41 @@
                          Description="{Binding AttentionTooltip}"/>
     </Window.TaskbarItemInfo>
     <DockPanel>
+        <!-- Grammar-break banner: blocks the UI when Arda halts on log-format drift.
+             Modeled after the IsUpdateAvailable banner; placed at DockPanel top so
+             it spans the whole window above the sidebar+content split. -->
+        <Border DockPanel.Dock="Top" Background="#FF5A1F1F" BorderBrush="#FFE04545" BorderThickness="0,0,0,2"
+                Padding="14,10" Visibility="{Binding IsHalted, Converter={StaticResource BoolToVis}}">
+            <DockPanel LastChildFill="True">
+                <icon:PackIconLucide DockPanel.Dock="Left" Kind="OctagonAlert" Width="22" Height="22"
+                                     VerticalAlignment="Center" Margin="0,0,12,0"
+                                     Foreground="#FFE04545"/>
+                <Button DockPanel.Dock="Right" Padding="14,4" Margin="12,0,0,0"
+                        Background="#FFE04545" Foreground="#FFF8F8F8"
+                        Command="{Binding CloseShellCommand}">
+                    <TextBlock Text="Close Mithril" FontWeight="SemiBold"/>
+                </Button>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Project Gorgon was updated. Mithril can't parse the new log format."
+                               Foreground="#FFF8E8E8" FontWeight="SemiBold"
+                               FontSize="{DynamicResource AppFontSizeMedium}"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock Text="Broken verb:" Foreground="#AAFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center"/>
+                        <Border Background="#33000000" CornerRadius="2" Padding="6,1" Margin="6,0,12,0"
+                                VerticalAlignment="Center">
+                            <TextBlock Text="{Binding HaltBannerVerb}" Foreground="#FFF8E8E8"
+                                       FontFamily="Cascadia Mono, Consolas, monospace"
+                                       FontSize="{DynamicResource AppFontSizeHint}"/>
+                        </Border>
+                        <TextBlock Text="{Binding HaltBannerHint}" Foreground="#CCFFFFFF"
+                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                </StackPanel>
+            </DockPanel>
+        </Border>
         <tb:TaskbarIcon x:Name="Tray" DockPanel.Dock="Top" Visibility="Visible"
                         ToolTipText="Mithril">
             <tb:TaskbarIcon.ContextMenu>
