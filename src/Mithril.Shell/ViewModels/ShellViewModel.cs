@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Reflection;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using Arda.Contracts.State.Health;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Character;
@@ -59,6 +60,7 @@ public sealed partial class ShellViewModel : ObservableObject
     private readonly ModuleGates _gates;
     private readonly DispatcherTimer _gameClockTimer;
     private readonly IPerfTracer _perf;
+    private readonly IWorldHealthView _health;
 
     public ShellViewModel(
         IServiceProvider services,
@@ -72,7 +74,8 @@ public sealed partial class ShellViewModel : ObservableObject
         IAttentionAggregator attention,
         IGameClock gameClock,
         IShiftCatalog shiftCatalog,
-        IPerfTracer perf)
+        IPerfTracer perf,
+        IWorldHealthView health)
     {
         _services = services;
         _settings = settings;
@@ -85,6 +88,7 @@ public sealed partial class ShellViewModel : ObservableObject
         _gameClock = gameClock;
         _shiftCatalog = shiftCatalog;
         _perf = perf;
+        _health = health;
         _allModules = modules.OrderBy(m => m.SortOrder).ToList();
         RebuildVisibleModules();
 
@@ -95,7 +99,9 @@ public sealed partial class ShellViewModel : ObservableObject
         _preferences.PropertyChanged += OnPreferencesChanged;
         _attention.AttentionChanged += OnAttentionChanged;
         _perf.IsActiveChanged += OnPerfTraceStateChanged;
+        _health.Changed += OnHealthChanged;
         RefreshPerfTraceState();
+        RefreshHealthState();
         RefreshCharacter();
         RefreshUpdateStatus();
         RefreshAttentionSurface();
@@ -178,6 +184,34 @@ public sealed partial class ShellViewModel : ObservableObject
             : "Perf-trace not recording";
     }
 
+    private void OnHealthChanged(object? sender, EventArgs e)
+    {
+        var d = System.Windows.Application.Current?.Dispatcher;
+        if (d is null || d.CheckAccess()) RefreshHealthState();
+        else d.InvokeAsync(RefreshHealthState);
+    }
+
+    private void RefreshHealthState()
+    {
+        var player = _health.Player;
+        var chat = _health.Chat;
+
+        PipelineModeText = _health.AllLive ? "LIVE" : "REPLAY";
+        PlayerDriftText = FormatDrift(player);
+        ChatDriftText = FormatDrift(chat);
+        IsHealthDegraded = _health.AllLive &&
+            (player.Drift > TimeSpan.FromSeconds(5) || chat.Drift > TimeSpan.FromSeconds(5));
+        HealthTooltip = $"Player: {player.Mode} · {player.FrameCount:N0} frames · drift {player.Drift.TotalSeconds:0.0}s\n" +
+                        $"Chat: {chat.Mode} · {chat.FrameCount:N0} frames · drift {chat.Drift.TotalSeconds:0.0}s";
+    }
+
+    private static string FormatDrift(WorldHealth h)
+    {
+        if (h.LastTimestamp is null) return "—";
+        var d = h.Drift;
+        return d.TotalSeconds < 2 ? "<2s" : $"{d.TotalSeconds:0}s";
+    }
+
     private void OnAttentionChanged(object? sender, AttentionChangedEventArgs e)
     {
         // Aggregator already marshalled to the UI thread.
@@ -258,6 +292,12 @@ public sealed partial class ShellViewModel : ObservableObject
 
     [ObservableProperty] private bool _isPerfTraceRecording;
     [ObservableProperty] private string _perfTraceTooltip = "Perf-trace recording";
+
+    [ObservableProperty] private string _pipelineModeText = "";
+    [ObservableProperty] private string _playerDriftText = "";
+    [ObservableProperty] private string _chatDriftText = "";
+    [ObservableProperty] private bool _isHealthDegraded;
+    [ObservableProperty] private string _healthTooltip = "";
 
     [RelayCommand]
     private void DismissUpdate() => _updateStatus.Dismiss();

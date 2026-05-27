@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using Arda.Composition;
+using Arda.Contracts.State.Health;
 using Arda.Hosting;
 using Arda.Wpf;
 using Arda.World.Player;
@@ -68,12 +69,7 @@ public static class ShellComposition
             .AddSingleton(o.GameConfig)
             .AddMithrilDiagnostics(o.LogDir)
             .AddMithrilPerfTrace(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
-            .AddMithrilGameServices(sp => () => sp.GetRequiredService<ShellSettings>().MirrorRawLogLinesToDiagnostics)
-            .AddMithrilLogActorPipeline(sp => () => sp.GetRequiredService<ShellSettings>().CaptureRawPlayerLogLines)
-            // L1 driver — legacy pipeline retained for LogStreamAttentionSource
-            // (subscription-health badge). Follow-on: retire once Arda exposes
-            // equivalent health signaling.
-            .AddMithrilLogStreamDriver()
+            .AddMithrilGameServices()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)
             .AddMithrilCommunityCalibration(o.CommunityCalibrationCacheDir)
@@ -140,7 +136,13 @@ public static class ShellComposition
 
         services.AddSingleton<InventoryProjection>();
 
+        services.AddSingleton<WorldHealthView>();
+        services.AddSingleton<IWorldHealthView>(sp => sp.GetRequiredService<WorldHealthView>());
+        services.AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<WorldHealthView>());
+        services.AddHostedService(sp => sp.GetRequiredService<WorldHealthView>());
+
         services.AddHostedService<ArdaDiagnosticBridge>();
+        services.AddHostedService<ActiveCharacterLogSynchronizer>();
 
         services.AddSingleton<SessionAgreementComposer>();
         services.AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<SessionAgreementComposer>());

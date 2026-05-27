@@ -76,8 +76,6 @@ Arda is a deterministic log-replay and live world-state tracking engine organise
 
 Modules consume Arda via `IDomainEventSubscriber` and the read-only state interfaces — they never reference the internal handler or dispatch types.
 
-> **Legacy L0/L1 pipeline.** `IPlayerLogStream`, `IChatLogStream`, `ILogStreamDriver`, and `LogStreamAttentionSource` still exist in `Mithril.Shared` for the subscription-health badge. Follow-on work will retire them once Arda exposes equivalent health signaling.
-
 ### Shell Bootstrap (Program.cs)
 
 Single-instance mutex guard &rarr; game root detection &rarr; settings load &rarr; `IHost` build &rarr; eager module gates opened &rarr; WPF `App.Run()`. Second-instance attempts raise the existing window via `EventWaitHandle`.
@@ -86,7 +84,7 @@ Single-instance mutex guard &rarr; game root detection &rarr; settings load &rar
 
 DI is composed via extension methods in `Mithril.Shared/DependencyInjection/ServiceCollectionExtensions.cs`:
 
-- **Game services**: `IPlayerLogStream`, `IChatLogStream`, `ICharacterDataService` — tail game logs and parse character exports
+- **Game services**: `IGameClock`, `IShiftCatalog`, `IGameReportsService`, `IActiveCharacterService` — game clocks, character snapshots
 - **Reference data**: `IReferenceDataService` — fetches JSON (items, recipes, skills, NPCs, XP tables) from `cdn.projectgorgon.com` with bundled fallback and background refresh
 - **Settings**: `ISettingsStore<T>` / `JsonSettingsStore<T>` with `System.Text.Json` source-generated contexts; `SettingsAutoSaver<T>` for periodic persistence
 - **Hotkeys**: OS-level Win32 hotkey registration; modules provide `IHotkeyCommand` implementations; `HotkeyConflictDetector` validates uniqueness

@@ -398,10 +398,10 @@
       "pattern": "LocalPlayer:\\s*ProcessAddPlayer\\([^,]+,\\s*[^,]+,\\s*\"[^\"]*\",\\s*\"([^\"]+)\"",
       "source": "player",
       "module": "shared",
-      "csharp": { "type": "Mithril.Shared.Character.ActiveCharacterLogSynchronizer", "method": "AddPlayerRx" },
+      "csharp": null,
       "eventType": "shared.ProcessAddPlayer",
       "kind": "session-marker",
-      "notes": "Drives active-character tracking and is the session-start marker for tail readers; also matches the literal scanned by PlayerLogTailReader.SeedToSessionStart.",
+      "notes": "Retired from C# — ActiveCharacterLogSynchronizer now consumes Arda SessionStarted events directly. Pattern retained for reference; the literal is scanned by PlayerLogTailReader.SeedToSessionStart.",
       "fields": [
         { "name": "characterName", "group": 1, "type": "string" }
       ]

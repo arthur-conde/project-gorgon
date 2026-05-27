@@ -14,12 +14,14 @@ public sealed class PalantirShellViewModel
     public PalantirShellViewModel(
         LiveInventoryViewModel liveInventory,
         WorldStateViewModel worldState,
+        WorldHealthViewModel worldHealth,
         NotificationTesterViewModel notificationTester)
     {
         Tabs = new[]
         {
             new ModuleTab("Live Inventory", liveInventory),
             new ModuleTab("World State", worldState),
+            new ModuleTab("Pipeline Health", worldHealth),
             new ModuleTab("Notification Tester", notificationTester),
         };
     }

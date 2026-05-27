@@ -55,6 +55,60 @@
                     <TextBlock Text="REC" Foreground="#FFE04545" FontWeight="SemiBold"
                                FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center"/>
                 </StackPanel>
+                <!-- Pipeline health: mode token + per-driver drift -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
+                            ToolTip="{Binding HealthTooltip}" Margin="12,0,0,0">
+                    <Border CornerRadius="3" Padding="5,1" VerticalAlignment="Center" Margin="0,0,6,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="#FF2A5A2A"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding PipelineModeText}" Value="REPLAY">
+                                        <Setter Property="Background" Value="#FF5A4A20"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding PipelineModeText}"
+                                   FontSize="{DynamicResource AppFontSizeHint}" FontWeight="SemiBold"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#FF7AE07A"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding PipelineModeText}" Value="REPLAY">
+                                            <Setter Property="Foreground" Value="#FFE8B04A"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+                    <TextBlock Text="P" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding PlayerDriftText}" Foreground="#AAFFFFFF" Margin="2,0,6,0"
+                               FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center"/>
+                    <TextBlock Text="C" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding ChatDriftText}" Foreground="#AAFFFFFF" Margin="2,0,0,0"
+                               FontSize="{DynamicResource AppFontSizeHint}" VerticalAlignment="Center"/>
+                    <Ellipse Width="6" Height="6" Margin="6,0,0,0" VerticalAlignment="Center"
+                             Visibility="{Binding IsHealthDegraded, Converter={StaticResource BoolToVis}}">
+                        <Ellipse.Fill>
+                            <SolidColorBrush Color="#FFE04545"/>
+                        </Ellipse.Fill>
+                        <Ellipse.Triggers>
+                            <EventTrigger RoutedEvent="Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever" AutoReverse="True">
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         From="1.0" To="0.3" Duration="0:0:0.7"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Ellipse.Triggers>
+                    </Ellipse>
+                </StackPanel>
                 <TextBlock Text="{Binding StatusText}" Foreground="#88FFFFFF"/>
             </DockPanel>
         </Border>
