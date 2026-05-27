@@ -24,7 +24,7 @@ public class WeatherTests
     private void Dispatch(string condition, bool flag = true)
     {
         var args = $"(\"{condition}\", {(flag ? "True" : "False")})".AsSpan();
-        _weather.Handle(args, $"LocalPlayer: ProcessSetWeather(\"{condition}\", {(flag ? "True" : "False")})", Meta());
+        _weather.Handle(args, default, $"LocalPlayer: ProcessSetWeather(\"{condition}\", {(flag ? "True" : "False")})", Meta());
     }
 
     [Fact]

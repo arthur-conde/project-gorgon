@@ -72,7 +72,7 @@ internal sealed class Npc : INpcState
     /// Args format: <c>(entityId, arg2, favor, isNpc, "Name")</c>
     /// Example: <c>(12307, 7, 2405.813, True, "NPC_Joe")</c>
     /// </summary>
-    internal void OnStartInteraction(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    internal void OnStartInteraction(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         _pendingDelete = null;
         _pendingDelta = null;
@@ -80,7 +80,7 @@ internal sealed class Npc : INpcState
         _activeVendorFavorTier = null;
         _vaultOpen = false;
 
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var entityId = tok.NextLong();
@@ -160,9 +160,9 @@ internal sealed class Npc : INpcState
     /// immediately; otherwise stash the delta as pending.
     /// Args format: <c>(entityId, "NPC_Key", delta, bool)</c>
     /// </summary>
-    internal void OnDeltaFavor(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    internal void OnDeltaFavor(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         tok.NextLong(); // entityId — already tracked
@@ -200,9 +200,9 @@ internal sealed class Npc : INpcState
     /// entity ID against the active interaction to attach the NPC key.
     /// Args format: <c>(entityId, FavorTier, gold, resetCounter, cap, ...)</c>
     /// </summary>
-    internal void OnVendorScreen(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    internal void OnVendorScreen(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var entityId = tok.NextLong();
@@ -226,9 +226,9 @@ internal sealed class Npc : INpcState
     /// and favor tier from the preceding <c>ProcessVendorScreen</c>.
     /// Args format: <c>(price, InternalName(instanceId), bool)</c>
     /// </summary>
-    internal void OnVendorAddItem(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    internal void OnVendorAddItem(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var price = tok.NextLong();

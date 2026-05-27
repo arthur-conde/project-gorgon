@@ -33,16 +33,13 @@ public class DeltaFavorHandlerTests
 
     private void ArmNpcInteraction(string npcKey, long entityId = 12307)
     {
-        _npc.OnStartInteraction(
-            $"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(),
-            $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")",
-            Meta());
+        _npc.OnStartInteraction($"({entityId}, 7, 2405.813, True, \"{npcKey}\")".AsSpan(), default, $"LocalPlayer: ProcessStartInteraction({entityId}, 7, 2405.813, True, \"{npcKey}\")", Meta());
     }
 
     private void Dispatch(string args)
     {
         var line = $"LocalPlayer: ProcessDeltaFavor{args}";
-        _handler.Handle(args.AsSpan(), line, Meta());
+        _handler.Handle(args.AsSpan(), default, line, Meta());
     }
 
     [Fact]

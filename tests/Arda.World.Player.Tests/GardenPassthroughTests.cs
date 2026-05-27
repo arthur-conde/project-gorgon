@@ -24,7 +24,7 @@ public class GardenPassthroughTests
         var sourceLine = "LocalPlayer: ProcessUpdateDescription(12345, \"My Garden\", \"A lovely plot\", \"Watering\", 0, \"unused(Scale=0.5)\", 1)";
         var args = "(12345, \"My Garden\", \"A lovely plot\", \"Watering\", 0, \"unused(Scale=0.5)\", 1)";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var frame = _bus.Published<UpdateDescriptionFrame>().Should().ContainSingle().Which;
         frame.PlotId.Should().Be(12345);
@@ -41,7 +41,7 @@ public class GardenPassthroughTests
         var sourceLine = "LocalPlayer: ProcessUpdateDescription(99, \"T\", \"D\", \"A\", 0, \"noscalehere\", 1)";
         var args = "(99, \"T\", \"D\", \"A\", 0, \"noscalehere\", 1)";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var frame = _bus.Published<UpdateDescriptionFrame>().Should().ContainSingle().Which;
         frame.PlotId.Should().Be(99);
@@ -55,7 +55,7 @@ public class GardenPassthroughTests
         var sourceLine = "LocalPlayer: ProcessUpdateDescription(1, \"\", \"\", \"\", 0, \"unused(Scale=1.0)\", 0)";
         var args = "(1, \"\", \"\", \"\", 0, \"unused(Scale=1.0)\", 0)";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var frame = _bus.Published<UpdateDescriptionFrame>().Should().ContainSingle().Which;
         frame.PlotId.Should().Be(1);
@@ -72,7 +72,7 @@ public class GardenPassthroughTests
         var sourceLine = "LocalPlayer: ProcessUpdateDescription(1, \"Herbs\", \"desc\", \"act\", 0, \"x(Scale=0.5)\", 1)";
         var args = sourceLine.AsSpan()["LocalPlayer: ProcessUpdateDescription".Length..];
 
-        handler.Handle(args, sourceLine, Meta());
+        handler.Handle(args, default, sourceLine, Meta());
 
         var frame = _bus.Published<UpdateDescriptionFrame>().Should().ContainSingle().Which;
         frame.Title.ToString().Should().Be("Herbs");
@@ -86,7 +86,7 @@ public class GardenPassthroughTests
         var handler = new SetPetOwnerHandler(_bus);
         var args = "(25237464, 7, 0)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         var frame = _bus.Published<SetPetOwnerFrame>().Should().ContainSingle().Which;
         frame.EntityId.Should().Be(25237464);
@@ -98,7 +98,7 @@ public class GardenPassthroughTests
         var handler = new SetPetOwnerHandler(_bus);
         var args = "(9999999999, extra)";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         _bus.Published<SetPetOwnerFrame>().Should().ContainSingle()
             .Which.EntityId.Should().Be(9999999999);
@@ -112,7 +112,7 @@ public class GardenPassthroughTests
         var handler = new ScreenTextHandler(_bus);
         var args = "(ErrorMessage, \"Something went wrong\")";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         _bus.Published<ScreenTextErrorFrame>().Should().ContainSingle();
     }
@@ -123,7 +123,7 @@ public class GardenPassthroughTests
         var handler = new ScreenTextHandler(_bus);
         var args = "(ImportantInfo, \"You discovered a point of interest!\")";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         _bus.Published<ScreenTextErrorFrame>().Should().BeEmpty();
     }
@@ -133,7 +133,7 @@ public class GardenPassthroughTests
     {
         var handler = new ScreenTextHandler(_bus);
 
-        handler.Handle(ReadOnlySpan<char>.Empty, "", Meta());
+        handler.Handle(ReadOnlySpan<char>.Empty, default, "", Meta());
 
         _bus.Published<ScreenTextErrorFrame>().Should().BeEmpty();
     }
@@ -147,7 +147,7 @@ public class GardenPassthroughTests
         var sourceLine = "LocalPlayer: ProcessErrorMessage(ItemUnusable, \"Onion Seeds can't be used: You already have the maximum of that type of plant growing\")";
         var args = "(ItemUnusable, \"Onion Seeds can't be used: You already have the maximum of that type of plant growing\")";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         var frame = _bus.Published<PlantingCapFrame>().Should().ContainSingle().Which;
         frame.SeedDisplayName.ToString().Should().Be("Onion Seeds");
@@ -159,7 +159,7 @@ public class GardenPassthroughTests
         var handler = new ErrorMessageHandler(_bus);
         var args = "(ItemUnusable, \"Cannot use that item here\")";
 
-        handler.Handle(args.AsSpan(), "", Meta());
+        handler.Handle(args.AsSpan(), default, "", Meta());
 
         _bus.Published<PlantingCapFrame>().Should().BeEmpty();
     }
@@ -169,7 +169,7 @@ public class GardenPassthroughTests
     {
         var handler = new ErrorMessageHandler(_bus);
 
-        handler.Handle(ReadOnlySpan<char>.Empty, "", Meta());
+        handler.Handle(ReadOnlySpan<char>.Empty, default, "", Meta());
 
         _bus.Published<PlantingCapFrame>().Should().BeEmpty();
     }
@@ -181,7 +181,7 @@ public class GardenPassthroughTests
         var sourceLine = "LocalPlayer: ProcessErrorMessage(ItemUnusable, \"Broccoli can't be used: You already have the maximum of that type of plant growing\")";
         var args = "(ItemUnusable, \"Broccoli can't be used: You already have the maximum of that type of plant growing\")";
 
-        handler.Handle(args.AsSpan(), sourceLine, Meta());
+        handler.Handle(args.AsSpan(), default, sourceLine, Meta());
 
         _bus.Published<PlantingCapFrame>().Should().ContainSingle()
             .Which.SeedDisplayName.ToString().Should().Be("Broccoli");

@@ -25,9 +25,9 @@ internal sealed class Weather : IFrameHandler, IWeatherState
         MeasuredAt = null;
     }
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var conditionSpan = tok.NextQuotedSpan();

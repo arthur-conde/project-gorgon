@@ -44,7 +44,7 @@ internal sealed class StateResetHandler : IFrameHandler
         _quest = quest;
     }
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         if (args.IsEmpty || WellKnownArgs.IsNonAreaKey(args))
         {

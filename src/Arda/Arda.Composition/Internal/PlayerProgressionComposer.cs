@@ -20,6 +20,7 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
     private readonly IPlayerState _playerState;
     private readonly PerCharacterStore<ProgressionSnapshot>? _store;
     private readonly Func<int, string?>? _recipeKeyResolver;
+    private readonly IGrammarBreakSignal? _grammarSignal;
     private readonly ILogger? _logger;
 
     // ── Live state ────────────────────────────────────────────────────────
@@ -44,12 +45,14 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
         IPlayerState playerState,
         PerCharacterStore<ProgressionSnapshot>? store = null,
         Func<int, string?>? recipeKeyResolver = null,
+        IGrammarBreakSignal? grammarSignal = null,
         ILogger? logger = null)
     {
         _bus = bus;
         _playerState = playerState;
         _store = store;
         _recipeKeyResolver = recipeKeyResolver;
+        _grammarSignal = grammarSignal;
         _logger = logger;
 
         _skillsLoadedSub = bus.Subscribe<SkillsLoaded>(OnSkillsLoaded);
@@ -169,6 +172,14 @@ internal sealed class PlayerProgressionComposer : IPlayerProgressionState, IDisp
     {
         if (!CanPersist)
             return;
+
+        if (_grammarSignal?.HasObservedBreak == true)
+        {
+            _logger?.LogWarning(
+                "Skipping progression snapshot save for {Character}/{Server}: grammar break observed in this session",
+                _currentCharacter, _currentServer);
+            return;
+        }
 
         var store = _store!;
         var character = _currentCharacter!;

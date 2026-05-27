@@ -131,10 +131,9 @@ public class ReplayDeterminismTests : IDisposable
     {
         public List<(string Verb, string Args, string Source)> Dispatches { get; } = [];
 
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
         {
-            var parsed = VerbExtractor.Parse(sourceLog.AsSpan());
-            Dispatches.Add((parsed.Verb.ToString(), args.ToString(), sourceLog));
+            Dispatches.Add((verb.ToString(), args.ToString(), sourceLog));
         }
     }
 
@@ -142,10 +141,9 @@ public class ReplayDeterminismTests : IDisposable
     {
         public List<(string Verb, string Args, bool IsReplay)> Dispatches { get; } = [];
 
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
         {
-            var parsed = VerbExtractor.Parse(sourceLog.AsSpan());
-            Dispatches.Add((parsed.Verb.ToString(), args.ToString(), metadata.IsReplay));
+            Dispatches.Add((verb.ToString(), args.ToString(), metadata.IsReplay));
         }
     }
 }

@@ -24,7 +24,7 @@ public class CelestialTests
     private void Dispatch(string phase)
     {
         var args = $"({phase})".AsSpan();
-        _celestial.Handle(args, $"LocalPlayer: ProcessSetCelestialInfo({phase})", Meta());
+        _celestial.Handle(args, default, $"LocalPlayer: ProcessSetCelestialInfo({phase})", Meta());
     }
 
     [Fact]

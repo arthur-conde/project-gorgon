@@ -15,7 +15,7 @@ internal sealed class ScreenTextHandler(IDomainEventPublisher bus) : IFrameHandl
 {
     private static ReadOnlySpan<char> ErrorMarker => "ErrorMessage";
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         if (args.Length == 0) return;
 
@@ -24,7 +24,7 @@ internal sealed class ScreenTextHandler(IDomainEventPublisher bus) : IFrameHandl
         if (isError)
             bus.Publish(new ScreenTextErrorFrame(metadata));
 
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
         var categorySpan = tok.NextTokenSpan();
         var textSpan = tok.NextQuotedSpan();

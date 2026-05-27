@@ -25,7 +25,7 @@ public class EffectsTests
     public void AddEffects_EmitsCatalogIds()
     {
         var args = "(12345, 67890, \"[302, 303]\", True)";
-        _effects.AddHandler.Handle(args.AsSpan(), "source", Meta());
+        _effects.AddHandler.Handle(args.AsSpan(), default, "source", Meta());
 
         var published = _bus.Published<EffectsAdded>();
         published.Should().ContainSingle();
@@ -37,7 +37,7 @@ public class EffectsTests
     public void AddEffects_TrailingComma_Tolerated()
     {
         var args = "(12345, 67890, \"[15361, ]\", False)";
-        _effects.AddHandler.Handle(args.AsSpan(), "source", Meta());
+        _effects.AddHandler.Handle(args.AsSpan(), default, "source", Meta());
 
         _bus.Published<EffectsAdded>().Should().ContainSingle()
             .Which.CatalogIds.Should().BeEquivalentTo([15361]);
@@ -47,7 +47,7 @@ public class EffectsTests
     public void RemoveEffects_EmitsInstanceIds()
     {
         var args = "(12345, [259278, 259279])";
-        _effects.RemoveHandler.Handle(args.AsSpan(), "source", Meta());
+        _effects.RemoveHandler.Handle(args.AsSpan(), default, "source", Meta());
 
         _bus.Published<EffectsRemoved>().Should().ContainSingle()
             .Which.InstanceIds.Should().BeEquivalentTo([259278L, 259279L]);
@@ -57,7 +57,7 @@ public class EffectsTests
     public void AddEffects_EmptyList_NoEvent()
     {
         var args = "(12345, 67890, \"[]\", True)";
-        _effects.AddHandler.Handle(args.AsSpan(), "source", Meta());
+        _effects.AddHandler.Handle(args.AsSpan(), default, "source", Meta());
 
         _bus.Published<EffectsAdded>().Should().BeEmpty();
     }
@@ -66,7 +66,7 @@ public class EffectsTests
     public void UpdateEffectName_EmitsInstanceIdAndDisplayName()
     {
         var args = "(25098977, 259320, \"Performance Appreciation, Level 0\")";
-        _effects.UpdateNameHandler.Handle(args.AsSpan(), "source", Meta());
+        _effects.UpdateNameHandler.Handle(args.AsSpan(), default, "source", Meta());
 
         var published = _bus.Published<EffectNameUpdated>();
         published.Should().ContainSingle();

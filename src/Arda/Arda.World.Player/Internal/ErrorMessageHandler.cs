@@ -13,13 +13,13 @@ internal sealed class ErrorMessageHandler(IDomainEventPublisher bus) : IFrameHan
 {
     private static ReadOnlySpan<char> PlantingCapMarker => "maximum of that type of plant growing";
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         if (!args.Contains(PlantingCapMarker, StringComparison.Ordinal))
             return;
 
         // Extract seed display name from: (ItemUnusable, "SeedName can't be used: ...")
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
         tok.NextTokenSpan(); // "ItemUnusable"
         var msgSpan = tok.NextQuotedSpan();

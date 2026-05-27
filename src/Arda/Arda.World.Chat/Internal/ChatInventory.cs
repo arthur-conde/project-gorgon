@@ -25,7 +25,7 @@ internal sealed class ChatInventory : IFrameHandler
 
     public ChatInventory(IDomainEventPublisher bus) => _bus = bus;
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         // args is the full line: "[Status] Apple x2 added to inventory."
         if (!args.StartsWith(Prefix) || !args.EndsWith(Suffix))

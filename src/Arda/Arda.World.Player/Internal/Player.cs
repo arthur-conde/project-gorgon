@@ -47,11 +47,11 @@ internal sealed class Player : IPlayerState, ISkillState
     /// <summary>
     /// Args format: <c>({type=X,raw=N,bonus=N,xp=N,tnl=N,max=N}, {type=Y,...}, ...)</c>
     /// </summary>
-    private void OnLoadSkills(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnLoadSkills(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         _rawSkills.Clear();
 
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         while (tok.HasMore)
@@ -72,9 +72,9 @@ internal sealed class Player : IPlayerState, ISkillState
     /// <summary>
     /// Args format: <c>({type=X,raw=N,bonus=N,xp=N,tnl=N,max=N}, True, 25, 0, 0)</c>
     /// </summary>
-    private void OnUpdateSkill(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnUpdateSkill(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var braced = tok.NextBracedSpan();
@@ -103,11 +103,11 @@ internal sealed class Player : IPlayerState, ISkillState
     /// <summary>
     /// Args format: <c>([1,1026,1027,...,], [7,607,255,...,])</c>
     /// </summary>
-    private void OnLoadRecipes(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnLoadRecipes(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         _recipes.Clear();
 
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var idsSpan = tok.NextBracketedSpan();
@@ -126,9 +126,9 @@ internal sealed class Player : IPlayerState, ISkillState
     /// <summary>
     /// Args format: <c>(21000, 2)</c>
     /// </summary>
-    private void OnUpdateRecipe(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnUpdateRecipe(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var recipeId = tok.NextInt();
@@ -204,25 +204,25 @@ internal sealed class Player : IPlayerState, ISkillState
 
     private sealed class LoadSkillsVerb(Player owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnLoadSkills(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnLoadSkills(args, verb, sourceLog, metadata);
     }
 
     private sealed class UpdateSkillVerb(Player owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnUpdateSkill(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnUpdateSkill(args, verb, sourceLog, metadata);
     }
 
     private sealed class LoadRecipesVerb(Player owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnLoadRecipes(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnLoadRecipes(args, verb, sourceLog, metadata);
     }
 
     private sealed class UpdateRecipeVerb(Player owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnUpdateRecipe(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnUpdateRecipe(args, verb, sourceLog, metadata);
     }
 }

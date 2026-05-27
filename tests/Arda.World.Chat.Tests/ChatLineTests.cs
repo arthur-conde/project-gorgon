@@ -25,7 +25,7 @@ public class ChatLineTests
     public void ParsesStandardChatLine()
     {
         var line = "[Trade] Emraell: WTS something";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         var evt = _bus.Published<PlayerChatLine>().Should().ContainSingle().Which;
         evt.Channel.Should().Be("Trade");
@@ -37,7 +37,7 @@ public class ChatLineTests
     public void ParsesGlobalChannel()
     {
         var line = "[Global] SomePlayer: hi everyone";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         var evt = _bus.Published<PlayerChatLine>().Should().ContainSingle().Which;
         evt.Channel.Should().Be("Global");
@@ -49,7 +49,7 @@ public class ChatLineTests
     public void TextWithColons_PreservesFullText()
     {
         var line = "[Guild] Leader: Meetup at 8:00 PM: bring food";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         var evt = _bus.Published<PlayerChatLine>().Should().ContainSingle().Which;
         evt.Speaker.Should().Be("Leader");
@@ -60,7 +60,7 @@ public class ChatLineTests
     public void NoSpeakerSeparator_IsIgnored()
     {
         var line = "[Status] Some status message without colon-space";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         _bus.Published<PlayerChatLine>().Should().BeEmpty();
     }
@@ -69,7 +69,7 @@ public class ChatLineTests
     public void EmptyChannel_IsIgnored()
     {
         var line = "[] Someone: text";
-        _handler.Handle(line.AsSpan(), line, Meta());
+        _handler.Handle(line.AsSpan(), default, line, Meta());
 
         _bus.Published<PlayerChatLine>().Should().BeEmpty();
     }

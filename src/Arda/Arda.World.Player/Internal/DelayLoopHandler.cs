@@ -12,9 +12,9 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class DelayLoopHandler(IDomainEventPublisher bus) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var seconds = tok.NextDouble();

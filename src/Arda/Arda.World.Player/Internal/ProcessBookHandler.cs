@@ -24,10 +24,10 @@ internal sealed class ProcessBookHandler(IDomainEventPublisher bus) : IFrameHand
     private static ReadOnlySpan<char> WopEffectClose => "</size>";
     private static ReadOnlySpan<char> WopDescNewline => @"\n";
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         // Args: ("title", "body"[, ...])
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
 
         var titleSpan = tok.NextQuotedSpan();

@@ -10,6 +10,6 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class VaultAddItemHandler(Vault vault) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
         => vault.OnAddItem(args, sourceLog, metadata);
 }

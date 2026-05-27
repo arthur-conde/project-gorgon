@@ -26,7 +26,7 @@ public class NpcTests
     private void DispatchInteraction(string interactionArgs)
     {
         var line = $"LocalPlayer: ProcessStartInteraction({interactionArgs})";
-        _npc.OnStartInteraction($"({interactionArgs})".AsSpan(), line, Meta());
+        _npc.OnStartInteraction($"({interactionArgs})".AsSpan(), default, line, Meta());
     }
 
     private void DispatchDeleteItem(long instanceId)
@@ -146,7 +146,7 @@ public class NpcTests
     private void DispatchDeltaFavor(string deltaFavorArgs)
     {
         var line = $"LocalPlayer: ProcessDeltaFavor({deltaFavorArgs})";
-        _npc.OnDeltaFavor($"({deltaFavorArgs})".AsSpan(), line, Meta());
+        _npc.OnDeltaFavor($"({deltaFavorArgs})".AsSpan(), default, line, Meta());
     }
 
     [Fact]

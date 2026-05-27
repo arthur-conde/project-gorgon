@@ -157,7 +157,7 @@ public class WorldDriverTests
 
     private sealed class RecordingHandler(List<string> log) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
             => log.Add(sourceLog);
     }
 }

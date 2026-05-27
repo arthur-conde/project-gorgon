@@ -35,7 +35,7 @@ internal sealed class Quest : IFrameHandler, IQuestState
     /// <summary>
     /// Handles <c>ProcessBook</c> — extracts quest ID from "New Quest" prefix.
     /// </summary>
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         var inner = SpanHelpers.StripParens(args);
         if (inner.IsEmpty)
@@ -63,11 +63,11 @@ internal sealed class Quest : IFrameHandler, IQuestState
     /// <summary>
     /// <c>ProcessLoadQuests(charEntityId, TransitionalQuestState[], [workOrderIds,...], [regularIds,...])</c>
     /// </summary>
-    private void OnLoadQuests(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnLoadQuests(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         _quests.Clear();
 
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
         tok.Skip(1); // charEntityId
         tok.Skip(1); // TransitionalQuestState[]
@@ -86,9 +86,9 @@ internal sealed class Quest : IFrameHandler, IQuestState
     /// <summary>
     /// <c>ProcessCompleteQuest(charEntityId, questId)</c>
     /// </summary>
-    private void OnCompleteQuest(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    private void OnCompleteQuest(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
-        var tok = new ArgTokenizer(args);
+        var tok = new ArgTokenizer(args, verb, sourceLog);
         tok.SkipOpen();
         tok.Skip(1); // charEntityId
 
@@ -110,13 +110,13 @@ internal sealed class Quest : IFrameHandler, IQuestState
 
     private sealed class LoadQuestsVerb(Quest owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnLoadQuests(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnLoadQuests(args, verb, sourceLog, metadata);
     }
 
     private sealed class CompleteQuestVerb(Quest owner) : IFrameHandler
     {
-        public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-            => owner.OnCompleteQuest(args, sourceLog, metadata);
+        public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+            => owner.OnCompleteQuest(args, verb, sourceLog, metadata);
     }
 }

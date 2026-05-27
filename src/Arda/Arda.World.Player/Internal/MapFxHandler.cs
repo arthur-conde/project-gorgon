@@ -13,12 +13,12 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class MapFxHandler(IDomainEventPublisher bus) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         if (!TryExtractPosition(args, out var x, out var y, out var z, out var afterTuple))
             return;
 
-        var tok = new ArgTokenizer(afterTuple);
+        var tok = new ArgTokenizer(afterTuple, verb, sourceLog);
         tok.Skip(2); // two unknown ints between position tuple and short name
         var shortSpan = tok.NextQuotedSpan();
         var catSpan = tok.NextTokenSpan();

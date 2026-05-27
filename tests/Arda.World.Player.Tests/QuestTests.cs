@@ -25,7 +25,7 @@ public class QuestTests
     public void NewQuest_EmitsQuestId()
     {
         var args = "(\"New Quest: <<<quest_12345_Name>>>\", \"body\")".AsSpan();
-        _quest.Handle(args, "source", Meta());
+        _quest.Handle(args, default, "source", Meta());
 
         _bus.Published<QuestOffered>().Should().ContainSingle()
             .Which.QuestId.Should().Be(12345);
@@ -35,7 +35,7 @@ public class QuestTests
     public void NonQuestBook_DoesNotEmit()
     {
         var args = "(\"Some Lore Book Title\", \"body\")".AsSpan();
-        _quest.Handle(args, "source", Meta());
+        _quest.Handle(args, default, "source", Meta());
 
         _bus.Published<QuestOffered>().Should().BeEmpty();
     }
@@ -44,7 +44,7 @@ public class QuestTests
     public void MalformedQuestId_DoesNotEmit()
     {
         var args = "(\"New Quest: <<<quest_abc_Name>>>\", \"body\")".AsSpan();
-        _quest.Handle(args, "source", Meta());
+        _quest.Handle(args, default, "source", Meta());
 
         _bus.Published<QuestOffered>().Should().BeEmpty();
     }

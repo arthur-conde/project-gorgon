@@ -9,6 +9,6 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class VendorAddItemHandler(Npc npc) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
-        => npc.OnVendorAddItem(args, sourceLog, metadata);
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
+        => npc.OnVendorAddItem(args, verb, sourceLog, metadata);
 }

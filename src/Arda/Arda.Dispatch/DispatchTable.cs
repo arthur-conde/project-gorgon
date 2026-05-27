@@ -27,8 +27,11 @@ internal sealed class DispatchTable
     /// <summary>
     /// Parse and dispatch a line to registered handlers. If the line has no
     /// recognizable verb, or no handler is registered, it is silently discarded
-    /// (zero allocation). A throwing handler is caught and logged — it does not
-    /// prevent subsequent handlers from executing.
+    /// (zero allocation). A handler bug is caught and logged — it does not
+    /// prevent subsequent handlers from executing on the same line. A
+    /// <see cref="GrammarException"/> is NOT caught here: it propagates out so
+    /// the surrounding <c>WorldDriver</c> can halt the simulation, since a
+    /// grammar drift means the in-memory world model is no longer trustworthy.
     /// </summary>
     public void Dispatch(ParsedVerb parsed, string sourceLog, LogLineMetadata metadata)
     {
@@ -42,12 +45,21 @@ internal sealed class DispatchTable
         {
             try
             {
-                handler.Handle(parsed.Args, sourceLog, metadata);
+                handler.Handle(parsed.Args, parsed.Verb, sourceLog, metadata);
+            }
+            catch (GrammarException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Handler {Handler} threw on verb dispatch", handler.GetType().Name);
+                _logger.LogError(ex,
+                    "Handler {Handler} threw on verb {Verb}: {Excerpt}",
+                    handler.GetType().Name, parsed.Verb.ToString(), Excerpt(sourceLog));
             }
         }
     }
+
+    private static string Excerpt(string log) =>
+        log.Length <= 200 ? log : log[..200] + "…";
 }

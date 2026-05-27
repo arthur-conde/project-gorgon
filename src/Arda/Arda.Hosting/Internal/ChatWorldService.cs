@@ -12,6 +12,9 @@ internal sealed class ChatWorldService(
     ChatLogSource source,
     DispatchTable dispatchTable,
     ReplayProgress progress,
+    IGrammarBreakSignal grammarSignal,
+    ArdaRuntimeOptions runtimeOptions,
+    TimeProvider time,
     ILogger<ChatWorldService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -24,7 +27,10 @@ internal sealed class ChatWorldService(
                 dispatchTable,
                 onLiveTransition: () => progress.MarkComplete(ReplayProgress.SourceFamily.Chat),
                 logger: logger,
-                sourceFamily: "Chat");
+                sourceFamily: "Chat",
+                grammarSignal: grammarSignal,
+                time: time,
+                tolerantGrammar: runtimeOptions.TolerantGrammar);
 
             await driver.RunAsync(stoppingToken).ConfigureAwait(false);
         }

@@ -30,7 +30,7 @@ internal sealed class Position(IDomainEventPublisher bus) : IFrameHandler, IPosi
         Source = null;
     }
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         if (args.Length >= 2 && args[0] == '(' && args[1] == '(')
             HandleNewPosition(args, metadata);

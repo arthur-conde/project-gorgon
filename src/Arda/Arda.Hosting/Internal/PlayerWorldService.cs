@@ -13,6 +13,9 @@ internal sealed class PlayerWorldService(
     DispatchTable dispatchTable,
     ReplayProgress progress,
     IReadOnlyList<ILineObserver> lineObservers,
+    IGrammarBreakSignal grammarSignal,
+    ArdaRuntimeOptions runtimeOptions,
+    TimeProvider time,
     ILogger<PlayerWorldService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -26,7 +29,10 @@ internal sealed class PlayerWorldService(
                 onLiveTransition: () => progress.MarkComplete(ReplayProgress.SourceFamily.Player),
                 observers: lineObservers,
                 logger: logger,
-                sourceFamily: "Player");
+                sourceFamily: "Player",
+                grammarSignal: grammarSignal,
+                time: time,
+                tolerantGrammar: runtimeOptions.TolerantGrammar);
 
             await driver.RunAsync(stoppingToken).ConfigureAwait(false);
         }

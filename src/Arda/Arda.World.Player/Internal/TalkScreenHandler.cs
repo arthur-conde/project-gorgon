@@ -12,7 +12,7 @@ namespace Arda.World.Player.Internal;
 /// </summary>
 internal sealed class TalkScreenHandler(IDomainEventPublisher bus) : IFrameHandler
 {
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         bus.Publish(new TalkScreenFrame(metadata));
     }

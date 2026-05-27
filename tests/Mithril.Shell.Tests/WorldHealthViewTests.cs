@@ -18,11 +18,39 @@ public sealed class WorldHealthViewTests : IAsyncLifetime
     private readonly TestBus _bus = new();
     private readonly FakeReplayProgress _replay = new();
     private readonly FakeTimeProvider _time = new();
+    private readonly FakeGrammarBreakSignal _grammarSignal = new();
     private readonly WorldHealthView _view;
 
     public WorldHealthViewTests()
     {
-        _view = new WorldHealthView(_bus, _replay, NullLogger<WorldHealthView>.Instance, _time);
+        _view = new WorldHealthView(_bus, _replay, _grammarSignal, NullLogger<WorldHealthView>.Instance, _time);
+    }
+
+    private sealed class FakeGrammarBreakSignal : IGrammarBreakSignal
+    {
+        public GrammarBreak? Current { get; private set; }
+        public bool IsRaised { get; private set; }
+        public bool HasObservedBreak => ObservedCount > 0;
+        public int ObservedCount { get; private set; }
+        public event EventHandler? Raised;
+        public event EventHandler? ObservedBreakChanged;
+
+        public void Raise(GrammarBreak breakDetails)
+        {
+            var first = !IsRaised;
+            Current ??= breakDetails;
+            IsRaised = true;
+            ObservedCount++;
+            ObservedBreakChanged?.Invoke(this, EventArgs.Empty);
+            if (first) Raised?.Invoke(this, EventArgs.Empty);
+        }
+
+        public void MarkObserved(GrammarBreak breakDetails)
+        {
+            Current ??= breakDetails;
+            ObservedCount++;
+            ObservedBreakChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 
     public Task InitializeAsync() => _view.StartAsync(CancellationToken.None);

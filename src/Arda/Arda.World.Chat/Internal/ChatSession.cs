@@ -27,7 +27,7 @@ internal sealed class ChatSession : IFrameHandler, IChatSessionState
 
     public ChatSession(IDomainEventPublisher bus) => _bus = bus;
 
-    public void Handle(ReadOnlySpan<char> args, string sourceLog, LogLineMetadata metadata)
+    public void Handle(ReadOnlySpan<char> args, ReadOnlySpan<char> verb, string sourceLog, LogLineMetadata metadata)
     {
         // args is the full line for chat verbs: "**** Logged In As Emraell. Server Laeth. ..."
         var loginIdx = args.IndexOf(LoggedInAs);
