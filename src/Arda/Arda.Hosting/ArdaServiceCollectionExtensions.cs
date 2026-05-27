@@ -50,6 +50,15 @@ public static class ArdaServiceCollectionExtensions
         services.AddSingleton<IGrammarBreakSignal>(sp =>
             new GrammarBreakSignal(sp.GetService<ILogger<GrammarBreakSignal>>()));
 
+        // Runtime-only toggles derived from process env (read once at startup)
+        var tolerant = string.Equals(
+            Environment.GetEnvironmentVariable("MITHRIL_GRAMMAR_TOLERANT"),
+            "1", StringComparison.Ordinal);
+        services.AddSingleton(new ArdaRuntimeOptions(TolerantGrammar: tolerant));
+
+        // TimeProvider — registered if the host hasn't already supplied one.
+        services.AddSingleton(TimeProvider.System);
+
         // Replay progress (shared, bindable from WPF splash)
         services.AddSingleton(sp =>
             new ReplayProgress(sp.GetService<ILogger<ReplayProgress>>()));
