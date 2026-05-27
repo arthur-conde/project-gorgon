@@ -14,7 +14,7 @@ using Legolas.Services;
 
 namespace Legolas.ViewModels;
 
-public sealed partial class MapOverlayViewModel : ObservableObject
+public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 {
     private readonly SessionState _session;
     private readonly ICoordinateProjector _projector;
@@ -27,6 +27,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
     private readonly IAreaCalibrationService? _areaCalibration;
     private readonly MotherlodeMeasurementCoordinator? _motherlode;
     private readonly ICharacterPinAnchor? _characterPin;
+    private readonly IDisposable? _positionSub;
 
     // Cached latest position event — IPositionState has X/Y/Z but no timestamp/source.
     private TrackerFix? _latestTrackerFix;
@@ -197,7 +198,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         {
             if (_positionState.X is { } px && _positionState.Z is { } pz)
                 _latestTrackerFix = new TrackerFix(px, _positionState.Y ?? 0, pz, DateTimeOffset.UtcNow, PositionSource.Spawn);
-            bus?.Subscribe<PlayerPositionChanged>(evt =>
+            _positionSub = bus?.Subscribe<PlayerPositionChanged>(evt =>
             {
                 var at = evt.Metadata.Timestamp ?? evt.Metadata.ReadOn;
                 _latestTrackerFix = new TrackerFix(evt.X, evt.Y, evt.Z, at, evt.Source);
@@ -361,6 +362,18 @@ public sealed partial class MapOverlayViewModel : ObservableObject
         var dispatcher = Application.Current?.Dispatcher;
         if (dispatcher is null) action();
         else dispatcher.InvokeAsync(action);
+    }
+
+    /// <summary>
+    /// Releases the Arda bus subscription stored at construction. The numerous
+    /// CLR <c>event +=</c> handlers wired on the same constructor remain;
+    /// unhooking them would require recording delegate references at the call
+    /// site and is out of scope for this change. Sufficient because the VM is
+    /// registered <c>Singleton</c> and only leaks once per process.
+    /// </summary>
+    public void Dispose()
+    {
+        _positionSub?.Dispose();
     }
 
     /// <summary>True iff the survey FSM is in <c>Listening</c>.</summary>

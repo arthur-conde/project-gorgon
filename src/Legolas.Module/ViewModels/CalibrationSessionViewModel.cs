@@ -23,7 +23,7 @@ namespace Legolas.ViewModels;
 /// </list>
 /// All decoupled from the survey FSM — nothing here touches SessionState.
 /// </summary>
-public sealed partial class CalibrationSessionViewModel : ObservableObject
+public sealed partial class CalibrationSessionViewModel : ObservableObject, IDisposable
 {
     private readonly IAreaCalibrationService _service;
     private readonly IDisposable? _pinSub;
@@ -35,6 +35,13 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject
         _service.SurveyObserved += OnSurveyObserved;
         _pinSub = bus?.Subscribe<MapPinAdded>(OnPinAdded);
         Refresh();
+    }
+
+    public void Dispose()
+    {
+        _service.Changed -= OnServiceChanged;
+        _service.SurveyObserved -= OnSurveyObserved;
+        _pinSub?.Dispose();
     }
 
     public ObservableCollection<CalibrationReference> References { get; } = new();
