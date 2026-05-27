@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
@@ -19,12 +20,12 @@ namespace Silmarillion.Navigation;
 public sealed class EffectsKindTarget : IReferenceKindTarget
 {
     private readonly EffectsTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public EffectsKindTarget(EffectsTabViewModel vm, IDiagnosticsSink? diag = null)
+    public EffectsKindTarget(EffectsTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.Effect;
@@ -36,10 +37,10 @@ public sealed class EffectsKindTarget : IReferenceKindTarget
         var row = _vm.AllEffects.FirstOrDefault(r => r.EnvelopeKey == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"Effects.TrySelect '{internalName}' → not found (AllEffects={_vm.AllEffects.Count}).");
+            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Effects.TrySelect '{internalName}' → not found (AllEffects={_vm.AllEffects.Count}).");
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"Effects.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Effects.TrySelect '{internalName}' → found, selecting.");
         // Clear any residual filter so the target row isn't filtered out of the visible ListBox.
         _vm.QueryText = "";
         _vm.SelectedRow = row;

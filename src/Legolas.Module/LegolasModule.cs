@@ -57,7 +57,7 @@ public sealed class LegolasModule : IMithrilModule
             sp.GetRequiredService<HeldKarpOptimizer>(),
             sp.GetRequiredService<NearestNeighbourTwoOptOptimizer>()));
         services.AddSingleton<IMultilaterationSolver>(sp =>
-            new MultilaterationSolver(sp.GetService<IDiagnosticsSink>()));
+            new MultilaterationSolver(sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas.Multilateration")));
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
         services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
         services.AddSingleton<PinCalibrationCoordinator>(sp =>
@@ -99,7 +99,7 @@ public sealed class LegolasModule : IMithrilModule
             sp.GetRequiredService<IDomainEventSubscriber>(),
             sp.GetRequiredService<IMapPinState>(),
             sp.GetRequiredService<IActiveCharacterService>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas")));
 
         // MotherlodeMeasurementCoordinator — now subscribes to Arda domain
         // events (PlayerPositionChanged, MapPinAdded, InventoryItemRemoved)
@@ -113,7 +113,7 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetRequiredService<LegolasSettings>(),
                 sp.GetService<ICharacterPinAnchor>(),
                 sp.GetService<IAreaState>(),
-                sp.GetService<IDiagnosticsSink>()));
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas.Motherlode")));
 
         services.AddSingleton<LegolasReportService>(sp => new LegolasReportService(
             sp.GetRequiredService<SurveyFlowController>(),
@@ -131,7 +131,7 @@ public sealed class LegolasModule : IMithrilModule
             sp.GetService<IDialogService>(),
             sp.GetService<IReferenceDataService>(),
             sp.GetService<IModuleActivator>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas")));
         services.AddSingleton<IDeepLinkHandler>(sp =>
             new LegolasDeepLinkHandler(sp.GetRequiredService<ILegolasShareImportTarget>()));
 

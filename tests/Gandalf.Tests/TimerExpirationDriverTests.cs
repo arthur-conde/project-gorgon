@@ -165,7 +165,7 @@ public sealed class TimerExpirationDriverTests : IDisposable
         var time = new ManualTime(t0);
         var progressSvc = new TimerProgressService(view, defsSvc,
             new PerCharacterStoreOptions { CharactersRootDir = _charactersDir },
-            diag: null, gameClock: null, time: time);
+            logger: null, gameClock: null, time: time);
         _disposables.Add(progressSvc);
 
         var bus = new TestDomainEventBus();

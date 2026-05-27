@@ -68,7 +68,7 @@ public static class ShellComposition
             .AddSingleton(o.ShellSettings)
             .AddSingleton<IActiveCharacterPersistence>(o.ShellSettings)
             .AddSingleton(o.GameConfig)
-            .AddMithrilDiagnostics(o.LogDir)
+            .AddMithrilLogging(o.LogDir)
             .AddMithrilPerfTrace(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
             .AddMithrilGameServices()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
@@ -143,10 +143,14 @@ public static class ShellComposition
         services.AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<WorldHealthView>());
         services.AddHostedService(sp => sp.GetRequiredService<WorldHealthView>());
 
-        services.AddHostedService<ArdaDiagnosticBridge>();
-        services.AddHostedService<ActiveCharacterLogSynchronizer>();
+        services.AddHostedService<ActiveCharacterLogSynchronizer>(sp => new ActiveCharacterLogSynchronizer(
+            sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
+            sp.GetRequiredService<IActiveCharacterService>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("ActiveChar")));
 
-        services.AddSingleton<SessionAgreementComposer>();
+        services.AddSingleton<SessionAgreementComposer>(sp => new SessionAgreementComposer(
+            sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("SessionAgreement")));
         services.AddSingleton<IAttentionSource>(sp => sp.GetRequiredService<SessionAgreementComposer>());
         services.AddHostedService(sp => sp.GetRequiredService<SessionAgreementComposer>());
 

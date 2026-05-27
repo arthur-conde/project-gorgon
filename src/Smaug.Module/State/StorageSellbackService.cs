@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Arda.Composition;
 using Mithril.Reference.Models.Items;
 using Mithril.Shared.Character;
@@ -46,7 +47,7 @@ public sealed class StorageSellbackService
     private readonly IPlayerProgressionState _progression;
     private readonly IFavorLookupService? _favorLookup;
     private readonly INpcStateTracker? _npcTracker;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     private IReadOnlyList<StorageSellbackVendor> _vendors = [];
 
@@ -63,14 +64,14 @@ public sealed class StorageSellbackService
         IPlayerProgressionState progression,
         IFavorLookupService? favorLookup = null,
         INpcStateTracker? npcTracker = null,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _refData = refData;
         _activeCharSvc = activeCharSvc;
         _progression = progression;
         _favorLookup = favorLookup;
         _npcTracker = npcTracker;
-        _diag = diag;
+        _logger = logger;
 
         _activeCharSvc.ActiveCharacterChanged += (_, _) => Rebuild();
         _activeCharSvc.StorageReportsChanged += (_, _) => Rebuild();
@@ -157,7 +158,7 @@ public sealed class StorageSellbackService
 
         _vendors = matches;
         VendorsChanged?.Invoke(this, EventArgs.Empty);
-        _diag?.Info("Smaug.Sellback",
+        _logger?.LogDiagnosticInfo("Smaug.Sellback",
             $"Rebuilt for {ActiveCharacter}: {matches.Count} vendors matched {report.Items.Count} stocked items.");
     }
 

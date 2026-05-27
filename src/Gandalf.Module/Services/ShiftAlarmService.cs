@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using System.Windows.Threading;
 using Arda.Contracts;
@@ -36,7 +37,7 @@ public sealed class ShiftAlarmService : BackgroundService
     private readonly GandalfShiftSettings _shiftSettings;
     private readonly IAudioPlaybackSink _audio;
     private readonly IDomainEventSubscriber _bus;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly Dictionary<string, IPlaybackHandle> _playback = new(StringComparer.Ordinal);
     private IDisposable? _subscription;
     private string? _lastFiredSlug;
@@ -48,20 +49,20 @@ public sealed class ShiftAlarmService : BackgroundService
         GandalfShiftSettings shiftSettings,
         IAudioPlaybackSink audio,
         IDomainEventSubscriber bus,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _catalog = catalog;
         _globalSettings = globalSettings;
         _shiftSettings = shiftSettings;
         _audio = audio;
         _bus = bus;
-        _diag = diag;
+        _logger = logger;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
         _subscription = _bus.Subscribe<TimeOfDayShifted>(OnShiftTransition);
-        _diag?.Info("Gandalf.ShiftAlarm",
+        _logger?.LogDiagnosticInfo("Gandalf.ShiftAlarm",
             "Subscribed to Arda TimeOfDayShifted events");
         return base.StartAsync(cancellationToken);
     }
@@ -134,7 +135,7 @@ public sealed class ShiftAlarmService : BackgroundService
         }
         if (def is null)
         {
-            _diag?.Warn("Gandalf.ShiftAlarm",
+            _logger?.LogDiagnosticWarn("Gandalf.ShiftAlarm",
                 $"Received TimeOfDayShifted slug='{slug}' not in catalog; ignoring");
             return;
         }

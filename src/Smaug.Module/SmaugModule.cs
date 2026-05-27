@@ -40,7 +40,7 @@ public sealed class SmaugModule : IMithrilModule
             Path.Combine(localApp, "Mithril", "Smaug"),
             sp.GetService<ICommunityCalibrationService>(),
             sp.GetRequiredService<SmaugSettings>().Calibration,
-            sp.GetService<IDiagnosticsSink>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Smaug"),
             sp.GetService<ISessionComposer>()));
 
         services.AddSingleton<VendorCatalogViewModel>();

@@ -39,7 +39,7 @@ public sealed class SamwiseModule : IMithrilModule
         services.AddSingleton<GardenStateMachine>(sp => new GardenStateMachine(
             sp.GetRequiredService<ICropConfigStore>(),
             time: null,
-            diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),
+            logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Samwise"),
             settings: sp.GetRequiredService<SamwiseSettings>(),
             referenceData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             activeChar: sp.GetService<Mithril.Shared.Character.IActiveCharacterService>(),
@@ -66,7 +66,7 @@ public sealed class SamwiseModule : IMithrilModule
             samwiseDir,
             sp.GetRequiredService<PerCharacterStore<GardenCharacterState>>(),
             sp.GetRequiredService<IActiveCharacterService>(),
-            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Samwise")));
 
         services.AddSingleton<GrowthCalibrationService>(sp => new GrowthCalibrationService(
             sp.GetRequiredService<GardenStateMachine>(),
@@ -74,7 +74,7 @@ public sealed class SamwiseModule : IMithrilModule
             samwiseDir,
             sp.GetService<Mithril.Shared.Reference.ICommunityCalibrationService>(),
             sp.GetRequiredService<SamwiseSettings>().Calibration,
-            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Samwise")));
 
         services.AddSingleton<GardenViewModel>();
         services.AddSingleton<GrowthCalibrationViewModel>();

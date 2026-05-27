@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -24,7 +25,7 @@ namespace Mithril.Shared.Diagnostics.Performance;
 public sealed class PerfTracerHostedService : IHostedService, IDisposable
 {
     private readonly IPerfTracer _tracer;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly IActiveCharacterService _activeChar;
     private readonly IReadOnlyList<IMithrilModule> _modules;
     private readonly Func<bool> _verboseFrameEvents;
@@ -68,20 +69,20 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         IActiveCharacterService activeChar,
         IEnumerable<IMithrilModule> modules,
         Func<bool> verboseFrameEvents,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _tracer = tracer;
         _activeChar = activeChar;
         _modules = modules.ToList();
         _verboseFrameEvents = verboseFrameEvents;
-        _diag = diag;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        try { StopInternal(); } catch (Exception ex) { _diag?.Warn("PerfTrace", $"Stop on shutdown failed: {ex.Message}"); }
+        try { StopInternal(); } catch (Exception ex) { _logger?.LogDiagnosticWarn("PerfTrace", $"Stop on shutdown failed: {ex.Message}"); }
         return Task.CompletedTask;
     }
 
@@ -102,7 +103,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
             _uiDispatcher = Application.Current?.Dispatcher;
             if (_uiDispatcher is null)
             {
-                _diag?.Warn("PerfTrace", "Cannot start: no WPF Application yet.");
+                _logger?.LogDiagnosticWarn("PerfTrace", "Cannot start: no WPF Application yet.");
                 return;
             }
 
@@ -117,7 +118,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _diag?.Warn("PerfTrace", $"StartInternal failed: {ex.Message}");
+            _logger?.LogDiagnosticWarn("PerfTrace", $"StartInternal failed: {ex.Message}");
             try { _tracer.StopSession(); } catch { }
         }
     }
@@ -133,10 +134,10 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
                 else d.Invoke(DetachHooks);
             }
         }
-        catch (Exception ex) { _diag?.Warn("PerfTrace", $"DetachHooks failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogDiagnosticWarn("PerfTrace", $"DetachHooks failed: {ex.Message}"); }
 
         try { _tracer.StopSession(); }
-        catch (Exception ex) { _diag?.Warn("PerfTrace", $"StopSession failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogDiagnosticWarn("PerfTrace", $"StopSession failed: {ex.Message}"); }
     }
 
     // ── Hook lifecycle (UI thread) ─────────────────────────────────────────
@@ -357,7 +358,7 @@ public sealed class PerfTracerHostedService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _diag?.Warn("PerfTrace", $"Counter tick failed: {ex.Message}");
+            _logger?.LogDiagnosticWarn("PerfTrace", $"Counter tick failed: {ex.Message}");
         }
     }
 

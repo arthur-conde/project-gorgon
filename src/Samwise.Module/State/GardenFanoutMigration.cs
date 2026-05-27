@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.IO;
 using System.Text.Json;
 using Mithril.Shared.Character;
@@ -22,24 +23,24 @@ public sealed class GardenFanoutMigration : IHostedService
     private readonly string _legacyPath;
     private readonly PerCharacterStore<GardenCharacterState> _store;
     private readonly IActiveCharacterService _active;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public GardenFanoutMigration(
         string legacyDir,
         PerCharacterStore<GardenCharacterState> store,
         IActiveCharacterService active,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _legacyPath = Path.Combine(legacyDir, "garden-state.json");
         _store = store;
         _active = active;
-        _diag = diag;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         try { Run(); }
-        catch (Exception ex) { _diag?.Warn("Samwise.Fanout", $"Fanout failed: {ex.Message}"); }
+        catch (Exception ex) { _logger?.LogDiagnosticWarn("Samwise.Fanout", $"Fanout failed: {ex.Message}"); }
         return Task.CompletedTask;
     }
 
@@ -57,7 +58,7 @@ public sealed class GardenFanoutMigration : IHostedService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Samwise.Fanout", $"Legacy read failed: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Samwise.Fanout", $"Legacy read failed: {ex.Message}");
             return;
         }
         if (legacy is null || legacy.PlotsByChar.Count == 0)
@@ -74,12 +75,12 @@ public sealed class GardenFanoutMigration : IHostedService
             {
                 Plots = new Dictionary<string, PersistedPlot>(legacy.PlotsByChar[name], StringComparer.Ordinal),
             },
-            diag: _diag);
+            logger: _logger);
 
         if (unresolved.Count == 0)
         {
             TryDeleteLegacy();
-            _diag?.Info("Samwise.Fanout", "PlotsByChar fanout complete; legacy garden-state.json removed.");
+            _logger?.LogDiagnosticInfo("Samwise.Fanout", "PlotsByChar fanout complete; legacy garden-state.json removed.");
         }
         else
         {
@@ -94,12 +95,12 @@ public sealed class GardenFanoutMigration : IHostedService
 
                 using var stream = File.Create(_legacyPath);
                 JsonSerializer.Serialize(stream, pruned, GardenStateJsonContext.Default.GardenState);
-                _diag?.Info("Samwise.Fanout",
+                _logger?.LogDiagnosticInfo("Samwise.Fanout",
                     $"Legacy trimmed to {unresolved.Count} unresolved char(s): {string.Join(", ", unresolved)}");
             }
             catch (Exception ex)
             {
-                _diag?.Warn("Samwise.Fanout", $"Legacy rewrite failed: {ex.Message}");
+                _logger?.LogDiagnosticWarn("Samwise.Fanout", $"Legacy rewrite failed: {ex.Message}");
             }
         }
     }
@@ -112,7 +113,7 @@ public sealed class GardenFanoutMigration : IHostedService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Samwise.Fanout", $"Legacy delete failed: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Samwise.Fanout", $"Legacy delete failed: {ex.Message}");
         }
     }
 }

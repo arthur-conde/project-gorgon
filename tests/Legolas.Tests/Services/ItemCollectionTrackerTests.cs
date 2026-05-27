@@ -1,3 +1,4 @@
+using System.IO;
 using FluentAssertions;
 using Arda.Abstractions.Logs;
 using Arda.World.Player.Events;
@@ -35,7 +36,7 @@ public sealed class ItemCollectionTrackerTests
         SessionState Session,
         SurveyFlowController Flow,
         LegolasSettings Settings,
-        CapturingSink Sink);
+        DiagnosticsLoggerProvider LogProvider);
 
     private static Harness Build()
     {
@@ -43,12 +44,13 @@ public sealed class ItemCollectionTrackerTests
         var session = new SessionState();
         var settings = new LegolasSettings { AutoResetWhenAllCollected = false };
         var flow = new SurveyFlowController(session, settings);
-        var sink = new CapturingSink();
+        var logProvider = new DiagnosticsLoggerProvider(
+            Path.Combine(Path.GetTempPath(), "legolas-tracker-" + Guid.NewGuid()));
         var refData = new FakeRefData();
         var svc = new ItemCollectionTracker(
             bus, session, flow,
-            refData: refData, diag: sink);
-        return new Harness(svc, bus, session, flow, settings, sink);
+            refData: refData, logger: logProvider.CreateLogger("Legolas.Ingestion"));
+        return new Harness(svc, bus, session, flow, settings, logProvider);
     }
 
     private static SurveyItemViewModel SeedSurvey(SessionState session, string displayName)
@@ -250,20 +252,4 @@ public sealed class ItemCollectionTrackerTests
         public event EventHandler<string>? FileUpdated { add { } remove { } }
     }
 
-    private sealed class CapturingSink : IDiagnosticsSink
-    {
-        private readonly List<(DiagnosticLevel Level, string Category, string Message)> _entries = new();
-        public void Write(DiagnosticLevel level, string category, string message)
-        {
-            lock (_entries) _entries.Add((level, category, message));
-        }
-
-        public IReadOnlyList<(DiagnosticLevel Level, string Category, string Message)> Snapshot()
-        {
-            lock (_entries) return _entries.ToArray();
-        }
-
-        IReadOnlyList<DiagnosticEntry> IDiagnosticsSink.Snapshot() => Array.Empty<DiagnosticEntry>();
-        public event EventHandler<DiagnosticEntry>? EntryAdded { add { } remove { } }
-    }
 }

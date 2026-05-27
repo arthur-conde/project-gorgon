@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.ComponentModel;
 using Mithril.GameReports;
 using Mithril.Shared.Diagnostics;
@@ -22,7 +23,7 @@ public sealed class ActiveCharacterService : IActiveCharacterService
     private readonly GameConfig _gameConfig;
     private readonly IActiveCharacterPersistence _persistence;
     private readonly IGameReportsService _reports;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     private string? _activeCharacterName;
     private string? _activeServer;
@@ -32,12 +33,12 @@ public sealed class ActiveCharacterService : IActiveCharacterService
         GameConfig gameConfig,
         IActiveCharacterPersistence persistence,
         IGameReportsService reports,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _gameConfig = gameConfig;
         _persistence = persistence;
         _reports = reports;
-        _diag = diag;
+        _logger = logger;
 
         _activeCharacterName = persistence.ActiveCharacterName;
         _activeServer = persistence.ActiveServer;

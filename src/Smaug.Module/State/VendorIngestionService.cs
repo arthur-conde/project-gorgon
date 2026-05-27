@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using System.Windows.Threading;
 using Arda.Composition;
@@ -26,7 +27,7 @@ public sealed class VendorIngestionService : BackgroundService
 {
     private readonly PriceCalibrationService _calibration;
     private readonly IPlayerProgressionState _progression;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly IDisposable _itemSoldSub;
     private Dispatcher? _dispatcher;
 
@@ -34,18 +35,18 @@ public sealed class VendorIngestionService : BackgroundService
         IDomainEventSubscriber bus,
         PriceCalibrationService calibration,
         IPlayerProgressionState progression,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _calibration = calibration;
         _progression = progression;
-        _diag = diag;
+        _logger = logger;
 
         _itemSoldSub = bus.Subscribe<VendorItemSold>(OnVendorItemSold);
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("Smaug",
+        _logger?.LogDiagnosticInfo("Smaug",
             "Subscribing to Arda domain bus for vendor events (VendorItemSold)");
 
         _dispatcher = Application.Current?.Dispatcher;
@@ -65,7 +66,7 @@ public sealed class VendorIngestionService : BackgroundService
         {
             if (string.IsNullOrEmpty(e.NpcKey) || string.IsNullOrEmpty(e.FavorTier))
             {
-                _diag?.Trace("Smaug.Parse",
+                _logger?.LogDiagnosticTrace("Smaug.Parse",
                     $"Sell of {e.InternalName} for {e.Price} skipped — no active vendor context");
                 return;
             }

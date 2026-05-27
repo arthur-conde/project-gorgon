@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
@@ -36,7 +37,7 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
 
     private readonly IActiveCharacterService _activeChar;
     private readonly IMapPinState _mapPinState;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly IDisposable _pinAddedSub;
     private readonly IDisposable _pinRemovedSub;
     private readonly IDisposable _areaChangedSub;
@@ -50,11 +51,11 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         IDomainEventSubscriber bus,
         IMapPinState mapPinState,
         IActiveCharacterService activeChar,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _mapPinState = mapPinState;
         _activeChar = activeChar;
-        _diag = diag;
+        _logger = logger;
         _activeChar.ActiveCharacterChanged += OnActiveCharacterChanged;
 
         // Initial resolve from current pin state (replaces Snapshot replay)
@@ -117,7 +118,7 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         }
         if (changed)
         {
-            _diag?.Trace("Legolas.CharacterPin",
+            _logger?.LogDiagnosticTrace("Legolas.CharacterPin",
                 _current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
             Changed?.Invoke();
         }
@@ -139,7 +140,7 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         }
         if (changed)
         {
-            _diag?.Trace("Legolas.CharacterPin",
+            _logger?.LogDiagnosticTrace("Legolas.CharacterPin",
                 _current is { } f ? $"declared @ ({f.World.X:0},{f.World.Z:0})" : "cleared");
             Changed?.Invoke();
         }
@@ -155,7 +156,7 @@ public sealed class CharacterPinAnchor : ICharacterPinAnchor, IDisposable
         }
         if (changed)
         {
-            _diag?.Trace("Legolas.CharacterPin", "cleared");
+            _logger?.LogDiagnosticTrace("Legolas.CharacterPin", "cleared");
             Changed?.Invoke();
         }
     }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
@@ -38,7 +39,7 @@ public sealed class PriceCalibrationService
     private readonly ISessionComposer? _session;
     private readonly ICommunityCalibrationService? _community;
     private readonly CalibrationSettings? _calibrationSettings;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly string _dataPath;
     private readonly string _observationsPath;
     // Fast-path dedup set: rebuilt on Load, updated on every persist. Replays
@@ -61,14 +62,14 @@ public sealed class PriceCalibrationService
         string dataDir,
         ICommunityCalibrationService? community = null,
         CalibrationSettings? calibrationSettings = null,
-        IDiagnosticsSink? diag = null,
+        ILogger? logger = null,
         ISessionComposer? session = null)
     {
         _refData = refData;
         _session = session;
         _community = community;
         _calibrationSettings = calibrationSettings;
-        _diag = diag;
+        _logger = logger;
         _dataPath = Path.Combine(dataDir, "calibration.json");
         _observationsPath = Path.Combine(dataDir, "observations.json");
         Load();
@@ -111,7 +112,7 @@ public sealed class PriceCalibrationService
 
         if (!_refData.ItemsByInternalName.TryGetValue(internalName, out var item))
         {
-            _diag?.Trace("Smaug.Calibration", $"Unknown item '{internalName}' — skipping observation");
+            _logger?.LogDiagnosticTrace("Smaug.Calibration", $"Unknown item '{internalName}' — skipping observation");
             return;
         }
 
@@ -135,7 +136,7 @@ public sealed class PriceCalibrationService
         {
             // Replay-on-relaunch: same session, same log-line timestamp, same
             // npc/item/price. Drop silently so SampleCount stays clean.
-            _diag?.Trace("Smaug.Calibration", $"Skipped replay of observation {key}");
+            _logger?.LogDiagnosticTrace("Smaug.Calibration", $"Skipped replay of observation {key}");
             return;
         }
 
@@ -143,7 +144,7 @@ public sealed class PriceCalibrationService
         RecomputeRates();
         Save();
 
-        _diag?.Info("Smaug.Calibration",
+        _logger?.LogDiagnosticInfo("Smaug.Calibration",
             $"Vendor sell: {internalName} → {npcKey} @ {favorTier} for {pricePaid}c " +
             $"(value={item.Value}, ratio={observation.Ratio:F2}, cp={civicPrideLevel})");
 
@@ -305,7 +306,7 @@ public sealed class PriceCalibrationService
                 // carry observations; merge with dedup (ObservationKey).
                 mergedObservations = MergeObservations(observations.Observations, legacy!.Observations);
                 loadedVersion = Math.Min(observations.Version, legacy.Version);
-                _diag?.Info("Smaug.Calibration",
+                _logger?.LogDiagnosticInfo("Smaug.Calibration",
                     $"Both observations.json and legacy calibration.json have observations; merged " +
                     $"{observations.Observations.Count} + {legacy.Observations.Count} → {mergedObservations.Count} (deduped).");
             }
@@ -335,7 +336,7 @@ public sealed class PriceCalibrationService
             if (_data.Version < 2)
             {
                 foreach (var obs in _data.Observations) obs.SessionId ??= "";
-                _diag?.Info("Smaug.Calibration",
+                _logger?.LogDiagnosticInfo("Smaug.Calibration",
                     $"Migrating calibration v{_data.Version} → v2: {_data.Observations.Count} observations carried forward (legacy session field defaults).");
                 _data.Version = 2;
             }
@@ -352,13 +353,13 @@ public sealed class PriceCalibrationService
                 Save();
             }
 
-            _diag?.Info("Smaug.Calibration",
+            _logger?.LogDiagnosticInfo("Smaug.Calibration",
                 $"Loaded {_data.Observations.Count} observations " +
                 $"({_data.AbsoluteRates.Count} absolute, {_data.RatioRates.Count} ratio)");
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Smaug.Calibration", $"Failed to load calibration: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Smaug.Calibration", $"Failed to load calibration: {ex.Message}");
             _data = new();
         }
     }
@@ -383,7 +384,7 @@ public sealed class PriceCalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Smaug.Calibration", $"Failed to read legacy calibration.json: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Smaug.Calibration", $"Failed to read legacy calibration.json: {ex.Message}");
             return null;
         }
     }
@@ -404,7 +405,7 @@ public sealed class PriceCalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Smaug.Calibration", $"Failed to read observations.json: {ex.Message}; quarantining as .corrupt.bak");
+            _logger?.LogDiagnosticWarn("Smaug.Calibration", $"Failed to read observations.json: {ex.Message}; quarantining as .corrupt.bak");
             QuarantineCorruptObservations();
             return null;
         }
@@ -419,11 +420,11 @@ public sealed class PriceCalibrationService
             // they're investigating; preserve the original instead.
             if (File.Exists(corruptPath)) return;
             File.Move(_observationsPath, corruptPath);
-            _diag?.Info("Smaug.Calibration", $"Quarantined unparseable observations.json → {corruptPath}");
+            _logger?.LogDiagnosticInfo("Smaug.Calibration", $"Quarantined unparseable observations.json → {corruptPath}");
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Smaug.Calibration", $"Failed to quarantine corrupt observations.json: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Smaug.Calibration", $"Failed to quarantine corrupt observations.json: {ex.Message}");
         }
     }
 
@@ -451,11 +452,11 @@ public sealed class PriceCalibrationService
             var backupPath = $"{_dataPath}.split.bak";
             if (File.Exists(backupPath)) return;
             File.Copy(_dataPath, backupPath);
-            _diag?.Info("Smaug.Calibration", $"Wrote pre-split backup: {backupPath}");
+            _logger?.LogDiagnosticInfo("Smaug.Calibration", $"Wrote pre-split backup: {backupPath}");
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Smaug.Calibration", $"Failed to write pre-split backup: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Smaug.Calibration", $"Failed to write pre-split backup: {ex.Message}");
         }
     }
 
@@ -477,7 +478,7 @@ public sealed class PriceCalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Smaug.Calibration", $"Failed to save observations: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Smaug.Calibration", $"Failed to save observations: {ex.Message}");
             return;
         }
 
@@ -495,7 +496,7 @@ public sealed class PriceCalibrationService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Smaug.Calibration", $"Failed to save aggregates: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Smaug.Calibration", $"Failed to save aggregates: {ex.Message}");
         }
     }
 

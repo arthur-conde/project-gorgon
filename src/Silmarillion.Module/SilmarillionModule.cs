@@ -43,7 +43,7 @@ public sealed class SilmarillionModule : IMithrilModule
         services.AddSingleton<IReferenceNavigator>(sp => new SilmarillionReferenceNavigator(
             () => sp.GetServices<IReferenceKindTarget>(),
             () => sp.GetService<IModuleActivator>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion")));
 
         services.AddSingleton<ItemsTabViewModel>(sp => new ItemsTabViewModel(
             sp.GetRequiredService<IReferenceDataService>(),
@@ -106,19 +106,19 @@ public sealed class SilmarillionModule : IMithrilModule
         // that motivates this.
         services.AddSingleton<IReferenceKindTarget>(sp => new ItemsKindTarget(
             sp.GetRequiredService<ItemsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new RecipesKindTarget(
             sp.GetRequiredService<RecipesTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new NpcsKindTarget(
             sp.GetRequiredService<NpcsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new QuestsKindTarget(
             sp.GetRequiredService<QuestsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new AbilityKindTarget(
             sp.GetRequiredService<AbilitiesTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         // RecipeIngredientKeywordKindTarget retired in #318 slice 4 (surface 2) — the
         // item-detail "Used as" 1:N surface is now a provenance popup fed
         // RecipesByIngredientKeywordWithReason directly (no synthetic-kind deep link /
@@ -135,44 +135,44 @@ public sealed class SilmarillionModule : IMithrilModule
         // re-derivation).
         services.AddSingleton<IReferenceKindTarget>(sp => new EffectsKindTarget(
             sp.GetRequiredService<EffectsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new EffectKeywordKindTarget(
             sp.GetRequiredService<EffectsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         // #327: symmetric Items-side single-keyword filter pivot (1:1, not a fan-out —
         // distinct from the retired #270 ItemKeyword recipe-slot fan-out kind). Restores
         // navigability to the Ability-detail / NPCs-tab keyword chips degraded in #326.
         services.AddSingleton<IReferenceKindTarget>(sp => new ItemByKeywordKindTarget(
             sp.GetRequiredService<ItemsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new EffectByStackingTypeKindTarget(
             sp.GetRequiredService<EffectsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new AreasKindTarget(
             sp.GetRequiredService<AreasTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         // NpcByAreaKindTarget retired in #318 slice 4, surface 4 — the Areas "NPCs in
         // this area" 1:N surface is now a provenance popup fed NpcsByAreaWithReason
         // directly (no synthetic-kind deep link / query re-derivation). The landmark
         // groups (#311 fold-in) likewise route through the shared virtualizing popup.
         services.AddSingleton<IReferenceKindTarget>(sp => new LorebooksKindTarget(
             sp.GetRequiredService<LorebooksTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new PlayerTitlesKindTarget(
             sp.GetRequiredService<PlayerTitlesTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new StorageVaultsKindTarget(
             sp.GetRequiredService<StorageVaultsTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         // Treasure System (#412/#435): two kinds, one tab. Power = the catalog;
         // Profile = the pools (also the #214 "pool-query" deep-link landing). Both
         // share TabIndex 10 (= TreasureTabViewModel.TabOrder).
         services.AddSingleton<IReferenceKindTarget>(sp => new PowerKindTarget(
             sp.GetRequiredService<TreasureTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
         services.AddSingleton<IReferenceKindTarget>(sp => new ProfileKindTarget(
             sp.GetRequiredService<TreasureTabViewModel>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Silmarillion.Nav")));
 
         // Module-scoped mithril://silmarillion/<kind>/<name> route (issue #229).
         services.AddSingleton<IDeepLinkHandler>(sp =>

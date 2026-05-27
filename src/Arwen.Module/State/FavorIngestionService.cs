@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using System.Windows.Threading;
 using Arda.Contracts;
@@ -19,7 +20,7 @@ namespace Arwen.State;
 public sealed class FavorIngestionService : BackgroundService
 {
     private readonly CalibrationService _calibration;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly IDisposable? _giftSub;
     private Dispatcher? _dispatcher;
 
@@ -28,10 +29,10 @@ public sealed class FavorIngestionService : BackgroundService
         CalibrationService calibration,
         IActiveCharacterService activeChar,
         SettingsAutoSaver<ArwenSettings> autoSaver,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _calibration = calibration;
-        _diag = diag;
+        _logger = logger;
         _ = activeChar;
         _ = autoSaver;
 
@@ -40,7 +41,7 @@ public sealed class FavorIngestionService : BackgroundService
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("Arwen.Ingestion",
+        _logger?.LogDiagnosticInfo("Arwen.Ingestion",
             "Subscribing to Arda domain bus (GiftAccepted) for calibration");
 
         _dispatcher = Application.Current?.Dispatcher;

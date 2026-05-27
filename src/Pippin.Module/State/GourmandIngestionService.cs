@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using System.Windows.Threading;
 using Arda.Contracts;
@@ -24,7 +25,7 @@ public sealed class GourmandIngestionService : BackgroundService
     private readonly GourmandStateMachine _state;
     private readonly GourmandStateService _stateService;
     private readonly PerCharacterView<GourmandState> _view;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly IDisposable? _subscription;
     private Dispatcher? _dispatcher;
 
@@ -33,12 +34,12 @@ public sealed class GourmandIngestionService : BackgroundService
         GourmandStateMachine state,
         GourmandStateService stateService,
         PerCharacterView<GourmandState> view,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _state = state;
         _stateService = stateService;
         _view = view;
-        _diag = diag;
+        _logger = logger;
 
         _subscription = bus.Subscribe<ArdaFoodsConsumedReport>(OnFoodsConsumedReport);
     }
@@ -48,13 +49,13 @@ public sealed class GourmandIngestionService : BackgroundService
         if (_view.Current is not null)
         {
             try { await _stateService.LoadAsync(cancellationToken).ConfigureAwait(false); }
-            catch (Exception ex) { _diag?.Warn("Pippin", $"Failed to load state: {ex.Message}"); }
-            _diag?.Info("Pippin",
+            catch (Exception ex) { _logger?.LogDiagnosticWarn("Pippin", $"Failed to load state: {ex.Message}"); }
+            _logger?.LogDiagnosticInfo("Pippin",
                 "State hydrated for active character — subscribed to Arda domain bus (FoodsConsumedReport)");
         }
         else
         {
-            _diag?.Info("Pippin",
+            _logger?.LogDiagnosticInfo("Pippin",
                 "No persisted active character — subscribed to Arda domain bus eagerly; hydrate deferred");
         }
 
@@ -79,7 +80,7 @@ public sealed class GourmandIngestionService : BackgroundService
 
         void Apply()
         {
-            _diag?.Trace("Pippin.Parse",
+            _logger?.LogDiagnosticTrace("Pippin.Parse",
                 $"FoodsConsumedReport with {foods.Count} entries (replay={report.Metadata.IsReplay})");
             var evt = new Parsing.FoodsConsumedReport(ts.UtcDateTime, foods);
             _state.Apply(evt);

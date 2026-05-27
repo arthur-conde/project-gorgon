@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
@@ -13,12 +14,12 @@ namespace Silmarillion.Navigation;
 public sealed class NpcsKindTarget : IReferenceKindTarget
 {
     private readonly NpcsTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public NpcsKindTarget(NpcsTabViewModel vm, IDiagnosticsSink? diag = null)
+    public NpcsKindTarget(NpcsTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.Npc;
@@ -32,10 +33,10 @@ public sealed class NpcsKindTarget : IReferenceKindTarget
         var row = _vm.AllNpcs.FirstOrDefault(r => r.InternalName == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"Npcs.TrySelect '{internalName}' → not found (AllNpcs={_vm.AllNpcs.Count}).");
+            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Npcs.TrySelect '{internalName}' → not found (AllNpcs={_vm.AllNpcs.Count}).");
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"Npcs.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Npcs.TrySelect '{internalName}' → found, selecting.");
         // Clear any residual filter so the target row isn't filtered out of the visible
         // ListBox. See ItemsKindTarget for the symptom.
         _vm.QueryText = "";

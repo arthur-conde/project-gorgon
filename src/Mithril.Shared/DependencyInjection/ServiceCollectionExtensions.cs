@@ -16,15 +16,12 @@ using Mithril.Shared.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shared.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddMithrilDiagnostics(this IServiceCollection services, string logDirectory) =>
-        services.AddSingleton<IDiagnosticsSink>(_ =>
-            new SerilogDiagnosticsSink(new DiagnosticsSink(), logDirectory));
-
     /// <summary>
     /// Register the opt-in perf-trace harness: an <see cref="IPerfTracer"/>
     /// singleton (writes per-session JSON-lines files to <paramref name="perfDirectory"/>)
@@ -43,13 +40,13 @@ public static class ServiceCollectionExtensions
     {
         services.AddSingleton<IPerfTracer>(sp => new PerfTracer(
             perfDirectory,
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("PerfTrace")));
         services.AddSingleton<PerfTracerHostedService>(sp => new PerfTracerHostedService(
             sp.GetRequiredService<IPerfTracer>(),
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetServices<Mithril.Shared.Modules.IMithrilModule>(),
             verboseFrameEventsAccessor(sp),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("PerfTrace")));
         services.AddHostedService(sp => sp.GetRequiredService<PerfTracerHostedService>());
         return services;
     }
@@ -65,20 +62,20 @@ public static class ServiceCollectionExtensions
             .AddSingleton<IGameClock, GameClock>()
             .AddSingleton<IShiftCatalog>(sp => new JsonShiftCatalog(
                 bundledDir: null,
-                diag: sp.GetService<IDiagnosticsSink>()))
+                logger: sp.GetRequiredService<ILoggerFactory>().CreateLogger("ShiftCatalog")))
             .AddSingleton<IGameReportsService>(sp =>
             {
                 var gameConfig = sp.GetRequiredService<Game.GameConfig>();
-                var diag = sp.GetService<IDiagnosticsSink>();
+                var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger("GameReports");
                 return new GameReportsService(
                     () => gameConfig.ReportsDirectory,
-                    diag is null ? null : (category, message) => diag.Write(DiagnosticLevel.Warn, category, message));
+                    (category, message) => logger.LogDiagnosticWarn(category, message));
             })
             .AddSingleton<IActiveCharacterService>(sp => new ActiveCharacterService(
                 sp.GetRequiredService<Game.GameConfig>(),
                 sp.GetRequiredService<IActiveCharacterPersistence>(),
                 sp.GetRequiredService<IGameReportsService>(),
-                sp.GetRequiredService<IDiagnosticsSink>()));
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("ActiveCharacter")));
 
     /// <summary>
     /// Register the root directory for per-character storage (typically
@@ -141,7 +138,7 @@ public static class ServiceCollectionExtensions
             .AddSingleton<IReferenceDataService>(sp => new ReferenceDataService(
                 cacheDirectory,
                 sp.GetRequiredService<HttpClient>(),
-                sp.GetRequiredService<IDiagnosticsSink>(),
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("Reference"),
                 perf: sp.GetService<IPerfTracer>()))
             .AddSingleton<IEntityNameResolver, ReferenceDataEntityNameResolver>();
 
@@ -150,7 +147,7 @@ public static class ServiceCollectionExtensions
             .AddSingleton<ICommunityCalibrationService>(sp => new CommunityCalibrationService(
                 cacheDirectory,
                 sp.GetRequiredService<HttpClient>(),
-                sp.GetRequiredService<IDiagnosticsSink>()));
+                sp.GetRequiredService<ILoggerFactory>().CreateLogger("CommunityCalibration")));
 
     /// <summary>
     /// Register a settings type for JSON persistence with debounced autosave on
@@ -221,7 +218,7 @@ public static class ServiceCollectionExtensions
             cacheDirectory,
             sp.GetRequiredService<HttpClient>(),
             sp.GetRequiredService<IReferenceDataService>(),
-            sp.GetRequiredService<IDiagnosticsSink>(),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Icons"),
             sp.GetRequiredService<IconSettings>()));
         return services;
     }

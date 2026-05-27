@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
@@ -15,12 +16,12 @@ namespace Silmarillion.Navigation;
 public sealed class AbilityKindTarget : IReferenceKindTarget
 {
     private readonly AbilitiesTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public AbilityKindTarget(AbilitiesTabViewModel vm, IDiagnosticsSink? diag = null)
+    public AbilityKindTarget(AbilitiesTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.Ability;
@@ -32,10 +33,10 @@ public sealed class AbilityKindTarget : IReferenceKindTarget
         var row = _vm.AllAbilities.FirstOrDefault(r => r.InternalName == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"Abilities.TrySelect '{internalName}' → not found (AllAbilities={_vm.AllAbilities.Count}).");
+            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Abilities.TrySelect '{internalName}' → not found (AllAbilities={_vm.AllAbilities.Count}).");
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"Abilities.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Abilities.TrySelect '{internalName}' → found, selecting.");
         // Clear any residual filter so the target row isn't filtered out of the visible ListBox.
         _vm.QueryText = "";
         _vm.SelectedRow = row;

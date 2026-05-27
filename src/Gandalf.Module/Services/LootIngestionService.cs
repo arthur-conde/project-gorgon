@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Arda.Contracts;
 using Arda.World.Player.Events;
 using Gandalf.Parsing;
@@ -30,7 +31,7 @@ public sealed class LootIngestionService : BackgroundService
     private readonly BossKillCreditParser _bossKill;
     private readonly DefeatCooldownParser _defeatCooldown;
     private readonly LootSource _source;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly List<IDisposable> _subscriptions = new();
     private bool _firstObservationLogged;
 
@@ -40,19 +41,19 @@ public sealed class LootIngestionService : BackgroundService
         BossKillCreditParser bossKill,
         DefeatCooldownParser defeatCooldown,
         LootSource source,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _bus = bus;
         _bracket = bracket;
         _bossKill = bossKill;
         _defeatCooldown = defeatCooldown;
         _source = source;
-        _diag = diag;
+        _logger = logger;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info(DiagCategory, "Subscribing to Arda domain events for loot ingestion");
+        _logger?.LogDiagnosticInfo(DiagCategory, "Subscribing to Arda domain events for loot ingestion");
 
         _subscriptions.Add(_bus.Subscribe<InteractionStarted>(evt =>
         {
@@ -144,6 +145,6 @@ public sealed class LootIngestionService : BackgroundService
     {
         if (_firstObservationLogged) return;
         _firstObservationLogged = true;
-        _diag?.Info(DiagCategory, "First loot-source event observed this session");
+        _logger?.LogDiagnosticInfo(DiagCategory, "First loot-source event observed this session");
     }
 }

@@ -60,7 +60,7 @@ public class TimerProgressServiceRecurringTests : IDisposable
         var gameClock = new GameClock(time);
         var progressSvc = new TimerProgressService(view, defsSvc,
             new PerCharacterStoreOptions { CharactersRootDir = _charactersDir },
-            diag: null, gameClock: gameClock, time: time);
+            logger: null, gameClock: gameClock, time: time);
         return (defsSvc, progressSvc, time);
     }
 

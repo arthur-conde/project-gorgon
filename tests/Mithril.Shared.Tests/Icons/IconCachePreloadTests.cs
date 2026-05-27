@@ -30,7 +30,7 @@ public sealed class IconCachePreloadTests : IDisposable
         var http = new HttpClient(handler ?? new RecordingHandler(_ => MakeOkPng()));
         var refData = new EmptyReferenceData();
         var settings = new IconSettings();
-        return new IconCacheService(_cacheDir, http, refData, diag: null, settings);
+        return new IconCacheService(_cacheDir, http, refData, logger: null, settings);
     }
 
     [Fact]

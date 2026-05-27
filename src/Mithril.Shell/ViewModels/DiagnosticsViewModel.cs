@@ -1,5 +1,8 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Reactive.Concurrency;
+using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Windows.Data;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -23,18 +26,27 @@ public sealed partial class CategoryToggle : ObservableObject
     partial void OnIsEnabledChanged(bool value) => _onChanged();
 }
 
-public sealed partial class DiagnosticsViewModel : ObservableObject
+public sealed partial class DiagnosticsViewModel : ObservableObject, IDisposable
 {
-    private readonly IDiagnosticsSink _sink;
+    private readonly IDiagnosticsLog _log;
+    private readonly CompositeDisposable _subscriptions = new();
     private readonly Dictionary<string, CategoryToggle> _categoryIndex = new(StringComparer.Ordinal);
 
-    public DiagnosticsViewModel(IDiagnosticsSink sink)
+    public DiagnosticsViewModel(IDiagnosticsLog log)
     {
-        _sink = sink;
-        foreach (var e in _sink.Snapshot()) { Entries.Add(e); TrackCategory(e.Category); }
-        _sink.EntryAdded += OnEntryAdded;
+        _log = log;
+        foreach (var e in _log.Snapshot()) { Entries.Add(e); TrackCategory(e.Category); }
         View = (ListCollectionView)CollectionViewSource.GetDefaultView(Entries);
         View.Filter = Filter;
+
+        var dispatcher = System.Windows.Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
+        var uiScheduler = new SynchronizationContextScheduler(
+            new DispatcherSynchronizationContext(dispatcher));
+        _subscriptions.Add(
+            _log.Live
+                .Where(_ => !Paused)
+                .ObserveOn(uiScheduler)
+                .Subscribe(Append));
     }
 
     public ObservableCollection<DiagnosticEntry> Entries { get; } = new();
@@ -111,18 +123,12 @@ public sealed partial class DiagnosticsViewModel : ObservableObject
         Categories.Add(toggle);
     }
 
-    private void OnEntryAdded(object? sender, DiagnosticEntry e)
-    {
-        if (Paused) return;
-        var d = System.Windows.Application.Current?.Dispatcher;
-        if (d is null || d.CheckAccess()) Append(e);
-        else d.InvokeAsync(() => Append(e), DispatcherPriority.Background);
-    }
-
     private void Append(DiagnosticEntry e)
     {
         TrackCategory(e.Category);
         Entries.Add(e);
         while (Entries.Count > 2000) Entries.RemoveAt(0);
     }
+
+    public void Dispose() => _subscriptions.Dispose();
 }

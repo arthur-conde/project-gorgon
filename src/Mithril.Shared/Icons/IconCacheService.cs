@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Net.Http;
@@ -14,7 +15,7 @@ public sealed class IconCacheService : IIconCacheService
     private readonly string _cacheDir;
     private readonly HttpClient _http;
     private readonly IReferenceDataService _refData;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly IconSettings _settings;
 
     private readonly ConcurrentDictionary<int, BitmapImage> _memCache = new();
@@ -29,13 +30,13 @@ public sealed class IconCacheService : IIconCacheService
         string cacheDir,
         HttpClient http,
         IReferenceDataService refData,
-        IDiagnosticsSink? diag,
+        ILogger? logger,
         IconSettings settings)
     {
         _cacheDir = cacheDir;
         _http = http;
         _refData = refData;
-        _diag = diag;
+        _logger = logger;
         _settings = settings;
         _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
@@ -237,7 +238,7 @@ public sealed class IconCacheService : IIconCacheService
             using var resp = await _http.GetAsync(url);
             if (!resp.IsSuccessStatusCode)
             {
-                _diag?.Warn("Icons", $"Download failed for icon {iconId}: HTTP {(int)resp.StatusCode}");
+                _logger?.LogDiagnosticWarn("Icons", $"Download failed for icon {iconId}: HTTP {(int)resp.StatusCode}");
                 MarkFailed(iconId);
                 return;
             }
@@ -259,7 +260,7 @@ public sealed class IconCacheService : IIconCacheService
         }
         catch (Exception ex)
         {
-            _diag?.Warn("Icons", $"Download failed for icon {iconId}: {ex.Message}");
+            _logger?.LogDiagnosticWarn("Icons", $"Download failed for icon {iconId}: {ex.Message}");
             MarkFailed(iconId);
         }
         finally

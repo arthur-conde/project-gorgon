@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Linq;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
@@ -17,12 +18,12 @@ namespace Silmarillion.Navigation;
 public sealed class PowerKindTarget : IReferenceKindTarget
 {
     private readonly TreasureTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public PowerKindTarget(TreasureTabViewModel vm, IDiagnosticsSink? diag = null)
+    public PowerKindTarget(TreasureTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.Power;
@@ -35,10 +36,10 @@ public sealed class PowerKindTarget : IReferenceKindTarget
             r => r.Kind == TreasureRowKind.Power && r.InternalName == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"Power.TrySelect '{internalName}' → not found (AllRows={_vm.AllRows.Count}).");
+            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Power.TrySelect '{internalName}' → not found (AllRows={_vm.AllRows.Count}).");
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"Power.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Power.TrySelect '{internalName}' → found, selecting.");
         _vm.QueryText = "";
         _vm.SelectedRow = row;
         return true;

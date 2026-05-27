@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+
 namespace Mithril.Shared.Diagnostics;
 
 /// <summary>
@@ -5,7 +7,7 @@ namespace Mithril.Shared.Diagnostics;
 /// ingestion loop must never die on one bad line, but emitting a <c>Warn</c>
 /// per bad line would reproduce the unbuffered per-line sink cost that
 /// mithril#507 is about (a pathological run of malformed lines → a Warn
-/// flood through <see cref="SerilogDiagnosticsSink"/>). This emits at most
+/// flood through the diagnostics file logger). This emits at most
 /// one Warn per <paramref name="window"/> and rolls the suppressed count into
 /// the next emitted message, so the failure stays observable without the
 /// flood.
@@ -13,12 +15,11 @@ namespace Mithril.Shared.Diagnostics;
 /// <remarks>
 /// Thread-safe (a single ingestion loop is the expected single writer; the
 /// lock keeps it correct if shared). A null sink makes <see cref="Warn"/> a
-/// no-op, mirroring the optional-<c>IDiagnosticsSink</c> convention used by
-/// the ingestion services.
+/// no-op, mirroring optional-<c>ILogger</c> convention used by ingestion services.
 /// </remarks>
 public sealed class ThrottledWarn
 {
-    private readonly IDiagnosticsSink? _sink;
+    private readonly ILogger? _logger;
     private readonly string _category;
     private readonly TimeProvider _time;
     private readonly TimeSpan _window;
@@ -27,12 +28,12 @@ public sealed class ThrottledWarn
     private DateTimeOffset _nextAllowed = DateTimeOffset.MinValue;
 
     public ThrottledWarn(
-        IDiagnosticsSink? sink,
+        ILogger? logger,
         string category,
         TimeSpan? window = null,
         TimeProvider? time = null)
     {
-        _sink = sink;
+        _logger = logger;
         _category = category;
         _time = time ?? TimeProvider.System;
         _window = window ?? TimeSpan.FromSeconds(5);
@@ -45,7 +46,7 @@ public sealed class ThrottledWarn
     /// </summary>
     public void Warn(string message)
     {
-        if (_sink is null) return;
+        if (_logger is null) return;
         lock (_gate)
         {
             var now = _time.GetUtcNow();
@@ -58,7 +59,7 @@ public sealed class ThrottledWarn
             var suppressed = _suppressed;
             _suppressed = 0;
             _nextAllowed = now + _window;
-            _sink.Warn(
+            _logger.LogDiagnosticWarn(
                 _category,
                 suppressed > 0
                     ? $"{message} (+{suppressed} similar suppressed in last {_window.TotalSeconds:0}s)"

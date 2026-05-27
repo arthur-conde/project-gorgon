@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
@@ -20,11 +21,11 @@ public sealed class ElrondDeepLinkHandler : IDeepLinkHandler
 
     public string Action => "elrond";
 
-    public bool TryHandle(string subPath, IDiagnosticsSink? diag)
+    public bool TryHandle(string subPath, ILogger? logger)
     {
         if (!PayloadPattern.IsMatch(subPath))
         {
-            diag?.Info("DeepLink", $"Rejected: elrond payload '{subPath}' failed validation.");
+            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: elrond payload '{subPath}' failed validation.");
             return false;
         }
         _target.ImportFromLinkPayload(subPath);

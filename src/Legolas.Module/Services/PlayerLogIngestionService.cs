@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using Arda.Contracts;
 using Arda.World.Player;
@@ -50,7 +51,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
     private readonly SessionState _session;
     private readonly MotherlodeMeasurementCoordinator _motherlode;
     private readonly LegolasSettings _settings;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     private IDisposable? _mapFxSub;
     private IDisposable? _delayLoopSub;
@@ -69,7 +70,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
         SessionState session,
         MotherlodeMeasurementCoordinator motherlode,
         LegolasSettings settings,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _bus = bus;
         _areaState = areaState;
@@ -78,7 +79,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _session = session;
         _motherlode = motherlode;
         _settings = settings;
-        _diag = diag;
+        _logger = logger;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -96,7 +97,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
         _screenTextSub = _bus.Subscribe<ScreenTextObserved>(OnScreenTextObserved);
         _areaChangedSub = _bus.Subscribe<AreaChanged>(OnAreaChanged);
 
-        _diag?.Info("Legolas.PlayerLog", "Subscribed to Arda domain events");
+        _logger?.LogDiagnosticInfo("Legolas.PlayerLog", "Subscribed to Arda domain events");
 
         return base.StartAsync(cancellationToken);
     }

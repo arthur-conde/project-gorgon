@@ -10,18 +10,22 @@ using Xunit;
 
 namespace Mithril.Shell.Tests;
 
-public sealed class SessionAgreementComposerTests : IAsyncLifetime
+public sealed class SessionAgreementComposerTests : IAsyncLifetime, IDisposable
 {
     private static readonly DateTimeOffset BaseTime = new(2026, 5, 22, 12, 0, 0, TimeSpan.Zero);
 
     private readonly TestBus _bus = new();
-    private readonly RecordingDiagnosticsSink _diag = new();
+    private readonly DiagnosticsLoggerProvider _logProvider;
     private readonly SessionAgreementComposer _composer;
 
     public SessionAgreementComposerTests()
     {
-        _composer = new SessionAgreementComposer(_bus, _diag);
+        _logProvider = new DiagnosticsLoggerProvider(
+            Path.Combine(Path.GetTempPath(), "mithril-session-agreement-" + Guid.NewGuid()));
+        _composer = new SessionAgreementComposer(_bus, _logProvider.CreateLogger("SessionAgreement"));
     }
+
+    public void Dispose() => _logProvider.Dispose();
 
     public Task InitializeAsync() => _composer.StartAsync(CancellationToken.None);
     public Task DisposeAsync() { _composer.Dispose(); return Task.CompletedTask; }
@@ -34,7 +38,7 @@ public sealed class SessionAgreementComposerTests : IAsyncLifetime
     {
         _bus.Publish(new ChatSessionIdentified("Emraell", "Laeth", TimeSpan.Zero, Meta(BaseTime)));
 
-        _diag.Entries.Should().BeEmpty();
+        _logProvider.Snapshot().Should().BeEmpty();
         _composer.Count.Should().Be(0);
     }
 
@@ -43,7 +47,7 @@ public sealed class SessionAgreementComposerTests : IAsyncLifetime
     {
         _bus.Publish(new SessionStarted("Emraell", Meta(BaseTime)));
 
-        _diag.Entries.Should().BeEmpty();
+        _logProvider.Snapshot().Should().BeEmpty();
         _composer.Count.Should().Be(0);
     }
 
@@ -53,7 +57,7 @@ public sealed class SessionAgreementComposerTests : IAsyncLifetime
         _bus.Publish(new SessionStarted("Emraell", Meta(BaseTime)));
         _bus.Publish(new ChatSessionIdentified("Emraell", "Laeth", TimeSpan.Zero, Meta(BaseTime.AddSeconds(5))));
 
-        _diag.Entries.Should().BeEmpty();
+        _logProvider.Snapshot().Should().BeEmpty();
         _composer.Count.Should().Be(0);
     }
 
@@ -63,7 +67,7 @@ public sealed class SessionAgreementComposerTests : IAsyncLifetime
         _bus.Publish(new SessionStarted("Emraell", Meta(BaseTime)));
         _bus.Publish(new ChatSessionIdentified("Frodo", "Laeth", TimeSpan.Zero, Meta(BaseTime.AddSeconds(5))));
 
-        _diag.Entries.Should().BeEmpty();
+        _logProvider.Snapshot().Should().BeEmpty();
         _composer.Count.Should().Be(0);
     }
 
@@ -81,7 +85,7 @@ public sealed class SessionAgreementComposerTests : IAsyncLifetime
         _bus.Publish(new SessionStarted("Emraell", Meta(BaseTime)));
         _bus.Publish(new ChatSessionIdentified("Emraell", "Laeth", TimeSpan.Zero, Meta(BaseTime)));
 
-        _diag.Entries.Should().BeEmpty();
+        _logProvider.Snapshot().Should().BeEmpty();
         _composer.Count.Should().Be(0);
     }
 
@@ -116,21 +120,5 @@ public sealed class SessionAgreementComposerTests : IAsyncLifetime
         {
             public void Dispose() => action();
         }
-    }
-
-    private sealed class RecordingDiagnosticsSink : IDiagnosticsSink
-    {
-        private readonly List<DiagnosticEntry> _entries = [];
-        public IReadOnlyList<DiagnosticEntry> Entries => _entries;
-        public event EventHandler<DiagnosticEntry>? EntryAdded;
-
-        public void Write(DiagnosticLevel level, string category, string message)
-        {
-            var entry = new DiagnosticEntry(DateTime.UtcNow, level, category, message);
-            _entries.Add(entry);
-            EntryAdded?.Invoke(this, entry);
-        }
-
-        public IReadOnlyList<DiagnosticEntry> Snapshot() => _entries.ToArray();
     }
 }

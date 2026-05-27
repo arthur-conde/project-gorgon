@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Arda.Composition;
 using Arda.Contracts;
 using Arda.World.Player.Events;
@@ -21,7 +22,7 @@ internal sealed class ActiveCharacterLogSynchronizer : IHostedService, IDisposab
 {
     private readonly IDomainEventSubscriber _bus;
     private readonly IActiveCharacterService _active;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     private IDisposable? _sessionSub;
     private IDisposable? _establishedSub;
@@ -30,16 +31,16 @@ internal sealed class ActiveCharacterLogSynchronizer : IHostedService, IDisposab
     public ActiveCharacterLogSynchronizer(
         IDomainEventSubscriber bus,
         IActiveCharacterService active,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _bus = bus;
         _active = active;
-        _diag = diag;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _diag?.Info("ActiveChar", "Subscribing to Arda SessionStarted + SessionEstablished");
+        _logger?.LogDiagnosticInfo("ActiveChar", "Subscribing to Arda SessionStarted + SessionEstablished");
         _sessionSub = _bus.Subscribe<SessionStarted>(OnSessionStarted);
         _establishedSub = _bus.Subscribe<SessionEstablished>(OnSessionEstablished);
         return Task.CompletedTask;

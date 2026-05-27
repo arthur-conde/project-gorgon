@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Arda.Contracts;
 using Arda.World.Player.Events;
 using Microsoft.Extensions.Hosting;
@@ -24,17 +25,17 @@ internal sealed class TimerExpirationDriver : BackgroundService
 {
     private readonly TimerProgressService _progress;
     private readonly IDomainEventSubscriber _bus;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private IDisposable? _subscription;
 
     public TimerExpirationDriver(
         TimerProgressService progress,
         IDomainEventSubscriber bus,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _progress = progress;
         _bus = bus;
-        _diag = diag;
+        _logger = logger;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -47,12 +48,12 @@ internal sealed class TimerExpirationDriver : BackgroundService
             }
             catch (Exception ex)
             {
-                _diag?.Warn("Gandalf.ExpirationDriver",
+                _logger?.LogDiagnosticWarn("Gandalf.ExpirationDriver",
                     $"CheckExpirations threw on tick {evt.Metadata.Timestamp:o}: {ex.Message}");
             }
         });
 
-        _diag?.Info("Gandalf.ExpirationDriver",
+        _logger?.LogDiagnosticInfo("Gandalf.ExpirationDriver",
             "Subscribed to Arda CalendarTimeAdvanced events");
 
         return base.StartAsync(cancellationToken);

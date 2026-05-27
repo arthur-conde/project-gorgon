@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Legolas.Domain;
 using Mithril.Shared.Diagnostics;
 
@@ -37,9 +38,9 @@ public sealed class MultilaterationSolver : IMultilaterationSolver
     // same output). Geometry, not luck, decides the result.
     private const int RansacSeed = 488;
 
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public MultilaterationSolver(IDiagnosticsSink? diag = null) => _diag = diag;
+    public MultilaterationSolver(ILogger? logger = null) => _logger = logger;
 
     public MultilaterationResult Solve(IReadOnlyList<MultilaterationSample> samples)
     {
@@ -47,7 +48,7 @@ public sealed class MultilaterationSolver : IMultilaterationSolver
 
         if (samples.Count < 3)
         {
-            _diag?.Trace("Legolas.Multilateration",
+            _logger?.LogDiagnosticTrace("Legolas.Multilateration",
                 $"Insufficient samples: {samples.Count} (need ≥3).");
             return new MultilaterationResult(
                 null, double.PositiveInfinity, double.PositiveInfinity,
@@ -88,7 +89,7 @@ public sealed class MultilaterationSolver : IMultilaterationSolver
 
         if (GaussNewton(inlierList, init) is not { } fix)
         {
-            _diag?.Warn("Legolas.Multilateration", "Gauss–Newton produced no finite estimate.");
+            _logger?.LogDiagnosticWarn("Legolas.Multilateration", "Gauss–Newton produced no finite estimate.");
             return new MultilaterationResult(
                 null, double.PositiveInfinity, double.PositiveInfinity,
                 inliers, MultilaterationQuality.NoSolution,
@@ -101,7 +102,7 @@ public sealed class MultilaterationSolver : IMultilaterationSolver
 
         if (!double.IsFinite(gdop) || gdop > GdopRefuseThreshold)
         {
-            _diag?.Info("Legolas.Multilateration",
+            _logger?.LogDiagnosticInfo("Legolas.Multilateration",
                 $"Low-confidence geometry: GDOP={gdop:0.0}, residRMS={residualRms:0.0}m, n={inlierList.Count}.");
             return new MultilaterationResult(
                 point, gdop, residualRms, inliers,
@@ -110,7 +111,7 @@ public sealed class MultilaterationSolver : IMultilaterationSolver
                 "roughly perpendicular to the others (≥30 m away), then re-check.");
         }
 
-        _diag?.Trace("Legolas.Multilateration",
+        _logger?.LogDiagnosticTrace("Legolas.Multilateration",
             $"Solved ({fix.X:0.0},{fix.Z:0.0}) GDOP={gdop:0.00} residRMS={residualRms:0.00}m " +
             $"inliers={inlierList.Count}/{samples.Count}.");
         return new MultilaterationResult(

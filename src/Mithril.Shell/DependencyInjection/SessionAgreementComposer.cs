@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Arda.Contracts;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
@@ -28,7 +29,7 @@ internal sealed class SessionAgreementComposer : IHostedService, IAttentionSourc
     public const string AttentionSourceId = "session-agreement";
 
     private readonly IDomainEventSubscriber _bus;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     private readonly object _gate = new();
     private string? _playerCharacter;
@@ -44,10 +45,10 @@ internal sealed class SessionAgreementComposer : IHostedService, IAttentionSourc
     private IDisposable? _chatSub;
     private bool _disposed;
 
-    public SessionAgreementComposer(IDomainEventSubscriber bus, IDiagnosticsSink? diag = null)
+    public SessionAgreementComposer(IDomainEventSubscriber bus, ILogger? logger = null)
     {
         _bus = bus ?? throw new ArgumentNullException(nameof(bus));
-        _diag = diag;
+        _logger = logger;
     }
 
     public string ModuleId => AttentionSourceId;
@@ -111,7 +112,7 @@ internal sealed class SessionAgreementComposer : IHostedService, IAttentionSourc
         var dedupKey = (sid, _chatBannerAt);
         if (!_emittedWarnings.Add(dedupKey)) return;
 
-        _diag?.Warn(DiagnosticCategory,
+        _logger?.LogDiagnosticWarn(DiagnosticCategory,
             $"Player.log banner server '{_playerServer}' disagrees with chat banner server '{_chatServer}' " +
             $"for character '{_playerCharacter}' (session id '{sid}', chat banner at {_chatBannerAt:O}). " +
             "The Player.log-derived server identity remains authoritative for downstream services; " +

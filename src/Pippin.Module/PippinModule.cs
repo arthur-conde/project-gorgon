@@ -67,7 +67,7 @@ public sealed class PippinModule : IMithrilModule
         services.AddSingleton<IPippinShareImportTarget>(sp => new PippinShareImportTarget(
             sp.GetRequiredService<FoodCatalog>(),
             sp.GetService<IModuleActivator>(),
-            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Pippin")));
         services.AddSingleton<IDeepLinkHandler>(sp =>
             new PippinDeepLinkHandler(sp.GetRequiredService<IPippinShareImportTarget>()));
 

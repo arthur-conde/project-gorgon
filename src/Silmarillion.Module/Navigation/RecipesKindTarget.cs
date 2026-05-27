@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
@@ -13,12 +14,12 @@ namespace Silmarillion.Navigation;
 public sealed class RecipesKindTarget : IReferenceKindTarget
 {
     private readonly RecipesTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public RecipesKindTarget(RecipesTabViewModel vm, IDiagnosticsSink? diag = null)
+    public RecipesKindTarget(RecipesTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.Recipe;
@@ -32,10 +33,10 @@ public sealed class RecipesKindTarget : IReferenceKindTarget
         var row = _vm.AllRecipes.FirstOrDefault(r => r.Recipe.InternalName == internalName);
         if (row is null)
         {
-            _diag?.Info("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → not found (AllRecipes={_vm.AllRecipes.Count}).");
+            _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → not found (AllRecipes={_vm.AllRecipes.Count}).");
             return false;
         }
-        _diag?.Info("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → found, selecting.");
+        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"Recipes.TrySelect '{internalName}' → found, selecting.");
         // Clear any residual filter so the target row isn't filtered out of the visible
         // ListBox. See ItemsKindTarget for the symptom — particularly relevant now that
         // the item-detail "Used as" keyword chip leaves an IngredientKeywords filter in

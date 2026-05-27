@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 using System.Windows;
 using Legolas.Domain;
@@ -23,7 +24,7 @@ public sealed class LegolasShareImportTarget : ILegolasShareImportTarget
     private readonly IDialogService? _dialogs;
     private readonly IReferenceDataService? _refData;
     private readonly IModuleActivator? _activator;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public LegolasShareImportTarget(
         LegolasShareCardRenderer? renderer = null,
@@ -31,21 +32,21 @@ public sealed class LegolasShareImportTarget : ILegolasShareImportTarget
         IDialogService? dialogs = null,
         IReferenceDataService? refData = null,
         IModuleActivator? activator = null,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _renderer = renderer;
         _settings = settings;
         _dialogs = dialogs;
         _refData = refData;
         _activator = activator;
-        _diag = diag;
+        _logger = logger;
     }
 
     public void ImportFromLinkPayload(string base64UrlPayload)
     {
         if (!ShareCodec.TryDecodePayload(base64UrlPayload, out var json, out var error))
         {
-            _diag?.Info("Legolas", $"Share link decode failed: {error}");
+            _logger?.LogDiagnosticInfo("Legolas", $"Share link decode failed: {error}");
             return;
         }
 
@@ -56,12 +57,12 @@ public sealed class LegolasShareImportTarget : ILegolasShareImportTarget
         }
         catch (JsonException ex)
         {
-            _diag?.Info("Legolas", $"Share link payload is not valid LegolasSharePayload JSON: {ex.Message}");
+            _logger?.LogDiagnosticInfo("Legolas", $"Share link payload is not valid LegolasSharePayload JSON: {ex.Message}");
             return;
         }
         if (payload is null)
         {
-            _diag?.Info("Legolas", "Share link payload deserialized to null.");
+            _logger?.LogDiagnosticInfo("Legolas", "Share link payload deserialized to null.");
             return;
         }
 
@@ -75,11 +76,11 @@ public sealed class LegolasShareImportTarget : ILegolasShareImportTarget
     private void Show(LegolasSharePayload payload)
     {
         if (_activator is not null && !_activator.Activate("legolas"))
-            _diag?.Info("Legolas", "Deep-link import: module activator could not find 'legolas'.");
+            _logger?.LogDiagnosticInfo("Legolas", "Deep-link import: module activator could not find 'legolas'.");
 
         if (_dialogs is null || _settings is null)
         {
-            _diag?.Info("Legolas", "Share import: no dialog service or settings registered; cannot open dialog.");
+            _logger?.LogDiagnosticInfo("Legolas", "Share import: no dialog service or settings registered; cannot open dialog.");
             return;
         }
 

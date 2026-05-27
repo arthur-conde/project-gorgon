@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
 using Arda.World.Player;
 using Gandalf.Domain;
@@ -52,7 +53,7 @@ public sealed class LootSource : ITimerSource, IDisposable
     private readonly IReferenceDataService? _refData;
     private readonly TimeProvider _time;
     private readonly ICalendarState? _calendarState;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly object _catalogLock = new();
     private IReadOnlyDictionary<string, DefeatCatalogEntry> _calibrationByDisplayName =
         new Dictionary<string, DefeatCatalogEntry>(StringComparer.OrdinalIgnoreCase);
@@ -67,7 +68,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         IAreaState? areaState = null,
         IReferenceDataService? refData = null,
         TimeProvider? time = null,
-        IDiagnosticsSink? diag = null,
+        ILogger? logger = null,
         ICalendarState? calendarState = null)
     {
         _derived = derived;
@@ -77,7 +78,7 @@ public sealed class LootSource : ITimerSource, IDisposable
         _refData = refData;
         _time = time ?? TimeProvider.System;
         _calendarState = calendarState;
-        _diag = diag;
+        _logger = logger;
         _catalog = BuildCatalog();
         _lastCatalogByKey = _catalog.ToDictionary(c => c.Key, StringComparer.Ordinal);
         _lastProgressByKey = SnapshotProgress();
@@ -359,7 +360,7 @@ public sealed class LootSource : ITimerSource, IDisposable
     public void OnDefeatCooldownActive(string npcDisplayName, DateTime timestampUtc)
     {
         if (string.IsNullOrEmpty(npcDisplayName)) return;
-        _diag?.Trace("Gandalf.Loot",
+        _logger?.LogDiagnosticTrace("Gandalf.Loot",
             $"Cooldown still active for {npcDisplayName.Trim()} at {timestampUtc:O}");
     }
 

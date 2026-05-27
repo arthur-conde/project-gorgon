@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using Mithril.Shared;
 using Mithril.Shared.Diagnostics;
@@ -7,13 +8,13 @@ namespace Mithril.Shell.Updates;
 public sealed class VelopackUpdateApplier : IUpdateApplier
 {
     private readonly MithrilUpdateManager _holder;
-    private readonly IDiagnosticsSink _diag;
+    private readonly ILogger _logger;
     private int _applying;
 
-    public VelopackUpdateApplier(MithrilUpdateManager holder, IDiagnosticsSink diag)
+    public VelopackUpdateApplier(MithrilUpdateManager holder, ILogger logger)
     {
         _holder = holder;
-        _diag = diag;
+        _logger = logger;
     }
 
     public bool IsApplying => Volatile.Read(ref _applying) == 1;
@@ -25,7 +26,7 @@ public sealed class VelopackUpdateApplier : IUpdateApplier
         {
             if (!_holder.IsAvailable || _holder.Pending is null)
             {
-                _diag.Info("updates", "Apply requested but no pending update; opening releases page.");
+                _logger.LogDiagnosticInfo("updates", "Apply requested but no pending update; opening releases page.");
                 OpenReleasesPage();
                 return;
             }
@@ -35,15 +36,15 @@ public sealed class VelopackUpdateApplier : IUpdateApplier
             // browser instead of failing inside Velopack.
             if (!_holder.IsInstalled)
             {
-                _diag.Info("updates", "Portable build — opening releases page instead of applying in place.");
+                _logger.LogDiagnosticInfo("updates", "Portable build — opening releases page instead of applying in place.");
                 OpenReleasesPage();
                 return;
             }
 
-            _diag.Info("updates", $"Downloading update {_holder.Pending.TargetFullRelease.Version} (channel={_holder.Channel.Name}).");
+            _logger.LogDiagnosticInfo("updates", $"Downloading update {_holder.Pending.TargetFullRelease.Version} (channel={_holder.Channel.Name}).");
             await _holder.Manager.DownloadUpdatesAsync(_holder.Pending, cancelToken: ct).ConfigureAwait(false);
 
-            _diag.Info("updates", "Restarting onto new version.");
+            _logger.LogDiagnosticInfo("updates", "Restarting onto new version.");
             // Calls Update.exe and terminates this process. WPF teardown does not happen —
             // settings persisted via the Closing handler in Program.cs Main() will not run.
             // The trade-off: the in-flight save in Program.cs's finally block still fires
@@ -57,7 +58,7 @@ public sealed class VelopackUpdateApplier : IUpdateApplier
         }
         catch (Exception ex)
         {
-            _diag.Warn("updates", $"Apply failed: {ex.GetType().Name} {ex.Message}. Falling back to releases page.");
+            _logger.LogDiagnosticWarn("updates", $"Apply failed: {ex.GetType().Name} {ex.Message}. Falling back to releases page.");
             OpenReleasesPage();
         }
         finally

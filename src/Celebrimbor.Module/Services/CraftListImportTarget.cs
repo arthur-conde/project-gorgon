@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using System.Windows;
 using Celebrimbor.Domain;
 using Celebrimbor.ViewModels;
@@ -18,18 +19,18 @@ public sealed class CraftListImportTarget : ICraftListImportTarget
     private readonly RecipePickerViewModel _picker;
     private readonly IReferenceDataService _refData;
     private readonly IModuleActivator? _activator;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
     public CraftListImportTarget(
         RecipePickerViewModel picker,
         IReferenceDataService refData,
         IModuleActivator? activator = null,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _picker = picker;
         _refData = refData;
         _activator = activator;
-        _diag = diag;
+        _logger = logger;
     }
 
     public void ImportFromLinkPayload(string base64UrlPayload)
@@ -71,7 +72,7 @@ public sealed class CraftListImportTarget : ICraftListImportTarget
         // Bring the Celebrimbor tab forward first so the dialog owner is the right window and
         // the user sees the list populate after confirming.
         if (_activator is not null && !_activator.Activate("celebrimbor"))
-            _diag?.Info("Celebrimbor", "Craft-list import: module activator could not find 'celebrimbor'.");
+            _logger?.LogDiagnosticInfo("Celebrimbor", "Craft-list import: module activator could not find 'celebrimbor'.");
 
         _picker.PromptAndApply(result, dialogTitleSuffix);
     }

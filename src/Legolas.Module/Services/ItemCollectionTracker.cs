@@ -5,6 +5,7 @@ using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 
@@ -43,7 +44,7 @@ public sealed class ItemCollectionTracker : BackgroundService
     private readonly SessionState _session;
     private readonly SurveyFlowController _flow;
     private readonly IReferenceDataService? _refData;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly ThrottledWarn _warn;
 
     private readonly Dictionary<string, Queue<long>> _pendingAdds
@@ -58,15 +59,15 @@ public sealed class ItemCollectionTracker : BackgroundService
         SessionState session,
         SurveyFlowController flow,
         IReferenceDataService? refData = null,
-        IDiagnosticsSink? diag = null,
+        ILogger? logger = null,
         TimeProvider? time = null)
     {
         _bus = bus;
         _session = session;
         _flow = flow;
         _refData = refData;
-        _diag = diag;
-        _warn = new ThrottledWarn(diag, "Legolas.Ingestion", time: time ?? TimeProvider.System);
+        _logger = logger;
+        _warn = new ThrottledWarn(logger, "Legolas.Ingestion", time: time ?? TimeProvider.System);
 
         _flow.Transitioned += OnFlowTransitioned;
     }
@@ -224,7 +225,7 @@ public sealed class ItemCollectionTracker : BackgroundService
             var summary = string.Join(", ",
                 unmatched.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
                     .Select(kv => $"{kv.Key} x{kv.Value}"));
-            _diag?.Trace("Legolas.PendingAdds",
+            _logger?.LogDiagnosticTrace("Legolas.PendingAdds",
                 $"survey ended ({t.Trigger}); unmatched pending Adds dropped: {summary}");
         }
     }

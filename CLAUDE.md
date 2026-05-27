@@ -88,7 +88,7 @@ DI is composed via extension methods in `Mithril.Shared/DependencyInjection/Serv
 - **Reference data**: `IReferenceDataService` — fetches JSON (items, recipes, skills, NPCs, XP tables) from `cdn.projectgorgon.com` with bundled fallback and background refresh
 - **Settings**: `ISettingsStore<T>` / `JsonSettingsStore<T>` with `System.Text.Json` source-generated contexts; `SettingsAutoSaver<T>` for periodic persistence
 - **Hotkeys**: OS-level Win32 hotkey registration; modules provide `IHotkeyCommand` implementations; `HotkeyConflictDetector` validates uniqueness
-- **Diagnostics**: Serilog-backed `IDiagnosticsSink`
+- **Diagnostics**: `ILogger` via `DiagnosticsLoggerProvider` (ring buffer, Rx live stream, Serilog compact-JSON file)
 - **Query system**: SQL-like filtering over data models — `MithrilDataGrid`/`MithrilQueryBox` (tabular UI), `QueryFilter` attached behaviour (any `ItemsControl`), `QueryableSource<T>` (VM-side, headless). See [docs/query-system.md](docs/query-system.md) before adding new filter UI.
 
 ### Patterns to Follow

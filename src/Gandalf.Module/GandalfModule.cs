@@ -92,7 +92,7 @@ public sealed class GandalfModule : IMithrilModule
             areaState: sp.GetService<IAreaState>(),
             refData: sp.GetService<Mithril.Shared.Reference.IReferenceDataService>(),
             time: null,
-            diag: sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>(),
+            logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Gandalf"),
             calendarState: sp.GetService<ICalendarState>()));
         services.AddHostedService<LootIngestionService>();
         services.AddHostedService<DefeatCalibrationBridge>();
@@ -106,7 +106,7 @@ public sealed class GandalfModule : IMithrilModule
         services.AddHostedService(sp => new GandalfAreaFlattenMigration(
             defsPath,
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
-            sp.GetService<Mithril.Shared.Diagnostics.IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Gandalf")));
 
         // One-shot startup fanout: split the old combined per-char gandalf.json into the
         // global definitions file + per-char progress files. Runs before module gates open.

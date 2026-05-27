@@ -50,7 +50,7 @@ public sealed class ArwenModule : IMithrilModule
             sp.GetRequiredService<IActiveCharacterService>(),
             sp.GetRequiredService<ISettingsStore<ArwenSettings>>(),
             sp.GetRequiredService<ArwenSettings>(),
-            sp.GetService<IDiagnosticsSink>()));
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Arwen")));
 
         services.AddSingleton<FavorStateService>();
         services.AddSingleton<IFavorLookupService>(sp => sp.GetRequiredService<FavorStateService>());
@@ -72,7 +72,7 @@ public sealed class ArwenModule : IMithrilModule
                 Path.Combine(localApp, "Mithril", "Arwen"),
                 sp.GetService<ICommunityCalibrationService>(),
                 settings.Calibration,
-                sp.GetService<IDiagnosticsSink>(),
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Arwen"),
                 pendingTtl: settings.PendingObservationTtl,
                 dispatch: UiDispatch,
                 session: sp.GetService<ISessionComposer>());

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
@@ -117,7 +118,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
     private readonly MotherlodeFlowController _flow;
     private readonly ICharacterPinAnchor? _characterPin;
     private readonly IAreaState? _areaState;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
     private readonly IReferenceDataService? _refData;
     private readonly LegolasSettings? _settings;
     private readonly IDisposable? _posSub;
@@ -174,7 +175,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         LegolasSettings? settings = null,
         ICharacterPinAnchor? characterPin = null,
         IAreaState? areaState = null,
-        IDiagnosticsSink? diag = null)
+        ILogger? logger = null)
     {
         _solver = solver;
         _flow = flow;
@@ -182,7 +183,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         _areaState = areaState;
         _refData = refData;
         _settings = settings;
-        _diag = diag;
+        _logger = logger;
         _posSub = bus.Subscribe<PlayerPositionChanged>(OnPlayerPositionChanged);
         _pinSub = bus.Subscribe<MapPinAdded>(OnMapPinAdded);
         _invSub = bus.Subscribe<InventoryItemRemoved>(OnInventoryItemRemoved);
@@ -246,12 +247,12 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             if (best is { } b)
             {
                 _session.Surveys[bestIdx] = b with { Collected = true };
-                _diag?.Info("Legolas.Motherlode",
+                _logger?.LogDiagnosticInfo("Legolas.Motherlode",
                     $"Map consumed ({evt.InternalName}) — slot {bestIdx} collected; dug={_dugMaps}.");
             }
             else
             {
-                _diag?.Info("Legolas.Motherlode",
+                _logger?.LogDiagnosticInfo("Legolas.Motherlode",
                     $"Map consumed ({evt.InternalName}) — dug={_dugMaps} (no measured slot to retire).");
             }
             changed = true;
@@ -311,7 +312,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             {
                 if (_sessionArea is not null && cur != _sessionArea)
                 {
-                    _diag?.Info("Legolas.Motherlode",
+                    _logger?.LogDiagnosticInfo("Legolas.Motherlode",
                         $"Area {_sessionArea} → {cur}: clearing in-flight measurement (dug count kept).");
                     ClearMeasurement();
                 }
@@ -345,7 +346,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
                 {
                     _guidance = "No position for that reading — drop an @me pin " +
                                 "at the spot (best) before using, or relog.";
-                    _diag?.Info("Legolas.Motherlode", "Use with no feeder fix in window.");
+                    _logger?.LogDiagnosticInfo("Legolas.Motherlode", "Use with no feeder fix in window.");
                 }
             }
             _open.LastUseAt = at;
@@ -367,12 +368,12 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
         {
             if (_open is not { } o)
             {
-                _diag?.Trace("Legolas.Motherlode", $"Distance {metres}m with no open location — dropped.");
+                _logger?.LogDiagnosticTrace("Legolas.Motherlode", $"Distance {metres}m with no open location — dropped.");
                 return;
             }
             if ((at - o.LastUseAt).TotalSeconds > DistanceWindowSeconds)
             {
-                _diag?.Trace("Legolas.Motherlode", $"Distance {metres}m outside use window — dropped.");
+                _logger?.LogDiagnosticTrace("Legolas.Motherlode", $"Distance {metres}m outside use window — dropped.");
                 return;
             }
 
@@ -381,7 +382,7 @@ public sealed class MotherlodeMeasurementCoordinator : IDisposable
             var slot = SelectSlot(o);
             if (slot < 0)
             {
-                _diag?.Trace("Legolas.Motherlode", $"Distance {metres}m — no slot to bind — dropped.");
+                _logger?.LogDiagnosticTrace("Legolas.Motherlode", $"Distance {metres}m — no slot to bind — dropped.");
                 return;
             }
             var createdSlot = slot >= _session.Surveys.Count;

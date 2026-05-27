@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
@@ -24,11 +25,11 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
 
     public string Action => "silmarillion";
 
-    public bool TryHandle(string subPath, IDiagnosticsSink? diag)
+    public bool TryHandle(string subPath, ILogger? logger)
     {
         if (string.IsNullOrEmpty(subPath))
         {
-            diag?.Info("DeepLink", "Rejected: silmarillion payload is empty.");
+            logger?.LogDiagnosticInfo("DeepLink", "Rejected: silmarillion payload is empty.");
             return false;
         }
 
@@ -37,7 +38,7 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
         var parts = subPath.Split('/', 3);
         if (parts.Length != 2 || parts[0].Length == 0 || parts[1].Length == 0)
         {
-            diag?.Info("DeepLink", $"Rejected: silmarillion payload '{subPath}' must be '<kind>/<name>'.");
+            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: silmarillion payload '{subPath}' must be '<kind>/<name>'.");
             return false;
         }
 
@@ -56,20 +57,20 @@ public sealed class SilmarillionDeepLinkHandler : IDeepLinkHandler
         // for item/recipe/npc/etc. routes.
         if (!DeepLinkPayload.IsValidEnvelopeKey(name))
         {
-            diag?.Info("DeepLink", $"Rejected: silmarillion name '{name}' failed validation.");
+            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: silmarillion name '{name}' failed validation.");
             return false;
         }
 
         if (!Enum.TryParse<EntityKind>(kind, ignoreCase: true, out var entityKind))
         {
-            diag?.Info("DeepLink", $"Rejected: silmarillion kind '{kind}' is not a known EntityKind.");
+            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: silmarillion kind '{kind}' is not a known EntityKind.");
             return false;
         }
 
         var entityRef = new EntityRef(entityKind, name);
         if (!_navigator.CanOpen(entityRef))
         {
-            diag?.Info("DeepLink", $"Rejected: silmarillion kind '{kind}' has no registered target yet.");
+            logger?.LogDiagnosticInfo("DeepLink", $"Rejected: silmarillion kind '{kind}' has no registered target yet.");
             return false;
         }
 

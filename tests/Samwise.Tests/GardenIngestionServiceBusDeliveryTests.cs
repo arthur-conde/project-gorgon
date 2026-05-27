@@ -85,7 +85,7 @@ public sealed class GardenIngestionServiceBusDeliveryTests : IDisposable
             alarms: alarms,
             calibration: calibration,
             autoSaver: autoSaver,
-            diag: null);
+            logger: null);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await service.StartAsync(cts.Token);
@@ -169,7 +169,7 @@ public sealed class GardenIngestionServiceBusDeliveryTests : IDisposable
         var calibration = new GrowthCalibrationService(sm, cfg, _root);
 
         var service = new GardenIngestionService(
-            bus, sm, stateService, alarms, calibration, autoSaver, diag: null);
+            bus, sm, stateService, alarms, calibration, autoSaver, logger: null);
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         await service.StartAsync(cts.Token);

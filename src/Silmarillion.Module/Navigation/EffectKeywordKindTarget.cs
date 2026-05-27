@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Reference;
 using Silmarillion.ViewModels;
@@ -19,12 +20,12 @@ namespace Silmarillion.Navigation;
 public sealed class EffectKeywordKindTarget : IReferenceKindTarget
 {
     private readonly EffectsTabViewModel _vm;
-    private readonly IDiagnosticsSink? _diag;
+    private readonly ILogger? _logger;
 
-    public EffectKeywordKindTarget(EffectsTabViewModel vm, IDiagnosticsSink? diag = null)
+    public EffectKeywordKindTarget(EffectsTabViewModel vm, ILogger? logger = null)
     {
         _vm = vm;
-        _diag = diag;
+        _logger = logger;
     }
 
     public EntityKind Kind => EntityKind.EffectKeyword;
@@ -35,13 +36,13 @@ public sealed class EffectKeywordKindTarget : IReferenceKindTarget
     {
         if (string.IsNullOrEmpty(internalName))
         {
-            _diag?.Info("Silmarillion.Nav", "EffectKeyword.TrySelect '' → empty payload, leaving Effects tab unchanged.");
+            _logger?.LogDiagnosticInfo("Silmarillion.Nav", "EffectKeyword.TrySelect '' → empty payload, leaving Effects tab unchanged.");
             return false;
         }
 
         var escaped = internalName.Replace("\"", "\\\"");
         var query = $"Keywords CONTAINS \"{escaped}\"";
-        _diag?.Info("Silmarillion.Nav", $"EffectKeyword.TrySelect '{internalName}' → QueryText='{query}'.");
+        _logger?.LogDiagnosticInfo("Silmarillion.Nav", $"EffectKeyword.TrySelect '{internalName}' → QueryText='{query}'.");
         _vm.SelectedRow = null;
         _vm.QueryText = query;
         return true;
