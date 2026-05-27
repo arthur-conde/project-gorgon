@@ -192,6 +192,59 @@ public sealed class WorldHealthViewTests : IAsyncLifetime
         fired.Should().BeTrue();
     }
 
+    // ── Grammar-break banner surfacing (the user-facing kill switch) ──────
+
+    private static GrammarBreak SampleBreak() =>
+        new("Player", "ProcessAddItem", "ProcessAddItem(bogus)", "bogus", "expected long", DateTimeOffset.UtcNow);
+
+    [Fact]
+    public void GrammarSignal_Raised_FlipsToHaltedAndPopulatesBreak()
+    {
+        var changedCount = 0;
+        _view.Changed += (_, _) => changedCount++;
+
+        _grammarSignal.Raise(SampleBreak());
+
+        _view.IsHalted.Should().BeTrue();
+        _view.IsTolerantBreakActive.Should().BeFalse("Raise crosses the halt threshold, not the tolerant one");
+        _view.ObservedBreakCount.Should().Be(1);
+        _view.Break!.Verb.Should().Be("ProcessAddItem");
+        _view.AllLive.Should().BeFalse("halted state vetoes AllLive");
+        _view.Player.Mode.Should().Be(WorldMode.Halted);
+        _view.Chat.Mode.Should().Be(WorldMode.Halted);
+        changedCount.Should().BeGreaterThan(0, "the shell banner re-renders off Changed");
+    }
+
+    [Fact]
+    public void GrammarSignal_MarkObserved_ShowsTolerantStateWithoutHalt()
+    {
+        var changedCount = 0;
+        _view.Changed += (_, _) => changedCount++;
+
+        _grammarSignal.MarkObserved(SampleBreak());
+        _grammarSignal.MarkObserved(SampleBreak());
+
+        _view.IsHalted.Should().BeFalse("MarkObserved is the tolerant path — the driver keeps going");
+        _view.IsTolerantBreakActive.Should().BeTrue();
+        _view.ObservedBreakCount.Should().Be(2);
+        _view.Break!.Verb.Should().Be("ProcessAddItem", "the first observation populates Break for context");
+        changedCount.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void GrammarSignal_RaiseAfterObserve_PromotesToHalted()
+    {
+        _grammarSignal.MarkObserved(SampleBreak());
+        _view.IsHalted.Should().BeFalse();
+        _view.IsTolerantBreakActive.Should().BeTrue();
+
+        _grammarSignal.Raise(SampleBreak());
+
+        _view.IsHalted.Should().BeTrue();
+        _view.IsTolerantBreakActive.Should().BeFalse("halted state supersedes tolerant");
+        _view.ObservedBreakCount.Should().Be(2);
+    }
+
     [Fact]
     public void Dispose_UnsubscribesFromBus()
     {
