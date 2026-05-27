@@ -15,8 +15,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,12,4,4">
-        <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel MaxWidth="640" HorizontalAlignment="Left" Margin="4,12,4,4">
 
             <TextBlock Text="Pipeline health"
                        FontFamily="{DynamicResource AppHeaderFontFamily}"

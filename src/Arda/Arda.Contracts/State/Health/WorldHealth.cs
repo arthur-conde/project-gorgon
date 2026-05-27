@@ -8,7 +8,13 @@ public sealed record WorldHealth(
     DateTimeOffset? LastTimestamp,
     long FrameCount,
     WorldMode Mode,
-    TimeSpan Drift);
+    TimeSpan Drift)
+{
+    /// <summary>
+    /// Drift beyond this threshold in Live mode indicates tailing is falling behind.
+    /// </summary>
+    public static readonly TimeSpan DriftWarningThreshold = TimeSpan.FromSeconds(5);
+}
 
 /// <summary>Mode of a world driver.</summary>
 public enum WorldMode

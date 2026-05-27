@@ -19,7 +19,6 @@ namespace Mithril.Shell.DependencyInjection;
 /// </summary>
 internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHostedService, IDisposable
 {
-    private static readonly TimeSpan DriftWarningThreshold = TimeSpan.FromSeconds(5);
 
     private readonly IDomainEventSubscriber _bus;
     private readonly IReplayProgress _replay;
@@ -112,14 +111,12 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
 
     private void OnCalendarAdvanced(CalendarTimeAdvanced evt)
     {
-        bool fire;
         lock (_gate)
         {
             _playerTimestamp = evt.Now;
             _playerFrames++;
-            fire = true;
         }
-        if (fire) RaiseChanged();
+        RaiseChanged();
     }
 
     private void OnChatEvent(PlayerChatLine evt)
@@ -189,7 +186,7 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
     {
         if (ts is null) return false;
         var drift = _time.GetUtcNow() - ts.Value;
-        return drift > DriftWarningThreshold;
+        return drift > WorldHealth.DriftWarningThreshold;
     }
 
     private void RaiseChanged() => Changed?.Invoke(this, EventArgs.Empty);

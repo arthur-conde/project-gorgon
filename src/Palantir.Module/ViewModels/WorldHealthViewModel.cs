@@ -56,13 +56,13 @@ public sealed partial class WorldHealthViewModel : ObservableObject, IDisposable
         PlayerFrames = p.FrameCount.ToString("N0", CultureInfo.CurrentCulture);
         PlayerDrift = FormatDrift(p);
         PlayerTimestamp = FormatTimestamp(p.LastTimestamp);
-        PlayerDegraded = p.Mode == WorldMode.Live && p.Drift > TimeSpan.FromSeconds(5);
+        PlayerDegraded = p.Mode == WorldMode.Live && p.Drift > WorldHealth.DriftWarningThreshold;
 
         ChatMode = c.Mode.ToString();
         ChatFrames = c.FrameCount.ToString("N0", CultureInfo.CurrentCulture);
         ChatDrift = FormatDrift(c);
         ChatTimestamp = FormatTimestamp(c.LastTimestamp);
-        ChatDegraded = c.Mode == WorldMode.Live && c.Drift > TimeSpan.FromSeconds(5);
+        ChatDegraded = c.Mode == WorldMode.Live && c.Drift > WorldHealth.DriftWarningThreshold;
 
         AllLive = _health.AllLive;
         OverallStatus = _health.AllLive

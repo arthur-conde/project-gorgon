@@ -200,7 +200,7 @@ public sealed partial class ShellViewModel : ObservableObject
         PlayerDriftText = FormatDrift(player);
         ChatDriftText = FormatDrift(chat);
         IsHealthDegraded = _health.AllLive &&
-            (player.Drift > TimeSpan.FromSeconds(5) || chat.Drift > TimeSpan.FromSeconds(5));
+            (player.Drift > WorldHealth.DriftWarningThreshold || chat.Drift > WorldHealth.DriftWarningThreshold);
         HealthTooltip = $"Player: {player.Mode} · {player.FrameCount:N0} frames · drift {player.Drift.TotalSeconds:0.0}s\n" +
                         $"Chat: {chat.Mode} · {chat.FrameCount:N0} frames · drift {chat.Drift.TotalSeconds:0.0}s";
     }
