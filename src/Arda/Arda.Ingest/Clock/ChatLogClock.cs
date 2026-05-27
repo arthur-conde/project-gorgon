@@ -71,6 +71,13 @@ internal sealed class ChatLogClock : ILogSourceClock
         // Chat logs carry the full date on every line — no anchoring needed.
     }
 
+    /// <inheritdoc/>
+    public void TryConsumeBanner(ReadOnlySpan<char> line)
+    {
+        // Chat-log timezone-offset banners are handled by
+        // ChatLogSource.TryApplyBannerOffset on the assembled line string.
+    }
+
     /// <summary>
     /// Override the UTC offset used for timestamp conversion. Called by
     /// <see cref="Coordinator.ChatLogSource"/> when it observes a login banner

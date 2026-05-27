@@ -47,6 +47,15 @@ internal interface ILogSourceClock
         ReadOnlySpan<(int Start, int Length)> firstBatchLines,
         char[] buffer,
         Func<DateTime> mtimeUtcAccessor);
+
+    /// <summary>
+    /// Per-line banner pre-scan. Called by <see cref="Coordinator.BatchProcessor"/>
+    /// on every line in every batch before classification, so the clock can
+    /// override its current date/timezone state from a session banner (e.g.
+    /// <c>Logged in as character X. Time UTC=...</c> on Player.log) when one
+    /// appears. Implementations must be cheap on non-banner lines.
+    /// </summary>
+    void TryConsumeBanner(ReadOnlySpan<char> line);
 }
 
 /// <summary>

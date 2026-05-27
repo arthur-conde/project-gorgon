@@ -33,6 +33,9 @@ internal sealed class LineClassifier
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
+    /// <summary>The clock this classifier delegates timestamp parsing to.</summary>
+    internal ILogSourceClock Clock => _clock;
+
     /// <summary>
     /// Classify a single line span. Returns a <see cref="ClassifiedLine"/>
     /// if the line should enter the pipeline, or <c>null</c> if it should

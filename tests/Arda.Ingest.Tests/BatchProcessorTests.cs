@@ -135,6 +135,30 @@ public class BatchProcessorTests : IDisposable
     }
 
     [Fact]
+    public void ProcessBatch_BannerInBatch_AnchorsAgainstBannerNotMtime()
+    {
+        File.WriteAllText(_tempFile,
+            "[14:30:05] Logged in as character Bob. Time UTC=2026-01-15 14:30:05\n" +
+            "[14:30:06] LocalPlayer: ProcessAddItem(1)\n");
+        // Mtime is wildly different from the banner — banner must win.
+        File.SetLastWriteTimeUtc(_tempFile, new DateTime(2027, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var clock = new PlayerLogClock(TimeProvider.System);
+        var classifier = new LineClassifier(clock);
+        var processor = new BatchProcessor(classifier, TimeProvider.System);
+        var tailer = new LogSourceTailer(_tempFile);
+
+        var results = processor.ProcessBatch(tailer, isReplay: true);
+
+        results.Should().NotBeNull();
+        results.Should().HaveCount(2);
+        results![0].Metadata.Timestamp!.Value.Year.Should().Be(2026);
+        results[0].Metadata.Timestamp!.Value.Month.Should().Be(1);
+        results[0].Metadata.Timestamp!.Value.Day.Should().Be(15);
+        results[1].Metadata.Timestamp!.Value.Day.Should().Be(15);
+    }
+
+    [Fact]
     public void ProcessBatch_AllNoise_ReturnsEmptyList()
     {
         File.WriteAllText(_tempFile,

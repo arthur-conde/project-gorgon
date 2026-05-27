@@ -146,6 +146,46 @@ internal sealed class PlayerLogClock : ILogSourceClock
         _prevTimeOfDay = timeOfDay;
     }
 
+    private const string BannerMarker = "Logged in as character ";
+    private const string TimeMarker = "Time UTC=";
+
+    /// <inheritdoc/>
+    public void TryConsumeBanner(ReadOnlySpan<char> line)
+    {
+        // Cheap shape check: line must carry a parseable [HH:MM:SS] prefix.
+        if (line.Length < PrefixLength) return;
+        if (line[0] != '[' || line[3] != ':' || line[6] != ':' || line[9] != ']') return;
+
+        var body = line[PrefixLength..];
+        if (!body.StartsWith(BannerMarker.AsSpan(), StringComparison.Ordinal)) return;
+
+        var timeIdx = body.IndexOf(TimeMarker.AsSpan(), StringComparison.Ordinal);
+        if (timeIdx < 0) return;
+
+        var stamp = body[(timeIdx + TimeMarker.Length)..];
+        // Expecting "YYYY-MM-DD HH:MM:SS" — strip a trailing period/dot.
+        if (stamp.Length >= 1 && stamp[^1] == '.') stamp = stamp[..^1];
+        if (stamp.Length < 19) return;
+        if (stamp[4] != '-' || stamp[7] != '-' || stamp[10] != ' ' ||
+            stamp[13] != ':' || stamp[16] != ':') return;
+
+        if (!int.TryParse(stamp[..4], out var year) ||
+            !int.TryParse(stamp[5..7], out var month) ||
+            !int.TryParse(stamp[8..10], out var day) ||
+            !int.TryParse(stamp[11..13], out var hour) ||
+            !int.TryParse(stamp[14..16], out var minute) ||
+            !int.TryParse(stamp[17..19], out var second)) return;
+
+        if (month is < 1 or > 12 || day is < 1 or > 31 ||
+            hour > 23 || minute > 59 || second > 59) return;
+
+        // A new banner crosses a session boundary — reset rollover tracking
+        // before re-anchoring so the next line doesn't trigger a false
+        // midnight advance against the prior session's last time-of-day.
+        Reset();
+        AnchorToDate(new DateOnly(year, month, day), new TimeSpan(hour, minute, second));
+    }
+
     /// <summary>
     /// Clear the anchored date and rollover tracking. Used when a session
     /// boundary is crossed (e.g., mid-session Player.log rotation) so the
