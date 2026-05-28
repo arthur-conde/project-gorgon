@@ -6,6 +6,7 @@ using Legolas.Domain;
 using Legolas.Services;
 using Arda.Contracts;
 using Arda.World.Player.Events;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Reference;
 
 namespace Legolas.ViewModels;
@@ -27,13 +28,18 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
 {
     private readonly IAreaCalibrationService _service;
     private readonly IDisposable? _pinSub;
+    private readonly Microsoft.Extensions.Logging.ILogger? _logger;
 
-    public CalibrationSessionViewModel(IAreaCalibrationService service, IDomainEventSubscriber? bus = null)
+    public CalibrationSessionViewModel(
+        IAreaCalibrationService service,
+        IDomainEventSubscriber? bus = null,
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         _service = service;
         _service.Changed += OnServiceChanged;
         _service.SurveyObserved += OnSurveyObserved;
         _pinSub = bus?.Subscribe<MapPinAdded>(OnPinAdded);
+        _logger = loggerFactory?.CreateLogger("Legolas.CalibrationSession");
         Refresh();
     }
 
@@ -749,7 +755,12 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
             // sees disk failures instead of the in-memory state silently
             // diverging from the file. The store rolls back its in-memory
             // dictionary on throw, so retrying after the user clears whatever
-            // held the lock (AV scan, OneDrive sync) works.
+            // held the lock (AV scan, OneDrive sync) works. Logging at warning
+            // so DiagnosticsLoggerProvider captures it for later diagnosis
+            // (round-4 review #1).
+            _logger?.LogWarning(ex,
+                "Calibration solve persist failed for area {AreaKey}; ResultText surfaces the error.",
+                _service.CurrentAreaKey ?? "(unknown)");
             ResultText = $"Couldn't save calibration: {ex.Message}. Check your disk / sync tooling and Solve again.";
             return;
         }
@@ -784,6 +795,11 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
             // rollback. Surface the failure (same contract as Solve) so the
             // WPF command doesn't crash. The in-memory state is restored, so
             // the prior calibration still applies until the user retries.
+            // Log at warning so DiagnosticsLoggerProvider captures it
+            // (round-4 review #1).
+            _logger?.LogWarning(ex,
+                "Calibration clear persist failed for area {AreaKey}; ResultText surfaces the error.",
+                _service.CurrentAreaKey ?? "(unknown)");
             ResultText = $"Couldn't clear calibration: {ex.Message}. Retry once the file lock clears.";
             return;
         }

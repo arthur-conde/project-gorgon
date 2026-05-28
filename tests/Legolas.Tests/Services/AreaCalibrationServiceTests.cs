@@ -241,7 +241,90 @@ public class AreaCalibrationServiceTests
         changed.Should().Be(1);
     }
 
+    [Fact]
+    public void Dual_write_does_not_touch_legacy_field_when_shared_service_throws_on_Save()
+    {
+        // Round-4 review #2: pin the post-round-3 ordering invariant.
+        // CalibrateCurrentArea must call IMapCalibrationService.SaveUserRefinement
+        // BEFORE writing _settings.AreaCalibrations[key]. A future contributor
+        // cleaning up "awkward ordering" who re-swaps the order will trip this
+        // test, because the throwing fake fails before the legacy write would
+        // run.
+        var refData = new FakeRefData
+        {
+            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+        };
+        var settings = new LegolasSettings();
+        var proj = new FakeProjector();
+        var saver = new SettingsAutoSaver<LegolasSettings>(new InMemoryStore(settings), settings);
+        var throwingMapCal = new ThrowingMapCalibrationService();
+        var svc = new AreaCalibrationService(refData, settings, proj, saver, throwingMapCal);
+        svc.SelectArea("AreaEltibule");
+
+        var placements = new[]
+        {
+            (new WorldCoord(0, 0, 0), new PixelPoint(0, 0)),
+            (new WorldCoord(100, 0, 0), new PixelPoint(100, 0)),
+            (new WorldCoord(0, 0, 100), new PixelPoint(0, -100)),
+        };
+
+        FluentActions.Invoking(() => svc.CalibrateCurrentArea(placements))
+            .Should().Throw<System.IO.IOException>();
+
+        settings.AreaCalibrations.Should().NotContainKey("AreaEltibule",
+            "shared-service throw must leave the legacy field untouched so retry starts from a clean state");
+    }
+
+    [Fact]
+    public void Dual_clear_does_not_touch_legacy_field_when_shared_service_throws_on_Clear()
+    {
+        // Round-4 review #2: same invariant for ClearCurrentAreaCalibration.
+        // Pre-round-3 order (legacy first) could leave a permanent orphan in
+        // refinements.json that no migration could recover.
+        var refData = new FakeRefData
+        {
+            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+        };
+        var settings = new LegolasSettings();
+        var prior = new AreaCalibration(2, 0, 5, 6, 3, 0.5);
+        settings.AreaCalibrations["AreaEltibule"] = prior;
+        var proj = new FakeProjector();
+        var saver = new SettingsAutoSaver<LegolasSettings>(new InMemoryStore(settings), settings);
+        var throwingMapCal = new ThrowingMapCalibrationService();
+        var svc = new AreaCalibrationService(refData, settings, proj, saver, throwingMapCal);
+        svc.SelectArea("AreaEltibule");
+
+        FluentActions.Invoking(() => svc.ClearCurrentAreaCalibration())
+            .Should().Throw<System.IO.IOException>();
+
+        settings.AreaCalibrations.Should().ContainKey("AreaEltibule",
+            "shared-service throw must leave the legacy field untouched so retry starts from a consistent state");
+    }
+
     // ---- fakes ------------------------------------------------------------
+
+    /// <summary>
+    /// IMapCalibrationService that throws IOException on every write — used to
+    /// verify AreaCalibrationService's dual-write ordering. Reads return null
+    /// (uncalibrated) which is fine for the ordering tests.
+    /// </summary>
+    private sealed class ThrowingMapCalibrationService : IMapCalibrationService
+    {
+        public event EventHandler<string>? Changed { add { } remove { } }
+        public bool IsCalibrated(string areaKey) => false;
+        public AreaCalibration? GetCalibration(string areaKey) => null;
+        public PixelPoint? WorldToWindow(string areaKey, WorldCoord world, double currentZoom) => null;
+        public WorldCoord? WindowToWorld(string areaKey, PixelPoint pixel, double currentZoom) => null;
+        public IReadOnlyDictionary<string, AreaCalibration> AllCalibrations { get; } =
+            new Dictionary<string, AreaCalibration>(StringComparer.Ordinal);
+        public IReadOnlyList<AreaCalibration> GetAllSources(string areaKey) => Array.Empty<AreaCalibration>();
+        public void SaveUserRefinement(string areaKey, AreaCalibration calibration) =>
+            throw new System.IO.IOException("simulated disk failure");
+        public void ClearUserRefinement(string areaKey) =>
+            throw new System.IO.IOException("simulated disk failure");
+        public int ImportUserRefinements(IReadOnlyDictionary<string, AreaCalibration> source) =>
+            throw new System.IO.IOException("simulated disk failure");
+    }
 
     private sealed class FakeProjector : ICoordinateProjector
     {

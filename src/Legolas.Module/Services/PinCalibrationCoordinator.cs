@@ -8,6 +8,7 @@ using Arda.World.Player.Events;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Legolas.Domain;
 using Legolas.ViewModels;
+using Microsoft.Extensions.Logging;
 
 namespace Legolas.Services;
 
@@ -106,6 +107,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     private readonly IMapPinState _pinState;
     private readonly LegolasSettings _settings;
     private readonly SessionState? _session;
+    private readonly Microsoft.Extensions.Logging.ILogger? _logger;
     private readonly IDisposable _addedSub;
     private readonly IDisposable _removedSub;
 
@@ -120,14 +122,19 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     // the wizard / overlay slider. Optional so the unit-test ctor stays
     // unchanged (legacy callers stamp the calibration at the default 1.0,
     // matching the pre-#524 hardcoded value).
+    //
+    // loggerFactory is optional so existing test ctors compile unchanged; the
+    // catch in Persist log-warns through it when present (#836 round-4 review).
     public PinCalibrationCoordinator(
         IAreaCalibrationService service, IMapPinState pinState, IDomainEventSubscriber bus,
-        LegolasSettings settings, SessionState? session = null)
+        LegolasSettings settings, SessionState? session = null,
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         _service = service;
         _pinState = pinState;
         _settings = settings;
         _session = session;
+        _logger = loggerFactory?.CreateLogger("Legolas.PinCalibrationCoordinator");
         // Seed ExistingPins from the current pin state; live add/remove
         // notifications arrive via the domain event bus.
         SyncExistingPins(_pinState.Pins);
@@ -287,6 +294,11 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
         SelectedMarker = null;
         OverridePin = null;
         PreviewResidual = null;
+        // Clear PersistError on Disarm so a failed Confirm's message doesn't
+        // linger after the user backs out / area-changes without re-Arming
+        // (round-4 review #3). Arm() also clears it, but Disarm is an
+        // independently-reachable exit so it needs the same hygiene.
+        PersistError = null;
         IsArmed = false;
         RaiseAll();
     }
@@ -444,6 +456,15 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
             // lock clears. We deliberately stay armed so the placed pairs
             // aren't lost: the user fixes whatever held the file open (AV /
             // OneDrive) and hits Confirm again.
+            //
+            // Log at warning level so DiagnosticsLoggerProvider captures it
+            // even before the XAML chip binding for PersistError lands (UI
+            // surfacing tracked in #842). Without this log, a real disk
+            // failure would be a fully silent no-op for the user
+            // (round-4 review #1).
+            _logger?.LogWarning(ex,
+                "Calibration persist failed for area {AreaKey}; PersistError set, coordinator stays armed.",
+                _service.CurrentAreaKey ?? "(unknown)");
             PersistError = $"Couldn't save calibration: {ex.Message}. Retry once the file lock clears.";
             return null;
         }

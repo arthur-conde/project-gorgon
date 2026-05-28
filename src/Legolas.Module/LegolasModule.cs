@@ -69,7 +69,8 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetRequiredService<IMapPinState>(),
                 sp.GetRequiredService<IDomainEventSubscriber>(),
                 sp.GetRequiredService<LegolasSettings>(),
-                sp.GetService<SessionState>()));
+                sp.GetService<SessionState>(),
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
 
         // Session + flow controllers + VMs.
         services.AddSingleton<SessionState>(sp =>
@@ -161,7 +162,11 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();
-        services.AddSingleton<CalibrationSessionViewModel>();
+        services.AddSingleton<CalibrationSessionViewModel>(sp =>
+            new CalibrationSessionViewModel(
+                sp.GetRequiredService<IAreaCalibrationService>(),
+                sp.GetService<IDomainEventSubscriber>(),
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
 
         services.AddSingleton<LegolasPanelView>(sp => new LegolasPanelView
         {
