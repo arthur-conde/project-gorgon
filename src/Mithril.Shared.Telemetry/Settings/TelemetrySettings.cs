@@ -6,6 +6,7 @@ using Mithril.Shared.Character;
 
 namespace Mithril.Shared.Telemetry.Settings;
 
+[JsonConverter(typeof(JsonStringEnumConverter<OtlpProtocol>))]
 public enum OtlpProtocol { Grpc, HttpProtobuf }
 
 /// <summary>
@@ -58,6 +59,19 @@ public sealed class TelemetrySettings : INotifyPropertyChanged, IVersionedState<
         if (EqualityComparer<T>.Default.Equals(f, v)) return;
         f = v;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(n));
+    }
+
+    /// <summary>
+    /// Raise <see cref="PropertyChanged"/> for callers that mutated a collection
+    /// in-place (e.g. <see cref="Headers"/> / <see cref="TagExports"/> add or
+    /// remove). The settings VM calls this after dictionary edits so
+    /// <c>SettingsAutoSaver&lt;T&gt;</c> picks them up. Modelled on
+    /// CelebrimborSettings.Touch.
+    /// </summary>
+    public void Touch([CallerMemberName] string? name = null)
+    {
+        if (!string.IsNullOrEmpty(name))
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 }
 

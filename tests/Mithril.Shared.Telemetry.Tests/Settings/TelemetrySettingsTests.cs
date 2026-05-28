@@ -40,4 +40,26 @@ public class TelemetrySettingsTests
         var migrated = TelemetrySettings.Migrate(legacy);
         migrated.SchemaVersion.Should().Be(1);
     }
+
+    [Fact]
+    public void Touch_fires_PropertyChanged_with_supplied_name()
+    {
+        var s = new TelemetrySettings();
+        var fired = new List<string?>();
+        s.PropertyChanged += (_, e) => fired.Add(e.PropertyName);
+        s.Touch(nameof(s.Headers));
+        fired.Should().Contain(nameof(s.Headers));
+    }
+
+    [Fact]
+    public void Protocol_serializes_as_string_for_hand_edit_friendliness()
+    {
+        var s = new TelemetrySettings { Protocol = OtlpProtocol.HttpProtobuf };
+        var json = JsonSerializer.Serialize(s, TelemetrySettingsJsonContext.Default.TelemetrySettings);
+        json.Should().Contain("\"protocol\": \"HttpProtobuf\"");
+        // Confirm we can deserialize a hand-edited string form
+        var raw = "{\"schemaVersion\":1,\"enableOtlpExport\":false,\"endpoint\":\"x\",\"protocol\":\"Grpc\",\"serviceName\":\"x\",\"headers\":{},\"tagExports\":{}}";
+        var round = JsonSerializer.Deserialize<TelemetrySettings>(raw, TelemetrySettingsJsonContext.Default.TelemetrySettings);
+        round!.Protocol.Should().Be(OtlpProtocol.Grpc);
+    }
 }

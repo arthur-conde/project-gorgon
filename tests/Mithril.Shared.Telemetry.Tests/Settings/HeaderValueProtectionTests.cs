@@ -31,4 +31,12 @@ public class HeaderValueProtectionTests
         var p = new HeaderValueProtection();
         p.Unprotect("not-wrapped").Should().Be("not-wrapped");
     }
+
+    [Fact]
+    public void Unprotect_returns_null_when_dpapi_blob_is_corrupted()
+    {
+        var p = new HeaderValueProtection();
+        p.Unprotect("dpapi:not-valid-base64!!!").Should().BeNull();
+        p.Unprotect("dpapi:Zm9vYmFy").Should().BeNull(); // valid base64 but not a real DPAPI blob
+    }
 }
