@@ -196,4 +196,54 @@ public class TelemetryHostExtensionsTests
         var settings = new TelemetrySettings();
         settings.TrustEndpoint.Should().BeFalse();
     }
+
+    [Fact]
+    public void TrustEndpoint_false_registers_log_scrubbing_processor_as_singleton()
+    {
+        var settings = new TelemetrySettings
+        {
+            EnableOtlpExport = true,
+            Endpoint = "http://localhost:65535/",
+            TrustEndpoint = false,
+        };
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(settings);
+                services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
+                services.AddMithrilOtlpExport(settings);
+            })
+            .Build();
+
+        // The full scrubber log processor must be DI-resolvable so the logs
+        // pipeline's AddProcessor(sp => sp.GetRequiredService<…>()) wires it.
+        host.Services.GetService<LogScrubbingProcessor>().Should().NotBeNull(
+            "TrustEndpoint = false must keep the catalog + allowlist + redactor log processor wired " +
+            "(mithril#841 — symmetry with the span scrubber).");
+    }
+
+    [Fact]
+    public void TrustEndpoint_true_registers_log_redaction_only_processor_singleton()
+    {
+        var settings = new TelemetrySettings
+        {
+            EnableOtlpExport = true,
+            Endpoint = "http://localhost:65535/",
+            TrustEndpoint = true,
+        };
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(settings);
+                services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
+                services.AddMithrilOtlpExport(settings);
+            })
+            .Build();
+
+        host.Services.GetService<LogValueRedactionOnlyProcessor>().Should().NotBeNull(
+            "TrustEndpoint = true swaps the allowlist gate out for the redactor-only log processor " +
+            "(mithril#840 + mithril#841).");
+    }
 }

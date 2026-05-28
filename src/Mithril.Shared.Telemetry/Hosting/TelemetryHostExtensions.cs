@@ -31,7 +31,12 @@ namespace Mithril.Shared.Telemetry.Hosting;
 /// <list type="bullet">
 /// <item>Scrubber graph: <see cref="TagCatalog"/>,
 ///   <see cref="NewlySeenTagsObserver"/>, <see cref="ValueRedactor"/>,
-///   <see cref="ExporterHealthMonitor"/>, <see cref="AllowlistAndRedactionProcessor"/>.</item>
+///   <see cref="ExporterHealthMonitor"/>, and the per-pipeline scrubber
+///   processors (<see cref="AllowlistAndRedactionProcessor"/> /
+///   <see cref="ValueRedactionOnlyProcessor"/> for spans;
+///   <see cref="LogScrubbingProcessor"/> /
+///   <see cref="LogValueRedactionOnlyProcessor"/> for logs;
+///   <see cref="MetricTagAllowlistView"/> for metric dimensions).</item>
 /// <item>OpenTelemetry tracing for every <c>Mithril.*</c>
 ///   <see cref="System.Diagnostics.ActivitySource"/> with HTTP-client
 ///   auto-instrumentation and OTLP export.</item>
@@ -40,6 +45,20 @@ namespace Mithril.Shared.Telemetry.Hosting;
 /// <item>OpenTelemetry logs bridge with OTLP export, sharing the resource
 ///   attribute set with traces and metrics.</item>
 /// </list>
+///
+/// <para><strong>Three-surface scrubber symmetry (mithril#841).</strong>
+/// The same three-layer model — catalog membership → user
+/// <see cref="TelemetrySettings.TagExports"/> override → value redaction —
+/// runs on spans, metric dimensions, and log records. Spans + logs both use
+/// a <c>BaseProcessor&lt;T&gt;</c> on the export pipeline and re-read
+/// <c>TagExports</c> per record so user toggles are live. Metrics use the
+/// OTel view API (<see cref="MetricTagAllowlistView"/>), which captures the
+/// allowed tag-key set once per instrument observation — metric-only tags
+/// are restart-required for v1. The
+/// <see cref="TelemetrySettings.TrustEndpoint"/> bypass also applies
+/// symmetrically: when on, the allowlist gate is skipped on all three
+/// surfaces but <see cref="ValueRedactor"/> still scrubs paths + character
+/// name from string values and the formatted log body.</para>
 ///
 /// <para><strong>Hot-reload — partial in v1.</strong>
 /// <see cref="TelemetrySettings.TagExports"/> mutations on the singleton
@@ -155,6 +174,8 @@ public static class TelemetryHostExtensions
         });
         services.AddSingleton<AllowlistAndRedactionProcessor>();
         services.AddSingleton<ValueRedactionOnlyProcessor>();
+        services.AddSingleton<LogScrubbingProcessor>();
+        services.AddSingleton<LogValueRedactionOnlyProcessor>();
 
         // Resource attributes shared across traces, metrics, logs.
         var serviceInstanceId = Guid.NewGuid().ToString("D");
@@ -195,8 +216,27 @@ public static class TelemetryHostExtensions
             })
             .WithMetrics(mb =>
             {
-                mb.AddMeter(MithrilSourcePrefix)
-                  .AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
+                mb.AddMeter(MithrilSourcePrefix);
+
+                // Metric symmetry with the tracing scrubber (mithril#841):
+                // when TrustEndpoint is off, the catalog allowlist is applied
+                // as a view filter on the Mithril.* meters so Sensitive-
+                // classified dimensions get dropped at aggregation time
+                // (keep the metric, drop the bad tag). TagExports is read once
+                // per instrument when the view callback first runs — see
+                // MetricTagAllowlistView's XML doc for the restart-required
+                // caveat.
+                if (!settings.TrustEndpoint)
+                {
+                    ((IDeferredMeterProviderBuilder)mb).Configure((sp, builder) =>
+                    {
+                        var catalog = sp.GetRequiredService<TagCatalog>();
+                        var monitor = sp.GetRequiredService<IOptionsMonitor<TelemetrySettings>>();
+                        MetricTagAllowlistView.AddCatalogAllowlistView(builder, catalog, monitor);
+                    });
+                }
+
+                mb.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
             });
 
         services.AddLogging(lb =>
@@ -210,6 +250,20 @@ public static class TelemetryHostExtensions
                     serviceInstanceId: serviceInstanceId));
                 o.IncludeFormattedMessage = true;
                 o.IncludeScopes = true;
+
+                // Log symmetry with the tracing scrubber (mithril#841): the
+                // same TrustEndpoint gate that selects between the allowlist
+                // and redactor-only processors on the tracing side selects
+                // between the log analogues here.
+                if (settings.TrustEndpoint)
+                {
+                    o.AddProcessor(sp => sp.GetRequiredService<LogValueRedactionOnlyProcessor>());
+                }
+                else
+                {
+                    o.AddProcessor(sp => sp.GetRequiredService<LogScrubbingProcessor>());
+                }
+
                 o.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
             });
         });
