@@ -2,10 +2,33 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:converters="clr-namespace:Legolas.Views.Converters"
+             xmlns:mah="http://metro.mahapps.com/winfx/xaml/controls"
              Background="{DynamicResource BgPrimaryBrush}">
     <UserControl.Resources>
         <ResourceDictionary>
+            <!-- Issue #132: scope MahApps theme resources to this view so
+                 mah:ColorPicker renders styled. UserControl-scoped merge
+                 keeps the rest of the app's visuals untouched.
+
+                 Order is load-bearing: WPF MergedDictionaries lookup is
+                 last-wins on key collision, so MahApps theme dictionaries
+                 come FIRST (they supply mah:ColorPicker's style + a
+                 baseline for any MahApps-specific keys it needs) and
+                 Mithril's Resources.xaml comes LAST so its implicit
+                 TargetType styles for the built-ins this view uses —
+                 TextBox (Resources.xaml:112), CheckBox (:123), GroupBox
+                 (:135), Button (:148), ComboBox (:287), ToolTip (:628) —
+                 override Dark.Steel's. Without this ordering, every
+                 stroke-style ComboBox / opacity Slider / "Reset to
+                 defaults" Button in this view would render in MahApps
+                 chrome, visually inconsistent with every other settings
+                 view. (LegolasShareDialog.xaml uses the inverse order
+                 deliberately to inherit MahApps' DropDownButton polish;
+                 not the same use case.) -->
             <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
@@ -184,26 +207,17 @@
                         </Grid.RowDefinitions>
 
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Route line" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox  Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
-                                  Text="{Binding Colors.RouteLine, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="0" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                  Background="{Binding Brushes.RouteLine}" />
+                        <mah:ColorPicker Grid.Row="0" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding Colors.RouteLine, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Wedge fill" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox  Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
-                                  Text="{Binding Colors.BearingWedgeFill, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="1" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                  Background="{Binding Brushes.BearingWedgeFill}" />
+                        <mah:ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding Colors.BearingWedgeFill, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Wedge stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox  Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,4,4"
-                                  Text="{Binding Colors.BearingWedgeStroke, UpdateSourceTrigger=LostFocus}" />
-                        <Border   Grid.Row="2" Grid.Column="2" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                  Background="{Binding Brushes.BearingWedgeStroke}" />
+                        <mah:ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding Colors.BearingWedgeStroke, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
                     </Grid>
-                    <TextBlock Text="ARGB hex (e.g. #FFFF0000 — opaque red, or #33FFFF80 — translucent yellow). 6-digit RGB also accepted; alpha defaults to FF."
-                               Foreground="{StaticResource TextTertiaryBrush}"
-                               TextWrapping="Wrap" Margin="0,6,0,0" />
                     <Button Content="Reset to defaults" HorizontalAlignment="Right" Margin="0,8,0,0"
                             Padding="10,4" Command="{Binding ResetColorsToDefaultsCommand}" />
                 </StackPanel>
@@ -290,16 +304,12 @@
                                    SelectedItem="{Binding Shape}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.OuterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding FillColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.OuterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding StrokeColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
                         <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
@@ -337,16 +347,12 @@
                                    SelectedItem="{Binding Shape}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.CenterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding FillColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.CenterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding StrokeColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
                         <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
@@ -450,16 +456,12 @@
                                    SelectedItem="{Binding Shape}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.PlayerOuterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding FillColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.PlayerOuterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding StrokeColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
                         <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
@@ -503,16 +505,12 @@
                                    SelectedItem="{Binding Shape}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.PlayerCenterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding FillColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.PlayerCenterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding StrokeColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
                         <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
@@ -638,10 +636,8 @@
                                    SelectedItem="{Binding Treatment}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Color" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding Color, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.ActivePin, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding Color, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Halo thickness" VerticalAlignment="Center" Margin="0,4,8,4" />
                         <Slider    Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Margin="0,4,8,4"
@@ -752,16 +748,12 @@
                                    SelectedItem="{Binding Shape}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.CalibrationOuterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding FillColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.CalibrationOuterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding StrokeColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
                         <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
@@ -805,16 +797,12 @@
                                    SelectedItem="{Binding Shape}" />
 
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="Fill" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding FillColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="1" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.CalibrationCenterFill, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding FillColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="Stroke" VerticalAlignment="Center" Margin="0,4,8,4" />
-                        <TextBox   Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" VerticalAlignment="Center" Margin="0,4,4,4"
-                                   Text="{Binding StrokeColor, UpdateSourceTrigger=LostFocus}" />
-                        <Border    Grid.Row="2" Grid.Column="3" Width="16" Height="16" BorderBrush="{StaticResource TextTertiaryBrush}" BorderThickness="1"
-                                   Background="{Binding DataContext.Brushes.CalibrationCenterStroke, RelativeSource={RelativeSource AncestorType=GroupBox}}" />
+                        <mah:ColorPicker Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
+                                         SelectedColor="{Binding StrokeColor, Converter={StaticResource ArgbHexToColor}, UpdateSourceTrigger=PropertyChanged}" />
 
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Stroke style" VerticalAlignment="Center" Margin="0,4,8,4" />
                         <ComboBox  Grid.Row="3" Grid.Column="1" Grid.ColumnSpan="3" VerticalAlignment="Center" Margin="0,4,0,4"
