@@ -1,3 +1,4 @@
+using System;
 using FluentAssertions;
 using Mithril.Shared.Telemetry.Processing;
 using Xunit;
@@ -51,5 +52,15 @@ public class ValueRedactorTests
         var r = new ValueRedactor(getActiveCharacter: () => "Thorgrim", userProfile: "x", localAppData: "x");
         r.Redact(null).Should().BeNull();
         r.Redact("").Should().Be("");
+    }
+
+    [Fact]
+    public void Swallows_active_character_callback_exception()
+    {
+        var r = new ValueRedactor(getActiveCharacter: () => throw new InvalidOperationException("disposed"),
+                                  userProfile: @"C:\nope",
+                                  localAppData: @"C:\nope");
+        Action act = () => r.Redact("plain string");
+        act.Should().NotThrow();
     }
 }

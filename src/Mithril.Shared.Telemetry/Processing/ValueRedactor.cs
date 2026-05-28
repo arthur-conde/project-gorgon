@@ -52,15 +52,26 @@ public sealed class ValueRedactor
     {
         if (string.IsNullOrEmpty(value)) return value;
 
-        // Path prefixes first (longest first).
-        if (!string.IsNullOrEmpty(_localAppData))
+        // Path prefixes first (longest first). Contains pre-check keeps the
+        // no-match path alloc-free; the ignore-case Replace overload allocates
+        // a new string unconditionally even when no match is found, and this
+        // runs on every string tag value of every exported span.
+        if (!string.IsNullOrEmpty(_localAppData)
+            && value.Contains(_localAppData, StringComparison.OrdinalIgnoreCase))
             value = value.Replace(_localAppData, "$LOCALAPPDATA", StringComparison.OrdinalIgnoreCase);
-        if (!string.IsNullOrEmpty(_userProfile))
+        if (!string.IsNullOrEmpty(_userProfile)
+            && value.Contains(_userProfile, StringComparison.OrdinalIgnoreCase))
             value = value.Replace(_userProfile, "$USER", StringComparison.OrdinalIgnoreCase);
 
         // Character name - read on every call so it tracks character switches.
-        var character = _getActiveCharacter();
-        if (!string.IsNullOrEmpty(character))
+        // Swallow callback exceptions: this is defence-in-depth, so the failure
+        // mode is "this tag value exports un-character-redacted" rather than
+        // tearing the export pipeline on a race during character switch.
+        string? character;
+        try { character = _getActiveCharacter(); }
+        catch { character = null; }
+        if (!string.IsNullOrEmpty(character)
+            && value.Contains(character, StringComparison.OrdinalIgnoreCase))
             value = value.Replace(character, "$CHARACTER", StringComparison.OrdinalIgnoreCase);
 
         return value;
