@@ -7,14 +7,28 @@ namespace Mithril.Shell.ViewModels;
 /// perf-trace toggles directly off <see cref="ShellSettings"/> so the
 /// checkboxes two-way-bind to the same persisted state the shell reads
 /// at startup; no separate save step needed (autosave already handles it).
+///
+/// Hosts the Telemetry sub-section VM (<see cref="TelemetrySettingsViewModel"/>)
+/// as a composed child so the Diagnostics page renders both perf-trace
+/// controls and the OTLP export configuration in one place — see mithril#815.
 /// </summary>
 public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
 {
     public ShellSettings Settings { get; }
 
-    public DiagnosticsSettingsViewModel(ShellSettings settings)
+    /// <summary>
+    /// The OTLP-export sub-section VM. Always present — ShellComposition
+    /// registers fallback singletons for the scrubber-graph collaborators when
+    /// AddMithrilOtlpExport is no-op (EnableOtlpExport=false) so the master
+    /// toggle and connection fields remain editable. The user can opt in,
+    /// restart, and the live exporter picks up the persisted settings.
+    /// </summary>
+    public TelemetrySettingsViewModel Telemetry { get; }
+
+    public DiagnosticsSettingsViewModel(ShellSettings settings, TelemetrySettingsViewModel telemetry)
     {
         Settings = settings;
+        Telemetry = telemetry;
     }
 
     /// <summary>The folder where perf-trace sessions land. Surfaced so the

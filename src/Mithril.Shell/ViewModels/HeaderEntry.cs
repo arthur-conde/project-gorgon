@@ -11,6 +11,7 @@ namespace Mithril.Shell.ViewModels;
 public sealed partial class HeaderEntry : ObservableObject
 {
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanSave))]
     private string _name;
 
     [ObservableProperty]
@@ -18,6 +19,13 @@ public sealed partial class HeaderEntry : ObservableObject
 
     [ObservableProperty]
     private bool _isValueRevealed;
+
+    /// <summary>
+    /// True when the row has a non-blank name and is therefore eligible for
+    /// persistence. Bound by the headers DataGrid's per-row Save button so
+    /// blank rows can't be saved (Task 14 quality-review Minor #7 deferral).
+    /// </summary>
+    public bool CanSave => !string.IsNullOrWhiteSpace(Name);
 
     /// <summary>The header name as last persisted to
     /// <see cref="Mithril.Shared.Telemetry.Settings.TelemetrySettings.Headers"/>.

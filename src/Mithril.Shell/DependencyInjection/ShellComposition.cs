@@ -19,12 +19,16 @@ using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 using Mithril.Shared.Telemetry.Abstractions;
+using Mithril.Shared.Telemetry.Catalog;
+using Mithril.Shared.Telemetry.Export;
 using Mithril.Shared.Telemetry.Hosting;
 using Mithril.Shared.Telemetry.Logs;
 using Mithril.Shared.Telemetry.Settings;
 using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.DependencyInjection;
+using Mithril.Shell.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shell.DependencyInjection;
@@ -138,6 +142,21 @@ public static class ShellComposition
             var loggerFactory = tmp.GetRequiredService<ILoggerFactory>();
             services.AddMithrilOtlpExport(telemetrySettings, loggerFactory);
         }
+
+        // Telemetry settings sub-section VM (Diagnostics → Telemetry export
+        // expander). The VM needs the scrubber-graph collaborators (TagCatalog,
+        // NewlySeenTagsObserver, HeaderValueProtection, ExporterHealthMonitor)
+        // to bind the chip-cloud / headers grid / status line. AddMithrilOtlpExport
+        // only registers those when EnableOtlpExport=true, so we register fallback
+        // singletons here to keep the settings UI functional in the off state —
+        // critical so the user can see the master toggle and turn export ON the
+        // first time. TryAddSingleton means the enabled path's registrations win
+        // when present, so the SAME instances feed both the exporter and the UI.
+        services.TryAddSingleton<TagCatalog>();
+        services.TryAddSingleton<NewlySeenTagsObserver>();
+        services.TryAddSingleton<HeaderValueProtection>();
+        services.TryAddSingleton<ExporterHealthMonitor>();
+        services.AddSingleton<TelemetrySettingsViewModel>();
 
         // L4 composition (singleton factories resolved eagerly by the bootstrap
         // below). Registered before the Arda drivers so hosted-service startup

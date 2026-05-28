@@ -1,0 +1,339 @@
+<UserControl x:Class="Mithril.Shell.Views.TelemetrySettingsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:vm="clr-namespace:Mithril.Shell.ViewModels"
+             Background="Transparent">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Converters.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- PiiClassification → border/background colour. Selector-style: one entry
+                 per enum member. Keeps the catalogue in this file rather than a global
+                 converter — chip classification is a single-view concern. -->
+            <SolidColorBrush x:Key="ChipSafeBrush"        Color="#FF2F4A2F"/>
+            <SolidColorBrush x:Key="ChipIdentifyingBrush" Color="#FF4A4020"/>
+            <SolidColorBrush x:Key="ChipSensitiveBrush"   Color="#FF5A2A2A"/>
+            <SolidColorBrush x:Key="ChipBorderOff"        Color="#33FFFFFF"/>
+            <SolidColorBrush x:Key="ChipBorderOn"         Color="#FFD4A847"/>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Expander Foreground="#FFE8E8E8"
+              Background="#FF1A1A1A"
+              BorderBrush="#22FFFFFF" BorderThickness="0,1,0,0"
+              Margin="0,16,0,0" Padding="0">
+        <Expander.Header>
+            <StackPanel Orientation="Horizontal">
+                <icon:PackIconLucide Kind="Radio" Width="16" Height="16"
+                                     VerticalAlignment="Center" Margin="0,0,8,0"
+                                     Foreground="#FFD4A847"/>
+                <TextBlock Text="Telemetry export (OTLP)"
+                           FontWeight="SemiBold" Foreground="#FFE8E8E8"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </Expander.Header>
+
+        <StackPanel Margin="0,12,0,0">
+
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8"
+                       Text="Send traces, metrics, and logs to an OpenTelemetry collector (Seq, Honeycomb, Grafana Cloud, ...). Off by default — when off, no spans or metrics are produced. Header values are stored DPAPI-wrapped at rest."/>
+
+            <CheckBox Content="Enable OTLP export"
+                      IsChecked="{Binding Settings.EnableOtlpExport, Mode=TwoWay}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
+
+            <!-- Restart-required banner. v1: always visible whenever the master toggle
+                 is on, because the host captures EnableOtlpExport + endpoint/headers/
+                 protocol/service-name fields once at AddMithrilOtlpExport time. -->
+            <Border Background="#332C2010" BorderBrush="#FFD4A847" BorderThickness="0,0,0,2"
+                    Padding="8,6" Margin="0,0,0,12"
+                    Visibility="{Binding Settings.EnableOtlpExport, Converter={StaticResource BoolToVis}}">
+                <StackPanel Orientation="Horizontal">
+                    <icon:PackIconLucide Kind="Info" Width="14" Height="14"
+                                         VerticalAlignment="Center" Margin="0,0,8,0"
+                                         Foreground="#FFD4A847"/>
+                    <TextBlock Text="Restart Mithril to apply endpoint, headers, protocol, and service-name changes. Tag-export toggles apply live."
+                               TextWrapping="Wrap" Foreground="#FFE8E8E8"
+                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                </StackPanel>
+            </Border>
+
+            <!-- Endpoint -->
+            <TextBlock Text="Endpoint" Foreground="#88FFFFFF"
+                       FontWeight="SemiBold" Margin="0,4,0,4"/>
+            <TextBox Text="{Binding Settings.Endpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     Background="#FF252525" Foreground="#FFE8E8E8" BorderBrush="#44FFFFFF"
+                     Padding="6,4" Margin="0,0,0,12"/>
+
+            <!-- Protocol -->
+            <TextBlock Text="Protocol" Foreground="#88FFFFFF"
+                       FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <ComboBox ItemsSource="{Binding Source={x:Static vm:TelemetrySettingsViewModel.ProtocolOptions}}"
+                      SelectedItem="{Binding Settings.Protocol, Mode=TwoWay}"
+                      Width="220" HorizontalAlignment="Left" Margin="0,0,0,12">
+                <!-- Explicit ItemTemplate so the selection box renders the enum name
+                     consistently with the dropdown items (avoids the
+                     ComboBox-renders-ToString fallback called out in wpf-gotchas.md). -->
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+
+            <!-- Service name -->
+            <TextBlock Text="Service name" Foreground="#88FFFFFF"
+                       FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBox Text="{Binding Settings.ServiceName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     Background="#FF252525" Foreground="#FFE8E8E8" BorderBrush="#44FFFFFF"
+                     Padding="6,4" Width="280" HorizontalAlignment="Left" Margin="0,0,0,16"/>
+
+            <!-- Headers -->
+            <TextBlock Text="Headers" Foreground="#88FFFFFF"
+                       FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
+                       Text="HTTP headers added to every OTLP request (typically an API key / bearer token). Save each row after editing — values are DPAPI-wrapped at rest before persisting."/>
+
+            <DataGrid ItemsSource="{Binding Headers}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False" CanUserDeleteRows="False"
+                      CanUserResizeRows="False" CanUserReorderColumns="False"
+                      HeadersVisibility="Column"
+                      Background="#FF1F1F1F" RowBackground="#FF1F1F1F"
+                      AlternatingRowBackground="#FF252525"
+                      Foreground="#FFE8E8E8"
+                      BorderBrush="#22FFFFFF" GridLinesVisibility="None"
+                      Margin="0,0,0,8" MaxHeight="220">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="Name" Width="200">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:HeaderEntry}">
+                                <TextBox Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         BorderThickness="0" Background="Transparent"
+                                         Foreground="#FFE8E8E8" Padding="6,4"
+                                         VerticalAlignment="Center"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="Value" Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:HeaderEntry}">
+                                <Grid>
+                                    <!-- Two stacked elements gated by IsValueRevealed:
+                                         TextBox (editable, two-way) when revealed,
+                                         TextBlock with bullet mask when masked.
+                                         Keeps editing two-way without a PasswordBox
+                                         (which doesn't bind cleanly per wpf-gotchas). -->
+                                    <TextBox Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             BorderThickness="0" Background="Transparent"
+                                             Foreground="#FFE8E8E8" Padding="6,4"
+                                             VerticalAlignment="Center"
+                                             Visibility="{Binding IsValueRevealed, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBlock Text="••••••••"
+                                               Foreground="#88FFFFFF"
+                                               VerticalAlignment="Center" Padding="6,4"
+                                               Visibility="{Binding IsValueRevealed, Converter={StaticResource InverseBoolToVis}}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <DataGridTemplateColumn Header="" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type vm:HeaderEntry}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="4,2">
+                                    <!-- Show/hide toggle -->
+                                    <Button ToolTip="Show / hide value"
+                                            Padding="6,2" Margin="0,0,4,0"
+                                            Background="#FF333333" Foreground="#FFE8E8E8"
+                                            Command="{Binding DataContext.RevealValueCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <icon:PackIconLucide Width="12" Height="12"
+                                                             Kind="Eye"/>
+                                    </Button>
+                                    <!-- Save row -->
+                                    <Button ToolTip="Save header"
+                                            Padding="6,2" Margin="0,0,4,0"
+                                            Background="#FF4A3820" Foreground="#FFF3E1B8"
+                                            IsEnabled="{Binding CanSave}"
+                                            Command="{Binding DataContext.SaveHeaderCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <icon:PackIconLucide Width="12" Height="12"
+                                                             Kind="Save"/>
+                                    </Button>
+                                    <!-- Remove row -->
+                                    <Button ToolTip="Remove header"
+                                            Padding="6,2"
+                                            Background="#FF3A2020" Foreground="#FFE8E8E8"
+                                            Command="{Binding DataContext.RemoveHeaderCommand,
+                                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}">
+                                        <icon:PackIconLucide Width="12" Height="12"
+                                                             Kind="Trash2"/>
+                                    </Button>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+
+            <Button Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,16"
+                    Background="#FF2A3A2A" Foreground="#FFE8E8E8"
+                    Command="{Binding AddHeaderCommand}">
+                <StackPanel Orientation="Horizontal">
+                    <icon:PackIconLucide Kind="Plus" Width="12" Height="12"
+                                         VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Text="Add header" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+
+            <!-- Tag cloud -->
+            <TextBlock Text="Exported tags" Foreground="#88FFFFFF"
+                       FontWeight="SemiBold" Margin="0,0,0,4"/>
+            <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
+                       FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8"
+                       Text="Click a chip to toggle whether the tag is included in exported spans. Green = safe, amber = identifying, red = potentially sensitive. Changes apply per span without restart."/>
+
+            <ItemsControl ItemsSource="{Binding TagGroups}" Margin="0,0,0,8">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:TagChipGroup}">
+                        <StackPanel Margin="0,0,0,12">
+                            <TextBlock Text="{Binding Subsystem}"
+                                       Foreground="#CCFFFFFF" FontWeight="SemiBold"
+                                       Margin="0,0,0,4"
+                                       FontSize="{DynamicResource AppFontSizeHint}"/>
+                            <ItemsControl ItemsSource="{Binding Chips}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal"/>
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:TagChip}">
+                                        <!-- Click toggles IsExported via IsChecked TwoWay.
+                                             ToggleButton (not Button) so chip visuals can
+                                             reflect the on/off state without an extra
+                                             converter. -->
+                                        <ToggleButton IsChecked="{Binding IsExported, Mode=TwoWay}"
+                                                      Margin="0,0,6,6" Padding="0"
+                                                      Background="Transparent" BorderThickness="0"
+                                                      ToolTip="{Binding Description}">
+                                            <ToggleButton.Template>
+                                                <ControlTemplate TargetType="ToggleButton">
+                                                    <Border x:Name="ChipBorder"
+                                                            BorderThickness="1"
+                                                            CornerRadius="10" Padding="8,3">
+                                                        <ContentPresenter HorizontalAlignment="Center"
+                                                                          VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    <ControlTemplate.Triggers>
+                                                        <!-- Classification → background -->
+                                                        <DataTrigger Binding="{Binding Classification}" Value="Safe">
+                                                            <Setter TargetName="ChipBorder" Property="Background" Value="{StaticResource ChipSafeBrush}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Classification}" Value="Identifying">
+                                                            <Setter TargetName="ChipBorder" Property="Background" Value="{StaticResource ChipIdentifyingBrush}"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Classification}" Value="Sensitive">
+                                                            <Setter TargetName="ChipBorder" Property="Background" Value="{StaticResource ChipSensitiveBrush}"/>
+                                                        </DataTrigger>
+                                                        <!-- Exported state → border -->
+                                                        <Trigger Property="IsChecked" Value="True">
+                                                            <Setter TargetName="ChipBorder" Property="BorderBrush" Value="{StaticResource ChipBorderOn}"/>
+                                                        </Trigger>
+                                                        <Trigger Property="IsChecked" Value="False">
+                                                            <Setter TargetName="ChipBorder" Property="BorderBrush" Value="{StaticResource ChipBorderOff}"/>
+                                                            <Setter Property="Opacity" Value="0.55"/>
+                                                        </Trigger>
+                                                    </ControlTemplate.Triggers>
+                                                </ControlTemplate>
+                                            </ToggleButton.Template>
+                                            <TextBlock Text="{Binding Key}"
+                                                       Foreground="#FFE8E8E8"
+                                                       FontFamily="Consolas, Cascadia Mono"
+                                                       FontSize="{DynamicResource AppFontSizeHint}"/>
+                                        </ToggleButton>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Newly-seen panel -->
+            <Expander Margin="0,0,0,12" Background="#FF1F1F1F"
+                      BorderBrush="#22FFFFFF" BorderThickness="1"
+                      Foreground="#FFE8E8E8">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal">
+                        <icon:PackIconLucide Kind="Sparkles" Width="14" Height="14"
+                                             VerticalAlignment="Center" Margin="0,0,6,0"
+                                             Foreground="#FFD4A847"/>
+                        <TextBlock VerticalAlignment="Center" Foreground="#FFE8E8E8">
+                            <TextBlock.Inlines>
+                                <Run Text="Newly-seen tags ("/><Run Text="{Binding NewlySeenChips.Count, Mode=OneWay}"/><Run Text=")"/>
+                            </TextBlock.Inlines>
+                        </TextBlock>
+                    </StackPanel>
+                </Expander.Header>
+
+                <StackPanel Margin="8,8,8,8">
+                    <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
+                               Text="Tag keys emitted by code but not in the static catalog. Promote a tag to start exporting it (the override is saved per tag)."/>
+                    <ItemsControl ItemsSource="{Binding NewlySeenChips}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:NewlySeenChip}">
+                                <Button Margin="0,0,6,6" Padding="8,3"
+                                        Background="#FF2C2C2C" Foreground="#FFE8E8E8"
+                                        BorderBrush="#FFD4A847" BorderThickness="1"
+                                        Command="{Binding PromoteCommand}"
+                                        ToolTip="Promote: start exporting this tag">
+                                    <StackPanel Orientation="Horizontal">
+                                        <icon:PackIconLucide Kind="Plus" Width="11" Height="11"
+                                                             VerticalAlignment="Center"
+                                                             Margin="0,0,4,0"
+                                                             Foreground="#FFD4A847"/>
+                                        <TextBlock Text="{Binding Key}"
+                                                   FontFamily="Consolas, Cascadia Mono"
+                                                   FontSize="{DynamicResource AppFontSizeHint}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Expander>
+
+            <!-- Last-export status -->
+            <Border Background="#FF1F1F1F" BorderBrush="#22FFFFFF" BorderThickness="1"
+                    Padding="8,6" Margin="0,0,0,4">
+                <StackPanel Orientation="Horizontal">
+                    <icon:PackIconLucide Kind="Activity" Width="14" Height="14"
+                                         VerticalAlignment="Center" Margin="0,0,8,0"
+                                         Foreground="#FFD4A847"/>
+                    <TextBlock Text="{Binding LastExportStatus}"
+                               VerticalAlignment="Center"
+                               Foreground="#FFE8E8E8"
+                               FontSize="{DynamicResource AppFontSizeHint}"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </Expander>
+</UserControl>

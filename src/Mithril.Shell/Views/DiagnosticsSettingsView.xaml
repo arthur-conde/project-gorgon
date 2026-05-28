@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:views="clr-namespace:Mithril.Shell.Views"
              Background="#FF1A1A1A">
     <UserControl.Resources>
         <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Converters.xaml"/>
@@ -52,6 +53,12 @@
             <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#66FFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}"
                        Text="Changes preview live. Settings persist on shutdown."/>
+
+            <!-- Telemetry export (OTLP) sub-section. The VM is always registered
+                 (ShellComposition adds fallback scrubber-graph singletons when
+                 OTLP export is off), so this expander is always available — letting
+                 the user opt in for the first time and see the master toggle. -->
+            <views:TelemetrySettingsControl DataContext="{Binding Telemetry}"/>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

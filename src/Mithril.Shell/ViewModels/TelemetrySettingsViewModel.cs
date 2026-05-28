@@ -88,6 +88,10 @@ public sealed partial class TelemetrySettingsViewModel : ObservableObject, IDisp
     /// the restart-required fields (EnableOtlpExport, Endpoint, Protocol, ServiceName).</summary>
     public TelemetrySettings Settings => _settings;
 
+    /// <summary>OTLP protocol options surfaced to the Protocol ComboBox.</summary>
+    public static OtlpProtocol[] ProtocolOptions { get; } =
+        (OtlpProtocol[])Enum.GetValues(typeof(OtlpProtocol));
+
     public ObservableCollection<HeaderEntry> Headers { get; }
     public ObservableCollection<TagChipGroup> TagGroups { get; }
     public ObservableCollection<NewlySeenChip> NewlySeenChips { get; }
