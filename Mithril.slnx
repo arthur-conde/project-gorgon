@@ -51,6 +51,7 @@
     <Project Path="tests/Mithril.LogSanitizer.Tests/Mithril.LogSanitizer.Tests.csproj" />
     <Project Path="tests/Mithril.Planning.Tests/Mithril.Planning.Tests.csproj" />
     <Project Path="tests/Mithril.Reference.Tests/Mithril.Reference.Tests.csproj" />
+    <Project Path="tests/Mithril.Shared.Telemetry.Tests/Mithril.Shared.Telemetry.Tests.csproj" />
     <Project Path="tests/Mithril.Shared.Tests/Mithril.Shared.Tests.csproj" />
     <Project Path="tests/Mithril.Shell.Tests/Mithril.Shell.Tests.csproj" />
     <Project Path="tests/Palantir.Tests/Palantir.Tests.csproj" />
