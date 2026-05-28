@@ -11,10 +11,10 @@ namespace Mithril.Shared.Telemetry.Catalog;
 /// allowlist-and-redaction processor (Task 6) for fast key lookup and by the
 /// settings UI for tag-cloud rendering.
 ///
-/// Conflicts (same key declared with different classifications) are a
-/// configuration bug — fail loudly at startup so a producer-side typo or
-/// drift between subsystems surfaces immediately rather than silently picking
-/// one classification.
+/// Conflicts (same key declared with any difference in classification,
+/// subsystem, or description) are a configuration bug — fail loudly at
+/// startup so a producer-side typo or drift between subsystems surfaces
+/// immediately rather than silently picking one declaration.
 /// </summary>
 public sealed class TagCatalog
 {
@@ -24,7 +24,7 @@ public sealed class TagCatalog
     /// Build the catalog by unioning descriptors from every registered provider.
     /// </summary>
     /// <param name="providers">All <see cref="ITagDescriptorProvider"/> instances; in DI this resolves to every registered provider.</param>
-    /// <exception cref="InvalidOperationException">Thrown when two providers declare the same key with different <see cref="PiiClassification"/> values.</exception>
+    /// <exception cref="InvalidOperationException">Thrown when two providers declare the same key with any difference in <see cref="TagDescriptor"/> fields (classification, subsystem, or description).</exception>
     public TagCatalog(IEnumerable<ITagDescriptorProvider> providers)
     {
         var dict = new Dictionary<string, TagDescriptor>(StringComparer.Ordinal);
@@ -32,11 +32,12 @@ public sealed class TagCatalog
         {
             foreach (var d in p.Describe())
             {
-                if (dict.TryGetValue(d.Key, out var existing) && existing.Classification != d.Classification)
+                if (dict.TryGetValue(d.Key, out var existing) && !existing.Equals(d))
                 {
                     throw new InvalidOperationException(
-                        $"Tag descriptor for '{d.Key}' conflicting classifications: " +
-                        $"{existing.Classification} (in {existing.Subsystem}) vs {d.Classification} (in {d.Subsystem}). " +
+                        $"Tag descriptor for '{d.Key}' has conflicting declarations: " +
+                        $"{existing.Classification}/{existing.Subsystem}/'{existing.Description}' " +
+                        $"vs {d.Classification}/{d.Subsystem}/'{d.Description}'. " +
                         $"Resolve at the producer site.");
                 }
                 dict[d.Key] = d;

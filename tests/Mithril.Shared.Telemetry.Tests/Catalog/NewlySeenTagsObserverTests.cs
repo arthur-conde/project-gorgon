@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using FluentAssertions;
 using Mithril.Shared.Telemetry.Catalog;
@@ -31,5 +32,14 @@ public class NewlySeenTagsObserverTests
         o.OnNewKey += k => seen.Add(k);
         o.Note("x"); o.Note("x"); o.Note("y");
         seen.Should().Equal("x", "y");
+    }
+
+    [Fact]
+    public void Throws_when_capacity_is_zero_or_negative()
+    {
+        Action zero = () => _ = new NewlySeenTagsObserver(capacity: 0);
+        Action negative = () => _ = new NewlySeenTagsObserver(capacity: -1);
+        zero.Should().Throw<ArgumentOutOfRangeException>();
+        negative.Should().Throw<ArgumentOutOfRangeException>();
     }
 }

@@ -33,6 +33,15 @@ public class TagCatalogTests
     }
 
     [Fact]
+    public void Conflict_on_same_key_different_subsystem_also_throws()
+    {
+        var a = new Provider(new TagDescriptor("module.id", PiiClassification.Identifying, "A", "desc"));
+        var b = new Provider(new TagDescriptor("module.id", PiiClassification.Identifying, "B", "desc"));
+        var act = () => new TagCatalog(new[] { a, b });
+        act.Should().Throw<InvalidOperationException>().WithMessage("*module.id*conflicting*");
+    }
+
+    [Fact]
     public void TryGetDescriptor_returns_false_for_unknown_key()
     {
         var catalog = new TagCatalog(Array.Empty<ITagDescriptorProvider>());

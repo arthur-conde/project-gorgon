@@ -27,8 +27,13 @@ public sealed class NewlySeenTagsObserver
     /// <summary>
     /// Create a new observer.
     /// </summary>
-    /// <param name="capacity">Maximum number of keys retained; oldest are evicted FIFO.</param>
-    public NewlySeenTagsObserver(int capacity = 256) => _capacity = capacity;
+    /// <param name="capacity">Maximum number of keys retained; oldest are evicted FIFO. Must be positive.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="capacity"/> is zero or negative.</exception>
+    public NewlySeenTagsObserver(int capacity = 256)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
+        _capacity = capacity;
+    }
 
     /// <summary>Record an observation of <paramref name="key"/>. No-op if already seen.</summary>
     public void Note(string key)
