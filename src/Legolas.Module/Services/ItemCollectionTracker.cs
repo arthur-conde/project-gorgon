@@ -4,6 +4,7 @@ using Arda.World.Player.Events;
 using Legolas.Domain;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Legolas.Services;
 
@@ -28,13 +29,18 @@ public sealed class ItemCollectionTracker : BackgroundService
 {
     private readonly IDomainEventSubscriber _bus;
     private readonly SessionState _session;
+    private readonly ILogger? _logger;
 
     private IDisposable? _screenTextSub;
 
-    public ItemCollectionTracker(IDomainEventSubscriber bus, SessionState session)
+    public ItemCollectionTracker(
+        IDomainEventSubscriber bus,
+        SessionState session,
+        ILogger? logger = null)
     {
         _bus = bus;
         _session = session;
+        _logger = logger;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -101,9 +107,16 @@ public sealed class ItemCollectionTracker : BackgroundService
             return;
         }
 
-        _session.LastLogEvent = _session.Surveys.Count == 0
-            ? $"Collected: {name} → no surveys tracked"
-            : $"Collected: {name} → no name match (have {string.Join(", ", _session.Surveys.Where(s => !s.Collected).Select(s => s.Name).Take(3))})";
+        if (_session.Surveys.Count == 0)
+        {
+            _session.LastLogEvent = $"Collected: {name} → no surveys tracked";
+            _logger?.LogTrace("Collected {Name} (count {Count}) with no surveys tracked", name, count);
+        }
+        else
+        {
+            _session.LastLogEvent = $"Collected: {name} → no name match (have {string.Join(", ", _session.Surveys.Where(s => !s.Collected).Select(s => s.Name).Take(3))})";
+            _logger?.LogTrace("Collected {Name} (count {Count}) did not match any uncollected survey slot", name, count);
+        }
     }
 
     private void AccumulateCollected(string name, int count)
