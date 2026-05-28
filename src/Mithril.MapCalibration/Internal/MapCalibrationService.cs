@@ -115,6 +115,25 @@ internal sealed class MapCalibrationService : IMapCalibrationService
         }
     }
 
+    public int ImportUserRefinements(IReadOnlyDictionary<string, AreaCalibration> source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source.Count == 0) return 0;
+        // Silent + batched per the IMapCalibrationService contract. No Changed
+        // fires; one persist for the whole batch. Migration paths rely on this
+        // so the host.StartAsync chain doesn't broadcast N events to whatever
+        // happens to be subscribed (and so a slow disk doesn't pay N tmp-file
+        // writes × N fsyncs).
+        var imported = _userStore.ImportFromLegacy(source);
+        if (imported > 0)
+        {
+            _logger?.LogInformation(
+                "Imported {Imported}/{Total} user refinements (silent, batched).",
+                imported, source.Count);
+        }
+        return imported;
+    }
+
     private void RaiseChanged(string areaKey)
     {
         EventHandler<string>? handler;

@@ -71,18 +71,24 @@ internal sealed class UserRefinementStore
     }
 
     /// <summary>
-    /// One-time migration entry point: import each entry only if not already
-    /// present. Used to copy <c>LegolasSettings.AreaCalibrations</c> in on
-    /// first run. Returns the count actually imported.
+    /// Migration entry point: import each entry if the area is not already
+    /// present in the store OR if its stored value's projection math differs
+    /// from <paramref name="entries"/>'s value (the "downgrade window"
+    /// recovery: legacy entry must be newer because we just came from a build
+    /// that only wrote to the legacy field). Batched into a single persist
+    /// and silent (no <see cref="IMapCalibrationService.Changed"/>; callers
+    /// route through that interface's <c>ImportUserRefinements</c>).
+    /// Returns the count actually written.
     /// </summary>
-    public int ImportIfAbsent(IEnumerable<KeyValuePair<string, AreaCalibration>> entries)
+    public int ImportFromLegacy(IEnumerable<KeyValuePair<string, AreaCalibration>> entries)
     {
         var imported = 0;
         lock (_gate)
         {
             foreach (var (key, cal) in entries)
             {
-                if (_refinements.ContainsKey(key)) continue;
+                if (_refinements.TryGetValue(key, out var existing) && MathEquals(existing, cal))
+                    continue;
                 _refinements[key] = cal with { Source = CalibrationSource.UserRefinement };
                 imported++;
             }
@@ -90,6 +96,21 @@ internal sealed class UserRefinementStore
         }
         return imported;
     }
+
+    /// <summary>
+    /// Compares only the fields that determine the world&#8596;pixel
+    /// projection. Ignores <see cref="AreaCalibration.Source"/> (always
+    /// re-stamped on import), <see cref="AreaCalibration.SchemaVersion"/>,
+    /// <see cref="AreaCalibration.ReferenceCount"/>, and
+    /// <see cref="AreaCalibration.ResidualPixels"/> (metadata, not transform).
+    /// </summary>
+    private static bool MathEquals(AreaCalibration a, AreaCalibration b) =>
+        a.Scale == b.Scale &&
+        a.RotationRadians == b.RotationRadians &&
+        a.OriginX == b.OriginX &&
+        a.OriginY == b.OriginY &&
+        a.MirrorNorth == b.MirrorNorth &&
+        a.CalibrationZoom == b.CalibrationZoom;
 
     private void Load()
     {
@@ -116,22 +137,26 @@ internal sealed class UserRefinementStore
         }
     }
 
+    /// <summary>
+    /// Serialises the in-memory dictionary atomically. <b>Throws on IO failure</b>
+    /// rather than swallowing &#8212; saving a calibration is a rare,
+    /// user-initiated event (wizard Confirm), so a silent persist failure
+    /// (transient AV scan lock, full disk, OneDrive placeholder hiccup) would
+    /// leave the in-memory state advanced but lose the data on next process
+    /// start with no surface signal. Callers (the public <see cref="Save"/> /
+    /// <see cref="Remove"/> / <see cref="ImportIfAbsent"/> entry points)
+    /// propagate the exception so the wizard / migration sees it and can
+    /// surface or retry.
+    /// </summary>
     private void Persist()
     {
-        try
-        {
-            var file = new UserRefinementFile(SchemaVersion: 1, Calibrations: _refinements);
-            var json = JsonSerializer.Serialize(file, MapCalibrationJsonContext.Default.UserRefinementFile);
-            // Atomic-ish write: temp file then move. Defends against a crash
-            // mid-write turning the store into garbage.
-            var tmp = _filePath + ".tmp";
-            File.WriteAllText(tmp, json);
-            if (File.Exists(_filePath)) File.Replace(tmp, _filePath, destinationBackupFileName: null);
-            else File.Move(tmp, _filePath);
-        }
-        catch (IOException ex)
-        {
-            _logger?.LogWarning(ex, "Failed to persist user refinement store to {Path}.", _filePath);
-        }
+        var file = new UserRefinementFile(SchemaVersion: 1, Calibrations: _refinements);
+        var json = JsonSerializer.Serialize(file, MapCalibrationJsonContext.Default.UserRefinementFile);
+        // Atomic-ish write: temp file then move. Defends against a crash
+        // mid-write turning the store into garbage.
+        var tmp = _filePath + ".tmp";
+        File.WriteAllText(tmp, json);
+        if (File.Exists(_filePath)) File.Replace(tmp, _filePath, destinationBackupFileName: null);
+        else File.Move(tmp, _filePath);
     }
 }

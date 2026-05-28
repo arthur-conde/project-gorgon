@@ -1,3 +1,4 @@
+using System.IO;
 using Legolas.Domain;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -41,26 +42,33 @@ internal sealed class LegolasAreaCalibrationMigration : IHostedService
         if (_settings.AreaCalibrations is null || _settings.AreaCalibrations.Count == 0)
             return Task.CompletedTask;
 
-        var imported = 0;
-        foreach (var (key, cal) in _settings.AreaCalibrations)
+        // Delegate the per-entry skip-vs-import-vs-overwrite decision to the
+        // service. ImportUserRefinements is silent + batched (one persist, no
+        // Changed events), so the host.StartAsync chain doesn't pay N disk
+        // writes and doesn't broadcast N cross-thread events to whatever
+        // happens to be subscribed at the time. The "skip-if-already-imported"
+        // gate is also moved there so it can check the user store directly,
+        // not the precedence-aware GetCalibration (which would re-import any
+        // entry whose user refinement lost to a baseline on every cold start
+        // once the baseline JSON is populated).
+        try
         {
-            if (cancellationToken.IsCancellationRequested) break;
-
-            // Skip if the shared service already exposes this area as a user
-            // refinement: either we imported it on a previous run, or the user
-            // re-calibrated through the new path and the dual-write covered it.
-            if (_mapCal.GetCalibration(key) is { Source: CalibrationSource.UserRefinement })
-                continue;
-
-            _mapCal.SaveUserRefinement(key, cal);
-            imported++;
+            var imported = _mapCal.ImportUserRefinements(_settings.AreaCalibrations);
+            if (imported > 0)
+            {
+                _logger?.LogInformation(
+                    "Imported {Imported}/{Total} area calibrations from LegolasSettings into the shared user-refinement store.",
+                    imported, _settings.AreaCalibrations.Count);
+            }
         }
-
-        if (imported > 0)
+        catch (IOException ex)
         {
-            _logger?.LogInformation(
-                "Imported {Imported}/{Total} area calibrations from LegolasSettings into the shared user-refinement store.",
-                imported, _settings.AreaCalibrations.Count);
+            // Persist threw (disk full / AV lock / OneDrive placeholder). Log
+            // and continue startup — the legacy store still holds the data, so
+            // a later restart can retry. Better to launch the shell without
+            // the import than to deny startup over a transient IO blip.
+            _logger?.LogWarning(ex,
+                "Failed to persist user refinements during legacy import; will retry on next startup.");
         }
         return Task.CompletedTask;
     }

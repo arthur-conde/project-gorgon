@@ -1,6 +1,5 @@
 using System.IO;
 using FluentAssertions;
-using Mithril.MapCalibration.DependencyInjection;
 using Mithril.MapCalibration.Internal;
 using Xunit;
 
@@ -168,24 +167,113 @@ public sealed class MapCalibrationServiceTests : IDisposable
     }
 
     [Fact]
-    public void Import_if_absent_does_not_overwrite_existing()
+    public void ImportUserRefinements_first_run_writes_every_entry()
     {
-        var store = new UserRefinementStore(_tempDir);
-        var keep = MakeCal(residual: 5.0, scale: 1.5);
-        store.Save("AreaEltibule", keep);
+        var svc = new MapCalibrationService(
+            new Dictionary<string, AreaCalibration>(),
+            new UserRefinementStore(_tempDir),
+            goodResidualThresholdPx: 12.0);
 
-        // Migration "imports" a different scale; should be ignored because key already present.
-        var migrationPayload = new Dictionary<string, AreaCalibration>
+        var payload = new Dictionary<string, AreaCalibration>
         {
-            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 999.0),
+            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 1.5),
             ["AreaSerbule"] = MakeCal(residual: 5.0, scale: 2.0),
         };
-        var imported = store.ImportIfAbsent(migrationPayload);
-        imported.Should().Be(1); // only Serbule was new
-        store.TryGet("AreaEltibule", out var elt).Should().BeTrue();
-        elt.Scale.Should().Be(1.5);
-        store.TryGet("AreaSerbule", out var ser).Should().BeTrue();
-        ser.Scale.Should().Be(2.0);
+
+        svc.ImportUserRefinements(payload).Should().Be(2);
+        svc.GetCalibration("AreaEltibule")!.Scale.Should().Be(1.5);
+        svc.GetCalibration("AreaSerbule")!.Scale.Should().Be(2.0);
+    }
+
+    [Fact]
+    public void ImportUserRefinements_is_idempotent_when_store_already_matches()
+    {
+        var svc = new MapCalibrationService(
+            new Dictionary<string, AreaCalibration>(),
+            new UserRefinementStore(_tempDir),
+            goodResidualThresholdPx: 12.0);
+
+        var cal = MakeCal(residual: 5.0, scale: 1.5);
+        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration> { ["AreaEltibule"] = cal });
+
+        // Re-running the import with the same content is a no-op; covers the
+        // every-startup re-import perf regression cited in the PR review (#3).
+        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration> { ["AreaEltibule"] = cal })
+           .Should().Be(0);
+    }
+
+    [Fact]
+    public void ImportUserRefinements_overwrites_when_legacy_value_differs()
+    {
+        // Downgrade-edit scenario from PR review #5: user calibrates via new
+        // path (both stores in sync), downgrades to legacy-only build,
+        // recalibrates (only LegolasSettings.AreaCalibrations updates), then
+        // re-upgrades. At re-upgrade the legacy entry is newer than the
+        // stored refinement — prefer it.
+        var svc = new MapCalibrationService(
+            new Dictionary<string, AreaCalibration>(),
+            new UserRefinementStore(_tempDir),
+            goodResidualThresholdPx: 12.0);
+
+        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
+        {
+            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 1.5),
+        });
+
+        // Legacy edit while downgraded — math differs.
+        var imported = svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
+        {
+            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 2.7),
+        });
+
+        imported.Should().Be(1);
+        svc.GetCalibration("AreaEltibule")!.Scale.Should().Be(2.7);
+    }
+
+    [Fact]
+    public void ImportUserRefinements_is_silent_no_Changed_event()
+    {
+        // Migration runs on the ThreadPool inside host.StartAsync; firing
+        // Changed there would cross-thread any UI subscriber attached during
+        // module bootstrap (PR review #6). The contract on the interface says
+        // ImportUserRefinements does not raise; this test pins it.
+        var svc = new MapCalibrationService(
+            new Dictionary<string, AreaCalibration>(),
+            new UserRefinementStore(_tempDir),
+            goodResidualThresholdPx: 12.0);
+
+        var fired = 0;
+        svc.Changed += (_, _) => fired++;
+
+        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
+        {
+            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: 1.5),
+            ["AreaSerbule"] = MakeCal(residual: 5.0, scale: 2.0),
+        });
+
+        fired.Should().Be(0);
+    }
+
+    [Fact]
+    public void Active_calibration_after_high_residual_save_with_baseline_falls_to_baseline()
+    {
+        // PR review #1: a high-residual user save with a usable baseline present
+        // must return the baseline as the effective transform — callers route
+        // the projector through the active calibration, so a return value that
+        // diverged from GetCalibration() would silently render one transform
+        // while reporting another.
+        var baseline = new Dictionary<string, AreaCalibration>
+        {
+            ["AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
+        };
+        var svc = new MapCalibrationService(baseline, new UserRefinementStore(_tempDir), goodResidualThresholdPx: 12.0);
+
+        svc.SaveUserRefinement("AreaEltibule", MakeCal(residual: 25.0, scale: 2.0));
+
+        var active = svc.GetCalibration("AreaEltibule");
+        active.Should().NotBeNull();
+        active!.Source.Should().Be(CalibrationSource.BundledBaseline);
+        active.Scale.Should().Be(1.0);
     }
 
     private static AreaCalibration MakeCal(double residual, double scale) =>

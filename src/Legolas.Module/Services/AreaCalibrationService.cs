@@ -200,16 +200,18 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         // Mithril expects to find it.
         _settings.AreaCalibrations[key] = calibration;
         _saver.Touch(); // AreaCalibrations is a sibling object — no PropertyChanged.
-        // SaveUserRefinement raises IMapCalibrationService.Changed, which our
-        // OnMapCalChanged handler re-broadcasts as our own Changed for the
-        // current area. Do NOT also fire Changed directly here — that would
-        // double-deliver (regression observed when both legacy + new paths
-        // raised). Apply the projector here for the synchronous-after-solve
-        // contract; the handler's projector-apply guards against the redundant
-        // re-application by comparing area keys.
-        _projector.ApplyCalibration(calibration);
+
+        // SaveUserRefinement raises IMapCalibrationService.Changed; our
+        // OnMapCalChanged handler resolves stacking precedence and applies
+        // whichever calibration won (which may NOT be the user's data if its
+        // residual exceeds the threshold and a usable baseline exists). Return
+        // the EFFECTIVE calibration rather than the user's input so the caller's
+        // return value matches what the projector actually renders — without
+        // this, a high-residual save returned the user's bad fit while the map
+        // silently rendered the baseline (the projector-vs-return mismatch that
+        // surfaced in PR review).
         _mapCal.SaveUserRefinement(key, calibration);
-        return calibration;
+        return _mapCal.GetCalibration(key);
     }
 
     public event EventHandler<CalibrationSurveyObservation>? SurveyObserved;

@@ -75,6 +75,40 @@ public interface IMapCalibrationService
     /// <summary>Drop a per-user refinement for an area (revert to baseline / community).</summary>
     void ClearUserRefinement(string areaKey);
 
-    /// <summary>Raised when the active transform changes for any area. Payload = the changed areaKey.</summary>
+    /// <summary>
+    /// Silent batched import of user refinements (one persist for the whole
+    /// batch; does <b>not</b> raise <see cref="Changed"/>). Designed for
+    /// migration paths &#8212; the cold-start import of a prior install's
+    /// calibrations.
+    ///
+    /// <para>Per-entry semantics: import if the area is not already present
+    /// in the user-refinement store, OR if the stored value's projection math
+    /// differs from <paramref name="source"/>'s entry. The "differs" branch
+    /// covers the downgrade window: a user on the new build calibrates area A
+    /// (both stores in sync), then downgrades to a pre-lift build and
+    /// recalibrates A (only the legacy store updates), then re-upgrades. At
+    /// re-upgrade, this method sees the legacy entry differs from the (stale)
+    /// stored refinement and prefers the legacy value &#8212; it must be the
+    /// newer one because the user just came from a build that only wrote
+    /// there.</para>
+    ///
+    /// <para>Returns the count actually written (zero on subsequent
+    /// idempotent runs after first-run import).</para>
+    /// </summary>
+    int ImportUserRefinements(IReadOnlyDictionary<string, AreaCalibration> source);
+
+    /// <summary>
+    /// Raised when the active transform changes for any area. Payload = the
+    /// changed areaKey.
+    ///
+    /// <para><b>Threading contract:</b> delivered <em>synchronously on the
+    /// thread that performed the write</em>. The writer may be any thread
+    /// (wizard on the UI dispatcher, hosted services on the ThreadPool,
+    /// community-sync background fetcher, etc.). UI subscribers that touch
+    /// WPF state from the handler MUST marshal back onto the dispatcher
+    /// themselves; this service does not own a dispatcher. The migration's
+    /// import path uses <see cref="ImportUserRefinements"/>, which is silent
+    /// (no <see cref="Changed"/> fires) for exactly this reason.</para>
+    /// </summary>
     event EventHandler<string>? Changed;
 }
