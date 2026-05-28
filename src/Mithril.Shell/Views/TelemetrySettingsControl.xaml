@@ -47,9 +47,19 @@
                       IsChecked="{Binding Settings.EnableOtlpExport, Mode=TwoWay}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
 
+            <!-- Trust endpoint (mithril#840). Skips the allowlist gate for fully-trusted
+                 local destinations (e.g. a self-hosted Seq) while keeping the value
+                 redactor running. Restart-required like the other top-level fields. -->
+            <CheckBox Content="Trust endpoint (skip allowlist for trusted local destinations)"
+                      IsChecked="{Binding Settings.TrustEndpoint, Mode=TwoWay}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,4"
+                      ToolTip="Use only for local sinks you fully control (e.g. self-hosted Seq). The value redactor still runs to scrub paths and character names from string tags."/>
+
             <!-- Restart-required banner. v1: always visible whenever the master toggle
                  is on, because the host captures EnableOtlpExport + endpoint/headers/
-                 protocol/service-name fields once at AddMithrilOtlpExport time. -->
+                 protocol/service-name + trust-endpoint fields once at AddMithrilOtlpExport
+                 time. Banner text must enumerate every restart-required field — users read
+                 it as the source of truth for "what applies live vs after restart". -->
             <Border Background="#332C2010" BorderBrush="#FFD4A847" BorderThickness="0,0,0,2"
                     Padding="8,6" Margin="0,0,0,12"
                     Visibility="{Binding Settings.EnableOtlpExport, Converter={StaticResource BoolToVis}}">
@@ -57,7 +67,7 @@
                     <icon:PackIconLucide Kind="Info" Width="14" Height="14"
                                          VerticalAlignment="Center" Margin="0,0,8,0"
                                          Foreground="#FFD4A847"/>
-                    <TextBlock Text="Restart Mithril to apply endpoint, headers, protocol, and service-name changes. Tag-export toggles apply live."
+                    <TextBlock Text="Restart Mithril to apply endpoint, headers, protocol, service-name, and trust-endpoint changes. Tag-export toggles apply live."
                                TextWrapping="Wrap" Foreground="#FFE8E8E8"
                                FontSize="{DynamicResource AppFontSizeHint}"/>
                 </StackPanel>

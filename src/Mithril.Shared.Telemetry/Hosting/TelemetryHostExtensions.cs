@@ -52,13 +52,15 @@ namespace Mithril.Shared.Telemetry.Hosting;
 /// through the exporter wrapper is non-trivial. Filed as a follow-up
 /// enhancement.</para>
 ///
-/// <para><strong>EventSource listener deferred (v1).</strong> The
-/// <see cref="ExporterHealthMonitor"/> is registered in DI so the settings UI
-/// can bind to it, but the
-/// <see cref="ExporterHealthMonitor.RecordFailure(string)"/> plumbing fed by
-/// the OTel SDK's internal EventSource is left for a follow-up — v1 users can
-/// read OTLP errors from the on-disk diagnostics .json log. The status line
-/// will show "no activity yet" until then, which is honest.</para>
+/// <para><strong>Exporter health.</strong> An
+/// <see cref="OtlpExporterEventListener"/> singleton is constructed eagerly so
+/// the OTel SDK's internal exporter <see cref="System.Diagnostics.Tracing.EventSource"/>
+/// is wired to <see cref="ExporterHealthMonitor.RecordFailure(string)"/>
+/// before the first export attempt. The OTel SDK exposes no public success
+/// callback, so the listener also runs a 30-second timer that calls
+/// <see cref="ExporterHealthMonitor.RecordSuccess"/> whenever no failure has
+/// been observed in the previous tick window — the v1 absence-of-failure
+/// compromise documented on the listener type. mithril#834.</para>
 /// </summary>
 public static class TelemetryHostExtensions
 {
@@ -121,6 +123,13 @@ public static class TelemetryHostExtensions
         services.AddSingleton<NewlySeenTagsObserver>();
         services.AddSingleton<HeaderValueProtection>(); // Consumed by Task 13 settings UI.
         services.AddSingleton<ExporterHealthMonitor>();
+        services.AddSingleton<OtlpExporterEventListener>();
+        // Eager start: the listener subscribes to the OTel exporter EventSource
+        // in its constructor, and we need it alive before the first export
+        // attempt so startup-time failures (DNS, TLS, corrupted endpoint) are
+        // captured. Hosted-service ordering is too coarse; resolve on host
+        // start via IHostedService bridged below.
+        services.AddHostedService<OtlpExporterEventListenerStarter>();
         services.AddSingleton(sp =>
         {
             // Active character read lazily on each scrub call so character
@@ -145,6 +154,7 @@ public static class TelemetryHostExtensions
             return new ValueRedactor(GetActiveCharacter, userProfile, localAppData);
         });
         services.AddSingleton<AllowlistAndRedactionProcessor>();
+        services.AddSingleton<ValueRedactionOnlyProcessor>();
 
         // Resource attributes shared across traces, metrics, logs.
         var serviceInstanceId = Guid.NewGuid().ToString("D");
@@ -168,9 +178,20 @@ public static class TelemetryHostExtensions
             .WithTracing(tb =>
             {
                 tb.AddSource(MithrilSourcePrefix)
-                  .AddHttpClientInstrumentation()
-                  .AddProcessor<AllowlistAndRedactionProcessor>()
-                  .AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
+                  .AddHttpClientInstrumentation();
+                // TrustEndpoint chooses which processor runs on the tracing pipeline:
+                // off (default) → full allowlist + redactor; on → redactor only.
+                // The choice is restart-required because it's captured here at
+                // AddProcessor registration time. See mithril#840.
+                if (settings.TrustEndpoint)
+                {
+                    tb.AddProcessor<ValueRedactionOnlyProcessor>();
+                }
+                else
+                {
+                    tb.AddProcessor<AllowlistAndRedactionProcessor>();
+                }
+                tb.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
             })
             .WithMetrics(mb =>
             {
@@ -274,6 +295,40 @@ public static class TelemetryHostExtensions
         return asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             ?? asm.GetName().Version?.ToString()
             ?? "0.0.0";
+    }
+
+    /// <summary>
+    /// Hosted-service shim that resolves the <see cref="OtlpExporterEventListener"/>
+    /// singleton on host start so the listener subscribes to the OTel exporter
+    /// EventSource <em>before</em> the first export attempt. The host's hosted-
+    /// service collection is started in registration order, and this entry is
+    /// registered after the OTel <see cref="OpenTelemetry.Trace.TracerProvider"/>
+    /// hosted services — but EventListener subscription is process-global and
+    /// completes synchronously in the constructor, so order here only needs to
+    /// be "before the first batch flush", which is satisfied at host start.
+    /// <para>The starter <em>does not</em> dispose the listener in
+    /// <see cref="StopAsync"/>. The listener is registered as a DI singleton
+    /// (<see cref="ServiceLifetime.Singleton"/>) so the host's
+    /// <see cref="IServiceProvider"/> disposes it during host teardown.
+    /// Disposing here too would invoke
+    /// <see cref="OtlpExporterEventListener.Dispose"/> twice — benign today
+    /// (BCL <see cref="System.Threading.Timer"/> and
+    /// <see cref="System.Diagnostics.Tracing.EventListener"/> are idempotent)
+    /// but the contract isn't guaranteed by either API, and a subclass that
+    /// adds state in <see cref="OtlpExporterEventListener.Dispose"/> would
+    /// break it silently. Let DI own the lifecycle.</para>
+    /// </summary>
+    private sealed class OtlpExporterEventListenerStarter(OtlpExporterEventListener listener)
+        : Microsoft.Extensions.Hosting.IHostedService
+    {
+        public Task StartAsync(CancellationToken cancellationToken)
+        {
+            // Touch the listener so DI builds the singleton (the ctor self-subscribes).
+            _ = listener;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>

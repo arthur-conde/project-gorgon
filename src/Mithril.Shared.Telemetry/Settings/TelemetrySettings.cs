@@ -50,6 +50,18 @@ public sealed class TelemetrySettings : INotifyPropertyChanged, IVersionedState<
     private string _serviceName = "mithril";
     public string ServiceName { get => _serviceName; set => Set(ref _serviceName, value); }
 
+    private bool _trustEndpoint;
+    /// <summary>
+    /// When <c>true</c>, span exports skip the allowlist gate (<see cref="Catalog.TagCatalog"/>
+    /// membership + <see cref="TagExports"/> overrides + Sensitive-by-default drops) so
+    /// every producer tag flows to the OTLP destination. Use only for fully-trusted local
+    /// destinations (e.g. a Seq container the user runs themselves). The
+    /// <c>ValueRedactor</c> still runs as belt-and-suspenders against accidental paths /
+    /// character-name leaks in string tag values. Restart-required: the processor choice
+    /// is captured once in <c>AddMithrilOtlpExport</c>. Off by default. mithril#840.
+    /// </summary>
+    public bool TrustEndpoint { get => _trustEndpoint; set => Set(ref _trustEndpoint, value); }
+
     /// <summary>Header NAME → wrapped value. Wrap on set via UI VM; unwrap when binding to OTel options.</summary>
     public Dictionary<string, string> Headers { get; set; } = new();
 

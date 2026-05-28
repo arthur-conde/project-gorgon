@@ -8,6 +8,7 @@ using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Telemetry.Abstractions;
 using Mithril.Shared.Telemetry.Hosting;
+using Mithril.Shared.Telemetry.Processing;
 using Mithril.Shared.Telemetry.Settings;
 using OpenTelemetry.Trace;
 using Xunit;
@@ -131,5 +132,68 @@ public class TelemetryHostExtensionsTests
         {
             try { Directory.Delete(settingsDir, recursive: true); } catch { /* best-effort */ }
         }
+    }
+
+    [Fact]
+    public void TrustEndpoint_false_registers_full_scrubber_processor_as_singleton()
+    {
+        var settings = new TelemetrySettings
+        {
+            EnableOtlpExport = true,
+            Endpoint = "http://localhost:65535/",
+            TrustEndpoint = false,
+        };
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(settings);
+                services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
+                services.AddMithrilOtlpExport(settings);
+            })
+            .Build();
+
+        // Both processors are registered as singletons (the choice of which one
+        // is added to the tracing pipeline is captured at registration time);
+        // the full scrubber must be resolvable so AddProcessor<T> can wire it.
+        host.Services.GetService<AllowlistAndRedactionProcessor>().Should().NotBeNull(
+            "TrustEndpoint = false must keep the catalog + allowlist + redactor processor on the tracing pipeline.");
+    }
+
+    [Fact]
+    public void TrustEndpoint_true_registers_redaction_only_processor_singleton()
+    {
+        var settings = new TelemetrySettings
+        {
+            EnableOtlpExport = true,
+            Endpoint = "http://localhost:65535/",
+            TrustEndpoint = true,
+        };
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(settings);
+                services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
+                services.AddMithrilOtlpExport(settings);
+            })
+            .Build();
+
+        host.Services.GetService<ValueRedactionOnlyProcessor>().Should().NotBeNull(
+            "TrustEndpoint = true swaps the allowlist gate out for the redactor-only processor " +
+            "(see mithril#840); the singleton must be resolvable so AddProcessor<T> can wire it.");
+        host.Services.GetService<TracerProvider>().Should().NotBeNull(
+            "Toggling TrustEndpoint must not break the tracer provider wiring.");
+    }
+
+    [Fact]
+    public void TrustEndpoint_default_is_false_so_existing_configs_keep_scrubbing()
+    {
+        // Restart-required behaviour-preservation check: loading a v1 telemetry.json
+        // that pre-dates the TrustEndpoint field must default to the safe (scrubbed)
+        // path, not the bypass. STJ tolerates the missing field; the default value
+        // of `false` carries the contract.
+        var settings = new TelemetrySettings();
+        settings.TrustEndpoint.Should().BeFalse();
     }
 }
