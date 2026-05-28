@@ -28,6 +28,50 @@ public sealed class StringToColorConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) => throw new NotSupportedException();
 }
 
+/// <summary>
+/// Two-way bridge between an ARGB-hex string property (canonical
+/// <c>#AARRGGBB</c>) and a WPF <see cref="Color"/>, for binding hex-string
+/// settings to color-picker controls (e.g. <c>mah:ColorPicker.SelectedColor</c>).
+/// Malformed / null input falls back to opaque magenta — matching the existing
+/// fail-loud convention used by Legolas's settings layer so a bad value is
+/// visible everywhere rather than silently transparent.
+/// </summary>
+public sealed class ArgbHexToColorConverter : IValueConverter
+{
+    private static readonly Color Fallback = Colors.Magenta; // #FFFF00FF
+
+    public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is string s && TryParseArgb(s, out var color) ? color : Fallback;
+
+    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
+        => value is Color c
+            ? $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}"
+            : "#FFFF00FF";
+
+    private static bool TryParseArgb(string input, out Color color)
+    {
+        color = Fallback;
+        if (string.IsNullOrWhiteSpace(input)) return false;
+        var s = input.Trim();
+        if (s.StartsWith('#')) s = s[1..];
+        // Accept 6-digit RGB (alpha = FF) or 8-digit ARGB.
+        if (s.Length is not (6 or 8)) return false;
+        foreach (var ch in s)
+        {
+            if (!Uri.IsHexDigit(ch)) return false;
+        }
+        byte a = s.Length == 8
+            ? byte.Parse(s.AsSpan(0, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture)
+            : (byte)0xFF;
+        int rgbStart = s.Length == 8 ? 2 : 0;
+        byte r = byte.Parse(s.AsSpan(rgbStart, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        byte g = byte.Parse(s.AsSpan(rgbStart + 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        byte b = byte.Parse(s.AsSpan(rgbStart + 4, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        color = Color.FromArgb(a, r, g, b);
+        return true;
+    }
+}
+
 public sealed class NullOrEmptyToVisibilityConverter : IValueConverter
 {
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)

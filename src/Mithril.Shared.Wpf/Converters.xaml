@@ -4,6 +4,7 @@
     <c:BoolToVisibilityConverter x:Key="BoolToVis"/>
     <c:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
     <c:StringToColorConverter x:Key="StringToColor"/>
+    <c:ArgbHexToColorConverter x:Key="ArgbHexToColor"/>
     <c:NullOrEmptyToVisibilityConverter x:Key="NullOrEmptyToVis"/>
     <c:EnumToBoolConverter x:Key="EnumToBoolConverter"/>
     <c:PositiveIntToVisibilityConverter x:Key="PositiveIntToVis"/>
