@@ -245,22 +245,6 @@
         { "name": "desc", "group": "desc", "type": "string" }
       ]
     },
-    "legolas.PlayerLogParser.ItemCollectedRx": {
-      "pattern": "^(?<name>.+?)(?:\\s+x\\d+)?\\s+collected!(?:\\s+Also found\\s+(?<bonus>.+?)(?:\\s+x\\d+)?\\s+\\(speed bonus!\\))?\\.?$",
-      "source": "player",
-      "module": "legolas",
-      "csharp": {
-        "type": "Legolas.Services.PlayerLogParser",
-        "method": "ItemCollectedTextRx",
-        "options": ["Compiled", "CultureInvariant"]
-      },
-      "eventType": "legolas.ItemCollected",
-      "notes": "Post-Arda: operates on the already-extracted ScreenTextObserved.Text (ImportantInfo category) rather than the full log line. Matches the inner text body only.",
-      "fields": [
-        { "name": "name", "group": "name", "type": "string" },
-        { "name": "bonus", "group": "bonus", "type": "string" }
-      ]
-    },
     "legolas.PlayerLogParser.MapFxRelativeOffsetRx": {
       "pattern": "The (?<name>.+?) is (?<a>\\d+)m (?<aDir>north|south|east|west) and (?<b>\\d+)m (?<bDir>north|south|east|west)\\b",
       "source": "player",
