@@ -14,6 +14,7 @@
     <Project Path="src/Mithril.Persistence/Mithril.Persistence.csproj" />
     <Project Path="src/Mithril.Shared/Mithril.Shared.csproj" />
     <Project Path="src/Mithril.Shared.Telemetry.Abstractions/Mithril.Shared.Telemetry.Abstractions.csproj" />
+    <Project Path="src/Mithril.Shared.Telemetry/Mithril.Shared.Telemetry.csproj" />
     <Project Path="src/Mithril.Shell/Mithril.Shell.csproj" />
     <Project Path="src/Palantir.Module/Palantir.Module.csproj" />
     <Project Path="src/Pippin.Module/Pippin.Module.csproj" />
