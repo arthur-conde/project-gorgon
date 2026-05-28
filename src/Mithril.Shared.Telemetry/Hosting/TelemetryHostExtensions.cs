@@ -73,13 +73,13 @@ public static class TelemetryHostExtensions
     /// <param name="services">DI service collection.</param>
     /// <param name="settings">
     /// The persisted telemetry settings instance. Pass the same reference
-    /// you've registered with
-    /// <c>AddMithrilVersionedSettings&lt;TelemetrySettings&gt;</c> so the
-    /// settings UI's in-place mutations (notably
-    /// <see cref="TelemetrySettings.TagExports"/> add/remove) flow through to
-    /// the scrubber per span without restart. The endpoint / headers /
-    /// service-name fields are captured once at registration — see remarks on
-    /// <see cref="TelemetryHostExtensions"/> for the deferred hot-reload note.
+    /// you've registered with <c>AddMithrilVersionedSettings&lt;TelemetrySettings&gt;</c>.
+    /// Restart-required fields (endpoint, headers, protocol, service-name) are
+    /// captured once here at registration time. Live fields (TagExports) are read
+    /// via <see cref="IOptionsMonitor{T}"/> which resolves the DI singleton on
+    /// every CurrentValue read — so UI mutations on the singleton flow through to
+    /// the scrubber without restart, regardless of which instance was passed to
+    /// this method.
     /// </param>
     /// <param name="loggerFactory">
     /// Optional logger factory; when supplied, a logger under category
@@ -102,15 +102,18 @@ public static class TelemetryHostExtensions
 
         var logger = loggerFactory?.CreateLogger("Telemetry.Otlp");
 
-        // Register the caller-provided settings instance as the source of truth
-        // for IOptionsMonitor consumers (notably AllowlistAndRedactionProcessor,
-        // which reads TagExports per span). Task 13's Shell composition registers
-        // the same TelemetrySettings instance as a singleton via
-        // AddMithrilVersionedSettings<T>, so mutations from the settings UI flow
-        // through to the scrubber without restart. OnChange notifications are a
-        // v1 no-op — see XML doc deferral on AddMithrilOtlpExport.
-        services.AddSingleton<IOptionsMonitor<TelemetrySettings>>(
-            _ => new SingletonOptionsMonitor<TelemetrySettings>(settings));
+        // Bridge: IOptionsMonitor<TelemetrySettings>.CurrentValue resolves to the
+        // host's singleton at request time so per-span TagExports reads see UI
+        // mutations live. Capturing `settings` into a closure here would alias
+        // whichever instance the caller passed in — which under
+        // AddMithrilVersionedSettings<T> may be a different singleton than the
+        // one the host eventually builds (e.g. when the caller resolved settings
+        // from a temp ServiceProvider for the EnableOtlpExport gating decision).
+        // Resolve through sp instead so the scrubber always sees the live
+        // host-singleton dictionary. OnChange notifications are a v1 no-op — the
+        // scrubber polls CurrentValue, doesn't subscribe.
+        services.AddSingleton<IOptionsMonitor<TelemetrySettings>>(sp =>
+            new SingletonOptionsMonitor<TelemetrySettings>(sp.GetRequiredService<TelemetrySettings>()));
 
         // Scrubber graph. Process-wide singletons; the processor references
         // the catalog + redactor + observer + settings monitor.

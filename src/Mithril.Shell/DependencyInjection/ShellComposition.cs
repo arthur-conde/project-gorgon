@@ -123,12 +123,15 @@ public static class ShellComposition
         services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
         services.AddSingleton<ITagDescriptorProvider, ArdaTagDescriptors>();
 
-        // Resolve the loaded TelemetrySettings + ILoggerFactory to gate the
-        // OTel pipeline at registration time. The temporary provider is scoped
-        // to this using block; the real singletons live in the actual host
-        // provider built later. Settings load is a one-time startup cost so
-        // the extra resolve here is acceptable, and EnableOtlpExport changes
-        // require a restart anyway (per TelemetrySettings XML doc).
+        // Resolve the loaded TelemetrySettings + ILoggerFactory via a temporary
+        // provider. This snapshot is used by AddMithrilOtlpExport for the
+        // EnableOtlpExport gate and to capture restart-required fields (endpoint,
+        // headers, protocol, service-name) once at registration. The
+        // IOptionsMonitor inside AddMithrilOtlpExport resolves through DI at
+        // request time, so live fields (TagExports) always reflect the host's
+        // singleton — UI mutations after launch flow through to the scrubber
+        // without restart, even though the snapshot here is a separate instance
+        // from the host's eventual singleton.
         using (var tmp = services.BuildServiceProvider())
         {
             var telemetrySettings = tmp.GetRequiredService<TelemetrySettings>();

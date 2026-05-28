@@ -1,7 +1,10 @@
+using System;
+using System.IO;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Telemetry.Abstractions;
 using Mithril.Shared.Telemetry.Hosting;
@@ -85,5 +88,48 @@ public class TelemetryHostExtensionsTests
         monitor.CurrentValue.TagExports.Should().ContainKey("module.id",
             "scrubber reads TagExports per span via CurrentValue; aliasing the IOptionsMonitor " +
             "snapshot away from the singleton would silently strand the user toggle until restart.");
+    }
+
+    [Fact]
+    public void TagExports_mutations_are_visible_when_settings_resolved_via_AddMithrilVersionedSettings()
+    {
+        // Mirror the production Shell composition: settings come from a persisted
+        // store via AddMithrilVersionedSettings<T>, and AddMithrilOtlpExport is
+        // called with a settings snapshot resolved from a temporary provider for
+        // the EnableOtlpExport gating decision. The IOptionsMonitor must resolve
+        // the host's singleton, not the snapshot — otherwise UI mutations on the
+        // host's TagExports dictionary silently strand until restart.
+        var settingsDir = Path.Combine(Path.GetTempPath(), $"telemetry-test-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(settingsDir);
+        try
+        {
+            var hb = Host.CreateApplicationBuilder();
+            hb.Services.AddMithrilVersionedSettings<TelemetrySettings>(
+                Path.Combine(settingsDir, "telemetry.json"),
+                TelemetrySettingsJsonContext.Default.TelemetrySettings);
+            hb.Services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
+            // Mirror Shell's BuildServiceProvider step exactly:
+            TelemetrySettings snapshot;
+            using (var tmp = hb.Services.BuildServiceProvider())
+            {
+                snapshot = tmp.GetRequiredService<TelemetrySettings>();
+                snapshot.EnableOtlpExport = true;
+                snapshot.Endpoint = "http://localhost:65535/";
+            }
+            hb.Services.AddMithrilOtlpExport(snapshot);
+            using var host = hb.Build();
+
+            var hostSingleton = host.Services.GetRequiredService<TelemetrySettings>();
+            var monitor = host.Services.GetRequiredService<IOptionsMonitor<TelemetrySettings>>();
+            // The host's singleton must be what the monitor returns — NOT the snapshot.
+            monitor.CurrentValue.Should().BeSameAs(hostSingleton);
+            // And mutations on the host singleton must show up immediately.
+            hostSingleton.TagExports["module.id"] = false;
+            monitor.CurrentValue.TagExports.Should().ContainKey("module.id");
+        }
+        finally
+        {
+            try { Directory.Delete(settingsDir, recursive: true); } catch { /* best-effort */ }
+        }
     }
 }
