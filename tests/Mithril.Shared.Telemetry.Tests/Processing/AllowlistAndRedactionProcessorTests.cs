@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using FluentAssertions;
@@ -28,7 +29,7 @@ public class AllowlistAndRedactionProcessorTests
 
     private static AllowlistAndRedactionProcessor Build(
         TagDescriptor[] catalog,
-        Dictionary<string, bool>? userOverrides = null,
+        ConcurrentDictionary<string, bool>? userOverrides = null,
         Func<string?>? activeChar = null,
         NewlySeenTagsObserver? observer = null)
     {

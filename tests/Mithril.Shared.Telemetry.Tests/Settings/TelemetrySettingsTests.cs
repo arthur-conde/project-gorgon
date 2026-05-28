@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Mithril.Shared.Telemetry.Settings;
 using Xunit;
@@ -49,6 +50,36 @@ public class TelemetrySettingsTests
         s.PropertyChanged += (_, e) => fired.Add(e.PropertyName);
         s.Touch(nameof(s.Headers));
         fired.Should().Contain(nameof(s.Headers));
+    }
+
+    [Fact]
+    public async Task TagExports_concurrent_reads_and_writes_dont_corrupt()
+    {
+        // Regression: TagExports is touched concurrently by the UI thread (chip
+        // toggle), the OTel BatchProcessor consumer thread (TryGetValue per tag),
+        // and the SettingsAutoSaver timer thread (JSON serialise). A plain
+        // Dictionary<,> would throw / corrupt during a rehash collision.
+        // ConcurrentDictionary keeps the structure traversable under that load.
+        var s = new TelemetrySettings();
+        const int iterations = 1000;
+        var writer = Task.Run(() =>
+        {
+            for (int i = 0; i < iterations; i++)
+            {
+                s.TagExports[$"tag.{i % 50}"] = i % 2 == 0;
+            }
+        });
+        var reader = Task.Run(() =>
+        {
+            for (int i = 0; i < iterations; i++)
+            {
+                _ = s.TagExports.TryGetValue($"tag.{i % 50}", out _);
+            }
+        });
+        await Task.WhenAll(writer, reader);
+        // Survive without throwing or corrupting — exact final state is not
+        // asserted, only that the dictionary remained traversable.
+        foreach (var _ in s.TagExports) { /* iterate to surface any corruption */ }
     }
 
     [Fact]

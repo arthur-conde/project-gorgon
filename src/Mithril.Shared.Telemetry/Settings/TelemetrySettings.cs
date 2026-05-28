@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -52,8 +53,17 @@ public sealed class TelemetrySettings : INotifyPropertyChanged, IVersionedState<
     /// <summary>Header NAME → wrapped value. Wrap on set via UI VM; unwrap when binding to OTel options.</summary>
     public Dictionary<string, string> Headers { get; set; } = new();
 
-    /// <summary>Tag-key → exported-or-not user override. Absent key means "use catalog default".</summary>
-    public Dictionary<string, bool> TagExports { get; set; } = new();
+    /// <summary>
+    /// Tag-key → exported-or-not user override. Absent key means "use catalog default".
+    ///
+    /// <see cref="ConcurrentDictionary{TKey,TValue}"/> because three threads touch this:
+    /// the UI thread (chip-toggle writer), the OTel BatchProcessor consumer thread
+    /// (per-tag <c>TryGetValue</c> reader in <c>AllowlistAndRedactionProcessor.OnEnd</c>),
+    /// and the <c>SettingsAutoSaver</c> timer thread (JSON-serialise reader). A plain
+    /// <see cref="Dictionary{TKey,TValue}"/> would risk corruption during rehash under
+    /// concurrent write+read.
+    /// </summary>
+    public ConcurrentDictionary<string, bool> TagExports { get; set; } = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
     private void Set<T>(ref T f, T v, [CallerMemberName] string? n = null)
