@@ -225,6 +225,11 @@ public static class TelemetryHostExtensions
     /// string. Corrupted blobs are logged at Warning level and skipped — a
     /// single bad row should not block export of the remaining headers.
     /// </summary>
+    // TODO: percent-encode `,` / `=` / whitespace in values per the OTLP
+    // exporter spec. Real-world API keys (Seq, Honeycomb, Grafana Cloud) are
+    // URL-safe in practice, so this rarely bites — but a hand-pasted bearer
+    // token containing `=` will silently corrupt the headers map. Track as a
+    // follow-up if it surfaces.
     private static string BuildHeadersString(TelemetrySettings settings, ILogger? logger)
     {
         if (settings.Headers.Count == 0)
