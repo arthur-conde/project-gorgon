@@ -2,81 +2,50 @@ using System.Windows;
 using Arda.Contracts;
 using Arda.World.Player.Events;
 using Legolas.Domain;
-using Legolas.Flow;
 using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Mithril.Shared.Diagnostics;
-using Mithril.Shared.Reference;
 
 namespace Legolas.Services;
 
 /// <summary>
-/// Arda-driven inventory-add ↔ Player.log-collect attribution. Subscribes to
-/// <see cref="InventoryItemAdded"/> (replaces former <c>IPlayerWorld.Bus</c>
-/// <c>PlayerInventoryAdded</c> subscription) and <see cref="ScreenTextObserved"/>
-/// (replaces the L1 driver <c>ProcessScreenText</c> parsing) via
-/// <see cref="IDomainEventSubscriber"/>.
+/// Survey-mode item-attribution tracker. Treats <see cref="ScreenTextObserved"/>
+/// "<c>&lt;item&gt; collected!</c>" lines as the sole source of truth for both
+/// primary drops and speed-bonus drops — the chat text carries the explicit
+/// <c>xN</c> count and fires for both fresh-instance and stack-onto-existing
+/// inventory mutations, while <c>InventoryItemAdded</c> only fires on the
+/// fresh-instance path and always carries <c>StackSize = 1</c>. See #824 for
+/// the corpus evidence behind this pivot (Player-2026-05-20-0400.log) and
+/// #543 / #809 for the prior attribution attempts this replaces.
 ///
-/// <list type="bullet">
-///   <item><b>Add channel</b> — <see cref="InventoryItemAdded"/> (instance-id +
-///   InternalName). Resolved to a display-name via
-///   <see cref="IReferenceDataService.ItemsByInternalName"/> and enqueued under
-///   that key.</item>
-///   <item><b>Collect channel</b> — <see cref="ScreenTextObserved"/> with
-///   category <c>ImportantInfo</c> matching the "<c>&lt;Mineral&gt; collected!</c>"
-///   pattern (parsed by <see cref="PlayerLogParser.TryParseItemCollected"/>).
-///   Dequeues the head of the matching display-name FIFO and credits one to
-///   <see cref="SessionState.CollectedItems"/>.</item>
-/// </list>
-///
-/// <para><b>Replay gating.</b> Both channels check
-/// <see cref="Arda.Abstractions.Logs.LogLineMetadata.IsReplay"/> — replay events
-/// are dropped. Replaces the former <c>LiveOnly</c> replay mode.</para>
+/// <para><b>Replay gating.</b> <see cref="Arda.Abstractions.Logs.LogLineMetadata.IsReplay"/>
+/// events are dropped — survey state is live-session only.</para>
 ///
 /// <para><b>Threading.</b> The Arda bus fires synchronously on the driver
-/// thread. Handlers marshal to the UI thread via the WPF dispatcher so
+/// thread. The handler marshals to the UI thread via the WPF dispatcher so
 /// overlay-bound state mutations stay single-threaded.</para>
 /// </summary>
 public sealed class ItemCollectionTracker : BackgroundService
 {
     private readonly IDomainEventSubscriber _bus;
     private readonly SessionState _session;
-    private readonly SurveyFlowController _flow;
-    private readonly IReferenceDataService? _refData;
     private readonly ILogger? _logger;
-    private readonly ThrottledWarn _warn;
 
-    private readonly Dictionary<string, Queue<long>> _pendingAdds
-        = new(StringComparer.OrdinalIgnoreCase);
-    private readonly object _pendingLock = new();
-
-    private IDisposable? _invAddedSub;
     private IDisposable? _screenTextSub;
 
     public ItemCollectionTracker(
         IDomainEventSubscriber bus,
         SessionState session,
-        SurveyFlowController flow,
-        IReferenceDataService? refData = null,
-        ILogger? logger = null,
-        TimeProvider? time = null)
+        ILogger? logger = null)
     {
         _bus = bus;
         _session = session;
-        _flow = flow;
-        _refData = refData;
         _logger = logger;
-        _warn = new ThrottledWarn(logger, "Legolas.Ingestion", time: time ?? TimeProvider.System);
-
-        _flow.Transitioned += OnFlowTransitioned;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
     {
-        _invAddedSub ??= _bus.Subscribe<InventoryItemAdded>(OnInventoryItemAdded);
         _screenTextSub ??= _bus.Subscribe<ScreenTextObserved>(OnScreenTextObserved);
-
         return base.StartAsync(cancellationToken);
     }
 
@@ -88,36 +57,16 @@ public sealed class ItemCollectionTracker : BackgroundService
 
     public override Task StopAsync(CancellationToken cancellationToken)
     {
-        _invAddedSub?.Dispose();
-        _invAddedSub = null;
         _screenTextSub?.Dispose();
         _screenTextSub = null;
-        _flow.Transitioned -= OnFlowTransitioned;
         return base.StopAsync(cancellationToken);
     }
 
     public override void Dispose()
     {
-        _invAddedSub?.Dispose();
-        _invAddedSub = null;
         _screenTextSub?.Dispose();
         _screenTextSub = null;
-        _flow.Transitioned -= OnFlowTransitioned;
         base.Dispose();
-    }
-
-    private void OnInventoryItemAdded(InventoryItemAdded evt)
-    {
-        if (evt.Metadata.IsReplay) return;
-
-        var displayName = ResolveDisplayName(evt.InternalName);
-        if (string.IsNullOrEmpty(displayName)) return;
-        lock (_pendingLock)
-        {
-            if (!_pendingAdds.TryGetValue(displayName, out var q))
-                _pendingAdds[displayName] = q = new Queue<long>();
-            q.Enqueue(evt.InstanceId);
-        }
     }
 
     private void OnScreenTextObserved(ScreenTextObserved evt)
@@ -125,29 +74,17 @@ public sealed class ItemCollectionTracker : BackgroundService
         if (evt.Metadata.IsReplay) return;
         if (!evt.Category.Span.SequenceEqual("ImportantInfo".AsSpan())) return;
 
-        var text = evt.Text.ToString();
-        if (PlayerLogParser.TryParseItemCollected(text) is not var (name, bonus)) return;
+        if (PlayerLogParser.TryParseItemCollected(evt.Text.Span) is not var (name, count, bonusName, bonusCount))
+            return;
 
-        MarshalToUi(() => HandleItemCollected(name, bonus));
+        MarshalToUi(() => HandleItemCollected(name, count, bonusName, bonusCount));
     }
 
-    private string? ResolveDisplayName(string internalName)
+    private void HandleItemCollected(string name, int count, string? bonusName, int bonusCount)
     {
-        if (string.IsNullOrEmpty(internalName)) return null;
-        if (_refData is null) return internalName;
-        if (_refData.ItemsByInternalName.TryGetValue(internalName, out var item)
-            && !string.IsNullOrEmpty(item.Name))
-        {
-            return item.Name;
-        }
-        return internalName;
-    }
-
-    private void HandleItemCollected(string name, string? speedBonusItem)
-    {
-        CreditCollect(name);
-        if (!string.IsNullOrEmpty(speedBonusItem))
-            CreditCollect(speedBonusItem!);
+        AccumulateCollected(name, count);
+        if (!string.IsNullOrEmpty(bonusName))
+            AccumulateCollected(bonusName, bonusCount);
 
         SurveyItemViewModel? best = null;
         var bestOrder = int.MaxValue;
@@ -170,63 +107,22 @@ public sealed class ItemCollectionTracker : BackgroundService
             return;
         }
 
-        _session.LastLogEvent = _session.Surveys.Count == 0
-            ? $"Collected: {name} → no surveys tracked"
-            : $"Collected: {name} → no name match (have {string.Join(", ", _session.Surveys.Where(s => !s.Collected).Select(s => s.Name).Take(3))})";
-    }
-
-    private void CreditCollect(string name)
-    {
-        bool hadAny;
-        lock (_pendingLock)
+        if (_session.Surveys.Count == 0)
         {
-            hadAny = _pendingAdds.TryGetValue(name, out var q) && q.Count > 0;
-            if (hadAny)
-            {
-                _pendingAdds[name].Dequeue();
-                if (_pendingAdds[name].Count == 0)
-                    _pendingAdds.Remove(name);
-            }
+            _session.LastLogEvent = $"Collected: {name} → no surveys tracked";
+            _logger?.LogTrace("Collected {Name} (count {Count}) with no surveys tracked", name, count);
         }
-
-        if (hadAny)
+        else
         {
-            AccumulateCollected(name, 1);
-            return;
+            _session.LastLogEvent = $"Collected: {name} → no name match (have {string.Join(", ", _session.Surveys.Where(s => !s.Collected).Select(s => s.Name).Take(3))})";
+            _logger?.LogTrace("Collected {Name} (count {Count}) did not match any uncollected survey slot", name, count);
         }
-        _warn.Warn(
-            $"Collect for '{name}' had no pending inventory add; crediting 0.");
     }
 
     private void AccumulateCollected(string name, int count)
     {
         _session.CollectedItems.TryGetValue(name, out var existing);
         _session.CollectedItems[name] = existing + count;
-    }
-
-    private void OnFlowTransitioned(SurveyTransition t)
-    {
-        var shouldClear = t.To == SurveyFlowState.Done
-            || string.Equals(t.Trigger, nameof(SurveyFlowController.Reset), StringComparison.Ordinal);
-        if (!shouldClear) return;
-
-        Dictionary<string, int>? unmatched = null;
-        lock (_pendingLock)
-        {
-            if (_pendingAdds.Count > 0)
-            {
-                unmatched = new Dictionary<string, int>(_pendingAdds.Count, StringComparer.OrdinalIgnoreCase);
-                foreach (var (name, q) in _pendingAdds) unmatched[name] = q.Count;
-                _pendingAdds.Clear();
-            }
-        }
-        if (unmatched is { Count: > 0 })
-        {
-            var summary = string.Join(", ",
-                unmatched.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
-                    .Select(kv => $"{kv.Key} x{kv.Value}"));
-            _logger?.LogTrace($"survey ended ({t.Trigger}); unmatched pending Adds dropped: {summary}");
-        }
     }
 
     private static void MarshalToUi(Action action)

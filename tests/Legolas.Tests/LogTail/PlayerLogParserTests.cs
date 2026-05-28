@@ -48,33 +48,62 @@ public class PlayerLogParserTests
     }
 
     // ---- TryParseItemCollected (ScreenTextObserved.Text) -----------------
+    //
+    // Post-#824: the parser carries both the primary item count and the
+    // speed-bonus count (extracted from the literal "xN" tail emitted by the
+    // game). Implicit count is 1 when "xN" is absent. ScreenText is the
+    // single source of truth for survey-mode attribution — the inventory
+    // bus drops counts on stack-onto-existing and always emits StackSize = 1
+    // on fresh-instance adds.
 
     [Theory]
-    [InlineData("Rubywall Crystal collected!", "Rubywall Crystal", null)]
-    [InlineData("Diamond collected!", "Diamond", null)]
-    [InlineData("Expert-Quality Metal Slab collected!", "Expert-Quality Metal Slab", null)]
-    [InlineData("Citrine collected!", "Citrine", null)]
-    public void TryParseItemCollected_extracts_name(string text, string expectedName, string? expectedBonus)
+    [InlineData("Rubywall Crystal collected!", "Rubywall Crystal", 1, null, 0)]
+    [InlineData("Diamond collected!", "Diamond", 1, null, 0)]
+    [InlineData("Expert-Quality Metal Slab collected!", "Expert-Quality Metal Slab", 1, null, 0)]
+    [InlineData("Citrine collected!", "Citrine", 1, null, 0)]
+    public void TryParseItemCollected_extracts_name(
+        string text, string expectedName, int expectedCount, string? expectedBonus, int expectedBonusCount)
     {
         var result = PlayerLogParser.TryParseItemCollected(text);
         result.Should().NotBeNull();
         result!.Value.Name.Should().Be(expectedName);
-        result.Value.SpeedBonusItem.Should().Be(expectedBonus);
+        result.Value.Count.Should().Be(expectedCount);
+        result.Value.BonusName.Should().Be(expectedBonus);
+        result.Value.BonusCount.Should().Be(expectedBonusCount);
     }
 
     [Theory]
-    [InlineData("Rubywall Crystal collected! Also found Azurite x2 (speed bonus!)",
-        "Rubywall Crystal", "Azurite")]
+    [InlineData("Rubywall Crystal collected! Also found Amethyst x2 (speed bonus!)",
+        "Rubywall Crystal", 1, "Amethyst", 2)]
+    [InlineData("Sapphire x3 collected! Also found Lapis Lazuli x3 (speed bonus!)",
+        "Sapphire", 3, "Lapis Lazuli", 3)]
     [InlineData("Garnet collected! Also found Fluorite (speed bonus!)",
-        "Garnet", "Fluorite")]
+        "Garnet", 1, "Fluorite", 1)]
     [InlineData("Simple Metal Slab collected! Also found Simple Metal Slab x3 (speed bonus!)",
-        "Simple Metal Slab", "Simple Metal Slab")]
-    public void TryParseItemCollected_extracts_speed_bonus(string text, string expectedName, string expectedBonus)
+        "Simple Metal Slab", 1, "Simple Metal Slab", 3)]
+    [InlineData("Piece of Green Glass x2 collected!",
+        "Piece of Green Glass", 2, null, 0)]
+    public void TryParseItemCollected_extracts_counts(
+        string text, string expectedName, int expectedCount, string? expectedBonus, int expectedBonusCount)
     {
         var result = PlayerLogParser.TryParseItemCollected(text);
         result.Should().NotBeNull();
         result!.Value.Name.Should().Be(expectedName);
-        result.Value.SpeedBonusItem.Should().Be(expectedBonus);
+        result.Value.Count.Should().Be(expectedCount);
+        result.Value.BonusName.Should().Be(expectedBonus);
+        result.Value.BonusCount.Should().Be(expectedBonusCount);
+    }
+
+    [Theory]
+    [InlineData("Wax Sculpture collected!", "Wax Sculpture", 1)]
+    [InlineData("Wax Sculpture x2 collected!", "Wax Sculpture", 2)]
+    public void TryParseItemCollected_handles_item_names_containing_x(
+        string text, string expectedName, int expectedCount)
+    {
+        var result = PlayerLogParser.TryParseItemCollected(text);
+        result.Should().NotBeNull();
+        result!.Value.Name.Should().Be(expectedName);
+        result.Value.Count.Should().Be(expectedCount);
     }
 
     [Theory]
