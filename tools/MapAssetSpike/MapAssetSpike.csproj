@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Mithril.Tools.MapAssetSpike</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      This is a research spike, not a Mithril.slnx project. Opt out of central
+      package management so AssetsTools.NET / texture deps stay local to the
+      spike instead of leaking into Directory.Packages.props. Also opt out of
+      Directory.Build.targets — the repo's targets file adds versionless
+      PackageReferences for VS-extension analyzers and Nerdbank.GitVersioning
+      that the spike doesn't need and that conflict with non-central versioning.
+    -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
+    <!-- The spike reads from the registry (Steam install lookup) and writes a
+         PNG with System.Drawing — both Windows-only. Suppress CA1416 instead of
+         decorating every call site. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!--
+      AssetsTools.NET: pure-C# Unity bundle reader (MIT). NuGet 3.0.4 is the
+      currently-shipping version (Feb 2026). AssetsTools.NET.Texture pulls in
+      the Texture2D decoder pipeline (also MIT, separate package because the
+      core lib stays codec-free).
+    -->
+    <PackageReference Include="AssetsTools.NET" Version="3.0.4" />
+    <!-- AssetsTools.NET.Texture lags the core lib on NuGet — 3.0.2 is the
+         latest texture package; pair it with core 3.0.4. -->
+    <PackageReference Include="AssetsTools.NET.Texture" Version="3.0.2" />
+    <!-- System.Drawing.Common for PNG re-encode + image-info verification. -->
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+</Project>
