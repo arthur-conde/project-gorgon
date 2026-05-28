@@ -65,6 +65,10 @@
     <ProjectReference Include="..\Arda\Arda.World.Chat\Arda.World.Chat.csproj" />
     <ProjectReference Include="..\Arda\Arda.World.Player\Arda.World.Player.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
+    <!-- Telemetry assembly: needed so ShellComposition can hand the trace-context
+         Serilog enricher to AddMithrilLogging. Mithril.Shared can't reference
+         Mithril.Shared.Telemetry directly (would be a dep cycle). -->
+    <ProjectReference Include="..\Mithril.Shared.Telemetry\Mithril.Shared.Telemetry.csproj" />
     <!-- Foundation-layer assembly for character export reports (storage/vault
          items, character snapshots). Mithril.Shared transitively pulls this,
          but listing it here makes the dependency explicit per the discipline

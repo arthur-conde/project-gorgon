@@ -15,6 +15,7 @@ using Mithril.Shared.Icons;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
+using Mithril.Shared.Telemetry.Logs;
 using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection;
@@ -68,7 +69,11 @@ public static class ShellComposition
             .AddSingleton(o.ShellSettings)
             .AddSingleton<IActiveCharacterPersistence>(o.ShellSettings)
             .AddSingleton(o.GameConfig)
-            .AddMithrilLogging(o.LogDir)
+            // Trace-context enricher stamps trace_id / span_id onto on-disk diagnostics
+            // log entries written inside an Activity scope (e.g. perf-recorder sessions,
+            // OTLP-exported spans). Allocation-free no-op outside an active Activity, so
+            // wiring it unconditionally is safe.
+            .AddMithrilLogging(o.LogDir, new MithrilTraceContextEnricher())
             .AddMithrilPerfRecorder(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
             .AddMithrilGameServices()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
