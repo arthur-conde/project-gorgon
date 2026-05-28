@@ -49,9 +49,23 @@ public interface IAreaCalibrationService
     /// <summary>
     /// Solve a calibration from user-placed reference clicks (a world point
     /// paired with the pixel the user clicked it at) for the current area,
-    /// persist it, and apply it to the projector. Returns the solved
-    /// calibration, or null if it couldn't be solved (no current area, &lt;2
-    /// non-degenerate references).
+    /// persist it, and apply the resulting transform via the shared
+    /// <see cref="IMapCalibrationService"/>. Returns the solver output
+    /// verbatim (the calibration the user just produced from their clicks),
+    /// or null if it couldn't be solved (no current area, &lt;2 non-degenerate
+    /// references).
+    ///
+    /// <para><b>Return-value contract:</b> the returned record is what the
+    /// SOLVER produced &#8212; it reflects how good the user's clicks fit,
+    /// not what's effectively rendered on the map. When stacking precedence
+    /// kicks in (e.g. the user's residual exceeds the "good" threshold and a
+    /// usable bundled baseline exists), <see cref="IMapCalibrationService.GetCalibration"/>
+    /// returns the baseline as the effective transform while this method
+    /// still returns the user's bad solve. The wizard relies on this so it
+    /// can surface "residual high &#8212; redo for a tighter fit" instead of
+    /// silently swapping in a different number. Callers that need the
+    /// effective transform &#8212; not the solve quality &#8212; query the
+    /// shared service.</para>
     /// </summary>
     AreaCalibration? CalibrateCurrentArea(
         IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
@@ -202,16 +216,20 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         _saver.Touch(); // AreaCalibrations is a sibling object — no PropertyChanged.
 
         // SaveUserRefinement raises IMapCalibrationService.Changed; our
-        // OnMapCalChanged handler resolves stacking precedence and applies
-        // whichever calibration won (which may NOT be the user's data if its
-        // residual exceeds the threshold and a usable baseline exists). Return
-        // the EFFECTIVE calibration rather than the user's input so the caller's
-        // return value matches what the projector actually renders — without
-        // this, a high-residual save returned the user's bad fit while the map
-        // silently rendered the baseline (the projector-vs-return mismatch that
-        // surfaced in PR review).
+        // OnMapCalChanged handler reads GetCalibration (which respects stacking
+        // precedence) and applies whichever calibration won to the projector.
+        // The return value here is the SOLVER OUTPUT verbatim — what the user
+        // just produced from their clicks — not the effective transform. The
+        // wizard surfaces it as "how good was your solve" (residual + scale
+        // for the redo/proceed gate), and consumers that need "what's actually
+        // rendered" read IMapCalibrationService.GetCalibration directly. These
+        // are two different questions: a high-residual user solve with a
+        // usable baseline present returns the user's bad fit (so the wizard
+        // says "redo for a tighter fit") while the map renders the baseline
+        // (correct rendering — the user's solve lost precedence). See the
+        // IAreaCalibrationService.CalibrateCurrentArea contract below.
         _mapCal.SaveUserRefinement(key, calibration);
-        return _mapCal.GetCalibration(key);
+        return calibration;
     }
 
     public event EventHandler<CalibrationSurveyObservation>? SurveyObserved;

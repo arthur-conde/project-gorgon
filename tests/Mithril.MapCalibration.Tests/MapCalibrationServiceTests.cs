@@ -257,11 +257,14 @@ public sealed class MapCalibrationServiceTests : IDisposable
     [Fact]
     public void Active_calibration_after_high_residual_save_with_baseline_falls_to_baseline()
     {
-        // PR review #1: a high-residual user save with a usable baseline present
-        // must return the baseline as the effective transform — callers route
-        // the projector through the active calibration, so a return value that
-        // diverged from GetCalibration() would silently render one transform
-        // while reporting another.
+        // Round-1 review #1 → round-2 review #1 + #5: the SHARED service's
+        // GetCalibration honours stacking precedence and returns the baseline
+        // when the user's solve has too-high residual. The wizard does NOT
+        // call GetCalibration to surface "your solve was good" — it consumes
+        // the AreaCalibrationService.CalibrateCurrentArea return value, which
+        // is the solver output (covered by the Legolas-side test). The two
+        // questions ("what did you solve" vs "what's rendered") are
+        // intentionally separate; this test pins the GetCalibration side.
         var baseline = new Dictionary<string, AreaCalibration>
         {
             ["AreaEltibule"] = MakeCal(residual: 4.0, scale: 1.0) with { Source = CalibrationSource.BundledBaseline },
@@ -274,6 +277,64 @@ public sealed class MapCalibrationServiceTests : IDisposable
         active.Should().NotBeNull();
         active!.Source.Should().Be(CalibrationSource.BundledBaseline);
         active.Scale.Should().Be(1.0);
+
+        // The losing user refinement is still discoverable via GetAllSources
+        // (debug surface for "what did the user actually solve").
+        svc.GetAllSources("AreaEltibule")
+            .Should().ContainSingle(s => s.Source == CalibrationSource.UserRefinement && s.Scale == 2.0);
+    }
+
+    [Fact]
+    public void ImportUserRefinements_ULP_drift_does_not_re_import_on_next_run()
+    {
+        // Round-2 review #4: a one-ULP wobble between the legacy entry's
+        // doubles and the stored doubles must not be treated as "different
+        // math" — otherwise every cold start writes the file again.
+        var svc = new MapCalibrationService(
+            new Dictionary<string, AreaCalibration>(),
+            new UserRefinementStore(_tempDir),
+            goodResidualThresholdPx: 12.0);
+
+        var baseScale = 1.7333333333333334;
+        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
+        {
+            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: baseScale),
+        });
+
+        // Same logical value, shifted by one ULP — mimics a JSON round-trip
+        // wobble or cross-JIT codegen drift.
+        var wobbled = Math.BitIncrement(baseScale);
+        svc.ImportUserRefinements(new Dictionary<string, AreaCalibration>
+        {
+            ["AreaEltibule"] = MakeCal(residual: 5.0, scale: wobbled),
+        }).Should().Be(0);
+    }
+
+    [Fact]
+    public void Save_rolls_back_in_memory_state_when_Persist_throws()
+    {
+        // Round-2 review #2 (deeper concern): Save mutates _refinements before
+        // Persist. If Persist throws (disk full / AV lock / OneDrive
+        // placeholder) the in-memory state must roll back so same-session
+        // reads see the failure, not a value that vanishes on next process
+        // boot. We provoke the throw by locking the file open externally for
+        // exclusive write — the temp-write attempt inside Persist fails.
+        var store = new UserRefinementStore(_tempDir);
+        var initial = MakeCal(residual: 5.0, scale: 1.0);
+        store.Save("AreaEltibule", initial);
+
+        // Hold the .tmp path exclusively so the next Save's File.WriteAllText
+        // throws when it tries to open it.
+        var tmpPath = Path.Combine(_tempDir, "refinements.json.tmp");
+        using (var lockHandle = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            FluentActions.Invoking(() => store.Save("AreaEltibule", MakeCal(residual: 5.0, scale: 99.0)))
+                .Should().Throw<IOException>();
+        }
+
+        // Same-session read returns the original value, not the rolled-back attempt.
+        store.TryGet("AreaEltibule", out var current).Should().BeTrue();
+        current.Scale.Should().Be(1.0);
     }
 
     private static AreaCalibration MakeCal(double residual, double scale) =>

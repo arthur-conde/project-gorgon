@@ -738,7 +738,22 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     private void Solve()
     {
         var pairs = Placements.Select(p => (p.Reference.World, p.Pixel)).ToList();
-        var calibration = _service.CalibrateCurrentArea(pairs, MapZoom);
+        AreaCalibration? calibration;
+        try
+        {
+            calibration = _service.CalibrateCurrentArea(pairs, MapZoom);
+        }
+        catch (System.IO.IOException ex)
+        {
+            // UserRefinementStore.Persist propagates IOException so the user
+            // sees disk failures instead of the in-memory state silently
+            // diverging from the file. The store rolls back its in-memory
+            // dictionary on throw, so retrying after the user clears whatever
+            // held the lock (AV scan, OneDrive sync) works.
+            ResultText = $"Couldn't save calibration: {ex.Message}. Check your disk / sync tooling and Solve again.";
+            return;
+        }
+
         if (calibration is null)
         {
             ResultText = "Couldn't solve — need ≥2 references at meaningfully different spots.";

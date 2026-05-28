@@ -55,8 +55,21 @@ internal sealed class UserRefinementStore
         var stamped = calibration with { Source = CalibrationSource.UserRefinement };
         lock (_gate)
         {
+            // Snapshot the prior value before mutating; if Persist throws
+            // (disk full, AV scan lock, OneDrive placeholder hiccup) we must
+            // restore so the in-memory state does not advance past on-disk
+            // reality. Otherwise same-session reads succeed while the next
+            // process boot reads the stale file — the silent data-loss path
+            // the round-1 review caught, now wrapped transactionally.
+            var hadPrior = _refinements.TryGetValue(areaKey, out var prior);
             _refinements[areaKey] = stamped;
-            Persist();
+            try { Persist(); }
+            catch
+            {
+                if (hadPrior) _refinements[areaKey] = prior!;
+                else _refinements.Remove(areaKey);
+                throw;
+            }
         }
     }
 
@@ -64,8 +77,14 @@ internal sealed class UserRefinementStore
     {
         lock (_gate)
         {
-            if (!_refinements.Remove(areaKey)) return false;
-            Persist();
+            if (!_refinements.TryGetValue(areaKey, out var prior)) return false;
+            _refinements.Remove(areaKey);
+            try { Persist(); }
+            catch
+            {
+                _refinements[areaKey] = prior;
+                throw;
+            }
             return true;
         }
     }
@@ -83,16 +102,29 @@ internal sealed class UserRefinementStore
     public int ImportFromLegacy(IEnumerable<KeyValuePair<string, AreaCalibration>> entries)
     {
         var imported = 0;
+        // Snapshot for rollback on Persist failure (same transactional invariant
+        // as Save above — batched imports must be all-or-nothing on disk; the
+        // in-memory state cannot diverge past the persisted state).
+        Dictionary<string, AreaCalibration>? snapshot = null;
         lock (_gate)
         {
             foreach (var (key, cal) in entries)
             {
                 if (_refinements.TryGetValue(key, out var existing) && MathEquals(existing, cal))
                     continue;
+                snapshot ??= new Dictionary<string, AreaCalibration>(_refinements, StringComparer.Ordinal);
                 _refinements[key] = cal with { Source = CalibrationSource.UserRefinement };
                 imported++;
             }
-            if (imported > 0) Persist();
+            if (imported > 0)
+            {
+                try { Persist(); }
+                catch
+                {
+                    _refinements = snapshot!; // restore pre-import state
+                    throw;
+                }
+            }
         }
         return imported;
     }
@@ -103,14 +135,30 @@ internal sealed class UserRefinementStore
     /// re-stamped on import), <see cref="AreaCalibration.SchemaVersion"/>,
     /// <see cref="AreaCalibration.ReferenceCount"/>, and
     /// <see cref="AreaCalibration.ResidualPixels"/> (metadata, not transform).
+    ///
+    /// <para>Uses a relative tolerance instead of raw <c>==</c> so a one-ULP
+    /// drift from JSON round-trip / cross-JIT codegen does not re-trigger an
+    /// overwrite (and an unnecessary disk write) on every startup. The
+    /// tolerance is tighter than any value the calibration math can produce
+    /// in practice (scale ~1, rotation ~3, origin up to ~2000), so a real
+    /// recalibration is never mistaken for "already in sync".</para>
     /// </summary>
     private static bool MathEquals(AreaCalibration a, AreaCalibration b) =>
-        a.Scale == b.Scale &&
-        a.RotationRadians == b.RotationRadians &&
-        a.OriginX == b.OriginX &&
-        a.OriginY == b.OriginY &&
         a.MirrorNorth == b.MirrorNorth &&
-        a.CalibrationZoom == b.CalibrationZoom;
+        AlmostEqual(a.Scale, b.Scale) &&
+        AlmostEqual(a.RotationRadians, b.RotationRadians) &&
+        AlmostEqual(a.OriginX, b.OriginX) &&
+        AlmostEqual(a.OriginY, b.OriginY) &&
+        AlmostEqual(a.CalibrationZoom, b.CalibrationZoom);
+
+    private const double DoubleCompareRelTolerance = 1e-12;
+
+    private static bool AlmostEqual(double a, double b)
+    {
+        if (a == b) return true; // covers NaN-stamped infinities and exact equality fast path
+        var scale = Math.Max(1.0, Math.Max(Math.Abs(a), Math.Abs(b)));
+        return Math.Abs(a - b) <= DoubleCompareRelTolerance * scale;
+    }
 
     private void Load()
     {
@@ -144,9 +192,9 @@ internal sealed class UserRefinementStore
     /// (transient AV scan lock, full disk, OneDrive placeholder hiccup) would
     /// leave the in-memory state advanced but lose the data on next process
     /// start with no surface signal. Callers (the public <see cref="Save"/> /
-    /// <see cref="Remove"/> / <see cref="ImportIfAbsent"/> entry points)
-    /// propagate the exception so the wizard / migration sees it and can
-    /// surface or retry.
+    /// <see cref="Remove"/> / <see cref="ImportFromLegacy"/> entry points)
+    /// roll the in-memory state back and re-throw so the wizard / migration
+    /// sees the failure and can surface or retry.
     /// </summary>
     private void Persist()
     {
