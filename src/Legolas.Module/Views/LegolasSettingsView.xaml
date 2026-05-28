@@ -7,15 +7,29 @@
     <UserControl.Resources>
         <ResourceDictionary>
             <!-- Issue #132: scope MahApps theme resources to this view so
-                 mah:ColorPicker renders styled. Same pattern as
-                 LegolasShareDialog.xaml — UserControl-scoped merge keeps the
-                 rest of the app's visuals untouched. App resources first so
-                 our brushes / fonts win on any key collision. -->
+                 mah:ColorPicker renders styled. UserControl-scoped merge
+                 keeps the rest of the app's visuals untouched.
+
+                 Order is load-bearing: WPF MergedDictionaries lookup is
+                 last-wins on key collision, so MahApps theme dictionaries
+                 come FIRST (they supply mah:ColorPicker's style + a
+                 baseline for any MahApps-specific keys it needs) and
+                 Mithril's Resources.xaml comes LAST so its implicit
+                 TargetType styles for the built-ins this view uses —
+                 TextBox (Resources.xaml:112), CheckBox (:123), GroupBox
+                 (:135), Button (:148), ComboBox (:287), ToolTip (:628) —
+                 override Dark.Steel's. Without this ordering, every
+                 stroke-style ComboBox / opacity Slider / "Reset to
+                 defaults" Button in this view would render in MahApps
+                 chrome, visually inconsistent with every other settings
+                 view. (LegolasShareDialog.xaml uses the inverse order
+                 deliberately to inherit MahApps' DropDownButton polish;
+                 not the same use case.) -->
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Dark.Steel.xaml"/>
+                <ResourceDictionary Source="pack://application:,,,/Mithril.Shared.Wpf;component/Resources.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </UserControl.Resources>

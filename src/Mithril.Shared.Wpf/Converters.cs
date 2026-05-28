@@ -32,9 +32,21 @@ public sealed class StringToColorConverter : IValueConverter
 /// Two-way bridge between an ARGB-hex string property (canonical
 /// <c>#AARRGGBB</c>) and a WPF <see cref="Color"/>, for binding hex-string
 /// settings to color-picker controls (e.g. <c>mah:ColorPicker.SelectedColor</c>).
-/// Malformed / null input falls back to opaque magenta — matching the existing
-/// fail-loud convention used by Legolas's settings layer so a bad value is
-/// visible everywhere rather than silently transparent.
+/// <para>
+/// <see cref="Convert"/> (hex → Color): malformed / null input falls back to
+/// opaque magenta — matching the existing fail-loud convention used by
+/// Legolas's settings layer so a bad persisted value is visible everywhere
+/// rather than silently transparent.
+/// </para>
+/// <para>
+/// <see cref="ConvertBack"/> (Color → hex): non-<see cref="Color"/> input
+/// (including <see langword="null"/>) returns <see cref="Binding.DoNothing"/>
+/// so the source property is NOT mutated. MahApps' <c>SelectedColor</c>
+/// dependency property is typed <c>Color?</c> and dispatches <see langword="null"/>
+/// on initialisation races / mid-edit hex clears / future reset paths;
+/// fabricating a literal hex on that signal would silently clobber the user's
+/// saved color with opaque magenta.
+/// </para>
 /// </summary>
 public sealed class ArgbHexToColorConverter : IValueConverter
 {
@@ -46,7 +58,7 @@ public sealed class ArgbHexToColorConverter : IValueConverter
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
         => value is Color c
             ? $"#{c.A:X2}{c.R:X2}{c.G:X2}{c.B:X2}"
-            : "#FFFF00FF";
+            : Binding.DoNothing;
 
     private static bool TryParseArgb(string input, out Color color)
     {

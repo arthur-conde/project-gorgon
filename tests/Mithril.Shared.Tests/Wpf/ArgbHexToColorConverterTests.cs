@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Windows.Data;
 using System.Windows.Media;
 using FluentAssertions;
 using Mithril.Shared.Wpf;
@@ -24,6 +25,9 @@ public sealed class ArgbHexToColorConverterTests
 
     private static string ConvertBack(Color color)
         => (string)Sut.ConvertBack(color, typeof(string), null!, CultureInfo.InvariantCulture);
+
+    private static object ConvertBackRaw(object? value)
+        => Sut.ConvertBack(value!, typeof(string), null!, CultureInfo.InvariantCulture);
 
     [Theory]
     [InlineData("#FFFF0000", 0xFF, 0xFF, 0x00, 0x00)] // opaque red
@@ -104,5 +108,28 @@ public sealed class ArgbHexToColorConverterTests
         var hex = ConvertBack(original);
         var roundTripped = Convert(hex);
         roundTripped.Should().Be(original);
+    }
+
+    [Fact]
+    public void ConvertBack_returns_DoNothing_for_null()
+    {
+        // MahApps mah:ColorPicker.SelectedColor is typed Color? and dispatches null
+        // during initialisation races / mid-edit hex clears / future reset paths.
+        // Fabricating a literal hex on null would silently clobber the user's saved
+        // color with opaque magenta — the wrong shape of "fail loud" here, because
+        // null on ConvertBack is a "no value" signal, not malformed user input.
+        // Binding.DoNothing tells WPF to skip the source-property update.
+        ConvertBackRaw(null).Should().BeSameAs(Binding.DoNothing);
+    }
+
+    [Theory]
+    [InlineData("not a color")]
+    [InlineData(42)]
+    [InlineData(true)]
+    public void ConvertBack_returns_DoNothing_for_non_Color_input(object value)
+    {
+        // Defensive: any non-Color from the binding system (mis-wired template,
+        // converter applied to wrong DP) leaves the source property untouched.
+        ConvertBackRaw(value).Should().BeSameAs(Binding.DoNothing);
     }
 }
