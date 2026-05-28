@@ -1,6 +1,9 @@
+using System.IO;
 using FluentAssertions;
 using Legolas.Domain;
 using Legolas.Services;
+using Mithril.MapCalibration;
+using Mithril.MapCalibration.DependencyInjection;
 using Mithril.Reference.Models.Items;
 using Mithril.Reference.Models.Misc;
 using Mithril.Reference.Models.Recipes;
@@ -13,14 +16,29 @@ namespace Legolas.Tests.Services;
 
 public class AreaCalibrationServiceTests
 {
-    private static (AreaCalibrationService svc, FakeProjector proj, LegolasSettings settings)
+    private static (AreaCalibrationService svc, FakeProjector proj, LegolasSettings settings, IMapCalibrationService mapCal)
         Build(FakeRefData refData)
     {
         var settings = new LegolasSettings();
         var proj = new FakeProjector();
         var saver = new SettingsAutoSaver<LegolasSettings>(new InMemoryStore(settings), settings);
-        var svc = new AreaCalibrationService(refData, settings, proj, saver);
-        return (svc, proj, settings);
+        var mapCalDir = Path.Combine(Path.GetTempPath(), "mithril-mapcal-tests", Guid.NewGuid().ToString("N"));
+        var mapCal = MapCalibrationServiceCollectionExtensions.Build(mapCalDir);
+        var svc = new AreaCalibrationService(refData, settings, proj, saver, mapCal);
+        return (svc, proj, settings, mapCal);
+    }
+
+    /// <summary>
+    /// Seed a persisted calibration through both stores, mirroring the dual-write
+    /// invariant <see cref="AreaCalibrationService.CalibrateCurrentArea"/> upholds
+    /// during the #836 transition window. Tests use this rather than reaching into
+    /// <see cref="LegolasSettings.AreaCalibrations"/> directly so reads (which now
+    /// go through <see cref="IMapCalibrationService"/>) see the seeded value.
+    /// </summary>
+    private static void Seed(IMapCalibrationService mapCal, LegolasSettings settings, string areaKey, AreaCalibration cal)
+    {
+        mapCal.SaveUserRefinement(areaKey, cal);
+        settings.AreaCalibrations[areaKey] = cal;
     }
 
     [Fact]
@@ -30,7 +48,7 @@ public class AreaCalibrationServiceTests
         // the key as the friendly name verbatim — the area-picker bypass path
         // (PlayerAreaTracker keys are always in-game-real, but a test/dev key
         // shouldn't crash the consumer).
-        var (svc, _, _) = Build(new FakeRefData());
+        var (svc, _, _, _) = Build(new FakeRefData());
 
         svc.SelectArea("AreaNowheresville");
 
@@ -47,9 +65,9 @@ public class AreaCalibrationServiceTests
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
-        var (svc, proj, settings) = Build(refData);
+        var (svc, proj, settings, mapCal) = Build(refData);
         var persisted = new AreaCalibration(3.0, 0.5, 11, 22, 4, 0.9);
-        settings.AreaCalibrations["AreaEltibule"] = persisted;
+        Seed(mapCal, settings, "AreaEltibule", persisted);
 
         // PlayerLogIngestionService.ApplyAreaIfChanged drives SelectArea with
         // the internal area key from PlayerAreaTracker — exercise that path.
@@ -81,7 +99,7 @@ public class AreaCalibrationServiceTests
                 },
             },
         };
-        var (svc, proj, _) = Build(refData);
+        var (svc, proj, _, _) = Build(refData);
 
         svc.SelectArea("AreaEltibule");
 
@@ -99,7 +117,7 @@ public class AreaCalibrationServiceTests
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
-        var (svc, proj, settings) = Build(refData);
+        var (svc, proj, settings, mapCal) = Build(refData);
         svc.SelectArea("AreaEltibule");
 
         var changed = 0;
@@ -131,7 +149,7 @@ public class AreaCalibrationServiceTests
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
-        var (svc, _, settings) = Build(refData);
+        var (svc, _, settings, mapCal) = Build(refData);
 
         // No current area yet.
         svc.CalibrateCurrentArea(new (WorldCoord, PixelPoint)[]
@@ -157,9 +175,9 @@ public class AreaCalibrationServiceTests
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
             NpcsByKey = { ["NPC_Marn"] = new Npc { Name = "Marn", AreaName = "AreaEltibule", Pos = "x:1 y:0 z:2" } },
         };
-        var (svc, proj, settings) = Build(refData);
+        var (svc, proj, settings, mapCal) = Build(refData);
         var persisted = new AreaCalibration(2, 0.1, 5, 6, 3, 0.5);
-        settings.AreaCalibrations["AreaEltibule"] = persisted;
+        Seed(mapCal, settings, "AreaEltibule", persisted);
 
         svc.SelectArea("AreaEltibule");
 
@@ -181,7 +199,7 @@ public class AreaCalibrationServiceTests
                 ["AreaAnagoge"] = new AreaEntry("AreaAnagoge", "Anagoge Island", ""),
             },
         };
-        var (svc, _, _) = Build(refData);
+        var (svc, _, _, _) = Build(refData);
 
         svc.AllAreas.Select(a => a.FriendlyName)
             .Should().ContainInOrder("Anagoge Island", "Eltibule", "Serbule");
@@ -190,7 +208,7 @@ public class AreaCalibrationServiceTests
     [Fact]
     public void NoteSurvey_reraises_as_SurveyObserved()
     {
-        var (svc, _, _) = Build(new FakeRefData());
+        var (svc, _, _, _) = Build(new FakeRefData());
         CalibrationSurveyObservation? seen = null;
         svc.SurveyObserved += (_, o) => seen = o;
 
@@ -208,8 +226,8 @@ public class AreaCalibrationServiceTests
         {
             AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
         };
-        var (svc, _, settings) = Build(refData);
-        settings.AreaCalibrations["AreaEltibule"] = new AreaCalibration(1, 0, 0, 0, 2, 0);
+        var (svc, _, settings, mapCal) = Build(refData);
+        Seed(mapCal, settings, "AreaEltibule", new AreaCalibration(1, 0, 0, 0, 2, 0));
         svc.SelectArea("AreaEltibule");
         svc.IsCurrentAreaCalibrated.Should().BeTrue();
 

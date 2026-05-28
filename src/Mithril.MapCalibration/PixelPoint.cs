@@ -1,4 +1,4 @@
-namespace Legolas.Domain;
+namespace Mithril.MapCalibration;
 
 public readonly record struct PixelPoint(double X, double Y)
 {

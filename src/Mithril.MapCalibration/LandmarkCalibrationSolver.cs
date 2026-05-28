@@ -1,29 +1,26 @@
-using Legolas.Domain;
-
-namespace Legolas.Services;
+namespace Mithril.MapCalibration;
 
 /// <summary>
-/// Pure solver: given &#8805;2 known reference points — a landmark/NPC's area-local
-/// world position (ground plane X/Z) paired with where the user clicked it on the
-/// 1:1 map overlay — derives the projector similarity transform
-/// (<see cref="AreaCalibration"/>) for that area.
+/// Pure solver: given &#8805;2 known reference points &#8212; a landmark/NPC's
+/// area-local world position (ground plane X/Z) paired with where the user
+/// clicked it on the 1:1 map overlay &#8212; derives the projector similarity
+/// transform (<see cref="AreaCalibration"/>) for that area.
 ///
-/// <para>Uses the same closed-form 2D-similarity least-squares as
-/// <see cref="CoordinateProjector.Refit"/> (Umeyama specialised to 2D, uniform
-/// scale, expressed via complex arithmetic). A similarity transform recovers an
-/// arbitrary <em>rotation</em> and scale, but <b>not a reflection</b> — so the
-/// world-axis &#8594; (East, North) <em>handedness</em> cannot be absorbed by the
-/// fit and must be chosen explicitly. We solve under both handedness conventions
-/// and keep whichever yields the lower RMS pixel residual; the wrong handedness
-/// would require a reflection and therefore fit poorly. This makes the
-/// X/Z &#8594; compass convention self-correcting from real geometry rather than
-/// an unverified assumption.</para>
+/// <para>Uses a closed-form 2D-similarity least-squares (Umeyama specialised
+/// to 2D, uniform scale, expressed via complex arithmetic). A similarity
+/// transform recovers an arbitrary <em>rotation</em> and scale, but
+/// <b>not a reflection</b> &#8212; so the world-axis &#8594; (East, North)
+/// <em>handedness</em> cannot be absorbed by the fit and must be chosen
+/// explicitly. We solve under both handedness conventions and keep whichever
+/// yields the lower RMS pixel residual; the wrong handedness would require a
+/// reflection and therefore fit poorly. This makes the X/Z &#8594; compass
+/// convention self-correcting from real geometry rather than an unverified
+/// assumption.</para>
 ///
 /// <para>The unit&#8596;metre scalar (engine units vs. the metres survey/treasure
 /// offsets are reported in) is folded into <see cref="AreaCalibration.Scale"/>:
 /// references are fed in world units, so the solved px-per-metre already absorbs
-/// any constant unit&#8596;metre ratio (PG/Unity is &#8776;1:1; a residual scalar,
-/// if any, is corrected by a single in-game survey drag as before).</para>
+/// any constant unit&#8596;metre ratio.</para>
 /// </summary>
 public static class LandmarkCalibrationSolver
 {
@@ -31,8 +28,8 @@ public static class LandmarkCalibrationSolver
 
     /// <summary>
     /// Solves for the area calibration. Returns null when fewer than 2
-    /// non-degenerate references are supplied (coincident world points carry no
-    /// scale/rotation information — same threshold as <see cref="CoordinateProjector.Refit"/>).
+    /// non-degenerate references are supplied (coincident world points carry
+    /// no scale/rotation information).
     /// </summary>
     public static AreaCalibration? Solve(IReadOnlyList<Reference> references)
     {
@@ -102,8 +99,7 @@ public static class LandmarkCalibrationSolver
         var originX = wMeanRe - cZmeanRe;
         var originY = wMeanIm - cZmeanIm;
 
-        // RMS pixel residual under the recovered transform (same Project math as
-        // CoordinateProjector so the residual reflects real on-screen error).
+        // RMS pixel residual under the recovered transform.
         var cos = Math.Cos(rotation);
         var sin = Math.Sin(rotation);
         double sumSq = 0;

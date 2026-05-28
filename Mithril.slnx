@@ -8,6 +8,7 @@
     <Project Path="src/Legolas.Module/Legolas.Module.csproj" />
     <Project Path="src/Mithril.GameReports/Mithril.GameReports.csproj" />
     <Project Path="src/Mithril.Leveling/Mithril.Leveling.csproj" />
+    <Project Path="src/Mithril.MapCalibration/Mithril.MapCalibration.csproj" />
     <Project Path="src/Mithril.Planning/Mithril.Planning.csproj" />
     <Project Path="src/Mithril.Reference/Mithril.Reference.csproj" />
     <Project Path="src/Mithril.Shared.Wpf/Mithril.Shared.Wpf.csproj" />
@@ -49,6 +50,7 @@
     <Project Path="tests/Mithril.GameReports.Tests/Mithril.GameReports.Tests.csproj" />
     <Project Path="tests/Mithril.Leveling.Tests/Mithril.Leveling.Tests.csproj" />
     <Project Path="tests/Mithril.LogSanitizer.Tests/Mithril.LogSanitizer.Tests.csproj" />
+    <Project Path="tests/Mithril.MapCalibration.Tests/Mithril.MapCalibration.Tests.csproj" />
     <Project Path="tests/Mithril.Planning.Tests/Mithril.Planning.Tests.csproj" />
     <Project Path="tests/Mithril.Reference.Tests/Mithril.Reference.Tests.csproj" />
     <Project Path="tests/Mithril.Shared.Telemetry.Tests/Mithril.Shared.Telemetry.Tests.csproj" />

@@ -538,7 +538,7 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
             if (Placements.Any(p => ReferenceEquals(p.Reference, r))) continue;
             // Canonical absolute world→pixel — shared with the #454
             // ProcessMapFx placement path so the two can't drift.
-            GhostPins.Add(new GhostPin(r.Name, c.ProjectWorld(r.World)));
+            GhostPins.Add(new GhostPin(r.Name, c.WorldToWindow(r.World)));
         }
         ClickWarning = null;
         RaiseDebug();

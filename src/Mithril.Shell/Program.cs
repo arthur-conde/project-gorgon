@@ -137,6 +137,7 @@ public static class Program
             var communityCalibrationCacheDir = Path.Combine(localApp, "Mithril", "Reference", "CommunityCalibration");
             var iconCacheDir = Path.Combine(localApp, "Mithril", "Icons");
             var charactersRootDir = Path.Combine(localApp, "Mithril", "characters");
+            var mapCalibrationDir = Path.Combine(localApp, "Mithril", "MapCalibration");
 
             var builder = Host.CreateApplicationBuilder(args);
 
@@ -168,7 +169,8 @@ public static class Program
             builder.Services.AddMithrilApp(new ShellCompositionOptions(
                 preferencesPath, shellStore, shellSettings, gameConfig,
                 logDir, perfDir, charactersRootDir, referenceCacheDir,
-                communityCalibrationCacheDir, iconCacheDir, shellDir, Boot));
+                communityCalibrationCacheDir, iconCacheDir, shellDir,
+                mapCalibrationDir, Boot));
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IMithrilModule))}");
             host = builder.Build();

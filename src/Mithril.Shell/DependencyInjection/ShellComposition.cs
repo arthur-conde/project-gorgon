@@ -7,6 +7,7 @@ using Arda.Hosting;
 using Arda.Wpf;
 using Arda.World.Chat;
 using Arda.World.Player;
+using Mithril.MapCalibration.DependencyInjection;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
@@ -53,6 +54,7 @@ public sealed record ShellCompositionOptions(
     string CommunityCalibrationCacheDir,
     string IconCacheDir,
     string ShellSettingsDir,
+    string MapCalibrationDir,
     Action<string>? ModuleLog = null);
 
 public static class ShellComposition
@@ -91,6 +93,7 @@ public static class ShellComposition
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
             .AddMithrilReferenceData(o.ReferenceCacheDir)
             .AddMithrilCommunityCalibration(o.CommunityCalibrationCacheDir)
+            .AddMithrilMapCalibration(o.MapCalibrationDir)
             .AddMithrilIcons(o.IconCacheDir)
             .AddMithrilAudio()
             .AddMithrilHotkeys()

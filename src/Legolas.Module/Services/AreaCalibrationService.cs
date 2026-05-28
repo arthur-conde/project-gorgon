@@ -1,4 +1,5 @@
 using Legolas.Domain;
+using Mithril.MapCalibration;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 
@@ -95,6 +96,7 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     private readonly LegolasSettings _settings;
     private readonly ICoordinateProjector _projector;
     private readonly SettingsAutoSaver<LegolasSettings> _saver;
+    private readonly IMapCalibrationService _mapCal;
 
     private IReadOnlyList<CalibrationReference> _currentRefs = Array.Empty<CalibrationReference>();
 
@@ -102,22 +104,29 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         IReferenceDataService refData,
         LegolasSettings settings,
         ICoordinateProjector projector,
-        SettingsAutoSaver<LegolasSettings> saver)
+        SettingsAutoSaver<LegolasSettings> saver,
+        IMapCalibrationService mapCal)
     {
         _refData = refData;
         _settings = settings;
         _projector = projector;
         _saver = saver;
+        _mapCal = mapCal;
+
+        // Re-apply the projector when the active calibration changes from a
+        // source we don't own (e.g. a community-sync update lands for the
+        // current area). Stacked-source precedence is honoured by GetCalibration.
+        _mapCal.Changed += OnMapCalChanged;
     }
 
     public string? CurrentAreaKey { get; private set; }
     public string? CurrentAreaFriendlyName { get; private set; }
 
     public bool IsCurrentAreaCalibrated =>
-        CurrentAreaKey is { } k && _settings.AreaCalibrations.ContainsKey(k);
+        CurrentAreaKey is { } k && _mapCal.IsCalibrated(k);
 
     public AreaCalibration? CurrentCalibration =>
-        CurrentAreaKey is { } k && _settings.AreaCalibrations.TryGetValue(k, out var c) ? c : null;
+        CurrentAreaKey is { } k ? _mapCal.GetCalibration(k) : null;
 
     public IReadOnlyList<CalibrationReference> CurrentAreaReferences => _currentRefs;
 
@@ -144,12 +153,21 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         CurrentAreaKey = key;
         _currentRefs = key is null ? Array.Empty<CalibrationReference>() : BuildReferences(key);
 
-        if (key is not null
-            && _settings.AreaCalibrations.TryGetValue(key, out var calibration))
+        if (key is not null && _mapCal.GetCalibration(key) is { } calibration)
         {
             _projector.ApplyCalibration(calibration);
         }
 
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnMapCalChanged(object? sender, string areaKey)
+    {
+        if (!string.Equals(areaKey, CurrentAreaKey, StringComparison.Ordinal)) return;
+        if (_mapCal.GetCalibration(areaKey) is { } calibration)
+        {
+            _projector.ApplyCalibration(calibration);
+        }
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -174,10 +192,23 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
             CalibrationZoom = calibrationZoom > 1e-6 ? calibrationZoom : 1.0,
         };
 
+        // Dual-write for #836's transition window: writes go to BOTH the shared
+        // service (canonical going forward) and LegolasSettings.AreaCalibrations
+        // (legacy, removed in a follow-up release once we've shipped one cycle
+        // of parity). A rollback to an older Mithril during the transition
+        // therefore preserves the user's calibration in the place that older
+        // Mithril expects to find it.
         _settings.AreaCalibrations[key] = calibration;
         _saver.Touch(); // AreaCalibrations is a sibling object — no PropertyChanged.
+        // SaveUserRefinement raises IMapCalibrationService.Changed, which our
+        // OnMapCalChanged handler re-broadcasts as our own Changed for the
+        // current area. Do NOT also fire Changed directly here — that would
+        // double-deliver (regression observed when both legacy + new paths
+        // raised). Apply the projector here for the synchronous-after-solve
+        // contract; the handler's projector-apply guards against the redundant
+        // re-application by comparing area keys.
         _projector.ApplyCalibration(calibration);
-        Changed?.Invoke(this, EventArgs.Empty);
+        _mapCal.SaveUserRefinement(key, calibration);
         return calibration;
     }
 
@@ -189,11 +220,11 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     public void ClearCurrentAreaCalibration()
     {
         if (CurrentAreaKey is not { } key) return;
-        if (_settings.AreaCalibrations.Remove(key))
-        {
-            _saver.Touch();
-            Changed?.Invoke(this, EventArgs.Empty);
-        }
+        // Dual-clear, same rationale as the dual-write in CalibrateCurrentArea.
+        // ClearUserRefinement raises mapCal.Changed → OnMapCalChanged re-broadcasts
+        // our Changed; do not raise Changed directly to avoid double-delivery.
+        if (_settings.AreaCalibrations.Remove(key)) _saver.Touch();
+        _mapCal.ClearUserRefinement(key);
     }
 
     private IReadOnlyList<CalibrationReference> BuildReferences(string areaKey)

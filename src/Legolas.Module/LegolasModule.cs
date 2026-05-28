@@ -59,6 +59,10 @@ public sealed class LegolasModule : IMithrilModule
             new MultilaterationSolver(sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas.Multilateration")));
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
         services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
+        // One-time on-start import of LegolasSettings.AreaCalibrations into the
+        // shared Mithril.MapCalibration user-refinement store (#836). Idempotent;
+        // does nothing on subsequent runs once the dual-write parity holds.
+        services.AddHostedService<LegolasAreaCalibrationMigration>();
         services.AddSingleton<PinCalibrationCoordinator>(sp =>
             new PinCalibrationCoordinator(
                 sp.GetRequiredService<IAreaCalibrationService>(),

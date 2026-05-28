@@ -238,7 +238,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// area's calibration and publish it (plus its age/source) onto the
     /// session. No tracker fix or no calibrated area ⇒ clear it (degrade
     /// silently — same "no marker" behaviour as before #476). The projection
-    /// is <see cref="AreaCalibration.ProjectWorld"/> — the exact transform the
+    /// is <see cref="AreaCalibration.WorldToWindow"/> — the exact transform the
     /// <c>ProcessMapFx</c> pins use, so the marker lands in the same frame as
     /// the pins (subject to the ±10% non-affine map ceiling — it is "near you",
     /// not pixel-exact, and that is expected).
@@ -311,7 +311,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                     // #524: thread the in-game map zoom; zero/unset falls back
                     // to the calibration's own zoom (zoomFactor → 1.0), keeping
                     // pre-#524 callers byte-identical.
-                    pinCal.ProjectWorld(p.World, EffectiveZoom(currentMapZoom, pinCal)),
+                    pinCal.WorldToWindow(p.World, EffectiveZoom(currentMapZoom, pinCal)),
                     p.ObservedAt,
                     Source: null, IsManual: true, IsPinned: true);
             // else: a genuinely newer zone-in/teleport wins over the pin.
@@ -325,7 +325,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             return SurveyAnchorResolution.Cleared;
 
         return new SurveyAnchorResolution(
-            c.ProjectWorld(new WorldCoord(fix.X, fix.Y, fix.Z), EffectiveZoom(currentMapZoom, c)),
+            c.WorldToWindow(new WorldCoord(fix.X, fix.Y, fix.Z), EffectiveZoom(currentMapZoom, c)),
             fix.MeasuredAt, fix.Source, IsManual: false, IsPinned: false);
     }
 
@@ -857,7 +857,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             var zoom = _session.CurrentMapZoom;
             foreach (var s in _motherlode.Snapshot().Surveys)
                 if (!s.Collected && s.SolvedWorld is { } w)
-                    (list ??= new()).Add(cal.ProjectWorld(w, zoom));
+                    (list ??= new()).Add(cal.WorldToWindow(w, zoom));
             return list ?? (IReadOnlyList<PixelPoint>)Array.Empty<PixelPoint>();
         }
     }
@@ -879,7 +879,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             if (next is null) return null;
 
             var zoom = _session.CurrentMapZoom;
-            var center = cal.ProjectWorld(next.SuggestedWorld, zoom);
+            var center = cal.WorldToWindow(next.SuggestedWorld, zoom);
             var zoomFactor = zoom > 1e-6 && cal.CalibrationZoom > 1e-6
                 ? zoom / cal.CalibrationZoom
                 : 1.0;
