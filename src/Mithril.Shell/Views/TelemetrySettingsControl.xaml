@@ -57,7 +57,9 @@
 
             <!-- Restart-required banner. v1: always visible whenever the master toggle
                  is on, because the host captures EnableOtlpExport + endpoint/headers/
-                 protocol/service-name fields once at AddMithrilOtlpExport time. -->
+                 protocol/service-name + trust-endpoint fields once at AddMithrilOtlpExport
+                 time. Banner text must enumerate every restart-required field — users read
+                 it as the source of truth for "what applies live vs after restart". -->
             <Border Background="#332C2010" BorderBrush="#FFD4A847" BorderThickness="0,0,0,2"
                     Padding="8,6" Margin="0,0,0,12"
                     Visibility="{Binding Settings.EnableOtlpExport, Converter={StaticResource BoolToVis}}">
@@ -65,7 +67,7 @@
                     <icon:PackIconLucide Kind="Info" Width="14" Height="14"
                                          VerticalAlignment="Center" Margin="0,0,8,0"
                                          Foreground="#FFD4A847"/>
-                    <TextBlock Text="Restart Mithril to apply endpoint, headers, protocol, and service-name changes. Tag-export toggles apply live."
+                    <TextBlock Text="Restart Mithril to apply endpoint, headers, protocol, service-name, and trust-endpoint changes. Tag-export toggles apply live."
                                TextWrapping="Wrap" Foreground="#FFE8E8E8"
                                FontSize="{DynamicResource AppFontSizeHint}"/>
                 </StackPanel>

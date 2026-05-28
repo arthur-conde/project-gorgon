@@ -306,8 +306,17 @@ public static class TelemetryHostExtensions
     /// hosted services — but EventListener subscription is process-global and
     /// completes synchronously in the constructor, so order here only needs to
     /// be "before the first batch flush", which is satisfied at host start.
-    /// <see cref="StopAsync"/> disposes the listener so the success-tick
-    /// <see cref="System.Threading.Timer"/> is released cleanly on shutdown.
+    /// <para>The starter <em>does not</em> dispose the listener in
+    /// <see cref="StopAsync"/>. The listener is registered as a DI singleton
+    /// (<see cref="ServiceLifetime.Singleton"/>) so the host's
+    /// <see cref="IServiceProvider"/> disposes it during host teardown.
+    /// Disposing here too would invoke
+    /// <see cref="OtlpExporterEventListener.Dispose"/> twice — benign today
+    /// (BCL <see cref="System.Threading.Timer"/> and
+    /// <see cref="System.Diagnostics.Tracing.EventListener"/> are idempotent)
+    /// but the contract isn't guaranteed by either API, and a subclass that
+    /// adds state in <see cref="OtlpExporterEventListener.Dispose"/> would
+    /// break it silently. Let DI own the lifecycle.</para>
     /// </summary>
     private sealed class OtlpExporterEventListenerStarter(OtlpExporterEventListener listener)
         : Microsoft.Extensions.Hosting.IHostedService
@@ -319,11 +328,7 @@ public static class TelemetryHostExtensions
             return Task.CompletedTask;
         }
 
-        public Task StopAsync(CancellationToken cancellationToken)
-        {
-            listener.Dispose();
-            return Task.CompletedTask;
-        }
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     /// <summary>

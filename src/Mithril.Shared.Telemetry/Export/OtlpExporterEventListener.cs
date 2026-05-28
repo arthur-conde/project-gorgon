@@ -136,6 +136,15 @@ public sealed class OtlpExporterEventListener : EventListener
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Runs on the OTel SDK's EventSource callback thread (whichever thread
+    /// originally raised the exporter event). The
+    /// <see cref="ExporterHealthMonitor.RecordFailure(string)"/> call below
+    /// fans out to subscribers <em>synchronously</em> under the monitor's
+    /// internal lock — a blocking subscriber would stall the OTel exporter
+    /// path. See the subscriber-dispatch contract on
+    /// <see cref="ExporterHealthMonitor"/>.
+    /// </remarks>
     protected override void OnEventWritten(EventWrittenEventArgs eventData)
     {
         if (eventData is null) return;

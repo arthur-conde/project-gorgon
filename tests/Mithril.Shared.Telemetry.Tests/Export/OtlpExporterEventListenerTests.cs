@@ -101,14 +101,22 @@ public class OtlpExporterEventListenerTests
         using var listener = new OtlpExporterEventListener(health, TimeSpan.FromHours(1), startTimer: false);
 
         src.ExportFailed("DNS resolution failed");
+        var errorBeforeTick = health.Current.LastError;
+        var failureUtcBeforeTick = health.Current.LastFailureUtc;
+        var successUtcBeforeTick = health.Current.LastSuccessUtc;
+
         var recorded = listener.TickSuccessForTests();
 
         recorded.Should().BeFalse(
             "absence-of-failure must respect the window — a tick immediately after a recorded " +
             "failure should not flip the status line back to green.");
-        health.Current.LastError.Should().Be(health.Current.LastError);
-        // Verify the failure remained the latest signal.
+        // A suppressed tick must not mutate the health snapshot — neither the
+        // failure reason nor the timestamps move. This is what makes the status
+        // line stay red across the window.
+        health.Current.LastError.Should().Be(errorBeforeTick);
         health.Current.LastError.Should().Contain("DNS resolution failed");
+        health.Current.LastFailureUtc.Should().Be(failureUtcBeforeTick);
+        health.Current.LastSuccessUtc.Should().Be(successUtcBeforeTick);
     }
 
     [Fact]
