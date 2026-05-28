@@ -134,7 +134,7 @@ public sealed partial class SessionState : ObservableObject
     [ObservableProperty] private bool _surveyPlayerIsPinned;
 
     // #524: the in-game map zoom (PG's "Zoom level: X.XX" readout). Used by
-    // AreaCalibration.ProjectWorld(world, currentZoom) so a calibration solved
+    // AreaCalibration.WorldToWindow(world, currentZoom) so a calibration solved
     // at one zoom can place pins at another. Ephemeral — defaults to PG's max
     // (2.00) on every Mithril restart, matching the accuracy-optimal stamp the
     // user is expected to use when calibrating. Range mirrors PG's slider hard

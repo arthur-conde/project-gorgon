@@ -1,16 +1,23 @@
 using System.Globalization;
 
-namespace Legolas.Domain;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// A point in a Project&#160;Gorgon area's local engine-unit coordinate space, as
 /// stored in reference data (<c>landmarks.json</c> <c>Loc</c>, <c>npcs.json</c>
-/// <c>Pos</c>). Format is <c>"x:&lt;f&gt; y:&lt;f&gt; z:&lt;f&gt;"</c>; the ground
-/// plane is <see cref="X"/>/<see cref="Z"/> and <see cref="Y"/> is elevation
-/// (ignored for map projection). Verified 2026-05-18 to be the same frame the game
-/// positions the player in (Player.log <c>ProcessNewPosition</c>), and coordinates
-/// are <b>signed</b> — negative X/Z are common (Myconian Cave, Sun Vale, Desert,
-/// Gazluk). Any parse that assumes positive-only silently misprojects whole zones.
+/// <c>Pos</c>). Format is <c>"x:&lt;f&gt; y:&lt;f&gt; z:&lt;f&gt;"</c>. Verified
+/// 2026-05-18 to be the same frame the game positions the player in (Player.log
+/// <c>ProcessNewPosition</c>); coordinates are <b>signed</b> &#8212; negative
+/// X/Z are common (Myconian Cave, Sun Vale, Desert, Gazluk) and any parse that
+/// assumes positive-only silently misprojects whole zones.
+///
+/// <para><see cref="Y"/> is elevation. It is <b>not consumed by the map-projection
+/// math</b> &#8212; world&#8596;pixel works on the (X, Z) ground plane only.
+/// The component is retained on the type so callers that already carry an
+/// elevation (e.g. <c>PlayerPositionChanged</c> events) don't lose it as it
+/// flows through, and so existing call sites that construct via the (x, y, z)
+/// shape compile unchanged. If a future consumer needs elevation, it can read
+/// it; map projection ignores it.</para>
 /// </summary>
 public readonly record struct WorldCoord(double X, double Y, double Z)
 {

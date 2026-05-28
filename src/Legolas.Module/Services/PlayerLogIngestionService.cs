@@ -193,7 +193,7 @@ public sealed class PlayerLogIngestionService : BackgroundService
         }
 
         var name = CleanName(shortName);
-        var pixel = cal.ProjectWorld(world, _session.CurrentMapZoom);
+        var pixel = cal.WorldToWindow(world, _session.CurrentMapZoom);
 
         if (FindDuplicateAbsolute(world, _settings.MapTargetDedupRadiusMetres) is { } dup)
         {

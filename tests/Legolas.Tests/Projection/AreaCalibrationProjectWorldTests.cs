@@ -6,7 +6,7 @@ using Xunit;
 namespace Legolas.Tests.Projection;
 
 /// <summary>
-/// #454: <see cref="AreaCalibration.ProjectWorld"/> must reproduce exactly the
+/// #454: <see cref="AreaCalibration.WorldToWindow"/> must reproduce exactly the
 /// transform <see cref="LandmarkCalibrationSolver"/> fits (it's the canonical
 /// absolute world→pixel used by both ProcessMapFx placement and the landmark
 /// "ghost" preview). Round-trips synthetic exact-fit references and pins the
@@ -54,7 +54,7 @@ public class AreaCalibrationProjectWorldTests
 
         foreach (var w in world)
         {
-            var projected = cal.ProjectWorld(w);
+            var projected = cal.WorldToWindow(w);
             var expected = Forward(w);
             projected.X.Should().BeApproximately(expected.X, 1e-6);
             projected.Y.Should().BeApproximately(expected.Y, 1e-6);
@@ -70,8 +70,8 @@ public class AreaCalibrationProjectWorldTests
         var minus = new AreaCalibration(1.0, 0.0, 0, 0, 2, 0) { MirrorNorth = true };
         var w = new WorldCoord(10, 0, 7);
 
-        plus.ProjectWorld(w).Should().Be(new PixelPoint(10, -7));
-        minus.ProjectWorld(w).Should().Be(new PixelPoint(10, 7));
+        plus.WorldToWindow(w).Should().Be(new PixelPoint(10, -7));
+        minus.WorldToWindow(w).Should().Be(new PixelPoint(10, 7));
     }
 
     // ---- #524: zoom-aware overload --------------------------------------
@@ -93,7 +93,7 @@ public class AreaCalibrationProjectWorldTests
         var w = new WorldCoord(10, 0, 5);
         var factor = currentZoom / calibrationZoom;
 
-        var projected = cal.ProjectWorld(w, currentZoom);
+        var projected = cal.WorldToWindow(w, currentZoom);
 
         // East = X * eff, North = Z * eff. Mirror-north default false → Y = Oy - Scale*eff*Z.
         projected.X.Should().BeApproximately(100 + 2.0 * factor * 10, 1e-9);
@@ -108,8 +108,8 @@ public class AreaCalibrationProjectWorldTests
         var cal = new AreaCalibration(1.7, 0.4, 50, -30, 3, 0) { CalibrationZoom = 1.5 };
         var w = new WorldCoord(12.5, 0, -7.25);
 
-        var legacy = cal.ProjectWorld(w);
-        var zoomAware = cal.ProjectWorld(w, 1.5);
+        var legacy = cal.WorldToWindow(w);
+        var zoomAware = cal.WorldToWindow(w, 1.5);
 
         zoomAware.X.Should().Be(legacy.X);
         zoomAware.Y.Should().Be(legacy.Y);
@@ -127,7 +127,7 @@ public class AreaCalibrationProjectWorldTests
         var cal = new AreaCalibration(2.0, 0.0, 100, 200, 3, 0) { CalibrationZoom = 0.5 };
         var w = new WorldCoord(10, 0, 5);
 
-        var guarded = cal.ProjectWorld(w, badZoom);
+        var guarded = cal.WorldToWindow(w, badZoom);
         // factor = 1.0 ⇒ effScale = Scale verbatim.
         guarded.X.Should().BeApproximately(100 + 2.0 * 10, 1e-9);
         guarded.Y.Should().BeApproximately(200 - 2.0 * 5, 1e-9);
@@ -142,6 +142,6 @@ public class AreaCalibrationProjectWorldTests
         var cal = new AreaCalibration(0.85, -0.2, 320, 480, 4, 0) { CalibrationZoom = 1.75, MirrorNorth = true };
         var w = new WorldCoord(123, 0, -456);
 
-        cal.ProjectWorld(w).Should().Be(cal.ProjectWorld(w, cal.CalibrationZoom));
+        cal.WorldToWindow(w).Should().Be(cal.WorldToWindow(w, cal.CalibrationZoom));
     }
 }

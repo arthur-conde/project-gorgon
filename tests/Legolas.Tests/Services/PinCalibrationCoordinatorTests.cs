@@ -383,10 +383,13 @@ public class PinCalibrationCoordinatorTests
         public List<(WorldCoord, PixelPoint)>? LastPairs { get; private set; }
         public double LastCalibrationZoom { get; private set; }
         public int ChangedCount { get; private set; }
+        /// <summary>If set, CalibrateCurrentArea throws this instead of solving. Round-4 review #2.</summary>
+        public Exception? ThrowOnCalibrate { get; set; }
 
         public AreaCalibration? CalibrateCurrentArea(
             IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements, double calibrationZoom = 1.0)
         {
+            if (ThrowOnCalibrate is { } ex) throw ex;
             LastPairs = placements.Select(p => (p.World, p.Pixel)).ToList();
             LastCalibrationZoom = calibrationZoom;
             ChangedCount++;
@@ -405,5 +408,48 @@ public class PinCalibrationCoordinatorTests
         public void ClearCurrentAreaCalibration() { }
         public void NoteSurvey(string name, MetreOffset offset) { }
         public event EventHandler<CalibrationSurveyObservation>? SurveyObserved { add { } remove { } }
+    }
+
+    [Fact]
+    public void Confirm_on_IOException_sets_PersistError_returns_null_and_stays_armed()
+    {
+        // Round-4 review #2: pins the coordinator's IOException catch contract.
+        // A persist failure must not crash the WPF command path; the
+        // coordinator stays armed so the user's pairs aren't lost on retry.
+        var (coord, calib, pins, _) = Build();
+        pins.Add(0, 0, "A");
+        pins.Add(50, 50, "B");
+        pins.Add(100, 0, "C");
+        coord.Arm();
+        PairAllPerfectly(coord);
+        coord.CanConfirm.Should().BeTrue();
+        calib.ThrowOnCalibrate = new System.IO.IOException("simulated AV lock on refinements.json.tmp");
+
+        var result = coord.Confirm();
+
+        result.Should().BeNull("Confirm catches IOException and returns null instead of throwing");
+        coord.PersistError.Should().NotBeNull().And.Contain("simulated AV lock");
+        coord.IsArmed.Should().BeTrue("coordinator stays armed so placed pairs aren't lost on retry");
+        coord.PairedCount.Should().Be(3, "pairs are preserved across a failed Confirm");
+    }
+
+    [Fact]
+    public void Disarm_clears_PersistError()
+    {
+        // Round-4 review #3: PersistError must not linger when the user backs
+        // out of a failed Confirm without re-Arming.
+        var (coord, calib, pins, _) = Build();
+        pins.Add(0, 0, "A");
+        pins.Add(50, 50, "B");
+        pins.Add(100, 0, "C");
+        coord.Arm();
+        PairAllPerfectly(coord);
+        calib.ThrowOnCalibrate = new System.IO.IOException("simulated");
+        coord.Confirm();
+        coord.PersistError.Should().NotBeNull();
+
+        coord.Disarm();
+
+        coord.PersistError.Should().BeNull("Disarm hygiene mirrors Arm");
     }
 }

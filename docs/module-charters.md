@@ -782,7 +782,7 @@ libraries; the charter follows the code:
   [#832](https://github.com/moumantai-gg/mithril/issues/832); supersedes the
   initial `IPlayerCameraState` predecessor framing).** The world→screen
   projection used by today's Legolas overlay is map-aligned, not 3D —
-  `AreaCalibration.ProjectWorld` is a per-area 2D similarity transform that
+  `AreaCalibration.WorldToWindow` (`Mithril.MapCalibration`; lifted in #836) is a per-area 2D similarity transform that
   needs only `(currentArea, playerPosition)`. Both signals already exist in
   Arda as `IAreaState` and `IPositionState`; `Mithril.Overlay` consumes them
   directly per the consumption-side rule. No new GameState producer is

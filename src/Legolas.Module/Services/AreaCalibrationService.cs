@@ -1,4 +1,5 @@
 using Legolas.Domain;
+using Mithril.MapCalibration;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
 
@@ -48,9 +49,23 @@ public interface IAreaCalibrationService
     /// <summary>
     /// Solve a calibration from user-placed reference clicks (a world point
     /// paired with the pixel the user clicked it at) for the current area,
-    /// persist it, and apply it to the projector. Returns the solved
-    /// calibration, or null if it couldn't be solved (no current area, &lt;2
-    /// non-degenerate references).
+    /// persist it, and apply the resulting transform via the shared
+    /// <see cref="IMapCalibrationService"/>. Returns the solver output
+    /// verbatim (the calibration the user just produced from their clicks),
+    /// or null if it couldn't be solved (no current area, &lt;2 non-degenerate
+    /// references).
+    ///
+    /// <para><b>Return-value contract:</b> the returned record is what the
+    /// SOLVER produced &#8212; it reflects how good the user's clicks fit,
+    /// not what's effectively rendered on the map. When stacking precedence
+    /// kicks in (e.g. the user's residual exceeds the "good" threshold and a
+    /// usable bundled baseline exists), <see cref="IMapCalibrationService.GetCalibration"/>
+    /// returns the baseline as the effective transform while this method
+    /// still returns the user's bad solve. The wizard relies on this so it
+    /// can surface "residual high &#8212; redo for a tighter fit" instead of
+    /// silently swapping in a different number. Callers that need the
+    /// effective transform &#8212; not the solve quality &#8212; query the
+    /// shared service.</para>
     /// </summary>
     AreaCalibration? CalibrateCurrentArea(
         IReadOnlyList<(WorldCoord World, PixelPoint Pixel)> placements,
@@ -95,6 +110,7 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     private readonly LegolasSettings _settings;
     private readonly ICoordinateProjector _projector;
     private readonly SettingsAutoSaver<LegolasSettings> _saver;
+    private readonly IMapCalibrationService _mapCal;
 
     private IReadOnlyList<CalibrationReference> _currentRefs = Array.Empty<CalibrationReference>();
 
@@ -102,22 +118,29 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         IReferenceDataService refData,
         LegolasSettings settings,
         ICoordinateProjector projector,
-        SettingsAutoSaver<LegolasSettings> saver)
+        SettingsAutoSaver<LegolasSettings> saver,
+        IMapCalibrationService mapCal)
     {
         _refData = refData;
         _settings = settings;
         _projector = projector;
         _saver = saver;
+        _mapCal = mapCal;
+
+        // Re-apply the projector when the active calibration changes from a
+        // source we don't own (e.g. a community-sync update lands for the
+        // current area). Stacked-source precedence is honoured by GetCalibration.
+        _mapCal.Changed += OnMapCalChanged;
     }
 
     public string? CurrentAreaKey { get; private set; }
     public string? CurrentAreaFriendlyName { get; private set; }
 
     public bool IsCurrentAreaCalibrated =>
-        CurrentAreaKey is { } k && _settings.AreaCalibrations.ContainsKey(k);
+        CurrentAreaKey is { } k && _mapCal.IsCalibrated(k);
 
     public AreaCalibration? CurrentCalibration =>
-        CurrentAreaKey is { } k && _settings.AreaCalibrations.TryGetValue(k, out var c) ? c : null;
+        CurrentAreaKey is { } k ? _mapCal.GetCalibration(k) : null;
 
     public IReadOnlyList<CalibrationReference> CurrentAreaReferences => _currentRefs;
 
@@ -144,12 +167,21 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         CurrentAreaKey = key;
         _currentRefs = key is null ? Array.Empty<CalibrationReference>() : BuildReferences(key);
 
-        if (key is not null
-            && _settings.AreaCalibrations.TryGetValue(key, out var calibration))
+        if (key is not null && _mapCal.GetCalibration(key) is { } calibration)
         {
             _projector.ApplyCalibration(calibration);
         }
 
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void OnMapCalChanged(object? sender, string areaKey)
+    {
+        if (!string.Equals(areaKey, CurrentAreaKey, StringComparison.Ordinal)) return;
+        if (_mapCal.GetCalibration(areaKey) is { } calibration)
+        {
+            _projector.ApplyCalibration(calibration);
+        }
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
@@ -174,10 +206,37 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
             CalibrationZoom = calibrationZoom > 1e-6 ? calibrationZoom : 1.0,
         };
 
+        // Dual-write for #836's transition window: writes go to BOTH the shared
+        // service (canonical going forward) and LegolasSettings.AreaCalibrations
+        // (legacy, removed in a follow-up release once we've shipped one cycle
+        // of parity). A rollback to an older Mithril during the transition
+        // therefore preserves the user's calibration in the place that older
+        // Mithril expects to find it.
+        //
+        // ORDER: shared service first (canonical going forward; throws on
+        // persist failure with full in-memory rollback), legacy field second.
+        // If the new store throws we never touch the legacy field, so a retry
+        // from a clean state works. The reverse order would leave the legacy
+        // field written and the new store empty — for Clear that produces a
+        // permanent orphan (the migration only imports, never deletes), and
+        // for Save it would only self-heal on next migration pass.
+        _mapCal.SaveUserRefinement(key, calibration);
         _settings.AreaCalibrations[key] = calibration;
         _saver.Touch(); // AreaCalibrations is a sibling object — no PropertyChanged.
-        _projector.ApplyCalibration(calibration);
-        Changed?.Invoke(this, EventArgs.Empty);
+
+        // SaveUserRefinement raises IMapCalibrationService.Changed; our
+        // OnMapCalChanged handler reads GetCalibration (which respects stacking
+        // precedence) and applies whichever calibration won to the projector.
+        // The return value here is the SOLVER OUTPUT verbatim — what the user
+        // just produced from their clicks — not the effective transform. The
+        // wizard surfaces it as "how good was your solve" (residual + scale
+        // for the redo/proceed gate), and consumers that need "what's actually
+        // rendered" read IMapCalibrationService.GetCalibration directly. These
+        // are two different questions: a high-residual user solve with a
+        // usable baseline present returns the user's bad fit (so the wizard
+        // says "redo for a tighter fit") while the map renders the baseline
+        // (correct rendering — the user's solve lost precedence). See the
+        // IAreaCalibrationService.CalibrateCurrentArea contract below.
         return calibration;
     }
 
@@ -189,11 +248,20 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     public void ClearCurrentAreaCalibration()
     {
         if (CurrentAreaKey is not { } key) return;
-        if (_settings.AreaCalibrations.Remove(key))
-        {
-            _saver.Touch();
-            Changed?.Invoke(this, EventArgs.Empty);
-        }
+        // Dual-clear, ORDER matters here (round-3 review #2): clear the new
+        // store FIRST, only touch the legacy field on success. If the new
+        // store's Persist throws (disk full / AV lock) the rollback restores
+        // the in-memory entry so reads still return the prior calibration,
+        // and we don't proceed to delete the legacy entry — the user retries
+        // from a fully-consistent state. The pre-round-3 order (legacy first)
+        // could leave a permanent orphan: the migration only imports, never
+        // deletes, so a half-cleared state survived restarts.
+        //
+        // ClearUserRefinement raises mapCal.Changed → OnMapCalChanged
+        // re-broadcasts our Changed; do not raise Changed directly to avoid
+        // double-delivery.
+        _mapCal.ClearUserRefinement(key);
+        if (_settings.AreaCalibrations.Remove(key)) _saver.Touch();
     }
 
     private IReadOnlyList<CalibrationReference> BuildReferences(string areaKey)

@@ -59,13 +59,18 @@ public sealed class LegolasModule : IMithrilModule
             new MultilaterationSolver(sp.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>().CreateLogger("Legolas.Multilateration")));
         services.AddSingleton<ICoordinateProjector, CoordinateProjector>();
         services.AddSingleton<IAreaCalibrationService, AreaCalibrationService>();
+        // One-time on-start import of LegolasSettings.AreaCalibrations into the
+        // shared Mithril.MapCalibration user-refinement store (#836). Idempotent;
+        // does nothing on subsequent runs once the dual-write parity holds.
+        services.AddHostedService<LegolasAreaCalibrationMigration>();
         services.AddSingleton<PinCalibrationCoordinator>(sp =>
             new PinCalibrationCoordinator(
                 sp.GetRequiredService<IAreaCalibrationService>(),
                 sp.GetRequiredService<IMapPinState>(),
                 sp.GetRequiredService<IDomainEventSubscriber>(),
                 sp.GetRequiredService<LegolasSettings>(),
-                sp.GetService<SessionState>()));
+                sp.GetService<SessionState>(),
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
 
         // Session + flow controllers + VMs.
         services.AddSingleton<SessionState>(sp =>
@@ -157,7 +162,11 @@ public sealed class LegolasModule : IMithrilModule
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();
-        services.AddSingleton<CalibrationSessionViewModel>();
+        services.AddSingleton<CalibrationSessionViewModel>(sp =>
+            new CalibrationSessionViewModel(
+                sp.GetRequiredService<IAreaCalibrationService>(),
+                sp.GetService<IDomainEventSubscriber>(),
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
 
         services.AddSingleton<LegolasPanelView>(sp => new LegolasPanelView
         {

@@ -17,7 +17,7 @@ namespace Legolas.Domain;
 /// already-placed label.</para>
 ///
 /// <para>Pure + WPF-free so it is unit-testable. The label box is estimated in
-/// the same pixel frame <see cref="AreaCalibration.ProjectWorld"/> produces
+/// the same pixel frame <see cref="AreaCalibration.WorldToWindow"/> produces
 /// (the WPF layer positions items by that pixel directly). Declutter is by
 /// mutual label overlap only — the overlay's on-screen pixel bounds aren't
 /// known VM-side, so off-screen markers are still listed (harmless: the Canvas
@@ -55,7 +55,7 @@ public static class GhostLabelDeclutter
 
         foreach (var r in references)
         {
-            var p = calibration.ProjectWorld(r.World, effectiveZoom);
+            var p = calibration.WorldToWindow(r.World, effectiveZoom);
             var name = r.Name ?? string.Empty;
             var box = new Rect(
                 p.X + LabelAnchorDx,

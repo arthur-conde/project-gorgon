@@ -65,6 +65,6 @@ public class GhostLabelDeclutterTests
         var markers = GhostLabelDeclutter.Build(refs, Cal);
 
         markers.Should().OnlyContain(m => m.ShowLabel);
-        markers[0].Pixel.Should().Be(Cal.ProjectWorld(new WorldCoord(0, 0, 0)));
+        markers[0].Pixel.Should().Be(Cal.WorldToWindow(new WorldCoord(0, 0, 0)));
     }
 }

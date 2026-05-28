@@ -41,7 +41,7 @@ SessionState            [ViewModels/SessionState.cs]   observable shared state (
    │                       ▲
    │                       │ user input: drag/nudge a pin to correct it
    ▼                    MapOverlayViewModel             [ViewModels/MapOverlayViewModel.cs]
-AreaCalibration          [Domain/AreaCalibration.cs]   ProjectWorld: world coord → overlay pixel (per-area, persisted)
+AreaCalibration          [Mithril.MapCalibration]      WorldToWindow: world coord → overlay pixel (per-area, persisted; #836 lift)
    │
    ▼
 PinScene + renderer     [Rendering/]   immutable per-frame snapshot drawn via Direct2D in a D3DImage
@@ -62,7 +62,7 @@ The wizard ([`LegolasWizardViewModel`](../src/Legolas.Module/ViewModels/LegolasW
 
 ### Area calibration: world → pixel
 
-The Survey placement transform is [`AreaCalibration`](../src/Legolas.Module/Domain/AreaCalibration.cs) (`ProjectWorld(WorldCoord) → PixelPoint`), a per-area 2D similarity transform persisted by [`IAreaCalibrationService`](../src/Legolas.Module/Services/AreaCalibrationService.cs). It is fitted by [`LandmarkCalibrationSolver`](../src/Legolas.Module/Services/LandmarkCalibrationSolver.cs) from *(world coordinate ↔ overlay pixel)* pairs.
+The Survey placement transform is [`AreaCalibration`](../src/Mithril.MapCalibration/AreaCalibration.cs) (`WorldToWindow(WorldCoord, currentZoom) → PixelPoint`), a per-area 2D similarity transform lifted to shared infra in #836 and now persisted by [`IMapCalibrationService`](../src/Mithril.MapCalibration/IMapCalibrationService.cs) (which Legolas's [`IAreaCalibrationService`](../src/Legolas.Module/Services/AreaCalibrationService.cs) delegates to for reads + dual-writes during the transition window). It is fitted by [`LandmarkCalibrationSolver`](../src/Mithril.MapCalibration/LandmarkCalibrationSolver.cs) from *(world coordinate ↔ overlay pixel)* pairs.
 
 The solver is a closed-form 2D similarity LSQ (origin X/Y, uniform scale, rotation), Umeyama-1991 specialised to 2D, expressed via 2D-complex arithmetic:
 
@@ -248,10 +248,10 @@ Pre-rewrite WPF baseline was 67–84 fps / p99 27–30 ms / 2–4 stutters for t
 | [`Services/PlayerLogParser.cs`](../src/Legolas.Module/Services/PlayerLogParser.cs) | `Player.log` parsing — `ProcessMapFx` (absolute survey targets + inline relative-offset for calibration verify), `ProcessScreenText` (`<Mineral> collected!` + motherlode distance), `ProcessDoDelayLoop` (motherlode use gesture). |
 | [`Services/PlayerLogIngestionService.cs`](../src/Legolas.Module/Services/PlayerLogIngestionService.cs) | `BackgroundService`. Area→calibration bridge, absolute pin placement, motherlode coordinator wiring. |
 | [`Services/ItemCollectionTracker.cs`](../src/Legolas.Module/Services/ItemCollectionTracker.cs) | `BackgroundService`. Tier-1 Add↔Collect correlator (#606 replacement for the retired chat-tail `LogIngestionService`); subscribes to `IInventoryView.Bus` + parses `ProcessScreenText` collect banners. |
-| [`Services/AreaCalibrationService.cs`](../src/Legolas.Module/Services/AreaCalibrationService.cs) | Per-area calibration persistence + `Changed`. |
+| [`Services/AreaCalibrationService.cs`](../src/Legolas.Module/Services/AreaCalibrationService.cs) | Calibration walkthrough lifecycle + `Changed`. Persistence lifted to [`IMapCalibrationService`](../src/Mithril.MapCalibration/IMapCalibrationService.cs) (#836); this service delegates reads + dual-writes during the transition window. |
 | [`Services/PinCalibrationCoordinator.cs`](../src/Legolas.Module/Services/PinCalibrationCoordinator.cs) | The guided two-phase calibration walkthrough (Drop/Pair, correction, residual, Confirm). |
-| [`Services/LandmarkCalibrationSolver.cs`](../src/Legolas.Module/Services/LandmarkCalibrationSolver.cs) | Pure 2D similarity LSQ solver. |
-| [`Domain/AreaCalibration.cs`](../src/Legolas.Module/Domain/AreaCalibration.cs) | The world→pixel transform (`ProjectWorld`). |
+| [`Mithril.MapCalibration/LandmarkCalibrationSolver.cs`](../src/Mithril.MapCalibration/LandmarkCalibrationSolver.cs) | Pure 2D similarity LSQ solver (lifted out of Legolas in #836). |
+| [`Mithril.MapCalibration/AreaCalibration.cs`](../src/Mithril.MapCalibration/AreaCalibration.cs) | The world↔pixel transform (`WorldToWindow` + `WindowToWorld`; lifted in #836). |
 | [`Services/CoordinateProjector.cs`](../src/Legolas.Module/Services/CoordinateProjector.cs) | Metre→pixel projection. **Vestigial** post-[#488](https://github.com/moumantai-gg/mithril/issues/488) (neither Survey nor the rebuilt Motherlode uses it). |
 | [`ViewModels/SessionState.cs`](../src/Legolas.Module/ViewModels/SessionState.cs) | Shared observable state. |
 | [`ViewModels/MapOverlayViewModel.cs`](../src/Legolas.Module/ViewModels/MapOverlayViewModel.cs) | Click handling, pin placement, route + wedge geometry, nudge dispatch. |
