@@ -777,20 +777,55 @@ libraries; the charter follows the code:
   world→screen projection + world-coord marker API in one package. Consumers
   hand `(areaKey, worldX, worldZ, style)`; `Mithril.Overlay` projects and
   draws. Owned by *no module*.
-  **Sequenced predecessor — `IPlayerCameraState` in Mithril.GameState.** The
-  projection's camera-state input (player position, view direction, FOV) must
-  land as a GameState producer *first*, so `Mithril.Overlay` consumes the
-  camera signal via the consumption-side rule rather than parsing raw logs
-  inside shared infra (which would violate the rule the projection lift is
-  supposed to honour). Build sequence: `IPlayerCameraState` producer →
-  projection + DirectX surface lift into `Mithril.Overlay` → `Mithril.Overlay`
-  published as shared infra. Legolas becomes the first projection-aware
-  consumer; its Survey / Motherlode markers, route-line, and motherlode wizard
-  all consume the marker API rather than owning the surface. Gwaihir becomes
-  the second consumer.
+  **Camera-state consumption — `IPositionState` + `IAreaState` from Arda
+  (resolved 2026-05-28 via closed
+  [#832](https://github.com/moumantai-gg/mithril/issues/832); supersedes the
+  initial `IPlayerCameraState` predecessor framing).** The world→screen
+  projection used by today's Legolas overlay is map-aligned, not 3D —
+  `AreaCalibration.ProjectWorld` is a per-area 2D similarity transform that
+  needs only `(currentArea, playerPosition)`. Both signals already exist in
+  Arda as `IAreaState` and `IPositionState`; `Mithril.Overlay` consumes them
+  directly per the consumption-side rule. No new GameState producer is
+  needed. Two reasons closed the original `IPlayerCameraState` proposal: (1)
+  view direction + FOV aren't carried by Player.log
+  (`Arda.Dispatch.Verbs.cs` declares no camera-orientation verb), and the
+  only off-log channels available — memory hooks, DirectX presentation
+  hooks — are foreclosed by PG's anti-injector stance (see
+  [[pg-anti-injector-stance]]: PG ships `[ACTk] Injection Detector` by
+  intent, today's Mono build runs it inert but a future IL2CPP migration
+  silently turns detection on); (2) a position-only `IPlayerCameraState`
+  whose only delta from `IPositionState` is stamping the area key was a
+  YAGNI seam for a migration we may never do. Build sequence:
+  `Mithril.MapCalibration` lift (or in-parallel with stub) → projection +
+  DirectX surface lift into `Mithril.Overlay` consuming
+  `IPositionState`/`IAreaState` directly → `Mithril.Overlay` published as
+  shared infra. Legolas becomes the first projection-aware consumer; its
+  Survey / Motherlode markers, route-line, and motherlode wizard all consume
+  the marker API rather than owning the surface. Gwaihir becomes the second
+  consumer.
 
 ## History
 
+- **2026-05-28** — **`Mithril.Overlay` sequenced-predecessor framing revised:
+  `IPlayerCameraState` dropped; consume `IPositionState` + `IAreaState` directly
+  (✅ owner-confirmed 2026-05-28).** When [#831](https://github.com/moumantai-gg/mithril/pull/831)
+  landed earlier today the *Cross-module shared infra → `Mithril.Overlay`* entry
+  named `IPlayerCameraState` as a sequenced predecessor (player position + view
+  direction + FOV). A planning pass to file the predecessor issue
+  ([#832](https://github.com/moumantai-gg/mithril/issues/832), closed without
+  code) surfaced two facts: (1) Player.log carries no camera-orientation verb
+  — `Arda.Dispatch.Verbs.cs` declares position only — and the off-log channels
+  available (memory hook, DirectX presentation hook) are foreclosed by PG's
+  anti-injector stance (PG ships ACTk's Injection Detector, currently inert on
+  Mono builds but loud about intent — see [[pg-anti-injector-stance]]); (2) the
+  remaining position-only flavour of `IPlayerCameraState` was a YAGNI seam over
+  the existing `IPositionState` + `IAreaState`. Owner picked the C resolution:
+  `Mithril.Overlay` consumes the two existing services directly. The lift's
+  "world→screen projection" reduces to `IMapCalibrationService.WorldToWindow`
+  — the renderer holds no projection math of its own. Build sequence revised
+  to drop the producer step; Legolas's overlay being map-aligned (not 3D)
+  makes this both correct and minimal. Surfaced during the issue-filing
+  follow-up to #831.
 - **2026-05-28** — **Gwaihir charter added + Legolas narrowed + three shared-infra
   lifts proposed (✅ owner-confirmed 2026-05-28).** Working out a module name for
   issue [#830](https://github.com/moumantai-gg/mithril/issues/830) §3a (community
