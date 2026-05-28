@@ -17,6 +17,7 @@ namespace Mithril.Shared.Tests;
 /// <i>producer-side</i> shape so PR B's new instrumentation surfaces can't
 /// silently drift away from what the exporter expects.
 /// </summary>
+[Collection(TelemetryTestCollection.Name)]
 public class PrBInstrumentationTests
 {
     private sealed record CapturedActivity(string Source, string Operation, Dictionary<string, object?> Tags, TimeSpan Duration);

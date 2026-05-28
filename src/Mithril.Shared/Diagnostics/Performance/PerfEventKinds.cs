@@ -28,6 +28,5 @@ public static class PerfEventKinds
     public const string ModuleDiscover = "module_discover";
     public const string GateOpen = "gate_open";
     public const string ViewResolve = "view_resolve";
-    public const string RefFetchOutcome = "ref_fetch_outcome";
     public const string MeterCounter = "meter_counter";
 }

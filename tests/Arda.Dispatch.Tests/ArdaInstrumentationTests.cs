@@ -15,6 +15,7 @@ namespace Arda.Dispatch.Tests;
 /// the producer-side shape so PR B can't drift away from what the exporter
 /// dispatch arms expect.
 /// </summary>
+[Collection(TelemetryTestCollection.Name)]
 public class ArdaInstrumentationTests
 {
     private readonly record struct CompositionEvent(int Value);

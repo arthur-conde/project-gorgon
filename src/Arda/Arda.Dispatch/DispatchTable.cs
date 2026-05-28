@@ -55,8 +55,14 @@ internal sealed class DispatchTable
         {
             // Counter only — emitting a span for every uncovered line would explode the
             // span volume on noisy log sources. Tags keep this aggregable per (verb, src).
-            ArdaMeters.VerbUnhandled.Add(1,
-                new KeyValuePair<string, object?>("verb", parsed.Verb.ToString()));
+            // Gate on Enabled so the `parsed.Verb.ToString()` allocation only happens when
+            // a listener is actually consuming the counter — preserves the "zero-cost when
+            // no listener" claim on a high-frequency hot path.
+            if (ArdaMeters.VerbUnhandled.Enabled)
+            {
+                ArdaMeters.VerbUnhandled.Add(1,
+                    new KeyValuePair<string, object?>("verb", parsed.Verb.ToString()));
+            }
             return;
         }
 

@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Core;
+using Serilog.Debugging;
 using Serilog.Formatting.Compact;
 using MelLogger = Microsoft.Extensions.Logging.ILogger;
 
@@ -27,11 +28,21 @@ public sealed class PerfRecorder : IPerfRecorder, IDisposable
     private PerfFileExporter? _exporter;
     private string? _currentSessionPath;
     private const int RetainedSessionFiles = 30;
+    private static int _selfLogWired;
 
     public PerfRecorder(string perfDir, MelLogger? logger = null)
     {
         _perfDir = perfDir;
         _diagLogger = logger;
+
+        // Serilog's file sink swallows IO errors silently by default. Wire SelfLog
+        // once per process to surface "disk full", "file locked by AV", etc. via the
+        // diagnostics logger — without this, a perf-trace session can produce an empty
+        // .jsonl while IsActive cheerfully reports success.
+        if (logger is not null && Interlocked.Exchange(ref _selfLogWired, 1) == 0)
+        {
+            SelfLog.Enable(msg => logger.LogWarning("Serilog SelfLog: {Message}", msg));
+        }
     }
 
     public bool IsActive => Volatile.Read(ref _logger) is not null;
@@ -68,11 +79,11 @@ public sealed class PerfRecorder : IPerfRecorder, IDisposable
                         flushToDiskInterval: TimeSpan.FromSeconds(1))
                     .CreateLogger();
 
-                var exporter = new PerfFileExporter(logger);
+                var exporter = new PerfFileExporter(logger, _diagLogger);
                 Volatile.Write(ref _logger, logger);
                 Volatile.Write(ref _currentSessionPath, sessionPath);
                 _exporter = exporter;
-                _diagLogger?.LogInformation($"Session started: {sessionPath}");
+                _diagLogger?.LogInformation("Session started: {SessionPath}", sessionPath);
 
                 exporter.EmitSessionHeader(header);
                 notify = true;
@@ -80,8 +91,8 @@ public sealed class PerfRecorder : IPerfRecorder, IDisposable
             catch (Exception ex)
             {
                 _diagLogger?.LogWarning(ex, "Failed to start session");
-                _logger = null;
-                _currentSessionPath = null;
+                Volatile.Write(ref _logger, null);
+                Volatile.Write(ref _currentSessionPath, null);
                 _exporter = null;
             }
         }
@@ -107,7 +118,7 @@ public sealed class PerfRecorder : IPerfRecorder, IDisposable
         toDispose?.Dispose();
         if (finishedPath is not null)
         {
-            _diagLogger?.LogInformation($"Session stopped: {finishedPath}");
+            _diagLogger?.LogInformation("Session stopped: {SessionPath}", finishedPath);
             IsActiveChanged?.Invoke(this, EventArgs.Empty);
         }
     }

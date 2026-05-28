@@ -4,8 +4,10 @@ using System.Diagnostics.Metrics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Arda.Abstractions.Diagnostics;
+using Microsoft.Extensions.Logging;
 using Mithril.Shared.Diagnostics.Telemetry;
 using Serilog.Core;
+using MelLogger = Microsoft.Extensions.Logging.ILogger;
 
 namespace Mithril.Shared.Diagnostics.Performance;
 
@@ -24,6 +26,7 @@ namespace Mithril.Shared.Diagnostics.Performance;
 internal sealed class PerfFileExporter : IDisposable
 {
     private readonly Logger _logger;
+    private readonly MelLogger? _diagLogger;
     private readonly ActivityListener _activityListener;
     private readonly MeterListener _meterListener;
 
@@ -37,9 +40,21 @@ internal sealed class PerfFileExporter : IDisposable
     // distinct buckets without holding live KeyValuePair arrays.
     private readonly ConcurrentDictionary<(string Instrument, string TagKey), CounterAccumulator> _counters = new();
 
-    public PerfFileExporter(Logger logger)
+    // Write-failure accounting. Swallowing errors silently inside a perf-recording
+    // session is the worst possible mode — the whole point is to be trustworthy when
+    // other systems aren't. The first failure of each kind is logged with full
+    // exception; subsequent failures bump a counter for a summary on Dispose.
+    private int _firstActivityFailureLogged;
+    private int _firstFrameFailureLogged;
+    private int _firstCounterFailureLogged;
+    private long _droppedActivityRecords;
+    private long _droppedFrameRecords;
+    private long _droppedCounterRecords;
+
+    public PerfFileExporter(Logger logger, MelLogger? diagLogger = null)
     {
         _logger = logger;
+        _diagLogger = diagLogger;
 
         _activityListener = new ActivityListener
         {
@@ -266,9 +281,14 @@ internal sealed class PerfFileExporter : IDisposable
                 activity.Duration.TotalMilliseconds,
                 activity.TagObjects);
         }
-        catch
+        catch (Exception ex)
         {
-            // Exporter never throws into the producer's stop path.
+            // Exporter never throws into the producer's stop path — but silently
+            // swallowing the failure is how an empty .jsonl ships. Log first occurrence
+            // with full detail, then count.
+            Interlocked.Increment(ref _droppedActivityRecords);
+            if (Interlocked.Exchange(ref _firstActivityFailureLogged, 1) == 0)
+                _diagLogger?.LogWarning(ex, "PerfFileExporter: first activity-write failure (subsequent failures counted, summary on session stop)");
         }
     }
 
@@ -335,7 +355,12 @@ internal sealed class PerfFileExporter : IDisposable
                 PerfEventKinds.FrameSummary, summary.Count, summary.MeanMs,
                 summary.P50Ms, summary.P95Ms, summary.MaxMs, summary.StallCount);
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Interlocked.Increment(ref _droppedFrameRecords);
+            if (Interlocked.Exchange(ref _firstFrameFailureLogged, 1) == 0)
+                _diagLogger?.LogWarning(ex, "PerfFileExporter: first frame-summary write failure");
+        }
     }
 
     private void FlushCounters()
@@ -353,7 +378,12 @@ internal sealed class PerfFileExporter : IDisposable
                     "{Kind} instrument={Instrument} sum={Sum} {@Tags}",
                     PerfEventKinds.MeterCounter, key.Instrument, sum, bucket.Tags);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref _droppedCounterRecords);
+                if (Interlocked.Exchange(ref _firstCounterFailureLogged, 1) == 0)
+                    _diagLogger?.LogWarning(ex, "PerfFileExporter: first counter-flush write failure");
+            }
         }
     }
 
@@ -365,6 +395,16 @@ internal sealed class PerfFileExporter : IDisposable
         try { FlushCounters(); } catch { }
         try { _activityListener.Dispose(); } catch { }
         try { _meterListener.Dispose(); } catch { }
+
+        // Surface the dropped-record summary so a session whose first-failure was the
+        // only thing logged still tells operators the scale of the problem.
+        var dropA = Interlocked.Read(ref _droppedActivityRecords);
+        var dropF = Interlocked.Read(ref _droppedFrameRecords);
+        var dropC = Interlocked.Read(ref _droppedCounterRecords);
+        if (dropA + dropF + dropC > 0)
+            _diagLogger?.LogWarning(
+                "PerfFileExporter: dropped records during session — activity={Activity} frame={Frame} counter={Counter}",
+                dropA, dropF, dropC);
     }
 
     // ── Tag helpers ───────────────────────────────────────────────────────

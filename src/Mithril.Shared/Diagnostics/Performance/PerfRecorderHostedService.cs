@@ -29,7 +29,7 @@ namespace Mithril.Shared.Diagnostics.Performance;
 public sealed class PerfRecorderHostedService : IHostedService, IDisposable
 {
     private readonly IPerfRecorder _recorder;
-    private readonly ILogger? _logger;
+    private readonly ILogger _logger;
     private readonly IActiveCharacterService _activeChar;
     private readonly IReadOnlyList<IMithrilModule> _modules;
     private readonly Func<bool> _verboseFrameEvents;
@@ -70,7 +70,7 @@ public sealed class PerfRecorderHostedService : IHostedService, IDisposable
         IActiveCharacterService activeChar,
         IEnumerable<IMithrilModule> modules,
         Func<bool> verboseFrameEvents,
-        ILogger? logger = null)
+        ILogger logger)
     {
         _recorder = recorder;
         _activeChar = activeChar;
@@ -83,7 +83,7 @@ public sealed class PerfRecorderHostedService : IHostedService, IDisposable
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        try { StopInternal(); } catch (Exception ex) { _logger?.LogWarning(ex, "Stop on shutdown failed"); }
+        try { StopInternal(); } catch (Exception ex) { _logger.LogWarning(ex, "Stop on shutdown failed"); }
         return Task.CompletedTask;
     }
 
@@ -104,7 +104,7 @@ public sealed class PerfRecorderHostedService : IHostedService, IDisposable
             _uiDispatcher = Application.Current?.Dispatcher;
             if (_uiDispatcher is null)
             {
-                _logger?.LogWarning("Cannot start: no WPF Application yet.");
+                _logger.LogWarning("Cannot start: no WPF Application yet.");
                 return;
             }
 
@@ -119,7 +119,7 @@ public sealed class PerfRecorderHostedService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "StartInternal failed");
+            _logger.LogWarning(ex, "StartInternal failed");
             try { _recorder.Stop(); } catch { }
         }
     }
@@ -135,10 +135,10 @@ public sealed class PerfRecorderHostedService : IHostedService, IDisposable
                 else d.Invoke(DetachHooks);
             }
         }
-        catch (Exception ex) { _logger?.LogWarning(ex, "DetachHooks failed"); }
+        catch (Exception ex) { _logger.LogWarning(ex, "DetachHooks failed"); }
 
         try { _recorder.Stop(); }
-        catch (Exception ex) { _logger?.LogWarning(ex, "Stop failed"); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Stop failed"); }
     }
 
     // ── Hook lifecycle (UI thread) ─────────────────────────────────────────
@@ -353,7 +353,7 @@ public sealed class PerfRecorderHostedService : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "Counter tick failed");
+            _logger.LogWarning(ex, "Counter tick failed");
         }
     }
 

@@ -568,6 +568,13 @@ public sealed class ReferenceDataService : IReferenceDataService
             catch (Exception ex)
             {
                 _logger?.LogWarning(ex, "{FileName} cache load failed, falling back to bundled", fileName);
+                // Mirror the cdn_failed retag — without this the cache-load record reads
+                // as a successful 0-byte cache load, indistinguishable from a hit.
+                cacheActivity?.SetTag("outcome", "cache_failed");
+                cacheActivity?.SetTag("bytes", 0L);
+                Mithril.Shared.Diagnostics.Telemetry.MithrilMeters.Reference.FetchOutcome.Add(1,
+                    new KeyValuePair<string, object?>("outcome", "cache_failed"),
+                    new KeyValuePair<string, object?>("file", fileName));
             }
         }
 

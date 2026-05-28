@@ -1,6 +1,6 @@
 # Perf-trace data schema
 
-Reference for the JSON-lines files written by [`IPerfTracer`](../src/Mithril.Shared/Diagnostics/Performance/IPerfTracer.cs) — what each event means, what its properties carry, and how to read a trace.
+Reference for the JSON-lines files written by [`IPerfRecorder`](../src/Mithril.Shared/Diagnostics/Performance/IPerfRecorder.cs) / [`PerfFileExporter`](../src/Mithril.Shared/Diagnostics/Performance/PerfFileExporter.cs) — what each event means, what its properties carry, and how to read a trace.
 
 Shipped in PR [#196](https://github.com/moumantai-gg/mithril/pull/196). Tracking issue: [#195](https://github.com/moumantai-gg/mithril/issues/195).
 
@@ -32,7 +32,13 @@ The discriminator is **`Kind`** — one of the constants in [`PerfEventKinds`](.
 
 ## Producer model
 
-Producers emit via `System.Diagnostics.ActivitySource` and `System.Diagnostics.Metrics.Meter` (BCL), using the canonical statics in [`Mithril.Shared.Diagnostics.Telemetry`](../src/Mithril.Shared/Diagnostics/Telemetry/) (and [`Arda.Abstractions.Diagnostics`](../src/Arda/Arda.Abstractions/Diagnostics/) for the Arda pipeline, which can't depend on `Mithril.Shared`). The recorder's internal listener — [`PerfFileExporter`](../src/Mithril.Shared/Diagnostics/Performance/PerfFileExporter.cs) — subscribes to every source/meter whose name starts with `"Mithril."` and maps emits to the JSON-lines schema below. The on-disk shape is preserved across the producer-API migration; consumers (mithril-logs MCP server, jq recipes) don't change.
+Producers emit via `System.Diagnostics.ActivitySource` and `System.Diagnostics.Metrics.Meter` (BCL), using the canonical statics in [`Mithril.Shared.Diagnostics.Telemetry`](../src/Mithril.Shared/Diagnostics/Telemetry/) (and [`Arda.Abstractions.Diagnostics`](../src/Arda/Arda.Abstractions/Diagnostics/) for the Arda pipeline, which can't depend on `Mithril.Shared`). The recorder's internal listener — [`PerfFileExporter`](../src/Mithril.Shared/Diagnostics/Performance/PerfFileExporter.cs) — subscribes to every source/meter whose name starts with `"Mithril."` and maps emits to the JSON-lines schema below.
+
+**Schema preservation is additive**, not byte-stable. Pre-existing record kinds keep all their pre-migration properties (so a jq recipe reading `.ModuleId` / `.File` / `.CacheHit` continues to work), but some records gained new properties:
+
+- `ref_fetch` gained an `Outcome` property (`cdn`, `cdn_failed`, `cache`, `cache_failed`, `bundled`) — previously the record only fired on the CDN path and `CacheHit` was always `false`. Consumers that read specific properties are unaffected; consumers comparing entire records will see the new key.
+
+If a downstream consumer (mithril-logs MCP, jq recipes) is sensitive to the full key set, treat this PR as an additive schema migration.
 
 ## What's instrumented today
 
@@ -387,8 +393,10 @@ A few signatures that have been useful in practice. Most failure modes have a ch
 Adding a new event kind:
 
 1. Add the string constant to [`PerfEventKinds.cs`](../src/Mithril.Shared/Diagnostics/Performance/PerfEventKinds.cs).
-2. Add an `EmitX(...)` method to [`IPerfTracer.cs`](../src/Mithril.Shared/Diagnostics/Performance/IPerfTracer.cs) and [`PerfTracer.cs`](../src/Mithril.Shared/Diagnostics/Performance/PerfTracer.cs) following the existing pattern — `if (Volatile.Read(ref _logger) is null) return;` short-circuits the inactive path.
-3. Call the emit from wherever the signal originates. For UI-thread hooks, wire/unwire in [`PerfTracerHostedService.AttachHooks`](../src/Mithril.Shared/Diagnostics/Performance/PerfTracerHostedService.cs).
-4. Document the new `Kind` in this file under **Event kinds**.
+2. Pick a canonical `ActivitySource` for the producer. If a cross-cutting source already fits in [`MithrilActivitySources`](../src/Mithril.Shared/Diagnostics/Telemetry/MithrilActivitySources.cs) (`Wpf`, `ShellModules`, `Reference`) or the Arda-side [`ArdaActivitySources`](../src/Arda/Arda.Abstractions/Diagnostics/ArdaActivitySources.cs), reuse it. Add a new entry to one of those catalogs if needed — never `new ActivitySource(...)` at a call site.
+3. Emit at the producer with `using var act = MithrilActivitySources.X.StartActivity("op.name"); act?.SetTag(...)`. No `IsActive` check — `StartActivity` returns null when no listener is attached, so producers pay one volatile read in the off case.
+4. Add a dispatch arm in [`PerfFileExporter.OnActivityStopped`](../src/Mithril.Shared/Diagnostics/Performance/PerfFileExporter.cs) keyed on `(source.Name, op)`, mapping tags to the JSON-lines record shape via the Serilog message template. Property names should be `CamelCase` (Serilog preserves placeholder case).
+5. For UI-thread hooks, wire/unwire in [`PerfRecorderHostedService.AttachHooks`](../src/Mithril.Shared/Diagnostics/Performance/PerfRecorderHostedService.cs).
+6. Document the new `Kind` in this file under **Event kinds** — include the property table.
 
-Adding a per-module timing without a new event kind: prefer `using var s = perf.Scope("module.operation", new { tags })`. Cheap to add, costs nothing when no session is active, surfaces as a `scope` event that filters/aggregates cleanly alongside everything else.
+For a `Meter` counter instead of a span: add the instrument to the relevant catalog ([`MithrilMeters`](../src/Mithril.Shared/Diagnostics/Telemetry/MithrilMeters.cs) or [`ArdaMeters`](../src/Arda/Arda.Abstractions/Diagnostics/ArdaMeters.cs)), emit with `Counter.Add(1, tag)`. `PerfFileExporter.AccumulateCounter` aggregates per `(instrument, tag-set)` and flushes as `meter_counter` records once per second — no new exporter code needed unless you want a custom record shape. For hot paths where tag values are expensive to compute (e.g. `parsed.Verb.ToString()`), gate on `Counter.Enabled` first.

@@ -99,6 +99,9 @@ internal sealed class DomainEventBus : IDomainEventBus
             var snapshot = _handlers;
             // HasListeners is a cheap volatile read; gates the string allocation
             // for the op name when no perf-recorder session has attached a listener.
+            // Cached once per Publish call — a listener that attaches mid-publish misses
+            // spans for this event's remaining subscribers. Acceptable trade-off: cheaper
+            // than per-subscriber volatile reads, and the next Publish picks it up.
             var instrument = ArdaActivitySources.Composition.HasListeners();
             foreach (var handler in snapshot)
             {

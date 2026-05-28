@@ -6,6 +6,7 @@ using Xunit;
 
 namespace Mithril.Shared.Tests;
 
+[Collection(TelemetryTestCollection.Name)]
 public class BindingErrorTraceListenerTests
 {
     // The listener is internal; use reflection rather than InternalsVisibleTo

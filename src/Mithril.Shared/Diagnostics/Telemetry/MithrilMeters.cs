@@ -68,9 +68,7 @@ public static class MithrilMeters
             Meter.CreateCounter<long>("mithril.reference.fetch_outcome");
     }
 
-    /// <summary>GameState services event counters (PR B). Per-service counters created on demand.</summary>
-    public static class GameState
-    {
-        public static readonly Meter Meter = new("Mithril.GameState");
-    }
+    // GameState per-service counters and subscriber-count gauges are deferred from PR B
+    // (see #818 acceptance criteria); add a `GameState` static here when the follow-up
+    // lands rather than shipping an empty placeholder.
 }

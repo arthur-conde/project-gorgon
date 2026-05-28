@@ -66,6 +66,9 @@ internal sealed class WorldDriver : IWorldDriver
 
         var sourceTag = new KeyValuePair<string, object?>("source", _sourceFamily ?? "unknown");
 
+        try
+        {
+
         await foreach (var line in _source.Lines(ct).WithCancellation(ct))
         {
             if (_grammarSignal?.IsRaised == true)
@@ -170,13 +173,19 @@ internal sealed class WorldDriver : IWorldDriver
             _onLiveTransition!();
         }
 
-        driverActivity?.SetTag("line_count", _lineCount);
-        driverActivity?.SetTag("halted", halted);
-
         _logger?.LogInformation(
             "World driver completed for {SourceFamily} ({LineCount} lines processed, halted={Halted})",
             _sourceFamily ?? "unknown",
             _lineCount,
             halted);
+        }
+        finally
+        {
+            // Tag in finally so an exception escape still records truthful state — without
+            // this, the activity disposes with default (line_count=0, halted=false) which
+            // is the opposite of what happened.
+            driverActivity?.SetTag("line_count", _lineCount);
+            driverActivity?.SetTag("halted", halted);
+        }
     }
 }
