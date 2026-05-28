@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using FluentAssertions;
 using Mithril.Shared.Telemetry.Export;
 using Xunit;
@@ -56,5 +57,19 @@ public class ExporterHealthMonitorTests
         using var sub = m.Subscribe(h => observed = h);
         observed.Should().NotBeNull();
         observed!.LastSuccessUtc.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task Concurrent_record_calls_dont_lose_either_timestamp()
+    {
+        using var m = new ExporterHealthMonitor();
+        const int iterations = 200;
+        var successTask = Task.Run(() => { for (int i = 0; i < iterations; i++) m.RecordSuccess(); });
+        var failureTask = Task.Run(() => { for (int i = 0; i < iterations; i++) m.RecordFailure("e"); });
+        await Task.WhenAll(successTask, failureTask);
+
+        // After 400 interleaved writes, both history fields must be set.
+        m.Current.LastSuccessUtc.Should().NotBeNull();
+        m.Current.LastFailureUtc.Should().NotBeNull();
     }
 }
