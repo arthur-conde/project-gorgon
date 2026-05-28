@@ -318,10 +318,13 @@ channel rule, and this strategic principle):
 
 ## Legolas — surveying & route optimization
 
-- **Owns: ✅ confirmed (owner, 2026-05-16)** — the survey FSM, position-anchor/projection,
-  survey-run route optimization, and the map overlay. (See `legolas-overview` doc +
-  `legolas_position_anchor_constraint` memory: surveying produces inventory items;
-  movement invalidates the projector.)
+- **Owns: ✅ confirmed (owner, 2026-05-16; narrowed 2026-05-28)** — the Survey
+  FSM, the Motherlode FSM (with its motherlode-specific position anchor +
+  `CoordinateProjector.Refit` for converting `[Status]` relative offsets to
+  world coords), survey-run route optimization, and the survey/motherlode UX
+  (cold-start calibration wizard, survey-run line, motherlode dig flow). See
+  `legolas-overview` doc + `legolas_position_anchor_constraint` memory:
+  surveying produces inventory items.
   - **Update — #454 (2026-05-18):** survey placement is now **absolute**
     (`ProcessMapFx`); the relative-offset model, the position anchor, and
     `CoordinateProjector.Refit` are retired *for Survey*. The
@@ -329,10 +332,40 @@ channel rule, and this strategic principle):
     calibration becomes a wizard `Calibrating` step over the map overlay
     (#460). The "movement invalidates the projector" caveat no longer
     applies to Survey.
+  - **Update — 2026-05-28 (owner-confirmed):** the **DirectX overlay surface**,
+    the **world→screen projection** that drives it, and the **per-area map
+    calibration data + transform** all lift out of Legolas into shared infra
+    (`Mithril.Overlay`, `Mithril.MapCalibration` — see the *Cross-module shared
+    infra* section below). The lifts retire Legolas's status as the de facto
+    home for "anything map/projection-shaped" and free Gwaihir (issue #830 §3a/§3b)
+    and Silmarillion (issue #830 §3c) to render world coords on either surface
+    without taking a Legolas dependency. Legolas becomes the first projection-aware
+    consumer of `Mithril.Overlay`'s marker API; its Survey/Motherlode markers,
+    route-line, and motherlode wizard all consume the marker API rather than
+    owning the surface. Sequenced predecessor: an `IPlayerCameraState` GameState
+    producer must land first so the projection lift consumes the camera signal
+    via the GameState consumption-side rule, not by parsing raw logs inside
+    `Mithril.Overlay`. The Motherlode-only `CoordinateProjector` / position
+    anchor (Status-line offsets → world coords) is a **separate** projection
+    from world→screen and **stays Legolas's**.
 - **Does NOT own:**
   - **✅ confirmed (owner, 2026-05-16)** — *General geographic reference* (where
     places/landmarks are). Areas/landmarks browsing is Silmarillion.
   - **✅ confirmed (owner, 2026-05-16)** — *Item acquisition guidance.*
+  - **✅ confirmed (owner, 2026-05-28)** — *The DirectX overlay surface itself.*
+    Lifted to `Mithril.Overlay` (shared infra). Legolas *uses* it for its own
+    markers; it does not own the substrate.
+  - **✅ confirmed (owner, 2026-05-28)** — *World→screen projection.* Lifted to
+    `Mithril.Overlay` alongside the overlay surface. Legolas hands world coords
+    to the marker API; the projection math is shared infra. (Motherlode's
+    Status-line-offsets-to-world-coords `CoordinateProjector` is a different
+    projection and stays Legolas's per the Owns line above.)
+  - **✅ confirmed (owner, 2026-05-28)** — *Per-area map calibration data +
+    transform.* Lifted to `Mithril.MapCalibration` (shared infra). Legolas's
+    accumulated per-area anchor observations become one of several anchor
+    sources the shared service stacks (bundled baseline + per-user refinement
+    + future community-sync); Legolas no longer owns the catalogue or the
+    `WorldToWindow` / `WindowToWorld` surface.
 - **Reference data:** `Items` (survey items).
 
 ## Arwen — NPC favor & gift tracking
@@ -599,6 +632,89 @@ channel rule, and this strategic principle):
   cross-server observations aren't blended; the gardening-buff log grammar is not
   yet decoded.
 
+## Gwaihir — community POI / pin sharing (player-facing)
+
+> **(Owner-confirmed 2026-05-28 — binding. Gwaihir is a *proposed* module, not
+> yet a `*.Module` project, so it does not count against the "all 12 projects
+> charactered" coverage statement above.)**
+
+- **Owns: ✅ confirmed (owner, 2026-05-28)** — the **player-facing surface** for
+  shared points-of-interest in the game world. Two halves: **community pin
+  repo** (issue [#830](https://github.com/moumantai-gg/mithril/issues/830) §3a —
+  serverless community-aggregated POI dataset parallel to `mithril-calibration`,
+  shape `(areaKey, worldX, worldZ, label, author, tags)`) and **`mithril://`
+  POI URLs** (issue #830 §3b — stateless URL encoding
+  `(areaKey, worldX, worldZ, label)` for peer-to-peer pin handoff, no hosting
+  infra needed). Owns the **POI *slice*** of the community-data pipeline — the
+  `"gwaihir"` key, its payload schema (server/shard-keyed pin record), and the
+  publish-trigger / consume-render policy — parallel to how Samwise / Arwen /
+  Smaug / Gandalf / Radagast own *their* community-sync keys. Owns *what is
+  shared and when*, not the wire and not the renderer.
+- **Does NOT own:**
+  - **✅ (cross-cutting shared-infra rule) — the rendering substrate.**
+    `Mithril.MapAssets` (PNG extraction, #830 Tier 1), `Mithril.MapCalibration`
+    (per-area world ↔ map-pixel transform), and `Mithril.Overlay` (DirectX
+    surface + world→screen projection + world-coord marker API) are shared
+    infra owned by *no module*. Gwaihir hands `(areaKey, worldX, worldZ, …)`
+    to either rendering surface — the static map-view control (MapAssets +
+    MapCalibration) or the live in-game overlay (Mithril.Overlay) — and the
+    right thing happens. World coord is the universal POI currency; rendering
+    surface is a downstream choice the user makes per pin. Owning the POI
+    dataset slice ≠ owning the renderer.
+  - **✅ (cross-cutting data-owner rule) — the community-sync transport.** The
+    serverless publish + consume *transport* (the raw.githubusercontent.com
+    aggregation pipeline — `CommunityCalibrationService` / `MithrilRepository`
+    and its future publish half) is **shared Mithril infra**, owned by
+    *neither* Gwaihir nor any consuming module. Gwaihir defines and consumes
+    its `"gwaihir"` slice; it does not own the wire, the aggregation, or the
+    publish mechanism. Same split as Radagast.
+  - **✅ (hard) vs Silmarillion (#830 §3c — area-page map background).**
+    Silmarillion is **the** reference browser; an area-page map rendering
+    landmarks / NPCs / quest-givers over the extracted PNG is a Silmarillion
+    surface that consumes the *same* shared infra (MapAssets + MapCalibration
+    + the map-view control). Gwaihir's surface is the community-POI dataset;
+    Silmarillion's is the reference catalogue. Same rendering substrate, two
+    surfaces, different data domain — the data-owner-vs-surface rule.
+  - **✅ (hard) vs Legolas.** Legolas's in-game survey/motherlode markers,
+    survey-run route line, motherlode wizard, and Motherlode-only
+    `CoordinateProjector` are Legolas-specific consumers of `Mithril.Overlay`
+    on top of Legolas-specific FSMs. Gwaihir is a separate consumer of the
+    same overlay marker API for a different purpose (community POIs). Both
+    render via shared infra; neither owns the other's UX.
+  - **✅ (hard) — position-data ceiling.** Gwaihir does **not** track *which*
+    player is *where* — there is no live player position stream (see issue
+    #830's position-data ceiling discussion). Pins are static world coords
+    authored at click-time (`Mithril.MapCalibration.WindowToWorld` on a map
+    click, or accepted from a `mithril://` URL) and rendered at static world
+    coords on either surface. "Live following player marker" is foreclosed by
+    data, not charter.
+  - **soft/empty** — *Editing / curating the community repo from inside
+    Mithril.* Author-side mutation is out-of-band (PR to the community repo,
+    parallel to `mithril-calibration`); Gwaihir is read + publish-trigger only,
+    mirroring Samwise / Arwen / Smaug / Gandalf / Radagast calibration-key
+    patterns.
+- **Data sources:** the community aggregate via the existing
+  `CommunityCalibrationService` / `MithrilRepository`
+  raw.githubusercontent.com pattern (new `"gwaihir"` key + payload schema,
+  server/shard-keyed); shared rendering infra (`Mithril.MapAssets` /
+  `Mithril.MapCalibration` / `Mithril.Overlay`). No CDN reference data.
+- **Open (for the build issue, not charter):** the three shared-infra lifts
+  (`Mithril.MapAssets` substrate per #830 Tier 1; `Mithril.MapCalibration`
+  lifted from Legolas's per-area anchor catalogue; `Mithril.Overlay` lifted
+  from Legolas's DirectX surface + projection) are **sequenced predecessors**.
+  The `Mithril.Overlay` projection lift in turn requires an `IPlayerCameraState`
+  GameState producer first (player position, view direction, FOV) so the
+  projection consumes the camera signal via the GameState consumption-side
+  rule rather than re-parsing raw logs. The community-sync publish half
+  (shared infra, currently unbuilt; Radagast is its first publishing consumer)
+  must also land before community-pin publishing works — Gwaihir adds a second
+  publishing consumer. The community payload must be **PG-server/shard-keyed**.
+  The ±10% non-affine ceiling (`legolas_calibration_findings`,
+  [PR #449](https://github.com/moumantai-gg/mithril/pull/449)) propagates to
+  every map-rendered pin: "approximate location" UX is fine; pixel-perfect
+  rendezvous is not, and `Mithril.MapCalibration` should expose the residual
+  estimate so Gwaihir's UX degrades honestly.
+
 ---
 
 ## Cross-module shared infra (charter-adjacent)
@@ -625,14 +741,95 @@ libraries; the charter follows the code:
   `MithrilRepository`, Mithril.Shared) — consume half shipped, publish half
   unbuilt.** The serverless raw.githubusercontent.com aggregation pipeline that
   every calibration key (`samwise`/`arwen`/`smaug`/`gandalf`, and proposed
-  `radagast`) rides on. Owned by *no module*: modules own their key + payload
-  slice and `Subscribe`/publish; the transport, aggregation, and (future)
-  publish mechanism are the shared single source of truth. The publish half is
-  the unbuilt extension — owned here, not by Radagast (its first publishing
-  consumer). Parallel to the data-owner-vs-surface rule for live state.
+  `radagast`/`gwaihir`) rides on. Owned by *no module*: modules own their key +
+  payload slice and `Subscribe`/publish; the transport, aggregation, and
+  (future) publish mechanism are the shared single source of truth. The publish
+  half is the unbuilt extension — owned here, not by Radagast (its first
+  publishing consumer) or Gwaihir (its second). Parallel to the
+  data-owner-vs-surface rule for live state.
+- **`Mithril.MapAssets` — proposed substrate
+  (issue [#830](https://github.com/moumantai-gg/mithril/issues/830) Tier 1; owner-confirmed 2026-05-28).**
+  Extracts per-area map PNGs from the user's local Steam PG install via Unity
+  AssetBundle parsing (`AssetsTools.NET`); mtime-keyed cache under
+  `%LocalAppData%/Mithril/maps/`. Surface:
+  `IMapAssetService.TryGetMapPngPathAsync(addressableKey, ct) → string?`. Owned
+  by *no module* — every map-rendering consumer (the WPF map-view control,
+  Silmarillion's area page per #830 §3c, Gwaihir's static-pin surface) pulls
+  the PNG through this service. Steam-only by substrate; fails informatively
+  when PG isn't a Steam install. See #830 for the Tier 1 build spec.
+- **`Mithril.MapCalibration` — proposed shared transform
+  (lift from Legolas; owner-confirmed 2026-05-28).** Per-area world ↔
+  map-PNG-pixel transform, bidirectional. Surface:
+  `IMapCalibrationService.WorldToWindow(areaKey, (x, z)) → Point?` +
+  `WindowToWorld(areaKey, point) → (x, z)?` + `IsCalibrated(areaKey) → bool`.
+  Anchor sources stack: bundled baseline (~36-area hand-authored JSON,
+  #830 Tier 2a) → per-user refinement from accumulated calibration data
+  (Legolas's existing anchor catalogue moves here) → potentially community-sync
+  down the road (parallel to existing calibration keys). Surfaces the residual
+  estimate so consumers can degrade UX honestly ("approximate location" chip)
+  per the ±10% non-affine ceiling
+  (`legolas_calibration_findings`,
+  [PR #449](https://github.com/moumantai-gg/mithril/pull/449)). Owned by
+  *no module* — Legolas, Silmarillion (#830 §3c), Gwaihir (#830 §3a/§3b), and
+  any future map-rendering consumer share the catalogue.
+- **`Mithril.Overlay` — proposed shared rendering surface
+  (lift from Legolas; owner-confirmed 2026-05-28).** DirectX overlay window +
+  world→screen projection + world-coord marker API in one package. Consumers
+  hand `(areaKey, worldX, worldZ, style)`; `Mithril.Overlay` projects and
+  draws. Owned by *no module*.
+  **Sequenced predecessor — `IPlayerCameraState` in Mithril.GameState.** The
+  projection's camera-state input (player position, view direction, FOV) must
+  land as a GameState producer *first*, so `Mithril.Overlay` consumes the
+  camera signal via the consumption-side rule rather than parsing raw logs
+  inside shared infra (which would violate the rule the projection lift is
+  supposed to honour). Build sequence: `IPlayerCameraState` producer →
+  projection + DirectX surface lift into `Mithril.Overlay` → `Mithril.Overlay`
+  published as shared infra. Legolas becomes the first projection-aware
+  consumer; its Survey / Motherlode markers, route-line, and motherlode wizard
+  all consume the marker API rather than owning the surface. Gwaihir becomes
+  the second consumer.
 
 ## History
 
+- **2026-05-28** — **Gwaihir charter added + Legolas narrowed + three shared-infra
+  lifts proposed (✅ owner-confirmed 2026-05-28).** Working out a module name for
+  issue [#830](https://github.com/moumantai-gg/mithril/issues/830) §3a (community
+  pin repo) and §3b (`mithril://` POI URLs) opened a broader architectural pass.
+  Conclusion: world coord is the universal POI currency; two rendering surfaces
+  exist (static map via extracted PNG, live in-game DirectX overlay); any module
+  with a world coord should reach either surface without taking a per-module
+  dependency. Three shared-infra lifts land in the same charter pass —
+  **`Mithril.MapAssets`** (PNG substrate, #830 Tier 1), **`Mithril.MapCalibration`**
+  (per-area world ↔ pixel transform, lifted from Legolas's calibration catalogue),
+  and **`Mithril.Overlay`** (DirectX surface + world→screen projection + marker
+  API, lifted from Legolas's overlay infrastructure). Legolas narrows
+  correspondingly: Survey FSM, Motherlode FSM with motherlode-only
+  `CoordinateProjector` for Status-offset→world-coord (a *different* projection
+  from world→screen, retained), survey-run route optimization, and the
+  survey/motherlode UX stay; the DirectX surface, world→screen projection math,
+  and per-area calibration *data* all lift. The world→screen projection lift
+  surfaces a sequenced predecessor: an `IPlayerCameraState` GameState producer
+  (player position + view direction + FOV) must land first so `Mithril.Overlay`
+  consumes the camera signal via the GameState consumption-side rule rather than
+  re-parsing raw logs in shared infra. Build sequence: `IPlayerCameraState`
+  producer → projection + DirectX surface lift into `Mithril.Overlay` →
+  calibration lift into `Mithril.MapCalibration` → `Mithril.MapAssets`
+  substrate → Gwaihir module. Gwaihir entry follows the Radagast pattern
+  (proposed module, not yet a `*.Module` project; does not count against the
+  12-project coverage statement). Charter pass disambiguates a naming question
+  along the way: the natural Tolkien-metaphor pick **Palantír** was already
+  claimed by the debug-tools module; **Gwaihir** (eagle-lord, messenger between
+  distant points) lands as the chosen name and slots into the existing
+  character-name pattern. The conversation also confirmed Celebrimbor is a
+  character (Noldorin smith) — Silmarillion is the lone book/jewel-name outlier,
+  not a character/place split. Issue #830 Tier 2 anchor authoring re-targets
+  from `Mithril.Reference/BundledData/area-anchors.json` to `Mithril.MapCalibration`;
+  worth a comment on #830 once the module name is settled. Issue #830's
+  "position-data ceiling" section also undersells the overlay path: *live-following
+  the player* remains foreclosed (no live position stream), but *static world
+  coords rendered live on the DirectX overlay* is fully supported — the overlay
+  refreshes at game framerate and the projection is solved, so Gwaihir pins
+  *stay put in world space as the camera moves*. Worth amending #830 separately.
 - **2026-05-21** — **Strategic principle made explicit: GameState owns the emulated
   game; modules project subsets for UX (✅ owner-confirmed 2026-05-21).** The two
   tactical rules previously landed today ([#578](https://github.com/moumantai-gg/mithril/pull/578)
