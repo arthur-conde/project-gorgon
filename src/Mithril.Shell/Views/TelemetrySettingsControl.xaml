@@ -24,7 +24,8 @@
     <Expander Foreground="#FFE8E8E8"
               Background="#FF1A1A1A"
               BorderBrush="#22FFFFFF" BorderThickness="0,1,0,0"
-              Margin="0,16,0,0" Padding="0">
+              Margin="0,16,0,0" Padding="0"
+              IsExpanded="{Binding Settings.EnableOtlpExport, Mode=OneTime}">
         <Expander.Header>
             <StackPanel Orientation="Horizontal">
                 <icon:PackIconLucide Kind="Radio" Width="16" Height="16"
