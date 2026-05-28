@@ -7,8 +7,8 @@ namespace Mithril.Shared.Telemetry.Catalog;
 
 /// <summary>
 /// Frozen union of every <see cref="TagDescriptor"/> contributed by subsystems
-/// via <see cref="ITagDescriptorProvider"/>. Consumed by the
-/// allowlist-and-redaction processor (Task 6) for fast key lookup and by the
+/// via <see cref="ITagDescriptorProvider"/>. Consumed by
+/// <c>AllowlistAndRedactionProcessor</c> for fast key lookup and by the
 /// settings UI for tag-cloud rendering.
 ///
 /// Conflicts (same key declared with any difference in classification,

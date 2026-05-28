@@ -13,6 +13,12 @@ namespace Mithril.Shared.Telemetry.Logs;
 /// No-op outside an active Activity (the common case for shell-startup
 /// logging before any source is wrapped).
 /// </summary>
+/// <remarks>
+/// The property keys <c>trace_id</c> and <c>span_id</c> are lowercase-underscored
+/// per the OpenTelemetry logs semantic convention, deliberately differing from
+/// Mithril's PascalCase MEL property convention so downstream OTel collectors
+/// recognise them without remapping.
+/// </remarks>
 public sealed class MithrilTraceContextEnricher : ILogEventEnricher
 {
     public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)

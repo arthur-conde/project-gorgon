@@ -201,7 +201,7 @@
                        FontWeight="SemiBold" Margin="0,0,0,4"/>
             <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8"
-                       Text="Click a chip to toggle whether the tag is included in exported spans. Green = safe, amber = identifying, red = potentially sensitive. Changes apply per span without restart."/>
+                       Text="Click a chip to toggle whether the tag is included in exported spans. Green = safe, amber = identifying, red = potentially sensitive. Changes apply per span without restart (once export is enabled)."/>
 
             <ItemsControl ItemsSource="{Binding TagGroups}" Margin="0,0,0,8">
                 <ItemsControl.ItemTemplate>

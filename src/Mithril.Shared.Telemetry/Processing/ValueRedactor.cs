@@ -6,9 +6,9 @@ namespace Mithril.Shared.Telemetry.Processing;
 /// value accidentally contains the active character name or a user-bearing
 /// path is sanitised before export.
 ///
-/// Ordering matters &mdash; longer prefix (<c>localAppData</c>) is replaced
-/// before <c>userProfile</c> so <c>C:\Users\alice\AppData\Local\&#8230;</c>
-/// becomes <c>$LOCALAPPDATA\&#8230;</c> rather than <c>$USER\AppData\Local\&#8230;</c>.
+/// Ordering matters — longer prefix (<c>localAppData</c>) is replaced
+/// before <c>userProfile</c> so <c>C:\Users\alice\AppData\Local\…</c>
+/// becomes <c>$LOCALAPPDATA\…</c> rather than <c>$USER\AppData\Local\…</c>.
 /// </summary>
 public sealed class ValueRedactor
 {

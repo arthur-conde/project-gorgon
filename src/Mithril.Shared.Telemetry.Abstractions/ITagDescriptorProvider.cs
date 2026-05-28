@@ -8,5 +8,9 @@ namespace Mithril.Shared.Telemetry.Abstractions;
 /// </summary>
 public interface ITagDescriptorProvider
 {
+    /// <summary>
+    /// Returns all tag descriptors this subsystem declares. Called once at catalog
+    /// construction; the result is expected to be stable for the process lifetime.
+    /// </summary>
     IReadOnlyCollection<TagDescriptor> Describe();
 }

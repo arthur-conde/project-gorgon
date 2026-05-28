@@ -29,6 +29,8 @@ public sealed class TelemetrySettings : INotifyPropertyChanged, IVersionedState<
     public static TelemetrySettings Migrate(TelemetrySettings loaded)
     {
         // v0 -> v1: no field renames yet; bump version stamp.
+        // The stamp is redundant when invoked via PerCharacterStore.RunMigrate (which bumps
+        // SchemaVersion after Migrate returns) but is required for direct callers (unit tests).
         loaded.SchemaVersion = Version;
         return loaded;
     }
