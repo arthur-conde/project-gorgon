@@ -38,7 +38,7 @@ public sealed class MithrilSharedTagDescriptors : ITagDescriptorProvider
         new("queue_depth",      PiiClassification.Safe, "Mithril.Wpf", "Current in-flight dispatcher op count."),
         new("generation",       PiiClassification.Safe, "Mithril.Wpf", "GC generation observed (0 | 1 | 2) for gc span."),
         new("duration_ms",      PiiClassification.Safe, "Mithril.Wpf", "GC pause duration in milliseconds (currently 0 — polling has no start/stop ticks)."),
-        new("message",          PiiClassification.Identifying, "Mithril.Wpf", "WPF data-binding error message text."),
+        new("message",          PiiClassification.Sensitive, "Mithril.Wpf", "Raw WPF binding error text — may include bound property path/character name"),
 
         // ── Mithril.Shell.Modules — gate/view/discover/activate spans ──
         new("module.id",        PiiClassification.Identifying, "Mithril.Shell.Modules", "Module id (samwise, pippin, ...) — the module-activated / gate_open / view_resolve subject."),
