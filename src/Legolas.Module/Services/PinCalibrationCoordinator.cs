@@ -270,6 +270,7 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
         SelectedMarker = null;
         OverridePin = null;
         PreviewResidual = null;
+        PersistError = null;
         SyncExistingPins(_pinState.Pins);
         Phase = HasUsablePins ? CalibrationPhase.Pair : CalibrationPhase.Drop;
         IsArmed = true;
@@ -403,6 +404,19 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
         return Persist();
     }
 
+    /// <summary>
+    /// User-visible error from the most recent <see cref="Confirm"/> /
+    /// <see cref="ConfirmAnyway"/> attempt that failed to persist (typically
+    /// a transient IOException &#8212; AV scan locking <c>refinements.json.tmp</c>,
+    /// OneDrive placeholder hiccup, full disk). Null when the last attempt
+    /// succeeded or no attempt has been made. Cleared on every new attempt
+    /// and on <see cref="Arm"/>. The wizard surfaces this so the user can
+    /// retry without the WPF command crashing into the unhandled-exception
+    /// path (round-3 review #1).
+    /// </summary>
+    [ObservableProperty]
+    private string? _persistError;
+
     private AreaCalibration? Persist()
     {
         var pairs = _pairs
@@ -415,9 +429,24 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
         // the ~15× blast radius. Headless / unit-test paths without a
         // SessionState fall back to 1.0 (the historic default).
         var zoom = _session?.CurrentMapZoom ?? 1.0;
-        var result = _service.CalibrateCurrentArea(pairs, calibrationZoom: zoom);
-        if (result is not null) Disarm();
-        return result;
+        PersistError = null;
+        try
+        {
+            var result = _service.CalibrateCurrentArea(pairs, calibrationZoom: zoom);
+            if (result is not null) Disarm();
+            return result;
+        }
+        catch (System.IO.IOException ex)
+        {
+            // UserRefinementStore.Save propagates IOException with full rollback
+            // (in-memory state restored). Surface the error to the wizard
+            // without crashing the WPF command — the user can retry once the
+            // lock clears. We deliberately stay armed so the placed pairs
+            // aren't lost: the user fixes whatever held the file open (AV /
+            // OneDrive) and hits Confirm again.
+            PersistError = $"Couldn't save calibration: {ex.Message}. Retry once the file lock clears.";
+            return null;
+        }
     }
 
     private void SelectMarker(CalibrationMarker? m)

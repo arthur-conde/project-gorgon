@@ -337,6 +337,36 @@ public sealed class MapCalibrationServiceTests : IDisposable
         current.Scale.Should().Be(1.0);
     }
 
+    [Fact]
+    public void ImportFromLegacy_rolls_back_in_memory_state_when_Persist_throws()
+    {
+        // Round-3 review #3: the whole-batch all-or-nothing invariant on the
+        // migration path is distinct from Save's per-key rollback — the
+        // snapshot is the whole pre-import dictionary, restored atomically.
+        // Provoke a persist throw by locking refinements.json.tmp exclusively
+        // and confirm neither new entry leaks into TryGet after the throw.
+        var store = new UserRefinementStore(_tempDir);
+        var preexisting = MakeCal(residual: 5.0, scale: 1.0);
+        store.Save("AreaEltibule", preexisting);
+
+        var tmpPath = Path.Combine(_tempDir, "refinements.json.tmp");
+        using (var lockHandle = new FileStream(tmpPath, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            FluentActions.Invoking(() => store.ImportFromLegacy(new Dictionary<string, AreaCalibration>
+            {
+                ["AreaSerbule"] = MakeCal(residual: 5.0, scale: 2.0),
+                ["AreaGoblinDungeon"] = MakeCal(residual: 5.0, scale: 3.0),
+            })).Should().Throw<IOException>();
+        }
+
+        // Neither new entry leaked into the in-memory dictionary.
+        store.TryGet("AreaSerbule", out _).Should().BeFalse();
+        store.TryGet("AreaGoblinDungeon", out _).Should().BeFalse();
+        // The pre-existing entry survived intact.
+        store.TryGet("AreaEltibule", out var elt).Should().BeTrue();
+        elt.Scale.Should().Be(1.0);
+    }
+
     private static AreaCalibration MakeCal(double residual, double scale) =>
         new(
             Scale: scale,

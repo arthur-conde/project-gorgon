@@ -774,7 +774,19 @@ public sealed partial class CalibrationSessionViewModel : ObservableObject, IDis
     [RelayCommand]
     private void Recalibrate()
     {
-        _service.ClearCurrentAreaCalibration();
+        try
+        {
+            _service.ClearCurrentAreaCalibration();
+        }
+        catch (System.IO.IOException ex)
+        {
+            // UserRefinementStore.Remove propagates IOException with full
+            // rollback. Surface the failure (same contract as Solve) so the
+            // WPF command doesn't crash. The in-memory state is restored, so
+            // the prior calibration still applies until the user retries.
+            ResultText = $"Couldn't clear calibration: {ex.Message}. Retry once the file lock clears.";
+            return;
+        }
         ClearPlacements();
         Refresh();
     }

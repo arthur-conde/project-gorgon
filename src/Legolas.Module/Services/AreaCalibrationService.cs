@@ -212,6 +212,15 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         // of parity). A rollback to an older Mithril during the transition
         // therefore preserves the user's calibration in the place that older
         // Mithril expects to find it.
+        //
+        // ORDER: shared service first (canonical going forward; throws on
+        // persist failure with full in-memory rollback), legacy field second.
+        // If the new store throws we never touch the legacy field, so a retry
+        // from a clean state works. The reverse order would leave the legacy
+        // field written and the new store empty — for Clear that produces a
+        // permanent orphan (the migration only imports, never deletes), and
+        // for Save it would only self-heal on next migration pass.
+        _mapCal.SaveUserRefinement(key, calibration);
         _settings.AreaCalibrations[key] = calibration;
         _saver.Touch(); // AreaCalibrations is a sibling object — no PropertyChanged.
 
@@ -228,7 +237,6 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
         // says "redo for a tighter fit") while the map renders the baseline
         // (correct rendering — the user's solve lost precedence). See the
         // IAreaCalibrationService.CalibrateCurrentArea contract below.
-        _mapCal.SaveUserRefinement(key, calibration);
         return calibration;
     }
 
@@ -240,11 +248,20 @@ public sealed class AreaCalibrationService : IAreaCalibrationService
     public void ClearCurrentAreaCalibration()
     {
         if (CurrentAreaKey is not { } key) return;
-        // Dual-clear, same rationale as the dual-write in CalibrateCurrentArea.
-        // ClearUserRefinement raises mapCal.Changed → OnMapCalChanged re-broadcasts
-        // our Changed; do not raise Changed directly to avoid double-delivery.
-        if (_settings.AreaCalibrations.Remove(key)) _saver.Touch();
+        // Dual-clear, ORDER matters here (round-3 review #2): clear the new
+        // store FIRST, only touch the legacy field on success. If the new
+        // store's Persist throws (disk full / AV lock) the rollback restores
+        // the in-memory entry so reads still return the prior calibration,
+        // and we don't proceed to delete the legacy entry — the user retries
+        // from a fully-consistent state. The pre-round-3 order (legacy first)
+        // could leave a permanent orphan: the migration only imports, never
+        // deletes, so a half-cleared state survived restarts.
+        //
+        // ClearUserRefinement raises mapCal.Changed → OnMapCalChanged
+        // re-broadcasts our Changed; do not raise Changed directly to avoid
+        // double-delivery.
         _mapCal.ClearUserRefinement(key);
+        if (_settings.AreaCalibrations.Remove(key)) _saver.Touch();
     }
 
     private IReadOnlyList<CalibrationReference> BuildReferences(string areaKey)
