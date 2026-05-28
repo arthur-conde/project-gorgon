@@ -19,6 +19,13 @@ public sealed partial class HeaderEntry : ObservableObject
     [ObservableProperty]
     private bool _isValueRevealed;
 
+    /// <summary>The header name as last persisted to
+    /// <see cref="Mithril.Shared.Telemetry.Settings.TelemetrySettings.Headers"/>.
+    /// Tracked so <see cref="TelemetrySettingsViewModel.SaveHeaderCommand"/> can
+    /// remove the prior key when the user renames a header in-place — otherwise
+    /// a typo fix would leak the typo'd entry indefinitely. Null until first save.</summary>
+    public string? PersistedName { get; internal set; }
+
     public HeaderEntry(string name, string value, bool isValueRevealed)
     {
         _name = name;

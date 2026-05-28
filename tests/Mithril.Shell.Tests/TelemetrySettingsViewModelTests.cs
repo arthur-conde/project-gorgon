@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Mithril.Shared.Telemetry.Abstractions;
 using Mithril.Shared.Telemetry.Catalog;
@@ -185,5 +186,41 @@ public sealed class TelemetrySettingsViewModelTests
         observer.Note("after.dispose");
 
         vm.NewlySeenChips.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SaveHeader_AfterRenaming_RemovesPriorKey()
+    {
+        var settings = new TelemetrySettings();
+        using var vm = BuildVm(settings);
+
+        // First save under a typo'd name.
+        vm.AddHeaderCommand.Execute(null);
+        var entry = vm.Headers.Single();
+        entry.Name = "X-API-Kye"; // typo
+        entry.Value = "abc";
+        vm.SaveHeaderCommand.Execute(entry);
+        settings.Headers.Keys.Should().Equal("X-API-Kye");
+
+        // User fixes the typo on the same row and saves again.
+        entry.Name = "X-API-Key";
+        vm.SaveHeaderCommand.Execute(entry);
+
+        settings.Headers.Keys.Should().Equal("X-API-Key");
+    }
+
+    [Fact]
+    public async Task OnNewKey_FromBackgroundThread_DoesNotThrow_WhenNoDispatcherPresent()
+    {
+        var observer = new NewlySeenTagsObserver();
+        using var vm = BuildVm(observer: observer);
+
+        // Run Note() on a background thread to exercise the cross-thread path.
+        // Tests run without a captured SynchronizationContext, so PostToUi
+        // falls back to synchronous execution — this confirms no exception
+        // escapes and the chip is added.
+        await Task.Run(() => observer.Note("brand.new.tag"));
+
+        vm.NewlySeenChips.Select(c => c.Key).Should().Contain("brand.new.tag");
     }
 }
