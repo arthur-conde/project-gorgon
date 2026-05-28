@@ -9,6 +9,8 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Serilog" />
+    <PackageReference Include="Serilog.Sinks.InMemory" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mithril.Shared.Telemetry\Mithril.Shared.Telemetry.csproj" />
