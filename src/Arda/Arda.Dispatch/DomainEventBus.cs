@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using Arda.Abstractions.Diagnostics;
 using Arda.Dispatch.Internal;
 using Microsoft.Extensions.Logging;
 
@@ -48,6 +50,8 @@ internal sealed class DomainEventBus : IDomainEventBus
 
     public void Publish<T>(T domainEvent) where T : struct
     {
+        ArdaMeters.DomainEventPublished.Add(1,
+            new KeyValuePair<string, object?>("event.type", typeof(T).Name));
         if (_subscriptions.TryGetValue(typeof(T), out var obj))
             ((SubscriptionList<T>)obj).Publish(domainEvent, _logger);
     }
@@ -93,8 +97,21 @@ internal sealed class DomainEventBus : IDomainEventBus
         public void Publish(T domainEvent, ILogger logger)
         {
             var snapshot = _handlers;
+            // HasListeners is a cheap volatile read; gates the string allocation
+            // for the op name when no perf-recorder session has attached a listener.
+            // Cached once per Publish call — a listener that attaches mid-publish misses
+            // spans for this event's remaining subscribers. Acceptable trade-off: cheaper
+            // than per-subscriber volatile reads, and the next Publish picks it up.
+            var instrument = ArdaActivitySources.Composition.HasListeners();
             foreach (var handler in snapshot)
             {
+                Activity? span = null;
+                if (instrument)
+                {
+                    var target = handler.Target?.GetType().Name ?? "static";
+                    span = ArdaActivitySources.Composition.StartActivity($"compose.{target}");
+                    span?.SetTag("event", typeof(T).Name);
+                }
                 try
                 {
                     handler(domainEvent);
@@ -119,6 +136,10 @@ internal sealed class DomainEventBus : IDomainEventBus
                 catch (Exception ex)
                 {
                     logger.LogError(ex, "Subscriber threw handling {EventType}", typeof(T).Name);
+                }
+                finally
+                {
+                    span?.Dispose();
                 }
             }
         }

@@ -1,3 +1,4 @@
+using Arda.Abstractions.Diagnostics;
 using Arda.Abstractions.Logs;
 using Arda.Ingest.Classification;
 using Arda.Ingest.Clock;
@@ -45,6 +46,10 @@ internal sealed class BatchProcessor
         var batch = tailer.ReadNew();
         if (batch.IsEmpty) return null;
 
+        using var activity = ArdaActivitySources.Ingest.StartActivity("batch.process");
+        activity?.SetTag("source", tailer.Path);
+        activity?.SetTag("line_count", (long)batch.LineCount);
+
         try
         {
             // Pre-scan: a session banner anywhere in the batch can override
@@ -88,6 +93,7 @@ internal sealed class BatchProcessor
                     classified.Value.Raw));
             }
 
+            activity?.SetTag("classified_count", (long)_results.Count);
             return _results;
         }
         finally

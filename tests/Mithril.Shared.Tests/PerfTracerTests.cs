@@ -1,10 +1,21 @@
 using System.IO;
+using System.Text.Json;
 using FluentAssertions;
 using Mithril.Shared.Diagnostics.Performance;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Xunit;
 
 namespace Mithril.Shared.Tests;
 
+/// <summary>
+/// Schema-parity tests for the perf-recorder pipeline. Producers emit via
+/// <see cref="MithrilActivitySources"/> + <see cref="MithrilMeters"/>; the
+/// recorder's internal listener writes the JSON-lines schema documented in
+/// <c>docs/perf-trace-schema.md</c>. These tests fix the on-disk shape so
+/// the <c>mithril-logs</c> MCP server and saved jq recipes keep working
+/// across the producer-API change.
+/// </summary>
+[Collection(TelemetryTestCollection.Name)]
 public class PerfTracerTests
 {
     private static string FreshTempDir()
@@ -25,23 +36,18 @@ public class PerfTracerTests
         var dir = FreshTempDir();
         try
         {
-            using var tracer = new PerfTracer(dir);
-            tracer.IsActive.Should().BeFalse();
-            tracer.CurrentSessionPath.Should().BeNull();
+            using var recorder = new PerfRecorder(dir);
+            recorder.IsActive.Should().BeFalse();
+            recorder.CurrentSessionPath.Should().BeNull();
 
-            // None of these may throw, none of these may write a file.
-            using (var s = tracer.Scope("does-not-matter", new { x = 1 })) { }
-            tracer.EmitFrameSummary(10, 16.0, 16.0, 17.0, 18.0, 0);
-            tracer.EmitDispatcher("Background", 1.0, 2.0, 3);
-            tracer.EmitGc(2, 5.0);
-            tracer.EmitBindingError("System.Windows.Data Error: 40");
-            tracer.EmitInputLatency("mouse", 12.3);
-            tracer.EmitScope("manual", 7.5, null);
-            tracer.EmitModuleActivated("samwise", 42.0);
-            tracer.EmitRefFetch("items", false, 500.0, 1024);
+            // With no session attached, ActivitySource.StartActivity returns null
+            // and Meter.Record is a no-op. No file should appear.
+            using (var act = MithrilActivitySources.ShellModules.StartActivity("activate"))
+                act?.SetTag("module.id", "samwise");
+            MithrilMeters.Wpf.FrameIntervalMs.Record(16.0);
 
             Directory.EnumerateFiles(dir, "*.jsonl").Should().BeEmpty(
-                "no session is active so the tracer must not have opened a file");
+                "no session is active so the recorder must not have opened a file");
         }
         finally { TryCleanup(dir); }
     }
@@ -52,15 +58,24 @@ public class PerfTracerTests
         var dir = FreshTempDir();
         try
         {
-            using (var tracer = new PerfTracer(dir))
+            using (var recorder = new PerfRecorder(dir))
             {
-                tracer.StartSession(SampleHeader());
-                tracer.IsActive.Should().BeTrue();
-                tracer.CurrentSessionPath.Should().NotBeNull();
+                recorder.Start(SampleHeader());
+                recorder.IsActive.Should().BeTrue();
+                recorder.CurrentSessionPath.Should().NotBeNull();
 
-                tracer.EmitModuleActivated("samwise", 12.3);
-                tracer.EmitRefFetch("items", false, 250.0, 2048);
-                tracer.StopSession();
+                using (var act = MithrilActivitySources.ShellModules.StartActivity("activate"))
+                {
+                    act?.SetTag("module.id", "samwise");
+                    Thread.Sleep(2);
+                }
+                using (var act = MithrilActivitySources.Reference.StartActivity("fetch"))
+                {
+                    act?.SetTag("file", "items");
+                    act?.SetTag("cache_hit", false);
+                    act?.SetTag("bytes", 2048L);
+                }
+                recorder.Stop();
             }
 
             var files = Directory.GetFiles(dir, "perf-*.jsonl");
@@ -76,48 +91,17 @@ public class PerfTracerTests
     }
 
     [Fact]
-    public void Scope_reports_a_nonzero_duration()
-    {
-        var dir = FreshTempDir();
-        try
-        {
-            using (var tracer = new PerfTracer(dir))
-            {
-                tracer.StartSession(SampleHeader());
-                using (var s = tracer.Scope("test.work", new { iterations = 3 }))
-                {
-                    // Sleep is the cheapest way to guarantee Stopwatch elapsed > 0.
-                    Thread.Sleep(5);
-                }
-                tracer.StopSession();
-            }
-
-            var line = File.ReadAllLines(Directory.GetFiles(dir, "perf-*.jsonl").Single())
-                .Single(l => l.Contains("\"Kind\":\"scope\""));
-            line.Should().Contain("\"Name\":\"test.work\"");
-            // Just make sure DurationMs is present and parses as a positive number — value depends on host.
-            var idx = line.IndexOf("\"DurationMs\":", StringComparison.Ordinal);
-            idx.Should().BeGreaterThan(-1);
-            var tail = line[(idx + "\"DurationMs\":".Length)..];
-            var end = tail.IndexOfAny([',', '}']);
-            double.Parse(tail[..end], System.Globalization.CultureInfo.InvariantCulture)
-                .Should().BeGreaterThan(0);
-        }
-        finally { TryCleanup(dir); }
-    }
-
-    [Fact]
     public void IsActiveChanged_fires_on_Start_and_Stop()
     {
         var dir = FreshTempDir();
         try
         {
-            using var tracer = new PerfTracer(dir);
+            using var recorder = new PerfRecorder(dir);
             var transitions = new List<bool>();
-            tracer.IsActiveChanged += (_, _) => transitions.Add(tracer.IsActive);
+            recorder.IsActiveChanged += (_, _) => transitions.Add(recorder.IsActive);
 
-            tracer.StartSession(SampleHeader());
-            tracer.StopSession();
+            recorder.Start(SampleHeader());
+            recorder.Stop();
 
             transitions.Should().HaveCount(2, "consumers depend on observing both start and stop transitions");
             transitions[0].Should().BeTrue();
@@ -141,10 +125,151 @@ public class PerfTracerTests
                 File.SetCreationTimeUtc(path, now.AddMinutes(-i));
             }
 
-            PerfTracer.PruneOldSessions(dir, retain: 3);
+            PerfRecorder.PruneOldSessions(dir, retain: 3);
 
             Directory.GetFiles(dir, "perf-*.jsonl").Should().HaveCount(3,
                 "the four oldest files should have been deleted");
+        }
+        finally { TryCleanup(dir); }
+    }
+
+    private static JsonElement FindRecord(string dir, string kind) =>
+        File.ReadAllLines(Directory.GetFiles(dir, "perf-*.jsonl").Single())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .Select(l => JsonDocument.Parse(l).RootElement)
+            .Single(e => e.GetProperty("Kind").GetString() == kind);
+
+    [Fact]
+    public void Module_activate_activity_serialises_to_module_activated_record()
+    {
+        var dir = FreshTempDir();
+        try
+        {
+            using (var recorder = new PerfRecorder(dir))
+            {
+                recorder.Start(SampleHeader());
+                using (var act = MithrilActivitySources.ShellModules.StartActivity("activate"))
+                {
+                    act?.SetTag("module.id", "samwise");
+                    Thread.Sleep(3);
+                }
+                recorder.Stop();
+            }
+
+            // Typed JSON parse — substring matching would miss field reorder, numeric
+            // formatting drift (e.g. DurationMs as "2.0" vs "2"), null-vs-absent
+            // semantics, and string-escape differences. Downstream consumers
+            // (mithril-logs MCP, jq) decode JSON, so the parity contract is the parsed
+            // graph, not the raw bytes.
+            var record = FindRecord(dir, "module_activated");
+            record.GetProperty("ModuleId").GetString().Should().Be("samwise");
+            record.GetProperty("DurationMs").GetDouble().Should().BeGreaterThan(0);
+        }
+        finally { TryCleanup(dir); }
+    }
+
+    [Fact]
+    public void Ref_fetch_activity_serialises_with_cache_hit_bytes_and_outcome()
+    {
+        var dir = FreshTempDir();
+        try
+        {
+            using (var recorder = new PerfRecorder(dir))
+            {
+                recorder.Start(SampleHeader());
+                using (var act = MithrilActivitySources.Reference.StartActivity("fetch"))
+                {
+                    act?.SetTag("file", "recipes");
+                    act?.SetTag("cache_hit", true);
+                    act?.SetTag("outcome", "cache");
+                    act?.SetTag("bytes", 4096L);
+                }
+                recorder.Stop();
+            }
+
+            var record = FindRecord(dir, "ref_fetch");
+            record.GetProperty("File").GetString().Should().Be("recipes");
+            record.GetProperty("CacheHit").GetBoolean().Should().BeTrue();
+            record.GetProperty("Outcome").GetString().Should().Be("cache");
+            record.GetProperty("Bytes").GetInt64().Should().Be(4096);
+            // Schema-parity (legacy): retain the original substring check too so we
+            // notice if the property-name case ever drifts.
+            File.ReadAllLines(Directory.GetFiles(dir, "perf-*.jsonl").Single())
+                .Single(l => l.Contains("\"Kind\":\"ref_fetch\""))
+                .Should().Contain("\"File\":\"recipes\"");
+        }
+        finally { TryCleanup(dir); }
+    }
+
+    [Fact]
+    public void Arda_compose_activity_serialises_to_arda_compose_record_end_to_end()
+    {
+        // Important #10: producer-side ArdaInstrumentationTests asserts the activity
+        // shape, but the JSON-lines record shape — which the exporter dispatch arm
+        // generates — was untested. A rename of `compose.X` → `composer.X` in the
+        // producer would silently break the consumer with green producer tests.
+        var dir = FreshTempDir();
+        try
+        {
+            using (var recorder = new PerfRecorder(dir))
+            {
+                recorder.Start(SampleHeader());
+                using (var act = Arda.Abstractions.Diagnostics.ArdaActivitySources.Composition.StartActivity("compose.InventoryComposer"))
+                {
+                    act?.SetTag("event", "InventoryItemAdded");
+                }
+                recorder.Stop();
+            }
+
+            var record = FindRecord(dir, "arda_compose");
+            record.GetProperty("Composer").GetString().Should().Be("InventoryComposer");
+            record.GetProperty("EventType").GetString().Should().Be("InventoryItemAdded");
+            record.GetProperty("DurationMs").GetDouble().Should().BeGreaterOrEqualTo(0);
+        }
+        finally { TryCleanup(dir); }
+    }
+
+    [Fact]
+    public void Concurrent_counter_increments_aggregate_to_a_single_meter_counter_record()
+    {
+        // Critical #3: counter aggregation (AccumulateCounter → FlushCounters → JSON)
+        // had no end-to-end test. This stresses the Interlocked.Add/Exchange pair
+        // under concurrent producers and asserts the aggregated sum lands as a single
+        // `meter_counter` line with the expected tag set.
+        var dir = FreshTempDir();
+        try
+        {
+            using (var recorder = new PerfRecorder(dir))
+            {
+                recorder.Start(SampleHeader());
+
+                const int incrementsPerThread = 1_000;
+                const int threadCount = 10;
+                Parallel.For(0, threadCount, _ =>
+                {
+                    for (var i = 0; i < incrementsPerThread; i++)
+                    {
+                        Arda.Abstractions.Diagnostics.ArdaMeters.LinesParsed.Add(1,
+                            new KeyValuePair<string, object?>("source", "player"));
+                    }
+                });
+
+                // FlushCounters runs on a 1s timer inside the exporter. Stop() also
+                // flushes synchronously via Dispose, so a deterministic stop is enough.
+                recorder.Stop();
+            }
+
+            // Aggregation must collapse 10_000 measurements into one record per
+            // (instrument, tag-set), with the sum exactly equal to the total.
+            var counterRecords = File.ReadAllLines(Directory.GetFiles(dir, "perf-*.jsonl").Single())
+                .Where(l => !string.IsNullOrWhiteSpace(l))
+                .Select(l => JsonDocument.Parse(l).RootElement)
+                .Where(e => e.GetProperty("Kind").GetString() == "meter_counter"
+                            && e.GetProperty("Instrument").GetString() == "mithril.arda.lines_parsed")
+                .ToList();
+            counterRecords.Should().NotBeEmpty("at least the final Dispose-flush must emit");
+            counterRecords.Sum(e => e.GetProperty("Sum").GetInt64())
+                .Should().Be(10_000, "all increments must aggregate to the JSON sum without loss");
         }
         finally { TryCleanup(dir); }
     }
