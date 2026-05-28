@@ -145,6 +145,7 @@ public static class TelemetryHostExtensions
             return new ValueRedactor(GetActiveCharacter, userProfile, localAppData);
         });
         services.AddSingleton<AllowlistAndRedactionProcessor>();
+        services.AddSingleton<ValueRedactionOnlyProcessor>();
 
         // Resource attributes shared across traces, metrics, logs.
         var serviceInstanceId = Guid.NewGuid().ToString("D");
@@ -168,9 +169,20 @@ public static class TelemetryHostExtensions
             .WithTracing(tb =>
             {
                 tb.AddSource(MithrilSourcePrefix)
-                  .AddHttpClientInstrumentation()
-                  .AddProcessor<AllowlistAndRedactionProcessor>()
-                  .AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
+                  .AddHttpClientInstrumentation();
+                // TrustEndpoint chooses which processor runs on the tracing pipeline:
+                // off (default) → full allowlist + redactor; on → redactor only.
+                // The choice is restart-required because it's captured here at
+                // AddProcessor registration time. See mithril#840.
+                if (settings.TrustEndpoint)
+                {
+                    tb.AddProcessor<ValueRedactionOnlyProcessor>();
+                }
+                else
+                {
+                    tb.AddProcessor<AllowlistAndRedactionProcessor>();
+                }
+                tb.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
             })
             .WithMetrics(mb =>
             {

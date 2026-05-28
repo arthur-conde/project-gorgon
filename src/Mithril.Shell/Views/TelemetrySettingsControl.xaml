@@ -47,6 +47,14 @@
                       IsChecked="{Binding Settings.EnableOtlpExport, Mode=TwoWay}"
                       Foreground="#FFE8E8E8" Margin="0,0,0,4"/>
 
+            <!-- Trust endpoint (mithril#840). Skips the allowlist gate for fully-trusted
+                 local destinations (e.g. a self-hosted Seq) while keeping the value
+                 redactor running. Restart-required like the other top-level fields. -->
+            <CheckBox Content="Trust endpoint (skip allowlist for trusted local destinations)"
+                      IsChecked="{Binding Settings.TrustEndpoint, Mode=TwoWay}"
+                      Foreground="#FFE8E8E8" Margin="0,0,0,4"
+                      ToolTip="Use only for local sinks you fully control (e.g. self-hosted Seq). The value redactor still runs to scrub paths and character names from string tags."/>
+
             <!-- Restart-required banner. v1: always visible whenever the master toggle
                  is on, because the host captures EnableOtlpExport + endpoint/headers/
                  protocol/service-name fields once at AddMithrilOtlpExport time. -->
