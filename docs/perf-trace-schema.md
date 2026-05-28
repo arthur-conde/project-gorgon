@@ -40,6 +40,10 @@ Producers emit via `System.Diagnostics.ActivitySource` and `System.Diagnostics.M
 
 If a downstream consumer (mithril-logs MCP, jq recipes) is sensitive to the full key set, treat this PR as an additive schema migration.
 
+### Parallel exporters
+
+Once `TelemetrySettings.EnableOtlpExport` is enabled (Settings → Diagnostics → Telemetry export (OTLP), restart required), the OTLP exporter from `Mithril.Shared.Telemetry` attaches as a *second* listener on the same producer surface as the perf-recorder file exporter. Producers don't change. Each exporter applies its own filtering before serialising — notably the OTLP exporter has the `AllowlistAndRedactionProcessor` tag scrubber (per mithril#815), which may drop tags the file exporter retains. If a JSON-lines record looks tag-rich but the same span in Seq/Honeycomb looks tag-sparse, that's the scrubber working as designed: check the tag's classification in `MithrilSharedTagDescriptors` / `ArdaTagDescriptors`, and the user's `TagExports` overrides in `%LocalAppData%/Mithril/Shell/telemetry.json`.
+
 ## What's instrumented today
 
 | Kind | Producer | Status |

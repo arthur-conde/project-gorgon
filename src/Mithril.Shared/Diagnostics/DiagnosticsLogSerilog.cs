@@ -12,9 +12,15 @@ namespace Mithril.Shared.Diagnostics;
 /// </summary>
 internal static class DiagnosticsLogSerilog
 {
-    public static Logger CreateFileLogger(string logDirectory) =>
-        new LoggerConfiguration()
-            .MinimumLevel.Verbose()
+    public static Logger CreateFileLogger(string logDirectory, params ILogEventEnricher[] enrichers)
+    {
+        var config = new LoggerConfiguration()
+            .MinimumLevel.Verbose();
+
+        if (enrichers is { Length: > 0 })
+            config = config.Enrich.With(enrichers);
+
+        return config
             .WriteTo.File(
                 formatter: new CompactJsonFormatter(),
                 path: Path.Combine(logDirectory, "mithril-.json"),
@@ -26,6 +32,7 @@ internal static class DiagnosticsLogSerilog
                 buffered: false,
                 flushToDiskInterval: TimeSpan.FromSeconds(2))
             .CreateLogger();
+    }
 
     public static LogEventLevel Map(DiagnosticLevel level) => level switch
     {

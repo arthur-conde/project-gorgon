@@ -7,6 +7,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Arda\Arda.Abstractions\Arda.Abstractions.csproj" />
     <ProjectReference Include="..\Mithril.Persistence\Mithril.Persistence.csproj" />
+    <ProjectReference Include="..\Mithril.Shared.Telemetry.Abstractions\Mithril.Shared.Telemetry.Abstractions.csproj" />
     <ProjectReference Include="..\Mithril.Reference\Mithril.Reference.csproj" />
     <ProjectReference Include="..\Mithril.GameReports\Mithril.GameReports.csproj" />
   </ItemGroup>

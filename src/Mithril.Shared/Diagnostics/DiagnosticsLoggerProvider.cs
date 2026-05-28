@@ -11,7 +11,8 @@ namespace Mithril.Shared.Diagnostics;
 /// </summary>
 public sealed class DiagnosticsLoggerProvider : ILoggerProvider, IDiagnosticsLog, IDisposable
 {
-    private const int DefaultCapacity = 2000;
+    /// <summary>Default ring-buffer capacity used by the shell composition.</summary>
+    public const int DefaultCapacity = 2000;
 
     private readonly ConcurrentQueue<DiagnosticEntry> _queue = new();
     private readonly int _capacity;
@@ -21,11 +22,22 @@ public sealed class DiagnosticsLoggerProvider : ILoggerProvider, IDiagnosticsLog
     private bool _disposed;
 
     public DiagnosticsLoggerProvider(string logDirectory, int capacity = DefaultCapacity)
+        : this(logDirectory, capacity, Array.Empty<ILogEventEnricher>())
+    {
+    }
+
+    /// <summary>
+    /// Constructs the provider with custom Serilog enrichers (e.g. the trace-context
+    /// enricher from Mithril.Shared.Telemetry). Mithril.Shared cannot reference the
+    /// telemetry assembly directly without creating a cycle, so the caller (typically
+    /// the shell composition layer) supplies them.
+    /// </summary>
+    public DiagnosticsLoggerProvider(string logDirectory, int capacity, params ILogEventEnricher[] enrichers)
     {
         _capacity = capacity;
         Directory.CreateDirectory(logDirectory);
         DiagnosticsLogSerilog.MigrateLegacyLogFiles(Publish, logDirectory);
-        _fileLogger = DiagnosticsLogSerilog.CreateFileLogger(logDirectory);
+        _fileLogger = DiagnosticsLogSerilog.CreateFileLogger(logDirectory, enrichers);
     }
 
     public IObservable<DiagnosticEntry> Live => _live;

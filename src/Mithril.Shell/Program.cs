@@ -168,7 +168,7 @@ public static class Program
             builder.Services.AddMithrilApp(new ShellCompositionOptions(
                 preferencesPath, shellStore, shellSettings, gameConfig,
                 logDir, perfDir, charactersRootDir, referenceCacheDir,
-                communityCalibrationCacheDir, iconCacheDir, Boot));
+                communityCalibrationCacheDir, iconCacheDir, shellDir, Boot));
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IMithrilModule))}");
             host = builder.Build();

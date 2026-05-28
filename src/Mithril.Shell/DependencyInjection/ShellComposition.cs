@@ -1,4 +1,6 @@
 using System.Collections.Frozen;
+using System.IO;
+using Arda.Abstractions.Diagnostics;
 using Arda.Composition;
 using Arda.Contracts.State.Health;
 using Arda.Hosting;
@@ -9,15 +11,25 @@ using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
 using Mithril.Shared.Diagnostics.Performance;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
+using Mithril.Shared.Telemetry.Abstractions;
+using Mithril.Shared.Telemetry.Catalog;
+using Mithril.Shared.Telemetry.Export;
+using Mithril.Shared.Telemetry.Hosting;
+using Mithril.Shared.Telemetry.Logs;
+using Mithril.Shared.Telemetry.Settings;
 using Mithril.Shared.Wpf;
 using Mithril.Shared.Wpf.DependencyInjection;
+using Mithril.Shell.ViewModels;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shell.DependencyInjection;
 
@@ -40,6 +52,7 @@ public sealed record ShellCompositionOptions(
     string ReferenceCacheDir,
     string CommunityCalibrationCacheDir,
     string IconCacheDir,
+    string ShellSettingsDir,
     Action<string>? ModuleLog = null);
 
 public static class ShellComposition
@@ -68,7 +81,11 @@ public static class ShellComposition
             .AddSingleton(o.ShellSettings)
             .AddSingleton<IActiveCharacterPersistence>(o.ShellSettings)
             .AddSingleton(o.GameConfig)
-            .AddMithrilLogging(o.LogDir)
+            // Trace-context enricher stamps trace_id / span_id onto on-disk diagnostics
+            // log entries written inside an Activity scope (e.g. perf-recorder sessions,
+            // OTLP-exported spans). Allocation-free no-op outside an active Activity, so
+            // wiring it unconditionally is safe.
+            .AddMithrilLogging(o.LogDir, new MithrilTraceContextEnricher())
             .AddMithrilPerfRecorder(o.PerfDir, sp => () => sp.GetRequiredService<ShellSettings>().VerboseFrameEvents)
             .AddMithrilGameServices()
             .AddMithrilPerCharacterStorage(o.CharactersRootDir)
@@ -91,6 +108,55 @@ public static class ShellComposition
             .AddMithrilItemDetail()
             .AddMithrilIngredientSources()
             .AddMithrilShellCommands();
+
+        // Opt-in OTLP export (mithril#815). Registration order:
+        //   1. AddMithrilVersionedSettings<TelemetrySettings> — registers the
+        //      JSON store, loads + migrates the singleton, wires SettingsAutoSaver.
+        //   2. Tag-descriptor providers — TagCatalog resolves
+        //      IEnumerable<ITagDescriptorProvider> at construction; without these
+        //      the catalog is empty and every tag is treated as "newly-seen".
+        //   3. AddMithrilOtlpExport(settings, loggerFactory) — no-op when
+        //      EnableOtlpExport=false (the default), so end users see no behaviour
+        //      change. Must receive the SAME TelemetrySettings instance the
+        //      versioned-settings registration produced so settings-UI mutations
+        //      to TagExports flow through to the scrubber per span without
+        //      restart (see SingletonOptionsMonitor in TelemetryHostExtensions).
+        services.AddMithrilVersionedSettings<TelemetrySettings>(
+            Path.Combine(o.ShellSettingsDir, "telemetry.json"),
+            TelemetrySettingsJsonContext.Default.TelemetrySettings);
+        services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
+        services.AddSingleton<ITagDescriptorProvider, ArdaTagDescriptors>();
+
+        // Resolve the loaded TelemetrySettings + ILoggerFactory via a temporary
+        // provider. This snapshot is used by AddMithrilOtlpExport for the
+        // EnableOtlpExport gate and to capture restart-required fields (endpoint,
+        // headers, protocol, service-name) once at registration. The
+        // IOptionsMonitor inside AddMithrilOtlpExport resolves through DI at
+        // request time, so live fields (TagExports) always reflect the host's
+        // singleton — UI mutations after launch flow through to the scrubber
+        // without restart, even though the snapshot here is a separate instance
+        // from the host's eventual singleton.
+        using (var tmp = services.BuildServiceProvider())
+        {
+            var telemetrySettings = tmp.GetRequiredService<TelemetrySettings>();
+            var loggerFactory = tmp.GetRequiredService<ILoggerFactory>();
+            services.AddMithrilOtlpExport(telemetrySettings, loggerFactory);
+        }
+
+        // Telemetry settings sub-section VM (Diagnostics → Telemetry export
+        // expander). The VM needs the scrubber-graph collaborators (TagCatalog,
+        // NewlySeenTagsObserver, HeaderValueProtection, ExporterHealthMonitor)
+        // to bind the chip-cloud / headers grid / status line. AddMithrilOtlpExport
+        // only registers those when EnableOtlpExport=true, so we register fallback
+        // singletons here to keep the settings UI functional in the off state —
+        // critical so the user can see the master toggle and turn export ON the
+        // first time. TryAddSingleton means the enabled path's registrations win
+        // when present, so the SAME instances feed both the exporter and the UI.
+        services.TryAddSingleton<TagCatalog>();
+        services.TryAddSingleton<NewlySeenTagsObserver>();
+        services.TryAddSingleton<HeaderValueProtection>();
+        services.TryAddSingleton<ExporterHealthMonitor>();
+        services.AddSingleton<TelemetrySettingsViewModel>();
 
         // L4 composition (singleton factories resolved eagerly by the bootstrap
         // below). Registered before the Arda drivers so hosted-service startup

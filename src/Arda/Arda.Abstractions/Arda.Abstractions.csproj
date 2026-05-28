@@ -7,4 +7,8 @@
     <RootNamespace>Arda.Abstractions</RootNamespace>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Mithril.Shared.Telemetry.Abstractions\Mithril.Shared.Telemetry.Abstractions.csproj" />
+  </ItemGroup>
+
 </Project>
