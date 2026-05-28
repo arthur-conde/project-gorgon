@@ -1,9 +1,9 @@
 using System;
-using System.Collections.Generic;
 using System.Reflection;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Mithril.Shared.Character;
 using Mithril.Shared.Telemetry.Catalog;
 using Mithril.Shared.Telemetry.Export;
@@ -41,12 +41,16 @@ namespace Mithril.Shared.Telemetry.Hosting;
 ///   attribute set with traces and metrics.</item>
 /// </list>
 ///
-/// <para><strong>Hot-reload deferred (v1).</strong> Endpoint / headers /
-/// service-name changes require a process restart in v1. The OTel SDK
-/// <c>AddOtlpExporter</c> callback captures settings at registration time,
-/// and threading <c>IOptionsMonitor&lt;TelemetrySettings&gt;</c> through is
-/// non-trivial. Filed as a follow-up enhancement; the user can iterate on a
-/// local Seq config by restarting between changes.</para>
+/// <para><strong>Hot-reload — partial in v1.</strong>
+/// <see cref="TelemetrySettings.TagExports"/> mutations on the singleton
+/// flow through to the scrubber live (per-span read of
+/// <c>IOptionsMonitor.CurrentValue.TagExports</c>) — the settings UI can
+/// toggle a tag and the next exported span honours it. Endpoint, headers,
+/// protocol, and service-name changes still require a process restart in
+/// v1: the OTel SDK <c>AddOtlpExporter</c> callback captures those once at
+/// registration, and threading per-field <c>OnChange</c> notifications
+/// through the exporter wrapper is non-trivial. Filed as a follow-up
+/// enhancement.</para>
 ///
 /// <para><strong>EventSource listener deferred (v1).</strong> The
 /// <see cref="ExporterHealthMonitor"/> is registered in DI so the settings UI
@@ -68,20 +72,25 @@ public static class TelemetryHostExtensions
     /// </summary>
     /// <param name="services">DI service collection.</param>
     /// <param name="settings">
-    /// Telemetry settings instance, loaded by the caller (typically via
-    /// <c>AddMithrilVersionedSettings&lt;TelemetrySettings&gt;</c>). The
-    /// settings are read once at registration; see remarks on
+    /// The persisted telemetry settings instance. Pass the same reference
+    /// you've registered with
+    /// <c>AddMithrilVersionedSettings&lt;TelemetrySettings&gt;</c> so the
+    /// settings UI's in-place mutations (notably
+    /// <see cref="TelemetrySettings.TagExports"/> add/remove) flow through to
+    /// the scrubber per span without restart. The endpoint / headers /
+    /// service-name fields are captured once at registration — see remarks on
     /// <see cref="TelemetryHostExtensions"/> for the deferred hot-reload note.
     /// </param>
-    /// <param name="logger">
-    /// Optional logger used to report corrupted DPAPI header blobs and other
+    /// <param name="loggerFactory">
+    /// Optional logger factory; when supplied, a logger under category
+    /// <c>"Telemetry.Otlp"</c> reports corrupted DPAPI header blobs and other
     /// wiring-time anomalies. Pass <c>null</c> to swallow such warnings.
     /// </param>
     /// <returns><paramref name="services"/> for chaining.</returns>
     public static IServiceCollection AddMithrilOtlpExport(
         this IServiceCollection services,
         TelemetrySettings settings,
-        ILogger? logger = null)
+        ILoggerFactory? loggerFactory = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(settings);
@@ -91,19 +100,23 @@ public static class TelemetryHostExtensions
             return services;
         }
 
-        // Bind a snapshot of TelemetrySettings into IOptionsMonitor so the
-        // scrubber processor can resolve it via DI. In v1 the snapshot is
-        // captured once at registration; hot-reload is a deferred enhancement
-        // (see remarks above). The caller may also register their own
-        // IOptionsMonitor<TelemetrySettings> upstream — Configure here is
-        // additive, so a richer binding wins last-writer.
-        services.AddOptions<TelemetrySettings>().Configure(o => CopySettings(settings, o));
+        var logger = loggerFactory?.CreateLogger("Telemetry.Otlp");
+
+        // Register the caller-provided settings instance as the source of truth
+        // for IOptionsMonitor consumers (notably AllowlistAndRedactionProcessor,
+        // which reads TagExports per span). Task 13's Shell composition registers
+        // the same TelemetrySettings instance as a singleton via
+        // AddMithrilVersionedSettings<T>, so mutations from the settings UI flow
+        // through to the scrubber without restart. OnChange notifications are a
+        // v1 no-op — see XML doc deferral on AddMithrilOtlpExport.
+        services.AddSingleton<IOptionsMonitor<TelemetrySettings>>(
+            _ => new SingletonOptionsMonitor<TelemetrySettings>(settings));
 
         // Scrubber graph. Process-wide singletons; the processor references
         // the catalog + redactor + observer + settings monitor.
         services.AddSingleton<TagCatalog>();
         services.AddSingleton<NewlySeenTagsObserver>();
-        services.AddSingleton<HeaderValueProtection>();
+        services.AddSingleton<HeaderValueProtection>(); // Consumed by Task 13 settings UI.
         services.AddSingleton<ExporterHealthMonitor>();
         services.AddSingleton(sp =>
         {
@@ -241,24 +254,6 @@ public static class TelemetryHostExtensions
     }
 
     /// <summary>
-    /// Copy the user-supplied settings instance into the IOptions-managed
-    /// instance. Done field-by-field rather than reference assignment so the
-    /// caller-held instance and the IOptions-resolved instance don't alias —
-    /// surprises from in-place edits propagating into running pipelines are
-    /// deferred to the hot-reload follow-up.
-    /// </summary>
-    private static void CopySettings(TelemetrySettings source, TelemetrySettings target)
-    {
-        target.SchemaVersion = source.SchemaVersion;
-        target.EnableOtlpExport = source.EnableOtlpExport;
-        target.Endpoint = source.Endpoint;
-        target.Protocol = source.Protocol;
-        target.ServiceName = source.ServiceName;
-        target.Headers = new Dictionary<string, string>(source.Headers);
-        target.TagExports = new Dictionary<string, bool>(source.TagExports);
-    }
-
-    /// <summary>
     /// Resolve the assembly informational version to populate
     /// <c>service.version</c>. Prefers the entry assembly (typically
     /// <c>Mithril.Shell</c>) so the user-facing version matches the running
@@ -271,5 +266,25 @@ public static class TelemetryHostExtensions
         return asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             ?? asm.GetName().Version?.ToString()
             ?? "0.0.0";
+    }
+
+    /// <summary>
+    /// IOptionsMonitor shim that returns the DI singleton on every CurrentValue
+    /// read so in-place mutations (TagExports add/remove) are picked up per
+    /// scrub. OnChange notification is a no-op for v1 — the scrubber polls
+    /// CurrentValue, doesn't subscribe. The full OnChange path lands with the
+    /// IOptionsMonitor hot-reload follow-up (see XML doc on AddMithrilOtlpExport).
+    /// </summary>
+    private sealed class SingletonOptionsMonitor<T>(T instance) : IOptionsMonitor<T> where T : class
+    {
+        public T CurrentValue => instance;
+        public T Get(string? name) => instance;
+        public IDisposable OnChange(Action<T, string?> listener) => NoSubscription.Instance;
+
+        private sealed class NoSubscription : IDisposable
+        {
+            public static readonly NoSubscription Instance = new();
+            public void Dispose() { }
+        }
     }
 }
