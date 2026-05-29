@@ -8,22 +8,24 @@ namespace Mithril.Overlay;
 /// Caches <see cref="ID2D1SolidColorBrush"/> instances keyed on packed ARGB
 /// so a scene drawer doesn't allocate a new brush per draw call. Brushes are
 /// tied to a specific render target; on render-target rebuild (resize,
-/// device-lost) call <see cref="Reset"/> and the cache discards everything.
+/// device-lost) the host calls <see cref="Reset"/> and the cache discards
+/// everything.
 ///
-/// <para>WPF's <c>SolidColorBrush.Freeze</c> hides the equivalent allocation
-/// cost behind reference-counted internals; we don't get that for free in
-/// D2D land, hence the explicit cache.</para>
+/// <para><b>Narrowed public surface (#835 step 6, review iteration-1 S1).</b>
+/// The class is public so the concrete type can ship under
+/// <c>Mithril.Overlay</c>; scene-drawer consumers reach it via
+/// <see cref="IOverlaySceneContext.Brushes"/> typed as the read-only
+/// <see cref="IOverlayBrushes"/> interface. The lifecycle surface
+/// (<see cref="Bind"/> / <see cref="Reset"/> / <see cref="Dispose"/>) is
+/// <c>internal</c> so a misbehaving drawer can't rebind, drop, or dispose
+/// the host-owned cache mid-frame &#8212; if a drawer nukes the cache,
+/// every subsequent drawer this tick gets <c>null</c> from <see cref="Get"/>.</para>
 ///
-/// <para><b>Public for scene drawers (#835 step 6).</b> Lifted out of
-/// <c>Mithril.Overlay.Internal</c> so an
-/// <see cref="IOverlaySceneContext"/> consumer (Legolas's scene drawer
-/// today; any future overlay consumer tomorrow) can call
-/// <see cref="Get"/> directly without leaning on the
-/// <c>InternalsVisibleTo</c> seam. The cache is still owned by
-/// <c>OverlayWindowService</c> and bound to the current render target
-/// before the scene drawers fire — consumers don't construct their own.</para>
+/// <para>WPF's <c>SolidColorBrush.Freeze</c> hides the equivalent
+/// allocation cost behind reference-counted internals; we don't get that
+/// for free in D2D land, hence the explicit cache.</para>
 /// </summary>
-public sealed class D2DBrushCache : IDisposable
+public sealed class D2DBrushCache : IOverlayBrushes, IDisposable
 {
     private readonly Dictionary<uint, ID2D1SolidColorBrush> _brushes = new();
     private ID2D1RenderTarget? _renderTarget;
@@ -31,9 +33,10 @@ public sealed class D2DBrushCache : IDisposable
     /// <summary>
     /// Bind the cache to a render target. Subsequent <see cref="Get"/> calls
     /// allocate brushes against this target. Calling with a different target
-    /// (or <c>null</c>) disposes all existing brushes.
+    /// (or <c>null</c>) disposes all existing brushes. Host-owned; not
+    /// exposed on <see cref="IOverlayBrushes"/>.
     /// </summary>
-    public void Bind(ID2D1RenderTarget? renderTarget)
+    internal void Bind(ID2D1RenderTarget? renderTarget)
     {
         if (ReferenceEquals(_renderTarget, renderTarget)) return;
         Reset();
@@ -56,12 +59,20 @@ public sealed class D2DBrushCache : IDisposable
         return brush;
     }
 
-    /// <summary>Discard all cached brushes. Called on render-target rebuild.</summary>
-    public void Reset()
+    /// <summary>Discard all cached brushes. Called on render-target rebuild.
+    /// Host-owned; not exposed on <see cref="IOverlayBrushes"/>.</summary>
+    internal void Reset()
     {
         foreach (var b in _brushes.Values) b.Dispose();
         _brushes.Clear();
     }
 
-    public void Dispose() => Reset();
+    /// <summary>Internal disposal entry point &#8212; the host calls this
+    /// directly. <see cref="IDisposable.Dispose"/> is also implemented
+    /// (explicit) so the cache is still usable with <c>using</c>-based
+    /// fixtures inside the platform's own tests, but the contract for
+    /// scene-drawer consumers is "do not Dispose; the host owns lifetime".</summary>
+    internal void DisposeInternal() => Reset();
+
+    void IDisposable.Dispose() => Reset();
 }

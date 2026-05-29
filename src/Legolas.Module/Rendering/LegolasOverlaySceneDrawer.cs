@@ -36,7 +36,7 @@ namespace Legolas.Rendering;
 /// existing per-frame path: it builds the scene from the live
 /// <see cref="MapOverlayViewModel"/> + <see cref="MarchingAntsClock"/> and
 /// hands it off to the shared
-/// <see cref="DrawScene(PinScene, ID2D1RenderTarget, ID2D1Factory, D2DBrushCache)"/>
+/// <see cref="DrawScene(PinScene, ID2D1RenderTarget, ID2D1Factory, IOverlayBrushes)"/>
 /// helper below (the relocated bodies of the old static
 /// <see cref="PinSceneRenderer"/>).</para>
 ///
@@ -64,12 +64,58 @@ internal sealed class LegolasOverlaySceneDrawer
     /// <see cref="IOverlayWindow.RegisterScene"/>. Builds a fresh
     /// <see cref="PinScene"/> from the VM each tick (same data flow as the
     /// legacy <c>MapOverlayView.OnMapSurfaceRender</c>) and hands it to
-    /// <see cref="DrawScene"/>.</summary>
+    /// <see cref="DrawScene"/>. Calibration-validation ghost markers
+    /// (#495, review iteration-1 B3) are drawn after the main scene as a
+    /// separate pass &#8212; they're pixel-native (the VM projects them
+    /// through the calibration) and out-of-band from the
+    /// <see cref="PinScene"/> contract that the snapshot baselines pin.</summary>
     public void Draw(IOverlaySceneContext ctx)
     {
         var scene = BuildScene();
         DrawScene(scene, ctx.RenderTarget, ctx.Factory, ctx.Brushes);
+        DrawCalibrationGhosts(ctx);
     }
+
+    /// <summary>Render the #495 calibration-validation ghost markers as a
+    /// magenta hollow ring + a magenta center dot per
+    /// <see cref="MapOverlayViewModel.CalibrationGhosts"/> entry. Labels
+    /// are deferred (review iteration-1 B3 accepted dots-only ship; #875
+    /// tracks the D2D-text lift via <c>ID2D1DeviceContext</c> +
+    /// <c>IDWriteFactory</c>). Skips silently when the user hasn't toggled
+    /// the validation panel.</summary>
+    private void DrawCalibrationGhosts(IOverlaySceneContext ctx)
+    {
+        var vm = _vm;
+        if (!vm.ShowCalibrationGhosts) return;
+        var ghosts = vm.CalibrationGhosts;
+        if (ghosts.Count == 0) return;
+
+        var stroke = ctx.Brushes.Get(GhostStrokeColor);
+        var fill = ctx.Brushes.Get(GhostStrokeColor);
+        if (stroke is null || fill is null) return;
+
+        for (var i = 0; i < ghosts.Count; i++)
+        {
+            var g = ghosts[i];
+            var cx = (float)g.Pixel.X;
+            var cy = (float)g.Pixel.Y;
+            // Outer hollow ring — matches the legacy XAML's
+            // <Ellipse Stroke="#FFE040E0" StrokeThickness="2" Width="16" Height="16">.
+            var outer = new Ellipse(new System.Numerics.Vector2(cx, cy), 8f, 8f);
+            ctx.RenderTarget.DrawEllipse(outer, stroke, 2f);
+            // Center dot — matches <Ellipse Fill="#FFE040E0" Width="4" Height="4">.
+            var center = new Ellipse(new System.Numerics.Vector2(cx, cy), 2f, 2f);
+            ctx.RenderTarget.FillEllipse(center, fill);
+        }
+        // TODO(#875): #495 ghost-label re-add. D2D text needs
+        // ID2D1DeviceContext + IDWriteFactory which the current surface
+        // doesn't expose; dots-only ships this iteration (alignment
+        // validation works without labels). #875 also tracks the
+        // validation-status banner deferred to the step-7 chrome lift.
+    }
+
+    private static readonly System.Windows.Media.Color GhostStrokeColor =
+        System.Windows.Media.Color.FromArgb(0xFF, 0xE0, 0x40, 0xE0);
 
     /// <summary>Test seam: build the per-tick PinScene from the VM exactly
     /// as <see cref="Draw"/> would. Lets the
@@ -78,6 +124,15 @@ internal sealed class LegolasOverlaySceneDrawer
     /// renderer's "active pin last" path replaces the previous registry's
     /// "active-last insertion order" invariant.</summary>
     internal PinScene BuildSceneForTest() => BuildScene();
+
+    /// <summary>Test seam (review iteration-1 B3): drive the calibration-
+    /// ghost pass against a supplied context exactly as <see cref="Draw"/>
+    /// would. Lets <c>LegolasOverlaySceneDrawerGhostTests</c> assert the
+    /// draw path is entered (brush fetched → ellipses drawn) when ghosts
+    /// are populated + <see cref="MapOverlayViewModel.ShowCalibrationGhosts"/>
+    /// is on, and short-circuited (no brush fetch, no draw) when off or
+    /// empty — without standing up a real D2D render target.</summary>
+    internal void DrawCalibrationGhostsForTest(IOverlaySceneContext ctx) => DrawCalibrationGhosts(ctx);
 
     private PinScene BuildScene()
     {
@@ -176,7 +231,7 @@ internal sealed class LegolasOverlaySceneDrawer
         PinScene scene,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
-        D2DBrushCache brushes)
+        IOverlayBrushes brushes)
     {
         // Wedges sit behind the route lines — drawing order matters; D2D has
         // no depth buffer for transparent geometry, so painters' algorithm.
@@ -189,14 +244,14 @@ internal sealed class LegolasOverlaySceneDrawer
         DrawPlayerAnchor(scene, rt, factory, brushes);
     }
 
-    private static void DrawMotherlodePins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    private static void DrawMotherlodePins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes)
     {
         for (var i = 0; i < scene.MotherlodePins.Count; i++)
             DrawPin(rt, factory, brushes, scene.MotherlodePins[i],
                 scene.SurveyOuter, scene.SurveyCenter, scene.SurveyOuterDiameter);
     }
 
-    private static void DrawMotherlodeGuidance(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    private static void DrawMotherlodeGuidance(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes)
     {
         if (scene.MotherlodeGuidance is not { } g || g.RadiusPixels <= 0) return;
         var stroke = brushes.Get(g.StrokeColor);
@@ -214,13 +269,13 @@ internal sealed class LegolasOverlaySceneDrawer
         rt.DrawLine(new Vector2(cx, cy - tick), new Vector2(cx, cy + tick), stroke, 2f, dashStyle);
     }
 
-    private static void DrawPlayerAnchor(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    private static void DrawPlayerAnchor(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes)
     {
         if (scene.PlayerPosition is not { } pos) return;
         DrawPin(rt, factory, brushes, pos, scene.PlayerOuter, scene.PlayerCenter, scene.PlayerOuter.Size);
     }
 
-    private static void DrawWedges(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    private static void DrawWedges(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes)
     {
         if (scene.Wedges.Count == 0) return;
         var fill = brushes.Get(scene.WedgeFillColor);
@@ -235,7 +290,7 @@ internal sealed class LegolasOverlaySceneDrawer
         }
     }
 
-    private static void DrawRoute(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    private static void DrawRoute(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes)
     {
         if (scene.RoutePoints.Count < 2) return;
         var brush = brushes.Get(scene.RouteLineColor);
@@ -245,7 +300,7 @@ internal sealed class LegolasOverlaySceneDrawer
         DrawPolyline(rt, scene.RoutePoints, brush, RouteThickness, dashStyle);
     }
 
-    private static void DrawActiveSegment(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    private static void DrawActiveSegment(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes)
     {
         if (scene.ActiveSegmentPoints.Count < 2) return;
         var brush = brushes.Get(scene.RouteLineColor);
@@ -288,7 +343,7 @@ internal sealed class LegolasOverlaySceneDrawer
         return factory.CreateStrokeStyle(props, dashes);
     }
 
-    private static void DrawSurveyPins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
+    private static void DrawSurveyPins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes)
     {
         if (scene.SurveyPins.Count == 0) return;
         for (var i = 0; i < scene.SurveyPins.Count; i++)
@@ -307,7 +362,7 @@ internal sealed class LegolasOverlaySceneDrawer
     }
 
     private static void DrawPin(
-        ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
+        ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes,
         PixelPoint pos, PinLayerStyle outer, PinLayerStyle center, double diameter)
     {
         DrawPinLayer(rt, factory, brushes, pos, diameter, outer);
@@ -315,7 +370,7 @@ internal sealed class LegolasOverlaySceneDrawer
     }
 
     private static void DrawActivePin(
-        ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
+        ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes,
         PixelPoint pos, PinScene scene, ActivePinTreatmentSpec spec)
     {
         switch (spec.Treatment)
@@ -345,7 +400,7 @@ internal sealed class LegolasOverlaySceneDrawer
     }
 
     private static void DrawHalo(
-        ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
+        ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes,
         PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         var haloDiameter = pinDiameter + 2 * spec.HaloPaddingPx;
@@ -360,7 +415,7 @@ internal sealed class LegolasOverlaySceneDrawer
     }
 
     private static void DrawGlow(
-        ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes,
+        ID2D1RenderTarget rt, ID2D1Factory factory, IOverlayBrushes brushes,
         PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         if (spec.GlowBlurRadius <= 0) return;
@@ -388,7 +443,7 @@ internal sealed class LegolasOverlaySceneDrawer
     private static void DrawPinLayer(
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
-        D2DBrushCache brushes,
+        IOverlayBrushes brushes,
         PixelPoint center,
         double diameter,
         PinLayerStyle style)

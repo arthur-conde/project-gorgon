@@ -8,6 +8,7 @@ using Arda.World.Player;
 using Arda.World.Player.Events;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Rendering;
@@ -38,6 +39,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     // MapOverlayView. Optional — null in tests using the simpler ctor.
     private readonly IWorldOverlayMarkers? _markers;
     private readonly IAreaState? _areaState;
+    private readonly Microsoft.Extensions.Logging.ILogger? _logger;
+
+    // #835 step 6 review iteration-1 B2: per-area first-time-trace dedup
+    // for the silent early-returns in RefreshCalibrationMarker. Mirrors
+    // OverlayWindowService._projectionMissAreasLogged pattern. TryAdd is
+    // lock-free, so the per-marker cost stays a hashed lookup. The trace
+    // surfaces the reason (no area / not pairing / no service / no cal /
+    // pixel-not-projectable) so silent fallbacks are observable.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte>
+        _calibrationFallbackAreasLogged = new(StringComparer.Ordinal);
 
     // Survey → marker handle map. Keyed on the VM (stable per pin) so a
     // Survey.Model 'with' replace doesn't churn the dictionary. Reads + writes
@@ -51,7 +62,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         _session = session;
         _projector = projector;
@@ -66,6 +77,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _characterPin = characterPin;
         _markers = markers;
         _areaState = areaState;
+        _logger = loggerFactory?.CreateLogger("Legolas.MapOverlay");
         if (_motherlode is not null)
             _motherlode.Changed += () => PostToUi(NotifyMotherlodeGuidanceChanged);
         if (_areaCalibration is not null)
@@ -1069,33 +1081,63 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             _markers.RemoveMarker(prev);
         }
 
-        // TODO(#835 step 6 follow-up — review observations O1+O2): when this
-        // path goes live (the new OverlayWindow is shown), emit Trace logs
-        // at each silent early-return below and bump a
-        // MithrilMeters.Overlay.CalibrationFallback counter so the user can
-        // see when the legacy WPF ItemsControl path is carrying calibration
-        // rendering. Adding ILogger to MapOverlayViewModel is a real lift
-        // (it doesn't have one today) so the instrumentation is deferred
-        // until the pipeline is no longer dormant.
-        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey) return;
-        // Only register while the Pair phase is live — Drop captures right-
-        // clicks to the game, the marker rendering is meaningless then. The
-        // legacy ItemsControl mirrors this with its IsCalibrationCapturing
-        // Visibility binding.
-        if (_pinCal?.IsPairing != true) return;
-
-        // Convert click pixel -> world via the calibration service. Uses the
-        // baseline / community / pre-confirm refinement to anchor the world
-        // coord; subsequent calibration changes re-project the marker (this
-        // is more correct than today's pixel-frozen rendering).
-        if (_areaCalibration is null) return;
-        var cal = _areaCalibration.CurrentCalibration;
-        if (cal is null) return;
-        if (cal.WindowToWorld(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal)) is not { } world)
+        // Per-area first-time Trace log on each silent early-return, so
+        // a stuck "no calibration markers visible" symptom is observable
+        // (review iteration-1 B2). Uses the same per-area dedup pattern
+        // as OverlayWindowService._projectionMissAreasLogged so a busy
+        // area doesn't flood the trace.
+        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey)
+        {
+            LogCalibrationFallback("(no-area)", "Area state has no current area key.");
             return;
+        }
+        // Only register while the Pair phase is live — Drop captures right-
+        // clicks to the game, the marker rendering is meaningless then.
+        if (_pinCal?.IsPairing != true)
+        {
+            // Phase flips are user-driven (Drop ⇄ Pair); chatty if logged
+            // per marker. Skip the trace for this branch — it's the
+            // expected steady state outside the wizard, not a fallback.
+            return;
+        }
+
+        // Convert click pixel -> world via the calibration service.
+        if (_areaCalibration is null)
+        {
+            LogCalibrationFallback(areaKey, "No IAreaCalibrationService injected — marker cannot anchor.");
+            return;
+        }
+        var cal = _areaCalibration.CurrentCalibration;
+        if (cal is null)
+        {
+            LogCalibrationFallback(areaKey,
+                "No baseline calibration for area — calibration walkthrough requires a seed (review iter-1 B2).");
+            return;
+        }
+        if (cal.WindowToWorld(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal)) is not { } world)
+        {
+            LogCalibrationFallback(areaKey,
+                "WindowToWorld returned null for marker pixel — calibration shape rejected the point.");
+            return;
+        }
 
         var style = BuildCalibrationMarkerStyle(marker.IsSelected);
         _calibrationMarkers[marker] = _markers.AddMarker(areaKey, world.X, world.Z, style);
+    }
+
+    /// <summary>Trace one calibration-marker early-return per
+    /// (area, reason) so silent fallbacks are observable in production
+    /// without flooding the trace on a busy area. Mirrors
+    /// <c>OverlayWindowService._projectionMissAreasLogged</c>.</summary>
+    private void LogCalibrationFallback(string areaKey, string reason)
+    {
+        var dedupKey = areaKey + "|" + reason;
+        if (_calibrationFallbackAreasLogged.TryAdd(dedupKey, 0))
+        {
+            _logger?.LogTrace(
+                "MapOverlayViewModel.RefreshCalibrationMarker fallback for area {AreaKey}: {Reason}",
+                areaKey, reason);
+        }
     }
 
     private LegolasCalibrationMarkerStyle BuildCalibrationMarkerStyle(bool isSelected)

@@ -51,7 +51,14 @@ namespace Mithril.Overlay.Internal;
 /// </summary>
 internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDisposable
 {
-    private const string UncalibratedMessage = "map not calibrated — use Legolas wizard";
+    // The chip flips on any uncalibrated area. Wording updated in review
+    // iteration-1 B2 — the previous "use Legolas wizard" was misleading
+    // because the registry-only calibration walkthrough now requires a
+    // baseline calibration to anchor against (WindowToWorld returns null
+    // without one). The seed comes from a bundled / community baseline or
+    // the Mithril MapCalibration workspace tool (#864).
+    private const string UncalibratedMessage =
+        "map not calibrated — seed calibration needed (no baseline for this area)";
 
     // Inject the concrete type directly (not IWorldOverlayMarkers): the
     // projection driver needs the internal CurrentArea setter and the
@@ -252,7 +259,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         }
         try { window.OverlaySurface.Dispose(); }
         catch (ObjectDisposedException) { /* idempotent dispose */ }
-        _brushCache.Dispose();
+        _brushCache.DisposeInternal();
         _window = null;
     }
 
@@ -301,7 +308,11 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
         // Scene drawers — fire BEFORE the marker renderer. Snapshot the
         // drawer array reference once so a concurrent register/unregister
-        // can't shift it mid-iteration.
+        // can't shift it mid-iteration. Each drawer is invoked in its own
+        // try/catch so a throwing drawer is isolated from siblings + the
+        // marker renderer's per-tick work (review iteration-1 B1). A
+        // single throw inside BeginDraw/EndDraw would otherwise abort the
+        // whole frame and poison the surface for every consumer.
         var drawers = _sceneDrawers;
         if (drawers.Length > 0)
         {
@@ -312,7 +323,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
                 sceneAct?.SetTag("drawer_count", drawers.Length);
                 for (var i = 0; i < drawers.Length; i++)
                 {
-                    drawers[i].Invoke(_sceneContext);
+                    InvokeSceneDrawerIsolated(drawers[i], i);
                 }
             }
         }
@@ -430,7 +441,30 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, currentZoom);
         for (var i = 0; i < drawers.Length; i++)
         {
-            drawers[i].Invoke(_sceneContext);
+            InvokeSceneDrawerIsolated(drawers[i], i);
+        }
+    }
+
+    /// <summary>Invoke one scene drawer with exception isolation. A
+    /// throwing drawer is logged + counted, and sibling drawers / the
+    /// marker renderer still get their per-tick work (review iteration-1
+    /// B1 &#8212; the dispatcher path runs inside a single
+    /// <c>BeginDraw</c>/<c>EndDraw</c> pair, so an uncaught throw here
+    /// would tear the whole frame down and poison the surface).</summary>
+    private void InvokeSceneDrawerIsolated(SceneDrawerRegistration drawer, int index)
+    {
+        try
+        {
+            drawer.Invoke(_sceneContext);
+        }
+        catch (Exception ex)
+        {
+            var drawerType = drawer.TargetTypeName;
+            _logger?.LogError(ex,
+                "Scene drawer {DrawerIndex} ({DrawerType}) threw; isolating from sibling drawers and the marker renderer for this tick.",
+                index, drawerType);
+            MithrilMeters.Overlay.SceneDrawerExceptions.Add(1,
+                new KeyValuePair<string, object?>("drawer_type", drawerType));
         }
     }
 
@@ -441,7 +475,13 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReady)));
     }
 
-    private void SetStatusMessage(string? value)
+    /// <summary>Sets (or clears) the consumer-facing status chip. Public to
+    /// satisfy <see cref="IOverlayWindow.SetStatusMessage"/> — a consumer
+    /// (Legolas' calibration coordinator) flips the chip for a
+    /// consumer-specific condition and clears it when resolved. The
+    /// per-tick uncalibrated-area gate in <see cref="OnSurfaceRender"/>
+    /// also drives it. No-ops when the value is unchanged.</summary>
+    public void SetStatusMessage(string? value)
     {
         if (string.Equals(_statusMessage, value, StringComparison.Ordinal)) return;
         _statusMessage = value;
@@ -462,7 +502,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var dispatcher = _dispatcher;
         if (window is null)
         {
-            _brushCache.Dispose();
+            _brushCache.DisposeInternal();
             return;
         }
 
@@ -502,8 +542,19 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     private sealed class SceneDrawerRegistration
     {
         private readonly Action<IOverlaySceneContext> _draw;
-        public SceneDrawerRegistration(Action<IOverlaySceneContext> draw) { _draw = draw; }
+        public SceneDrawerRegistration(Action<IOverlaySceneContext> draw)
+        {
+            _draw = draw;
+            // Cache the target type name once so the per-tick isolation
+            // path doesn't reflect on every exception. Delegate.Target is
+            // the instance the method is bound to (or null for a static
+            // method); falling back to the method's declaring type keeps
+            // the tag stable for static-method drawers.
+            TargetTypeName = (draw.Target?.GetType() ?? draw.Method.DeclaringType)?.FullName
+                ?? "unknown";
+        }
         public void Invoke(IOverlaySceneContext ctx) => _draw(ctx);
+        public string TargetTypeName { get; }
     }
 
     private sealed class SceneDrawerHandle : IDisposable
@@ -559,7 +610,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             _factory ?? throw new InvalidOperationException(
                 "IOverlaySceneContext.Factory accessed outside the scene-drawer callback.");
 
-        public D2DBrushCache Brushes =>
+        public IOverlayBrushes Brushes =>
             _brushes ?? throw new InvalidOperationException(
                 "IOverlaySceneContext.Brushes accessed outside the scene-drawer callback.");
 

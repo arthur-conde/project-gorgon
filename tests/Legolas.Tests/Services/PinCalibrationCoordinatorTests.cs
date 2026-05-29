@@ -399,7 +399,11 @@ public class PinCalibrationCoordinatorTests
 
         public string? CurrentAreaKey => "AreaTest";
         public string? CurrentAreaFriendlyName => "Test";
-        public bool IsCurrentAreaCalibrated => false;
+        // Default true so existing PinCalibrationCoordinatorTests (which
+        // pre-date the #835 step 6 review-iter-1 B2 Arm gate) stay green:
+        // their setups assume Arm always succeeds. The new gate-rejection
+        // tests opt-in by flipping this to false.
+        public bool IsCurrentAreaCalibrated { get; set; } = true;
         public AreaCalibration? CurrentCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
@@ -432,6 +436,98 @@ public class PinCalibrationCoordinatorTests
         coord.IsArmed.Should().BeTrue("coordinator stays armed so placed pairs aren't lost on retry");
         coord.PairedCount.Should().Be(3, "pairs are preserved across a failed Confirm");
     }
+
+    // ---- #835 step 6 review iteration-1 B2: bootstrap-gate Arm ----
+
+    [Fact]
+    public void Arm_in_uncalibrated_area_is_refused_with_BootstrapBlockedMessage_and_Info_log()
+    {
+        // Review iter-1 B2: opening Drop/Pair on an area with no baseline
+        // calibration is a no-op — the registry-only marker pipeline can't
+        // anchor placed pins without a baseline (WindowToWorld returns
+        // null), so the walkthrough would be invisible to the user. The
+        // coordinator must refuse cleanly: surface a user-visible message
+        // via BootstrapBlockedMessage, log an Info lifecycle event so the
+        // refusal is observable in diagnostics, and stay IsArmed=false so
+        // the wizard panel can branch on it.
+        var calib = new FakeCalib { IsCurrentAreaCalibrated = false };
+        var pins = new FakeMapPinState();
+        var bus = new TestDomainEventBus();
+        var settings = new LegolasSettings();
+        var loggerFactory = new TestLoggerFactory();
+        var coord = new PinCalibrationCoordinator(
+            calib, pins, bus, settings, session: null, loggerFactory);
+
+        coord.Arm();
+
+        coord.IsArmed.Should().BeFalse(
+            "Arm must refuse on an uncalibrated area — opening Drop/Pair " +
+            "without a seed leaves the calibration walkthrough invisible.");
+        coord.BootstrapBlockedMessage.Should().NotBeNullOrEmpty(
+            "BootstrapBlockedMessage must surface so the wizard panel can " +
+            "tell the user to bootstrap a baseline first.");
+        loggerFactory.Entries.Should().Contain(e =>
+            e.Level == Microsoft.Extensions.Logging.LogLevel.Information
+            && e.Category == "Legolas.PinCalibrationCoordinator"
+            && e.Message.Contains("Arm refused"),
+            "the refusal must surface as a LogInformation lifecycle event " +
+            "(not Warning — this is a user-initiated, expected refusal).");
+    }
+
+    [Fact]
+    public void Arm_in_calibrated_area_succeeds_and_clears_BootstrapBlockedMessage()
+    {
+        var calib = new FakeCalib { IsCurrentAreaCalibrated = true };
+        var pins = new FakeMapPinState();
+        var bus = new TestDomainEventBus();
+        var settings = new LegolasSettings();
+        var coord = new PinCalibrationCoordinator(calib, pins, bus, settings);
+
+        // Pre-seed a stale BootstrapBlockedMessage via a prior refusal:
+        // first flip uncalibrated, Arm (refused), then flip back to
+        // calibrated. The subsequent successful Arm must clear the prior
+        // message so the wizard panel doesn't display stale guidance.
+        calib.IsCurrentAreaCalibrated = false;
+        coord.Arm();
+        coord.BootstrapBlockedMessage.Should().NotBeNull("setup: prior refusal");
+        calib.IsCurrentAreaCalibrated = true;
+
+        coord.Arm();
+
+        coord.IsArmed.Should().BeTrue();
+        coord.BootstrapBlockedMessage.Should().BeNull(
+            "successful Arm must clear the prior refusal's message.");
+    }
+
+    private sealed class TestLoggerFactory : Microsoft.Extensions.Logging.ILoggerFactory
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<TestLogEntry> Entries { get; } = new();
+        public void AddProvider(Microsoft.Extensions.Logging.ILoggerProvider provider) { }
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) =>
+            new TestLogger(categoryName, Entries);
+        public void Dispose() { }
+
+        private sealed class TestLogger : Microsoft.Extensions.Logging.ILogger
+        {
+            private readonly string _category;
+            private readonly System.Collections.Concurrent.ConcurrentQueue<TestLogEntry> _sink;
+            public TestLogger(string c, System.Collections.Concurrent.ConcurrentQueue<TestLogEntry> s) { _category = c; _sink = s; }
+            public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+            public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+            public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel,
+                Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+                => _sink.Enqueue(new TestLogEntry(_category, logLevel, formatter(state, exception), exception));
+
+            private sealed class NullScope : IDisposable
+            {
+                public static readonly NullScope Instance = new();
+                public void Dispose() { }
+            }
+        }
+    }
+
+    private sealed record TestLogEntry(string Category, Microsoft.Extensions.Logging.LogLevel Level, string Message, Exception? Exception);
 
     [Fact]
     public void Disarm_clears_PersistError()

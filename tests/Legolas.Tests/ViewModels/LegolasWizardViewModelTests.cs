@@ -359,8 +359,21 @@ public class LegolasWizardViewModelTests
 
         wizard.PickSurveyModeCommand.Execute(null);
 
-        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
-        wizard.PinCalibration.IsArmed.Should().BeTrue("entering Calibrating arms map-overlay capture");
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating,
+            "the step machine still routes to Calibrating on an uncalibrated area " +
+            "so the wizard can surface the bootstrap-needed message.");
+        // #835 step 6 review iter-1 B2: PinCalibration.Arm now refuses on
+        // an uncalibrated area — the registry-only marker pipeline can't
+        // anchor placed pins without a baseline. The wizard panel can
+        // surface BootstrapBlockedMessage to direct the user to the
+        // MapCalibration workspace tool to seed a baseline first.
+        wizard.PinCalibration.IsArmed.Should().BeFalse(
+            "Arm refuses without a baseline calibration (#835 step 6 B2) — " +
+            "placed pins would have nowhere to render through " +
+            "IWorldOverlayMarkers without WindowToWorld.");
+        wizard.PinCalibration.BootstrapBlockedMessage.Should().NotBeNullOrEmpty(
+            "the user must see why calibration capture is disabled — " +
+            "namely, no baseline exists for the area yet.");
     }
 
     [Fact]
@@ -403,7 +416,13 @@ public class LegolasWizardViewModelTests
 
         wizard.CalibrateForMotherlodeCommand.Execute(null);
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
-        wizard.PinCalibration.IsArmed.Should().BeTrue();
+        // #835 step 6 review iter-1 B2: Arm refuses on uncalibrated areas
+        // now — the wizard's step routing still hits Calibrating but
+        // PinCalibration.IsArmed stays false. The test's intent is the
+        // detour-then-return state machine, which is independent of
+        // whether Arm succeeded on entry.
+        wizard.PinCalibration.IsArmed.Should().BeFalse(
+            "Arm refuses without a baseline (B2); the detour wizard transition is still valid.");
 
         calib.Calibrated = true;
         calib.RaiseChanged(); // IAreaCalibrationService.Changed → RecomputeStep
@@ -489,7 +508,12 @@ public class LegolasWizardViewModelTests
 
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
         wizard.HasPickedMode.Should().BeFalse("calibration is mode-independent");
-        wizard.PinCalibration.IsArmed.Should().BeTrue();
+        // #835 step 6 review iter-1 B2: Arm refuses without a baseline.
+        // The chip-to-Calibrating wizard transition still happens; the
+        // refused-Arm surfaces via BootstrapBlockedMessage.
+        wizard.PinCalibration.IsArmed.Should().BeFalse(
+            "Arm refuses without a baseline calibration (B2).");
+        wizard.PinCalibration.BootstrapBlockedMessage.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -512,7 +536,14 @@ public class LegolasWizardViewModelTests
     [Fact]
     public void Confirming_a_pre_pick_calibration_lands_on_PickMode_calibrated()
     {
-        var calib = new FakeAreaCalib { Calibrated = false };
+        // #835 step 6 review iter-1 B2: the in-flow calibration walkthrough
+        // now requires a baseline calibration to anchor placed pins
+        // (the registry-only marker pipeline needs WindowToWorld). Tests
+        // that exercise the full place-pin → confirm flow seed
+        // Calibrated=true so the walkthrough is "refine an existing
+        // baseline" — bootstrap-from-zero now goes through the
+        // MapCalibration workspace tool (#864) before this wizard step.
+        var calib = new FakeAreaCalib { Calibrated = true };
         var pins = new FakeMapPinState();
         var (wizard, _, _, _, _) = BuildSut(calib, pins);
 
@@ -536,7 +567,13 @@ public class LegolasWizardViewModelTests
     [Fact]
     public void ConfirmCalibration_persists_and_leaves_the_gate()
     {
-        var calib = new FakeAreaCalib { Calibrated = false };
+        // #835 step 6 review iter-1 B2: seed Calibrated=true so the
+        // walkthrough is "refine" — the in-flow walkthrough requires a
+        // baseline to anchor placed pins. Bootstrap-from-zero now goes
+        // through the MapCalibration workspace tool (#864) before this
+        // wizard step; the wizard never enters the refine flow without
+        // an existing baseline.
+        var calib = new FakeAreaCalib { Calibrated = true };
         var pins = new FakeMapPinState();
         var (wizard, _, _, _, _) = BuildSut(calib, pins);
         wizard.PickSurveyModeCommand.Execute(null);

@@ -33,12 +33,13 @@ public sealed class OverlaySceneHookTests
     private static OverlayWindowService BuildService(
         FakeMapCalibrationService calibration,
         StubAreaState areaState,
-        IOverlayZoomSource zoom)
+        IOverlayZoomSource zoom,
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         var markers = new WorldOverlayMarkers();
         var renderer = new MarkerSceneRenderer();
         var position = new StubPositionState();
-        return new OverlayWindowService(markers, renderer, calibration, areaState, position, zoom);
+        return new OverlayWindowService(markers, renderer, calibration, areaState, position, zoom, loggerFactory);
     }
 
     [Fact]
@@ -206,6 +207,93 @@ public sealed class OverlaySceneHookTests
         px.Should().BeNull(
             "Project must propagate WorldToWindow's null return — a fabricated pixel " +
             "would silently land the marker at (0,0) or similar nonsense.");
+    }
+
+    /// <summary>Review iteration-1 B1: a throwing scene drawer must not
+    /// poison sibling drawers or the per-tick render. Verifies sibling
+    /// dispatch, the <c>SceneDrawerExceptions</c> counter increment, and
+    /// the <c>LogError</c> emission.</summary>
+    [Fact]
+    public void Throwing_scene_drawer_is_isolated_from_siblings_logged_and_counted()
+    {
+        var calibration = new FakeMapCalibrationService();
+        calibration.CalibratedAreas.Add("A");
+        var areaState = new StubAreaState { CurrentArea = "A" };
+        var loggerFactory = new CapturingLoggerFactory();
+        var service = BuildService(calibration, areaState,
+            new FixedOverlayZoomSource(1.0), loggerFactory);
+
+        // Attach a MeterListener on SceneDrawerExceptions so we can assert
+        // the counter ticked. Per the existing MissCountersTests pattern,
+        // the counter is process-static; we filter by drawer_type tag to
+        // isolate this test's exception from any parallel test's counter
+        // increments. The throw site here is a unique nested lambda type
+        // — the captured target name will be this test class's name with
+        // a compiler-generated suffix; we just filter on the test name
+        // prefix.
+        long observedExceptionCounter = 0;
+        using var listener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instr, l) =>
+            {
+                if (instr.Meter.Name == "Mithril.Overlay"
+                    && instr.Name == "mithril.overlay.scene.exceptions")
+                {
+                    l.EnableMeasurementEvents(instr);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, tags, _) =>
+        {
+            // Match this test's drawer by tag — Delegate.Target for a
+            // local lambda is the closure object whose declaring type
+            // begins with this test's full type name.
+            foreach (var kv in tags)
+            {
+                if (kv.Key == "drawer_type"
+                    && kv.Value is string s
+                    && s.Contains(nameof(OverlaySceneHookTests)))
+                {
+                    Interlocked.Add(ref observedExceptionCounter, measurement);
+                    return;
+                }
+            }
+        });
+        listener.Start();
+
+        var throwingDrawerFired = 0;
+        var siblingDrawerFired = 0;
+        var raised = new InvalidOperationException("test-drawer-boom");
+
+        using var hThrowing = ((IOverlayWindow)service).RegisterScene(_ =>
+        {
+            throwingDrawerFired++;
+            throw raised;
+        });
+        using var hSibling = ((IOverlayWindow)service).RegisterScene(_ => siblingDrawerFired++);
+
+        service.DriveSceneForTest(null!, null!, "A", 1.0);
+
+        throwingDrawerFired.Should().Be(1, "the throwing drawer must still be invoked exactly once.");
+        siblingDrawerFired.Should().Be(1,
+            "the sibling drawer MUST still fire after the previous drawer threw — without " +
+            "per-drawer isolation, an uncaught throw inside BeginDraw/EndDraw aborts the whole " +
+            "frame and poisons every subsequent consumer for the tick.");
+
+        observedExceptionCounter.Should().Be(1,
+            "the SceneDrawerExceptions counter must tick once per isolated throw — without it " +
+            "a flood of exceptions is invisible in production traces.");
+
+        var errorEntries = loggerFactory.Entries
+            .Where(e => e.Level == Microsoft.Extensions.Logging.LogLevel.Error
+                        && e.Category == "Mithril.Overlay")
+            .ToList();
+        errorEntries.Should().NotBeEmpty(
+            "the isolated exception must surface as a LogError on the 'Mithril.Overlay' category " +
+            "so the user can see what failed without rebuilding with a debugger attached.");
+        errorEntries.Should().Contain(e => ReferenceEquals(e.Exception, raised),
+            "the original exception instance must be attached to the log entry, not just stringified — " +
+            "the stack trace is the only thing that lets the user (or maintainer) find the bug.");
     }
 
     private sealed class MutableZoomSource : IOverlayZoomSource

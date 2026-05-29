@@ -21,10 +21,15 @@ namespace Mithril.Overlay;
 ///
 /// <para><b>Threading.</b> Scene drawers fire on the WPF dispatcher inside
 /// the surface's <c>BeginDraw</c>/<c>EndDraw</c> pair &#8212; the same place
-/// the marker renderer runs. Drawers must not retain the context, the
-/// render target, the factory, or any brush past the callback; the brush
-/// cache is rebound + the render target may be torn down on resize /
-/// device-lost / area change.</para>
+/// the marker renderer runs. <b>All members of this interface (including
+/// the <see cref="Brushes"/> surface) must be touched only from that
+/// dispatcher thread inside the active scene-drawer callback</b> (review
+/// iteration-1 S3). Drawers must not retain the context, the render
+/// target, the factory, or any brush past the callback; the brush cache
+/// is rebound + the render target may be torn down on resize /
+/// device-lost / area change. Stashing the context (or any of its
+/// members) and using it from another thread &#8212; or from the next
+/// frame's drawer &#8212; is undefined behaviour.</para>
 ///
 /// <para><b>Drawing order.</b> Scene drawers fire BEFORE the marker
 /// renderer each tick (registered drawers in registration order). So a
@@ -44,11 +49,13 @@ public interface IOverlaySceneContext
     /// geometry / stroke style creation.</summary>
     ID2D1Factory Factory { get; }
 
-    /// <summary>Brush cache bound to <see cref="RenderTarget"/>. Drawers
-    /// should call <see cref="D2DBrushCache.Get"/> rather than creating
-    /// their own brushes; the cache is reset on render-target rebuild so
-    /// brush handles never outlive the target.</summary>
-    D2DBrushCache Brushes { get; }
+    /// <summary>Read-only view of the host-owned brush cache bound to
+    /// <see cref="RenderTarget"/>. Drawers should call
+    /// <see cref="IOverlayBrushes.Get"/> rather than creating their own
+    /// brushes; the cache is reset on render-target rebuild so brush
+    /// handles never outlive the target. Lifecycle (bind / reset /
+    /// dispose) is host-owned and not exposed here.</summary>
+    IOverlayBrushes Brushes { get; }
 
     /// <summary>The Arda internal area key for the current frame's player
     /// area (e.g. <c>"AreaEltibule"</c>). Empty / unknown areas are filtered

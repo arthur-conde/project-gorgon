@@ -115,9 +115,9 @@ public partial class MapOverlayView : Window
         {
             // #835 step 6: MapSurface no longer exists; only the brush cache
             // needs disposing (never bound now that OnMapSurfaceRender doesn't
-            // fire). Dispose is idempotent so the cleanup stays safe across
-            // step 7's deletion pass.
-            _brushCache.Dispose();
+            // fire). IDisposable.Dispose was made explicit in review-iter-1 S1,
+            // so use the internal alias visible via InternalsVisibleTo.
+            _brushCache.DisposeInternal();
         };
     }
 
