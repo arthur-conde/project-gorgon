@@ -87,7 +87,7 @@ internal static class ScreenshotCalibrator
         }
 
         // Phase: detect every landmark icon variant and pair with landmarks.json.
-        var (detectionsByType, rawDetections) = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold, inputs.IconRenderSizeOverride);
+        var (detectionsByType, rawDetections) = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold, inputs.IconRenderSizeOverride, inputs.IconSizeOverrides);
 
         if (debugBgra is not null)
         {
@@ -368,7 +368,7 @@ internal static class ScreenshotCalibrator
     }
 
     private static (Dictionary<string, List<TypedDetection>> ByType, List<(IconMeta Icon, Detection Det, int RenderW, int RenderH)> Raw)
-        DetectIconsByType(GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold, int iconRenderSizeOverride)
+        DetectIconsByType(GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold, int iconRenderSizeOverride, IReadOnlyDictionary<string, (int W, int H)> perIconOverrides)
     {
         // Load every template once, gray + alpha pair.
         var templates = new List<(IconMeta Icon, GrayImage Gray, GrayImage Alpha)>();
@@ -429,7 +429,17 @@ internal static class ScreenshotCalibrator
         foreach (var (icon, gray, alpha) in templates)
         {
             int rw, rh;
-            if (chosenSize == 0)
+            // Per-icon override beats the global render-size rule entirely.
+            // Used when PG renders a sprite with an aspect ratio that doesn't
+            // match the source asset (e.g. landmark_npc on Serbule: source
+            // 236×256 but PG renders 17×16 — an aspect inversion that no
+            // proportional scaling can reach).
+            if (perIconOverrides.TryGetValue(icon.Name, out var forced))
+            {
+                rw = forced.W; rh = forced.H;
+                Console.WriteLine($"  [icon] {icon.Name}: forced {rw}x{rh} via --icon-size override");
+            }
+            else if (chosenSize == 0)
             {
                 rw = gray.Width; rh = gray.Height;
             }

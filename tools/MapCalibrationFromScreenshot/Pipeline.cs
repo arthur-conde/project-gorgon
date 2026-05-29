@@ -62,6 +62,7 @@ internal static class Pipeline
             MapRectOverride: args.MapRect,
             DetectionThreshold: args.DetectionThreshold,
             IconRenderSizeOverride: args.IconRenderSize,
+            IconSizeOverrides: args.IconSizeOverrides,
             DebugImagePath: args.DebugImagePath,
             ProjectionOverlayPath: args.ProjectionOverlayPath);
 
@@ -189,6 +190,7 @@ internal sealed record CalibrationInputs(
     (int X, int Y, int W, int H)? MapRectOverride,
     double DetectionThreshold,
     int IconRenderSizeOverride,
+    IReadOnlyDictionary<string, (int W, int H)> IconSizeOverrides,
     string? DebugImagePath,
     string? ProjectionOverlayPath);
 

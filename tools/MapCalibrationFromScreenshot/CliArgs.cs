@@ -23,6 +23,7 @@ internal sealed record CliArgs(
     (int X, int Y, int W, int H)? MapRect,
     double DetectionThreshold,
     int IconRenderSize,
+    IReadOnlyDictionary<string, (int W, int H)> IconSizeOverrides,
     string? DebugImagePath,
     string? ProjectionOverlayPath,
     double Zoom,
@@ -46,6 +47,7 @@ internal sealed record CliArgs(
         (int, int, int, int)? mapRect = null;
         double detectionThreshold = 0.5;
         int iconRenderSize = 0;  // 0 = auto-detect
+        var iconSizeOverrides = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
         string? debugImagePath = null;
         string? projectionOverlayPath = null;
         double zoom = 1.0;
@@ -76,6 +78,10 @@ internal sealed record CliArgs(
                     break;
                 case "--icon-render-size":
                     iconRenderSize = int.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
+                    break;
+                case "--icon-size":
+                    var (iconName, iconWh) = ParseIconSize(Next(argv, ref i));
+                    iconSizeOverrides[iconName] = iconWh;
                     break;
                 case "--debug-image":
                     debugImagePath = Next(argv, ref i);
@@ -132,11 +138,31 @@ internal sealed record CliArgs(
             MapRect: mapRect,
             DetectionThreshold: detectionThreshold,
             IconRenderSize: iconRenderSize,
+            IconSizeOverrides: iconSizeOverrides,
             DebugImagePath: debugImagePath,
             ProjectionOverlayPath: projectionOverlayPath,
             Zoom: zoom,
             Phase: phase,
             DryRun: dryRun);
+    }
+
+    private static (string Name, (int W, int H) Wh) ParseIconSize(string s)
+    {
+        var eq = s.IndexOf('=');
+        if (eq <= 0)
+        {
+            throw new UserFacingException($"--icon-size wants 'name=WxH' (got '{s}')");
+        }
+        var name = s[..eq];
+        var dim = s[(eq + 1)..];
+        var x = dim.IndexOf('x');
+        if (x <= 0)
+        {
+            throw new UserFacingException($"--icon-size wants 'name=WxH' (got '{s}')");
+        }
+        var w = int.Parse(dim[..x], CultureInfo.InvariantCulture);
+        var h = int.Parse(dim[(x + 1)..], CultureInfo.InvariantCulture);
+        return (name, (w, h));
     }
 
     private static (int, int, int, int) ParseMapRect(string s)
@@ -212,7 +238,11 @@ internal sealed record CliArgs(
               --icon-render-size <px>       on-screen pixel size PG renders icons at; bypasses the
                                             auto-detect sweep. Measure by opening the screenshot in
                                             an image viewer and reading an icon's bbox dimension
-                                            (e.g. PG renders ~19 px at 1080p UI scale)
+              --icon-size <name>=<W>x<H>    force a specific template to exact WxH dimensions (no
+                                            aspect-preservation). Repeatable; use when PG renders
+                                            a sprite with a different aspect than its source asset
+                                            (verified for landmark_npc on Serbule — 17x16 vs 236x256
+                                            source). Overrides --icon-render-size for that icon
               --debug-image <path>          write an annotated PNG: cyan rects mark every detection
                                             that cleared threshold, red crosses mark the pivot-
                                             corrected anchor, green rect outlines the map rect
