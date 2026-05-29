@@ -188,10 +188,14 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
             SolverReadout.Calibration = stored;
             RefreshProjections(stored);
         }
-        // Fire-and-forget: the dialog runs modally on the UI thread; the bg work
+        // Fire-and-forget: the dialog runs on the UI thread; the bg work
         // updates UI properties when complete. Caller (MainViewModel) doesn't
         // await — area-switch responsiveness wins over linearised completion.
-        _ = LoadAsync();
+        // try/catch around the assignment so any sync throw that escapes
+        // before the first await inside LoadAsync (e.g. the dialog ctor) gets
+        // funnelled into LoadError rather than silently lost.
+        try { _ = LoadAsync(); }
+        catch (Exception ex) { LoadError = ex.Message; }
     }
 
     private void OnRefsChanged(object? sender, NotifyCollectionChangedEventArgs e)
