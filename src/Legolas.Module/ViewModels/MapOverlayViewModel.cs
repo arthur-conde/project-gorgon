@@ -103,12 +103,20 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             // #835 step 5: wire the placed-marker collection into the marker
             // pipeline. New markers register on add, IsSelected/Pixel updates
             // re-derive in place, removals (Clear / partial undo) unregister.
+            //
+            // Iteration-2 nit I2: pre-existing markers at construction time
+            // also need their initial registration — the OnCalibrationMarkers
+            // Changed.NewItems path runs RefreshCalibrationMarker, mirror that
+            // here for symmetry. A coordinator that already had markers
+            // placed before MapOverlayViewModel was resolved would otherwise
+            // stay silently unregistered until the next user mutation.
             if (_pinCal.PlacedMarkers is { } placed)
             {
                 placed.CollectionChanged += OnCalibrationMarkersChanged;
                 foreach (var m in placed)
                 {
                     m.PropertyChanged += OnCalibrationMarkerPropertyChanged;
+                    RefreshCalibrationMarker(m);
                 }
             }
         }
@@ -796,8 +804,34 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         {
             UnregisterAllSurveyMarkers();
         }
+        // Active-last invariant (iteration-2 fix, #835 review B1): any add
+        // pushed a non-active marker to the tail of _insertionOrder; if the
+        // active pin existed before, it lost its tail position. Re-register
+        // it so the renderer's "active halo on top" contract holds.
+        if (e.NewItems is not null && _markers is not null)
+        {
+            var active = IsListening ? _session.SelectedSurvey : null;
+            if (active is not null
+                && Surveys.Contains(active)
+                && !ContainsActiveInNewItems(e.NewItems, active))
+            {
+                RegisterSurveyMarker(active);
+            }
+        }
         RebuildRouteGeometry();
         RebuildAllWedges();
+    }
+
+    /// <summary>True iff one of the just-added surveys IS the active one,
+    /// in which case its re-registration above would be redundant — it's
+    /// already at the tail.</summary>
+    private static bool ContainsActiveInNewItems(System.Collections.IList newItems, SurveyItemViewModel active)
+    {
+        foreach (var item in newItems)
+        {
+            if (ReferenceEquals(item, active)) return true;
+        }
+        return false;
     }
 
     private void OnSurveyPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -875,7 +909,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// <summary>Refresh a single survey marker — used when its
     /// <see cref="SurveyItemViewModel.Model"/> swaps. Idempotent for the
     /// "no change" case (the remove+re-add does churn one handle, which is
-    /// acceptable because Model swaps are user-driven, not per-frame).</summary>
+    /// acceptable because Model swaps are user-driven, not per-frame).
+    ///
+    /// <para><b>Active-last invariant (iteration-2 fix, #835 review B1).</b>
+    /// A non-active survey's re-register would otherwise push it to the
+    /// tail of <c>_insertionOrder</c>, kicking the active pin off the tail
+    /// and breaking the renderer's "active halo on top" contract. When the
+    /// refreshed survey is not the active one, follow it by re-registering
+    /// the active one so the tail invariant holds.</para></summary>
     private void RefreshSurveyMarker(SurveyItemViewModel s)
     {
         if (_markers is null) return;
@@ -884,6 +925,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         // selection flipped → re-add with the new style at end-of-list to
         // mirror PinSceneRenderer's active-last ordering.
         RegisterSurveyMarker(s);
+
+        // If the refreshed survey wasn't the active one, the active pin
+        // (if any) just lost its tail position. Re-register it so it
+        // returns to the tail.
+        var active = IsListening ? _session.SelectedSurvey : null;
+        if (active is not null && !ReferenceEquals(s, active) && Surveys.Contains(active))
+        {
+            RegisterSurveyMarker(active);
+        }
     }
 
     /// <summary>Re-derive every survey marker. Cheaper than tearing the
@@ -891,13 +941,35 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// changing in the active-treatment case — but
     /// <see cref="IWorldOverlayMarkers.UpdateMarker"/> doesn't accept a style
     /// swap, so a full refresh is the simplest correct path. Called on
-    /// SelectedSurvey / FSM state flips.</summary>
+    /// SelectedSurvey / FSM state flips.
+    ///
+    /// <para><b>Active-last insertion order (iteration-2 fix, #835 review B1).</b>
+    /// <c>PinSceneRenderer.DrawSurveyPins</c> renders the active pin LAST so
+    /// its halo sits on top of neighbouring pins. <see cref="MarkerSceneRenderer.Render"/>
+    /// iterates insertion order with no active-pin special-casing, so the
+    /// registry's <c>_insertionOrder</c> tail MUST be the active marker
+    /// when one is selected. Iteration-1 of #835 registered surveys in
+    /// source order; with the selected pin not at the end of
+    /// <see cref="SessionState.Surveys"/>, its halo rendered occluded.
+    /// Fix: register non-active pins first, then the active one last.</para>
+    /// </summary>
     private void RefreshAllSurveyMarkers()
     {
         if (_markers is null) return;
+        var active = IsListening ? _session.SelectedSurvey : null;
         foreach (var s in Surveys)
         {
+            if (ReferenceEquals(s, active)) continue; // hold the active pin
             RegisterSurveyMarker(s);
+        }
+        // Register active last so it lands at the tail of _insertionOrder
+        // and the renderer draws its halo on top of every other pin. Guard
+        // against a stale selection that's no longer in Surveys (defensive;
+        // SessionState wipes SelectedSurvey on ClearSurveys but the VM
+        // shouldn't crash if some other path leaves a dangling reference).
+        if (active is not null && Surveys.Contains(active))
+        {
+            RegisterSurveyMarker(active);
         }
     }
 
@@ -1045,6 +1117,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             _markers.RemoveMarker(prev);
         }
 
+        // TODO(#835 step 6 follow-up — review observations O1+O2): when this
+        // path goes live (the new OverlayWindow is shown), emit Trace logs
+        // at each silent early-return below and bump a
+        // MithrilMeters.Overlay.CalibrationFallback counter so the user can
+        // see when the legacy WPF ItemsControl path is carrying calibration
+        // rendering. Adding ILogger to MapOverlayViewModel is a real lift
+        // (it doesn't have one today) so the instrumentation is deferred
+        // until the pipeline is no longer dormant.
         if (_areaState?.CurrentArea is not { Length: > 0 } areaKey) return;
         // Only register while the Pair phase is live — Drop captures right-
         // clicks to the game, the marker rendering is meaningless then. The

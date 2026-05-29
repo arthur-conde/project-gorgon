@@ -37,6 +37,18 @@ public static class LegolasOverlayDrawerRegistrations
         renderer.RegisterDrawer<LegolasSurveyMarkerStyle>(LegolasSurveyMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasMotherlodeMarkerStyle>(LegolasMotherlodeMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasMotherlodeGuidanceMarkerStyle>(LegolasMotherlodeGuidanceMarkerDrawer.Draw);
+        // TODO(#835 step 6): player anchor producer deferred — currently
+        // rendered by the legacy WPF binding to
+        // MapOverlayViewModel.PlayerMarkerPixel inside
+        // MapOverlayView.OnMapSurfaceRender. The drawer registration is
+        // here to keep the visual contract pinned via
+        // LegolasMarkerDrawerSnapshotTests + MarkerPipelineSnapshotTests
+        // until the producer side lands (a Survey-mode IPositionState
+        // -> AddMarker for the projected GPS anchor, and a Motherlode-mode
+        // HasPlayerPosition -> AddMarker for the manual-click anchor —
+        // both today live in PlayerMarkerPixel as a computed pixel property
+        // the legacy renderer reads per-frame). Once the producer ships
+        // in step 6, this comment retires.
         renderer.RegisterDrawer<LegolasPlayerMarkerStyle>(LegolasPlayerMarkerDrawer.Draw);
         // #835 step 5: calibration drawer joins.
         renderer.RegisterDrawer<LegolasCalibrationMarkerStyle>(LegolasCalibrationMarkerDrawer.Draw);

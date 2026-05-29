@@ -279,6 +279,17 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         SetStatusMessage(null);
 
         var snapshot = _markers.CurrentAreaMarkers;
+        // TODO(#835 step 6): plumb the live in-game zoom (Legolas's
+        // SessionState.CurrentMapZoom slider) into the projection driver.
+        // Calibration markers registered via WindowToWorld(pixel,
+        // EffectiveZoom(_session.CurrentMapZoom, cal)) Legolas-side already
+        // depend on the zoom factor; passing 1.0 here means the round-trip
+        // (register at slider-zoom Z, project at hardcoded 1.0) lands the
+        // marker at the wrong pixel whenever the user has the slider off
+        // 1.0. Dormant today (the overlay window isn't shown — see PR
+        // #863's "Window not shown in production" architectural note),
+        // but step 6 must wire a zoom provider through OverlayWindow
+        // Service before the window goes live.
         var projected = ProjectMarkers(snapshot, areaKey, _calibration, currentZoom: 1.0,
             onMiss: this, snapshotCount: snapshot.Count);
         if (!_firstFrameLogged)
