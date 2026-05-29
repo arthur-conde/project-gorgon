@@ -925,6 +925,83 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
 
     private static Color ParseColor(string hex) => LegolasBrushes.Parse(hex);
 
+    // ---- #835 step 4: Motherlode marker registry plumbing --------------
+
+    // Motherlode pins + the single guidance ring tracked as a list of handles
+    // so the same "tear down + rebuild" pattern as Survey markers stays simple.
+    // Motherlode state mutates rarely (one event per use/distance/measurement),
+    // so the cost of remove+re-add per Changed event is negligible.
+    private readonly List<MarkerHandle> _motherlodeMarkers = new();
+
+    /// <summary>Tear down and rebuild every Motherlode marker — pins (one per
+    /// non-collected solved treasure) + the optional guidance ring.
+    /// Runs on the WPF dispatcher (callers marshal via <see cref="PostToUi"/>).
+    /// No-op without a registry / area / calibration / coordinator — same
+    /// degrade-silently rule as the legacy <see cref="MotherlodeMarkerPixels"/>
+    /// getter.</summary>
+    private void RefreshMotherlodeMarkers()
+    {
+        if (_markers is null) return;
+        UnregisterAllMotherlodeMarkers();
+
+        if (_session.Mode != SessionMode.Motherlode) return;
+        if (_motherlode is null) return;
+        if (_areaCalibration?.CurrentCalibration is not { } cal) return;
+        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey) return;
+
+        var snap = _motherlode.Snapshot();
+
+        // Motherlode style mirrors the Survey style triple (PinSceneRenderer
+        // re-uses the Survey theme for Motherlode per the #113 Layer 5
+        // commentary in PinSceneRenderer). PinDiameter doubles as the
+        // Motherlode pin diameter today.
+        var pinStyle = PinStyle;
+        var outerStyle = new PinLayerStyle(
+            Shape: pinStyle.Outer.Shape,
+            FillColor: ParseColor(pinStyle.Outer.FillColor),
+            StrokeColor: ParseColor(pinStyle.Outer.StrokeColor),
+            StrokeStyle: pinStyle.Outer.StrokeStyle,
+            StrokeThickness: pinStyle.Outer.StrokeThickness,
+            Size: 0);
+        var centerStyle = new PinLayerStyle(
+            Shape: pinStyle.Center.Shape,
+            FillColor: ParseColor(pinStyle.Center.FillColor),
+            StrokeColor: ParseColor(pinStyle.Center.StrokeColor),
+            StrokeStyle: pinStyle.Center.StrokeStyle,
+            StrokeThickness: pinStyle.Center.StrokeThickness,
+            Size: pinStyle.Center.Size);
+        var motherlodeStyle = new LegolasMotherlodeMarkerStyle(outerStyle, centerStyle, PinDiameter);
+
+        foreach (var s in snap.Surveys)
+        {
+            if (s.Collected || s.SolvedWorld is not { } w) continue;
+            _motherlodeMarkers.Add(_markers.AddMarker(areaKey, w.X, w.Z, motherlodeStyle));
+        }
+
+        // Guidance ring (#506). Pixel radius depends on calibration scale +
+        // zoom, so re-register on calibration/zoom Changed (already wired
+        // to call this method). Color matches the legacy
+        // MotherlodeGuidanceOverlay branch.
+        if (snap.NextSpot is { } next)
+        {
+            var zoom = _session.CurrentMapZoom;
+            var zoomFactor = zoom > 1e-6 && cal.CalibrationZoom > 1e-6
+                ? zoom / cal.CalibrationZoom
+                : 1.0;
+            var radiusPx = next.ToleranceRadiusMetres * cal.Scale * zoomFactor;
+            var guidanceStyle = new LegolasMotherlodeGuidanceMarkerStyle(radiusPx, _brushes.RouteLine.Color);
+            _motherlodeMarkers.Add(_markers.AddMarker(
+                areaKey, next.SuggestedWorld.X, next.SuggestedWorld.Z, guidanceStyle));
+        }
+    }
+
+    private void UnregisterAllMotherlodeMarkers()
+    {
+        if (_markers is null) return;
+        foreach (var h in _motherlodeMarkers) _markers.RemoveMarker(h);
+        _motherlodeMarkers.Clear();
+    }
+
     public ObservableCollection<SurveyItemViewModel> Surveys => _session.Surveys;
 
     public SessionState Session => _session;
@@ -1066,6 +1143,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(MotherlodeGuidanceOverlay));
         OnPropertyChanged(nameof(MotherlodeGuidancePhrase));
+        // #835 step 4: same set of triggers (motherlode Changed, calibration
+        // Changed, mode flip, zoom slider) refreshes the marker pipeline so
+        // pins + guidance ring stay in sync with the on-screen state.
+        RefreshMotherlodeMarkers();
     }
 
     /// <summary>
