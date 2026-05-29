@@ -7,6 +7,10 @@ using Legolas.Controls;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Rendering;
+// #835: D2DOverlaySurface / D2DBrushCache / D2DRenderEventArgs lifted to
+// Mithril.Overlay.Internal. Legolas keeps consuming them via the
+// InternalsVisibleTo("Legolas.Module") seam until Migration step 6.
+using Mithril.Overlay.Internal;
 using Legolas.ViewModels;
 
 namespace Legolas.Views;
