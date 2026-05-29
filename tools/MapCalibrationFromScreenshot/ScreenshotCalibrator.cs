@@ -112,15 +112,6 @@ internal static class ScreenshotCalibrator
             Console.WriteLine($"[detect] {typeGroup.Key}: {typeGroup.Value.Count} detections vs {areaRefs.Count} landmarks in area");
         }
 
-        // Phase: write debug image if requested (regardless of solve success).
-        if (debugBgra is not null && inputs.DebugImagePath is not null)
-        {
-            ImageIo.DrawRect(debugBgra, debugW, debugH, mapRect.OriginX, mapRect.OriginY,
-                mapRect.Width, mapRect.Height, 0, 255, 0);
-            ImageIo.SaveBgraPng(debugBgra, debugW, debugH, inputs.DebugImagePath);
-            Console.WriteLine($"[debug] annotated screenshot -> {inputs.DebugImagePath}");
-        }
-
         // Phase: assignment via RANSAC over the full (detection, ref) pool.
         // Sequential pairing per-type produced geometrically-incoherent results
         // (sub-meter NPCs paired by file order, not by actual map position).
@@ -148,6 +139,33 @@ internal static class ScreenshotCalibrator
             return new CalibrationResult(null, assigned, "solver returned null on RANSAC inliers (degenerate — all collinear?)");
         }
         cal = cal with { CalibrationZoom = inputs.Zoom, Source = CalibrationSource.BundledBaseline };
+
+        // Phase: write debug image (deferred so we can color-code RANSAC inliers).
+        if (debugBgra is not null && inputs.DebugImagePath is not null)
+        {
+            // Overlay green rects + crosses for inliers RANSAC actually kept,
+            // on top of the cyan/red raw-detection layer. Converts inlier
+            // texture-pixel coords back to screenshot pixels for drawing.
+            var scaleX = (double)mapRect.Width / mapRect.TextureWidth;
+            var scaleY = (double)mapRect.Height / mapRect.TextureHeight;
+            foreach (var a in assigned)
+            {
+                int sx = (int)Math.Round(a.PixelX * scaleX + mapRect.OriginX);
+                int sy = (int)Math.Round(a.PixelY * scaleY + mapRect.OriginY);
+                // Slightly oversized green rect to stand out over the cyan raw rect.
+                ImageIo.DrawRect(debugBgra, debugW, debugH, sx - 12, sy - 12, 24, 24, 0, 255, 0);
+                ImageIo.DrawRect(debugBgra, debugW, debugH, sx - 13, sy - 13, 26, 26, 0, 255, 0);
+                ImageIo.DrawCross(debugBgra, debugW, debugH, sx, sy, 6, 0, 255, 0);
+            }
+            ImageIo.DrawRect(debugBgra, debugW, debugH, mapRect.OriginX, mapRect.OriginY,
+                mapRect.Width, mapRect.Height, 0, 255, 0);
+            ImageIo.SaveBgraPng(debugBgra, debugW, debugH, inputs.DebugImagePath);
+            Console.WriteLine($"[debug] annotated screenshot -> {inputs.DebugImagePath}");
+            Console.WriteLine("[debug]   cyan rect / red cross = every NCC detection that cleared threshold");
+            Console.WriteLine("[debug]   green rect / green cross = the RANSAC inliers actually used in the solve");
+            Console.WriteLine("[debug]   green outline = the map rect");
+        }
+
         return new CalibrationResult(cal, assigned, FailureReason: null);
     }
 
