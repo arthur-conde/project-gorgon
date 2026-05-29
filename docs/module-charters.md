@@ -339,33 +339,44 @@ channel rule, and this strategic principle):
     infra* section below). The lifts retire Legolas's status as the de facto
     home for "anything map/projection-shaped" and free Gwaihir (issue #830 §3a/§3b)
     and Silmarillion (issue #830 §3c) to render world coords on either surface
-    without taking a Legolas dependency. Legolas becomes the first projection-aware
-    consumer of `Mithril.Overlay`'s marker API; its Survey/Motherlode markers,
-    route-line, and motherlode wizard all consume the marker API rather than
-    owning the surface. Sequenced predecessor: an `IPlayerCameraState` GameState
-    producer must land first so the projection lift consumes the camera signal
-    via the GameState consumption-side rule, not by parsing raw logs inside
-    `Mithril.Overlay`. The Motherlode-only `CoordinateProjector` / position
+    without taking a Legolas dependency. Legolas becomes the first consumer of
+    the `Mithril.Overlay` platform: its Survey/Motherlode scene — markers, route
+    line, guidance ring, pixel nudges, calibration placement — draws through the
+    overlay's **scene hook** (relocating today's `PinSceneRenderer` pass), rather
+    than owning the surface; the simpler world-coord **marker registry** is the
+    convenience path Gwaihir uses. Camera-state predecessor: **resolved** via
+    closed [#832](https://github.com/moumantai-gg/mithril/issues/832) (Decision
+    C) — the projection is map-aligned (not 3D) and consumes `IPositionState` +
+    `IAreaState` directly per the consumption-side rule; no `IPlayerCameraState`
+    producer is needed (see the `Mithril.Overlay` entry below for the full
+    reasoning). The Motherlode-only `CoordinateProjector` / position
     anchor (Status-line offsets → world coords) is a **separate** projection
     from world→screen and **stays Legolas's**.
 - **Does NOT own:**
   - **✅ confirmed (owner, 2026-05-16)** — *General geographic reference* (where
     places/landmarks are). Areas/landmarks browsing is Silmarillion.
   - **✅ confirmed (owner, 2026-05-16)** — *Item acquisition guidance.*
-  - **✅ confirmed (owner, 2026-05-28)** — *The DirectX overlay surface itself.*
-    Lifted to `Mithril.Overlay` (shared infra). Legolas *uses* it for its own
-    markers; it does not own the substrate.
-  - **✅ confirmed (owner, 2026-05-28)** — *World→screen projection.* Lifted to
-    `Mithril.Overlay` alongside the overlay surface. Legolas hands world coords
-    to the marker API; the projection math is shared infra. (Motherlode's
-    Status-line-offsets-to-world-coords `CoordinateProjector` is a different
-    projection and stays Legolas's per the Owns line above.)
-  - **✅ confirmed (owner, 2026-05-28)** — *Per-area map calibration data +
-    transform.* Lifted to `Mithril.MapCalibration` (shared infra). Legolas's
-    accumulated per-area anchor observations become one of several anchor
-    sources the shared service stacks (bundled baseline + per-user refinement
-    + future community-sync); Legolas no longer owns the catalogue or the
-    `WorldToWindow` / `WindowToWorld` surface.
+  - **✅ confirmed (owner, 2026-05-28)** — *The DirectX overlay surface +
+    windowing layer.* Lifted to `Mithril.Overlay` (shared infra): the
+    transparent-window host (click-through, foreground gating, layout, resize,
+    DPI) *and* the D2D drawing surface. Legolas *draws on* it via the scene hook;
+    it does not own the substrate.
+  - **✅ confirmed (owner, 2026-05-28)** — *World→screen projection.* The
+    map-aligned transform lives in `Mithril.MapCalibration` and is surfaced to
+    overlay consumers through the scene hook's `Project(...)` helper. Legolas
+    draws its scene through the hook; the projection math is shared infra.
+    (Motherlode's Status-line-offsets-to-world-coords `CoordinateProjector` is a
+    different projection and stays Legolas's per the Owns line above.)
+  - **✅ confirmed (owner, 2026-05-28; extended 2026-05-29)** — *Per-area map
+    calibration data + transform — and the calibration store + session.* Lifted
+    to `Mithril.MapCalibration` (shared infra). Legolas's accumulated per-area
+    anchor observations become one of several anchor sources the shared service
+    stacks (bundled baseline + per-user refinement + future community-sync);
+    Legolas no longer owns the catalogue, the `WorldToWindow` / `WindowToWorld`
+    surface, the calibration store, or the headless solve *session*. What Legolas
+    **keeps** is the overlay-flavored calibration *placement UX* (the Drop/Pair
+    click-through walkthrough), which feeds the shared session — a different
+    surface (the static texture) supplies its own placement UX.
 - **Reference data:** `Items` (survey items).
 
 ## Arwen — NPC favor & gift tracking
@@ -654,13 +665,18 @@ channel rule, and this strategic principle):
   - **✅ (cross-cutting shared-infra rule) — the rendering substrate.**
     `Mithril.MapAssets` (PNG extraction, #830 Tier 1), `Mithril.MapCalibration`
     (per-area world ↔ map-pixel transform), and `Mithril.Overlay` (DirectX
-    surface + world→screen projection + world-coord marker API) are shared
-    infra owned by *no module*. Gwaihir hands `(areaKey, worldX, worldZ, …)`
+    surface + windowing layer + scene hook + world-coord marker registry) are
+    shared infra owned by *no module*. Gwaihir hands `(areaKey, worldX, worldZ, …)`
     to either rendering surface — the static map-view control (MapAssets +
     MapCalibration) or the live in-game overlay (Mithril.Overlay) — and the
     right thing happens. World coord is the universal POI currency; rendering
     surface is a downstream choice the user makes per pin. Owning the POI
-    dataset slice ≠ owning the renderer.
+    dataset slice ≠ owning the renderer. Gwaihir consumes whichever surface's
+    draw path fits (the overlay's world-coord **marker registry** for the simple
+    POI-pin case; the static map-view control for the texture) and — when a
+    target area isn't calibrated yet — the **shared calibration session**
+    (`Mithril.MapCalibration`), supplying its own surface-appropriate placement
+    UX. It implements none of these itself.
   - **✅ (cross-cutting data-owner rule) — the community-sync transport.** The
     serverless publish + consume *transport* (the raw.githubusercontent.com
     aggregation pipeline — `CommunityCalibrationService` / `MithrilRepository`
@@ -772,11 +788,56 @@ libraries; the charter follows the code:
   [PR #449](https://github.com/moumantai-gg/mithril/pull/449)). Owned by
   *no module* — Legolas, Silmarillion (#830 §3c), Gwaihir (#830 §3a/§3b), and
   any future map-rendering consumer share the catalogue.
-- **`Mithril.Overlay` — proposed shared rendering surface
-  (lift from Legolas; owner-confirmed 2026-05-28).** DirectX overlay window +
-  world→screen projection + world-coord marker API in one package. Consumers
-  hand `(areaKey, worldX, worldZ, style)`; `Mithril.Overlay` projects and
-  draws. Owned by *no module*.
+  **The transform (`WorldToWindow` / `WindowToWorld`) + `LandmarkCalibrationSolver`
+  shipped in #836 (closed).** Still owed (reframed 2026-05-29): the
+  surface-agnostic **calibration store** (per-area get/save, baseline → per-user
+  refinement → community layering) and a headless **calibration *session*
+  protocol** (accumulate `(pixel, worldLandmark)` pairs → `LandmarkCalibrationSolver`
+  → commit to the store) lift here from Legolas's `AreaCalibrationService`.
+  These belong in `MapCalibration`, **not** `Mithril.Overlay`, because they
+  serve the static 2D-texture surface (Silmarillion area pages, Gwaihir static
+  pins) as well as the live overlay — calibration is upstream of *both*
+  rendering targets. What stays **per-surface** is the calibration *placement
+  UX*: the overlay's `PinCalibrationCoordinator` Drop/Pair phase split exists
+  only because a transparent window's click-through is all-or-nothing, a
+  constraint the in-app texture control doesn't have — so each surface
+  implements its own placement interaction feeding the shared session, and live
+  current-area tracking (from Arda) stays overlay-side. Tracked as a follow-up
+  issue (see the *Mithril Roadmap* Project).
+- **`Mithril.Overlay` — proposed shared overlay *platform*
+  (lift from Legolas; owner-confirmed 2026-05-28; reframed 2026-05-29).** Not a
+  registry — a three-layer platform for "any module spins up an in-game overlay
+  and draws on it." Owned by *no module*. The layers:
+  1. **Windowing-behavior layer** — the transparent topmost window host:
+     click-through (`ClickThrough` / `PartialClickThrough`), foreground-focus
+     gating (show/hide as the user alt-tabs between game and desktop —
+     `ForegroundFocusGate` + `User32Focus`), window layout persistence
+     (`WindowLayoutBinder`), resize chrome (`ResizeGrips`), and the
+     per-monitor-DPI / `Stretch.Fill` invariant. This hosts **D2D *and*
+     plain-WPF overlay content** — Legolas already runs two windows on it today
+     (the D2D map overlay *and* the WPF inventory overlay), which is why it's a
+     separate layer from the drawing surface, not welded to it.
+  2. **D2D drawing surface + scene hook** — the `D3DImage`-backed Direct2D
+     surface plus a per-tick **scene-drawer hook** that hands the consumer a raw
+     render target + factory + brush cache **and a `Project(areaKey, worldX,
+     worldZ) → pixel?` helper** (backed by `Mithril.MapCalibration`). This is
+     the *primary* draw API: the consumer draws its whole scene with full
+     freedom — world-projected geometry, polylines, pixel-anchored glyphs,
+     animation — exactly as today's `PinSceneRenderer` does off the `Render`
+     event. `FrameTimeLogger` (generic frame-interval capture) lifts here so any
+     consumer can perf-profile the shared surface.
+  3. **`IWorldOverlayMarkers`** — a *thin convenience* over the scene hook for
+     the dumb-simple "just plot these world points with this style" case;
+     consumers hand `(areaKey, worldX, worldZ, style)` and the platform projects
+     + draws. Built **on top of** layer 2, not instead of it.
+  Consumers pick their layer: Legolas draws its full survey/motherlode scene via
+  the hook (layer 2); Gwaihir uses the registry (layer 3) for community POI pins.
+  **Calibration is *not* here** — the world→pixel transform, the per-area
+  calibration store, and the headless calibration *session* live in
+  `Mithril.MapCalibration` (see its entry) because they serve the static
+  2D-texture surface too, not just the overlay. The overlay only *consumes* a
+  calibration (via the `Project` helper) and *renders* a surface's calibration
+  placement pins through the scene hook.
   **Camera-state consumption — `IPositionState` + `IAreaState` from Arda
   (resolved 2026-05-28 via closed
   [#832](https://github.com/moumantai-gg/mithril/issues/832); supersedes the
@@ -799,10 +860,19 @@ libraries; the charter follows the code:
   `Mithril.MapCalibration` lift (or in-parallel with stub) → projection +
   DirectX surface lift into `Mithril.Overlay` consuming
   `IPositionState`/`IAreaState` directly → `Mithril.Overlay` published as
-  shared infra. Legolas becomes the first projection-aware consumer; its
-  Survey / Motherlode markers, route-line, and motherlode wizard all consume
-  the marker API rather than owning the surface. Gwaihir becomes the second
-  consumer.
+  shared infra. Legolas becomes the first consumer: it draws its full
+  survey/motherlode scene — pins, route polyline, pixel nudges, the guidance
+  ring, calibration-placement pins — through the **scene hook** (layer 2),
+  essentially relocating today's `PinSceneRenderer` draw pass onto the shared
+  surface, rather than owning the surface. Gwaihir becomes the second consumer
+  and uses the **marker registry** (layer 3) for community POI pins. Because
+  Legolas draws freeform, the route-polyline, pixel-nudge, and
+  pre-calibration-pixel cases — filed as
+  [#866](https://github.com/moumantai-gg/mithril/issues/866) /
+  [#867](https://github.com/moumantai-gg/mithril/issues/867) /
+  [#868](https://github.com/moumantai-gg/mithril/issues/868) while the public
+  API was registry-only — need **no** pixel-space marker API; they dissolve into
+  the scene hook (route + nudge) and per-surface calibration placement (#868).
 
 ## History
 
