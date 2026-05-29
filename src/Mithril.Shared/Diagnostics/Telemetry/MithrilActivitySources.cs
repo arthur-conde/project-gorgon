@@ -29,6 +29,9 @@ public static class MithrilActivitySources
     /// <summary>Reference-data fetches (CDN, cache hit, bundled fallback) and version detection.</summary>
     public static readonly ActivitySource Reference = new("Mithril.Reference");
 
+    /// <summary>Mithril.Overlay window lifecycle, device reset, per-area projection start (#835).</summary>
+    public static readonly ActivitySource Overlay = new("Mithril.Overlay");
+
     // Arda pipeline sources live in Arda.Abstractions.Diagnostics.ArdaActivitySources
     // because Arda projects can't take a dependency on Mithril.Shared. Both catalogs
     // share the "Mithril." prefix below so listeners receive both uniformly.
