@@ -40,6 +40,8 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     [ObservableProperty]
     private AreaCalibration? _calibration;
 
+    public SolverReadoutViewModel SolverReadout { get; } = new();
+
     /// <summary>
     /// True when the user has placed refs that haven't been committed to the
     /// baseline JSON yet. Wired in Task 11 — for now it just tracks the
@@ -59,7 +61,39 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
         var refVm = new RefViewModel(sel.Name, sel.Kind, sel.World, new PixelPoint(x, y));
         Refs.Add(refVm);
         Picker.Selected = null;
-        // Task 9 hooks the solver here via Refs.CollectionChanged.
+        // Solver re-runs via the OnRefsChanged hook below.
+    }
+
+    private void ReSolve()
+    {
+        if (Refs.Count < 2)
+        {
+            Calibration = null;
+            SolverReadout.Calibration = null;
+            foreach (var r in Refs) r.ResidualPx = null;
+            return;
+        }
+
+        var solverRefs = Refs.Select(r =>
+            new LandmarkCalibrationSolver.Reference(r.World.X, r.World.Z, r.TexturePixel))
+            .ToList();
+        var cal = LandmarkCalibrationSolver.Solve(solverRefs);
+        Calibration = cal;
+        SolverReadout.Calibration = cal;
+
+        if (cal is null)
+        {
+            foreach (var r in Refs) r.ResidualPx = null;
+            return;
+        }
+
+        foreach (var r in Refs)
+        {
+            var projected = cal.WorldToWindow(r.World);
+            var dx = projected.X - r.TexturePixel.X;
+            var dy = projected.Y - r.TexturePixel.Y;
+            r.ResidualPx = Math.Sqrt(dx * dx + dy * dy);
+        }
     }
 
     public AreaWorkspaceViewModel(string area, PgInstallResolver installResolver)
@@ -80,7 +114,7 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     private void OnRefsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         OnPropertyChanged(nameof(HasUncommittedRefs));
-        // Task 9 will call ReSolve() here.
+        ReSolve();
     }
 
     private async Task LoadAsync()

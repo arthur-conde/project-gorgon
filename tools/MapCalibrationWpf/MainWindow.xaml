@@ -59,7 +59,13 @@
                 <RowDefinition Height="Auto" />
               </Grid.RowDefinitions>
               <views:RefTable Grid.Row="0" />
-              <!-- SolverReadout slot — Task 9 inserts the readout view here. -->
+              <ContentControl Grid.Row="1" Content="{Binding SolverReadout}">
+                <ContentControl.ContentTemplate>
+                  <DataTemplate>
+                    <views:SolverReadout />
+                  </DataTemplate>
+                </ContentControl.ContentTemplate>
+              </ContentControl>
             </Grid>
           </DataTemplate>
         </ContentControl.ContentTemplate>
