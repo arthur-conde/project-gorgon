@@ -155,7 +155,8 @@ internal static class SelfTest
             MapRectOverride: null,
             DetectionThreshold: 0.5,
             IconRenderSizeOverride: 0,
-            DebugImagePath: null);
+            DebugImagePath: null,
+            ProjectionOverlayPath: null);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 
         if (result.Calibration is null)

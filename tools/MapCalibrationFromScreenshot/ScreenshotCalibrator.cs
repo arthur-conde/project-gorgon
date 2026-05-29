@@ -140,6 +140,45 @@ internal static class ScreenshotCalibrator
         }
         cal = cal with { CalibrationZoom = inputs.Zoom, Source = CalibrationSource.BundledBaseline };
 
+        // Phase: render the projection overlay on a fresh screenshot copy.
+        // Projects every landmark + NPC ref through the recovered calibration
+        // and marks them on the screenshot. Lets the user see exactly where
+        // every world coord ends up — calibration accuracy is then a visual
+        // judgement (do markers land on actual icons?) rather than an abstract
+        // residual number. Inlier set marked separately so the user can see
+        // which refs RANSAC actually used.
+        if (inputs.ProjectionOverlayPath is not null)
+        {
+            var (projBgra, projW, projH) = ImageIo.LoadBgra(inputs.ScreenshotPath);
+            double sxPerTx = (double)mapRect.Width / mapRect.TextureWidth;
+            double syPerTy = (double)mapRect.Height / mapRect.TextureHeight;
+            var inlierLabels = new HashSet<string>(assigned.Select(a => a.Label.Split(':').Last().Split(' ')[0]), StringComparer.Ordinal);
+            int onScreen = 0, offScreen = 0;
+            foreach (var r in allRefs)
+            {
+                var pred = cal.WorldToWindow(new WorldCoord(r.World.X, 0, r.World.Z));
+                int sx = (int)Math.Round(pred.X * sxPerTx + mapRect.OriginX);
+                int sy = (int)Math.Round(pred.Y * syPerTy + mapRect.OriginY);
+                if (sx < 0 || sx >= projW || sy < 0 || sy >= projH) { offScreen++; continue; }
+                onScreen++;
+                bool isInlier = inlierLabels.Contains(r.Name.Split(' ')[0]);
+                // Yellow cross for every ref, green outline + label-mark for RANSAC inliers.
+                ImageIo.DrawCross(projBgra, projW, projH, sx, sy, 5, 255, 255, 0);
+                if (isInlier)
+                {
+                    ImageIo.DrawRect(projBgra, projW, projH, sx - 8, sy - 8, 16, 16, 0, 255, 0);
+                }
+            }
+            // Map-rect outline.
+            ImageIo.DrawRect(projBgra, projW, projH, mapRect.OriginX, mapRect.OriginY,
+                mapRect.Width, mapRect.Height, 128, 128, 128);
+            ImageIo.SaveBgraPng(projBgra, projW, projH, inputs.ProjectionOverlayPath);
+            Console.WriteLine($"[overlay] projection overlay -> {inputs.ProjectionOverlayPath}");
+            Console.WriteLine($"[overlay]   yellow cross   = every ref projected through the recovered calibration");
+            Console.WriteLine($"[overlay]   green rect     = the RANSAC inliers used in the solve");
+            Console.WriteLine($"[overlay]   {onScreen} refs landed inside the screenshot, {offScreen} fell outside");
+        }
+
         // Phase: write debug image (deferred so we can color-code RANSAC inliers).
         if (debugBgra is not null && inputs.DebugImagePath is not null)
         {

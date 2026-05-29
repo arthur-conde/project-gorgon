@@ -62,7 +62,8 @@ internal static class Pipeline
             MapRectOverride: args.MapRect,
             DetectionThreshold: args.DetectionThreshold,
             IconRenderSizeOverride: args.IconRenderSize,
-            DebugImagePath: args.DebugImagePath);
+            DebugImagePath: args.DebugImagePath,
+            ProjectionOverlayPath: args.ProjectionOverlayPath);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
         if (result.Calibration is null)
@@ -181,7 +182,8 @@ internal sealed record CalibrationInputs(
     (int X, int Y, int W, int H)? MapRectOverride,
     double DetectionThreshold,
     int IconRenderSizeOverride,
-    string? DebugImagePath);
+    string? DebugImagePath,
+    string? ProjectionOverlayPath);
 
 internal sealed record AssignedReference(
     string Label,

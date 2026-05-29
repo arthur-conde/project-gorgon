@@ -24,6 +24,7 @@ internal sealed record CliArgs(
     double DetectionThreshold,
     int IconRenderSize,
     string? DebugImagePath,
+    string? ProjectionOverlayPath,
     double Zoom,
     Phase Phase,
     bool DryRun)
@@ -46,6 +47,7 @@ internal sealed record CliArgs(
         double detectionThreshold = 0.5;
         int iconRenderSize = 0;  // 0 = auto-detect
         string? debugImagePath = null;
+        string? projectionOverlayPath = null;
         double zoom = 1.0;
         Phase phase = Phase.Full;
         bool dryRun = false;
@@ -77,6 +79,9 @@ internal sealed record CliArgs(
                     break;
                 case "--debug-image":
                     debugImagePath = Next(argv, ref i);
+                    break;
+                case "--projection-overlay":
+                    projectionOverlayPath = Next(argv, ref i);
                     break;
                 case "--zoom":
                     zoom = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
@@ -128,6 +133,7 @@ internal sealed record CliArgs(
             DetectionThreshold: detectionThreshold,
             IconRenderSize: iconRenderSize,
             DebugImagePath: debugImagePath,
+            ProjectionOverlayPath: projectionOverlayPath,
             Zoom: zoom,
             Phase: phase,
             DryRun: dryRun);
@@ -210,6 +216,10 @@ internal sealed record CliArgs(
               --debug-image <path>          write an annotated PNG: cyan rects mark every detection
                                             that cleared threshold, red crosses mark the pivot-
                                             corrected anchor, green rect outlines the map rect
+              --projection-overlay <path>   project every landmark + NPC ref through the recovered
+                                            calibration and mark on the screenshot. Yellow crosses
+                                            for all refs, green rects around RANSAC inliers. Useful
+                                            for seeing where the residual lives at a glance
 
             paths (sane defaults):
               --baseline    <baseline.json> default: src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json
