@@ -22,10 +22,23 @@ public sealed class LegolasOverlayDrawerRegistrationsTests
         LegolasOverlayDrawerRegistrations_InvokeViaInternals(renderer);
 
         // Survey + Motherlode + MotherlodeGuidance + Player = 4.
-        // DrawerCount is the renderer's internal accessor; only the test
-        // assembly (via InternalsVisibleTo on Mithril.Overlay) can read it.
         renderer.DrawerCount.Should().Be(4);
         renderer.HasAnyDrawer.Should().BeTrue();
+
+        // Per-type registration assertions guard against the typo-where-one-
+        // type-is-double-registered-and-another-silently-dropped case (count
+        // is 4 but only 3 distinct types are wired — Survey pin renders, the
+        // player pin is dead, a fourth bogus type takes the slot). Without
+        // these the smoke test passes for that bug; with them, the missing
+        // type fails its assertion individually.
+        renderer.IsRegistered<LegolasSurveyMarkerStyle>().Should().BeTrue(
+            "Survey-pin drawer must be wired by RegisterAll");
+        renderer.IsRegistered<LegolasMotherlodeMarkerStyle>().Should().BeTrue(
+            "Motherlode-pin drawer must be wired by RegisterAll");
+        renderer.IsRegistered<LegolasMotherlodeGuidanceMarkerStyle>().Should().BeTrue(
+            "Motherlode-guidance drawer must be wired by RegisterAll");
+        renderer.IsRegistered<LegolasPlayerMarkerStyle>().Should().BeTrue(
+            "Player-anchor drawer must be wired by RegisterAll");
     }
 
     /// <summary>RegisterAll is internal-to-Legolas.Module (the public surface

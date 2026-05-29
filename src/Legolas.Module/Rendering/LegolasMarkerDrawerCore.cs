@@ -73,6 +73,26 @@ internal static class LegolasMarkerDrawerCore
                 var swappedOuter = outer with { FillColor = spec.Color };
                 DrawPin(rt, factory, brushes, pos, swappedOuter, center, outerDiameter);
                 break;
+
+            default:
+                // A new ActivePinTreatment enum value would otherwise silently
+                // render nothing — the caller's
+                // `if (style.ActiveTreatment is { } spec)` routes here instead
+                // of to DrawPin, so even the plain pin would be skipped. Fail
+                // loud so unhandled values surface during dev rather than as
+                // an invisible-pin field bug.
+                //
+                // TODO #835 step 6: PinSceneRenderer.DrawActivePin has NO
+                // default arm today, so a new enum value silently no-ops
+                // there. This is a deliberate behavioural divergence from
+                // the byte-parity source (byte parity still holds for every
+                // currently-defined enum value — they all hit the explicit
+                // cases above). When step 6 retires PinSceneRenderer, the
+                // divergence becomes moot.
+                throw new ArgumentOutOfRangeException(
+                    nameof(spec),
+                    spec.Treatment,
+                    "Unknown ActivePinTreatment — add a case to LegolasMarkerDrawerCore.DrawActivePin.");
         }
     }
 

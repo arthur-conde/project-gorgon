@@ -48,14 +48,31 @@ internal sealed class HeadlessD2DRenderTarget : IDisposable
     public int Height => _height;
 
     /// <summary>
-    /// Try to construct a headless RT at the given size. Returns null if no
-    /// usable D3D11 driver is available (hardware + WARP both fail). The
-    /// caller should gate the test with a Skip when this returns null.
+    /// Try to construct a headless RT at the given size. Returns null only
+    /// when no usable D3D11 driver is available (hardware + WARP both fail) —
+    /// the constructor wraps that case in <see cref="InvalidOperationException"/>
+    /// carrying both inner messages, which is the ONLY exception caught here.
+    ///
+    /// <para>Everything else (<see cref="DllNotFoundException"/> for missing
+    /// Vortice native libs, <see cref="BadImageFormatException"/>, argument
+    /// validation, OOM, interop bugs) propagates so investigators land on
+    /// the actual cause instead of a misleading "no driver" diagnostic. The
+    /// caller is expected to <c>Skip</c> when this returns null and to
+    /// surface the captured driver-construction exception in the Skip
+    /// message via the <paramref name="driverError"/> out-param.</para>
     /// </summary>
-    public static HeadlessD2DRenderTarget? TryCreate(int width, int height)
+    public static HeadlessD2DRenderTarget? TryCreate(int width, int height, out Exception? driverError)
     {
-        try { return new HeadlessD2DRenderTarget(width, height); }
-        catch { return null; }
+        driverError = null;
+        try
+        {
+            return new HeadlessD2DRenderTarget(width, height);
+        }
+        catch (InvalidOperationException ex)
+        {
+            driverError = ex;
+            return null;
+        }
     }
 
     private HeadlessD2DRenderTarget(int width, int height)

@@ -15,6 +15,11 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- #835 R-C1 (iteration 2): [SkippableFact]/[SkippableTheory] + Skip.If
+         for the headless-D3D11 gate in LegolasMarkerDrawerSnapshotTests.
+         xunit 2.x has no built-in Skip; the runner reports Skipped (not
+         Failed) when Skip.If throws this package's marker exception. -->
+    <PackageReference Include="Xunit.SkippableFact" />
     <PackageReference Include="FluentAssertions" />
     <!-- #835 step 2: snapshot tests render through Direct2D + D3D11 to a
          headless RT, then byte-compare the encoded PNG against the
