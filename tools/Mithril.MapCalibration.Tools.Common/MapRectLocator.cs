@@ -1,4 +1,4 @@
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Finds where the area map's rendered window sits inside a screenshot.
@@ -13,7 +13,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// <c>--map-rect</c>. Zoomed-in screenshots (where the visible map is only a
 /// pan window) defeat this v1 approach — the user must zoom out first.</para>
 /// </summary>
-internal static class MapRectLocator
+public static class MapRectLocator
 {
     /// <summary>
     /// Tries NCC across a coarse scale ladder. Returns null on weak/no match.
@@ -103,7 +103,7 @@ internal static class MapRectLocator
 /// Visible map's bounding box in the screenshot, plus the source texture's
 /// native dimensions. Combined these give the screenshot↔texture transform.
 /// </summary>
-internal sealed record MapRect(
+public sealed record MapRect(
     int OriginX,
     int OriginY,
     int Width,

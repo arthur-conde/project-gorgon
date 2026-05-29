@@ -1,4 +1,5 @@
 using Mithril.MapCalibration;
+using Mithril.Tools.MapCalibration.Common;
 
 namespace Mithril.Tools.MapCalibrationFromScreenshot;
 

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Mithril.MapCalibration;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Reads the subset of <c>npcs.json</c> we need: per-area list of NPCs with
@@ -15,7 +15,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// gives the solver an order of magnitude more reference points than
 /// landmarks alone.</para>
 /// </summary>
-internal static class NpcsReader
+public static class NpcsReader
 {
     public static IReadOnlyList<LandmarkRef> LoadForArea(string npcsJsonPath, string area)
     {

@@ -32,5 +32,6 @@
       independent of this csproj's local opt-out.
     -->
     <ProjectReference Include="..\..\src\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <ProjectReference Include="..\Mithril.MapCalibration.Tools.Common\Mithril.MapCalibration.Tools.Common.csproj" />
   </ItemGroup>
 </Project>

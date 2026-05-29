@@ -1,4 +1,5 @@
 using System.Globalization;
+using Mithril.Tools.MapCalibration.Common;
 
 namespace Mithril.Tools.MapCalibrationFromScreenshot;
 

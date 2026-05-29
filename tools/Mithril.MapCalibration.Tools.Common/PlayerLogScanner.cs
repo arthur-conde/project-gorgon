@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using Mithril.MapCalibration;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Reads <c>Player.log</c> backwards looking for the most recent <c>[Status]</c>
@@ -17,7 +17,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// becomes the most reliable reference point for the solver via the player-pin
 /// template match.</para>
 /// </summary>
-internal static class PlayerLogScanner
+public static class PlayerLogScanner
 {
     // [Status] lines vary across PG versions. The robust subset to extract:
     //   - the area name (often "Area: <Area...>" or embedded in a longer status)

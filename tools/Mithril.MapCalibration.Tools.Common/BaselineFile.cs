@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Mithril.MapCalibration;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Reads and writes <c>src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json</c>.
@@ -14,7 +14,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// <para>Writes JSON in the exact shape <c>BundledBaselineLoader</c> reads:
 /// camelCase property names, indented, default values omitted.</para>
 /// </summary>
-internal static class BaselineFile
+public static class BaselineFile
 {
     public static void UpsertAnchor(string baselinePath, string area, AreaCalibration cal)
     {

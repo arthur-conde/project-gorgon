@@ -1,4 +1,4 @@
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Hand-rolled normalised cross-correlation (NCC) for template matching against
@@ -15,7 +15,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// teardrop pin doesn't get scored against the empty corners of its bounding
 /// rectangle.</para>
 /// </summary>
-internal static class NccTemplateMatch
+public static class NccTemplateMatch
 {
     /// <summary>
     /// Slides <paramref name="template"/> over <paramref name="image"/> and
@@ -218,7 +218,7 @@ internal static class NccTemplateMatch
 /// Downstream consumers should prefer <see cref="Centre"/> which uses the
 /// sub-pixel values automatically.
 /// </summary>
-internal readonly record struct Detection(int X, int Y, double Score, double SubX, double SubY)
+public readonly record struct Detection(int X, int Y, double Score, double SubX, double SubY)
 {
     public Detection(int x, int y, double score) : this(x, y, score, x, y) { }
 
@@ -230,7 +230,7 @@ internal readonly record struct Detection(int X, int Y, double Score, double Sub
 /// Single-channel byte image (grayscale, or alpha-only when used as a mask).
 /// Row-major, top-down. Constructed by <see cref="ImageIo"/>.
 /// </summary>
-internal sealed class GrayImage
+public sealed class GrayImage
 {
     public int Width { get; }
     public int Height { get; }

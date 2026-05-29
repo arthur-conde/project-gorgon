@@ -15,6 +15,8 @@
 //
 // See README.md next to this file for usage and the synthetic test harness.
 
+using Mithril.Tools.MapCalibration.Common;
+
 namespace Mithril.Tools.MapCalibrationFromScreenshot;
 
 internal static class Program
@@ -47,6 +49,3 @@ internal static class Program
         }
     }
 }
-
-/// <summary>Marker exception for clean exit-with-message paths. Stack trace suppressed.</summary>
-internal sealed class UserFacingException(string message) : Exception(message);

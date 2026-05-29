@@ -6,7 +6,7 @@ using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Extracts the named landmark + player-pin icon Texture2Ds from
@@ -17,7 +17,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// <para>The pivot is load-bearing: PG's landmark icons are teardrop-shaped and
 /// anchored at the bottom tip (pivot ≈ (0.5, 0)), not the centre. Template-match
 /// returns the icon centre; the world-anchor pixel is centre + (w*(pivot.x-0.5),
-/// h*(0.5-pivot.y)) — see <see cref="ScreenshotCalibrator"/>. Without this
+/// h*(0.5-pivot.y)) — see <c>ScreenshotCalibrator</c> in the CLI. Without this
 /// correction every landmark drifts by ~icon-height/2, blowing the 12 px residual
 /// threshold systematically (issue #852 comment).</para>
 ///
@@ -26,7 +26,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// <see cref="AssetsManager.LoadClassPackage"/>. The user supplies that — the
 /// tool errors with the download URL if missing.</para>
 /// </summary>
-internal static class IconTemplateExtractor
+public static class IconTemplateExtractor
 {
     // Bump when the extracted PNG bytes or sidecar shape change in a way that
     // requires re-extracting from sharedassets0.assets (e.g., the vertical-flip
@@ -326,9 +326,9 @@ internal static class IconTemplateExtractor
     }
 }
 
-internal sealed record IconIndex(int Version, List<IconMeta> Icons);
+public sealed record IconIndex(int Version, List<IconMeta> Icons);
 
-internal sealed record IconMeta(
+public sealed record IconMeta(
     string Name,
     string File,
     int Width,
