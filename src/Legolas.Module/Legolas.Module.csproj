@@ -22,6 +22,11 @@
   <ItemGroup>
     <ProjectReference Include="..\Arda\Arda.Contracts\Arda.Contracts.csproj" />
     <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <!-- #835: D3DDeviceLifecycle / D2DOverlaySurface / D2DBrushCache lifted
+         to Mithril.Overlay.Internal. Legolas still consumes them via the
+         InternalsVisibleTo("Legolas.Module") on Mithril.Overlay until
+         Migration step 6 deletes Legolas's PinSceneRenderer + MapOverlayView. -->
+    <ProjectReference Include="..\Mithril.Overlay\Mithril.Overlay.csproj" />
     <ProjectReference Include="..\Mithril.Shared\Mithril.Shared.csproj" />
     <ProjectReference Include="..\Mithril.Shared.Wpf\Mithril.Shared.Wpf.csproj" />
   </ItemGroup>

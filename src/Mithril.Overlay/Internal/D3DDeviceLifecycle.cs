@@ -19,7 +19,7 @@ using D3DFeatureLevel = Vortice.Direct3D.FeatureLevel;
 using D2DFeatureLevel = Vortice.Direct2D1.FeatureLevel;
 using DxgiFormat = Vortice.DXGI.Format;
 
-namespace Legolas.Rendering;
+namespace Mithril.Overlay.Internal;
 
 /// <summary>
 /// Owns the D3D11 + D3D9Ex pair and the shared-handle texture that bridges

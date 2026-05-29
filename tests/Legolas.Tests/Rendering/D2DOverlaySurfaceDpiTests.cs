@@ -3,7 +3,10 @@ using System.Threading;
 using System.Windows.Controls;
 using System.Windows.Media;
 using FluentAssertions;
-using Legolas.Rendering;
+// #835: D2DOverlaySurface lifted to Mithril.Overlay.Internal. Test retained
+// in tests/Legolas.Tests/ for the migration window; Mithril.Overlay.Tests now
+// owns a parallel regression for the same Stretch.Fill invariant.
+using Mithril.Overlay.Internal;
 using Xunit;
 
 namespace Legolas.Tests.Rendering;

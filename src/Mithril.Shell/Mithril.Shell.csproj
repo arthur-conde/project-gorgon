@@ -84,6 +84,11 @@
          arrived transitively via Elrond's ref — fragile; make it explicit. -->
     <ProjectReference Include="..\Mithril.Leveling\Mithril.Leveling.csproj" />
     <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <!-- Mithril.Overlay (#835): scaffold-only. Shell must reference so the
+         DLL lands in the app base dir for the reflection module loader to
+         resolve when consumer modules call IWorldOverlayMarkers / IOverlayWindow
+         post-migration. Memory pointer: shell_must_projectref_shared_libs. -->
+    <ProjectReference Include="..\Mithril.Overlay\Mithril.Overlay.csproj" />
     <ProjectReference Include="..\Mithril.Planning\Mithril.Planning.csproj" />
     <ProjectReference Include="..\Samwise.Module\Samwise.Module.csproj" />
     <ProjectReference Include="..\Legolas.Module\Legolas.Module.csproj" />

@@ -1,0 +1,84 @@
+<Window x:Class="Mithril.Overlay.Internal.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:internal="clr-namespace:Mithril.Overlay.Internal"
+        Title="Mithril Overlay"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        Width="800" Height="600">
+    <!--
+        Per docs/wpf-gotchas.md (layered-window section): an AllowsTransparency
+        window only routes clicks to pixels with non-zero composited alpha. The
+        backdrop Rectangle paints a low-alpha fill so the window receives clicks
+        across its whole client area instead of having them fall through to the
+        game. Mirrors MapOverlayView's #80101010 backdrop, kept dimmable via the
+        same Opacity-multiplied pattern when a consumer binds opacity later.
+
+        Per docs/legolas-overview.md §Pitfalls: the surface MUST host its
+        D3DImage with Stretch.Fill (handled inside D2DOverlaySurface) and the
+        whole window has no internal zoom/pan — it's strictly 1:1 with the game
+        map (#126/#127).
+    -->
+    <Grid>
+        <Rectangle Fill="#80101010" IsHitTestVisible="False" />
+        <Border BorderBrush="#FF303030" BorderThickness="1">
+            <DockPanel>
+                <Border x:Name="HeaderChrome"
+                        DockPanel.Dock="Top"
+                        Background="#FF252525"
+                        Padding="8,4"
+                        MouseLeftButtonDown="HeaderChrome_MouseLeftButtonDown">
+                    <!--
+                        DataContext is set in OverlayWindowService.CreateWindowOnDispatcher
+                        to the service instance (which implements IOverlayWindow +
+                        INotifyPropertyChanged). Plain {Binding} resolves against
+                        the service's StatusMessage / HasStatusMessage. The previous
+                        RelativeSource=AncestorType=Window bound to the OverlayWindow
+                        class itself (which has no StatusMessage), silently never
+                        firing — a textbook docs/wpf-gotchas.md trap.
+                    -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Overlay" Foreground="White" FontWeight="SemiBold" />
+                        <TextBlock Text=" | " Foreground="#FF888888" Margin="6,0,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasStatusMessage}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding StatusMessage, Mode=OneWay}"
+                                   Foreground="#FFE0B070">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasStatusMessage}" Value="False">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+                <Grid x:Name="ViewportRoot" ClipToBounds="True" Background="Transparent">
+                    <!--
+                        D2D overlay surface. Stretch.Fill is enforced inside
+                        D2DOverlaySurface itself (regression-guarded in
+                        Mithril.Overlay.Tests); don't introduce a wrapper layer
+                        that re-stretches.
+                    -->
+                    <internal:D2DOverlaySurface x:Name="Surface" IsHitTestVisible="False" />
+                </Grid>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

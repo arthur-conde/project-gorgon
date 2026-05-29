@@ -2,7 +2,7 @@ using System.Windows.Media;
 using Vortice.Direct2D1;
 using Color4 = Vortice.Mathematics.Color4;
 
-namespace Legolas.Rendering;
+namespace Mithril.Overlay.Internal;
 
 /// <summary>
 /// Caches <see cref="ID2D1SolidColorBrush"/> instances keyed on packed ARGB

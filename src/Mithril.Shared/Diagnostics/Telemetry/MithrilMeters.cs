@@ -68,6 +68,28 @@ public static class MithrilMeters
             Meter.CreateCounter<long>("mithril.reference.fetch_outcome");
     }
 
+    /// <summary>Mithril.Overlay per-tick projection + marker count (#835).</summary>
+    public static class Overlay
+    {
+        public static readonly Meter Meter = new("Mithril.Overlay");
+
+        /// <summary>Per-tick world→pixel projection wall-clock latency. Tag: <c>area</c> (area key).</summary>
+        public static readonly Histogram<double> ProjectionLatencyMs =
+            Meter.CreateHistogram<double>("mithril.overlay.projection.latency_ms", unit: "ms");
+
+        /// <summary>Per-tick marker count (one record per frame). Tag: <c>area</c> (area key).</summary>
+        public static readonly Counter<long> FrameMarkers =
+            Meter.CreateCounter<long>("mithril.overlay.frame.markers");
+
+        /// <summary>Per-marker <c>WorldToWindow</c> returned null (calibration shape rejected the marker even though the area is calibrated). Tag: <c>area</c>. Surfaces as a counter so a flood is observable; first-time-per-area logged at Trace.</summary>
+        public static readonly Counter<long> ProjectionMisses =
+            Meter.CreateCounter<long>("mithril.overlay.projection.misses");
+
+        /// <summary>Per-marker drawer-dispatch miss (no drawer registered for the marker's style type). Tag: <c>style_type</c>. Pairs with the first-time-per-type Trace log in <c>MarkerSceneRenderer</c>.</summary>
+        public static readonly Counter<long> DispatchMisses =
+            Meter.CreateCounter<long>("mithril.overlay.dispatch.misses");
+    }
+
     // GameState per-service counters and subscriber-count gauges are deferred from PR B
     // (see #818 acceptance criteria); add a `GameState` static here when the follow-up
     // lands rather than shipping an empty placeholder.

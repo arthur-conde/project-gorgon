@@ -2,28 +2,29 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Microsoft.Extensions.Logging;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Vortice.Direct2D1;
 using Color4 = Vortice.Mathematics.Color4;
 
-namespace Legolas.Rendering;
+namespace Mithril.Overlay.Internal;
 
 /// <summary>
-/// WPF host element for the Direct2D-rendered pin / route / wedge layer.
+/// WPF host element for the Direct2D-rendered overlay layer.
 ///
 /// Wraps a <see cref="D3DImage"/>: owns the D3D11 + D3D9Ex device pair via
 /// <see cref="D3DDeviceLifecycle"/>, the shared-handle texture that bridges
 /// them, the Vortice D2D render target on top of it, and the
 /// Lock / SetBackBuffer / draw / AddDirtyRect / Unlock cycle each frame.
-/// Knows nothing about Legolas semantics — consumers subscribe to
+/// Knows nothing about consumer semantics — consumers subscribe to
 /// <see cref="Render"/> and emit draw calls against the supplied
 /// <see cref="ID2D1RenderTarget"/>.
 ///
-/// Step B implementation: includes a debug fill (<see cref="DebugFill"/>) so
-/// the pipeline can be validated visually before the real
-/// <c>PinSceneRenderer</c> is wired in step C. When DebugFill is true and
-/// no Render handler is attached, the surface paints a translucent magenta
-/// rectangle in the top-left corner so a tester can see the GPU path is
-/// alive.
+/// Includes a debug fill (<see cref="DebugFill"/>) so the pipeline can be
+/// validated visually before a real renderer is wired in. When DebugFill is
+/// true and no Render handler is attached, the surface paints a translucent
+/// magenta rectangle in the top-left corner so a tester can see the GPU
+/// path is alive.
 /// </summary>
 public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
 {
@@ -32,6 +33,14 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
     private D3DDeviceLifecycle? _lifecycle;
     private bool _renderingHooked;
     private bool _disposed;
+
+    /// <summary>Optional logger for device-init failures + lifecycle events.
+    /// Settable (rather than a ctor param) because the XAML host instantiates
+    /// the surface via the parameterless ctor &#8212;
+    /// <see cref="OverlayWindowService"/> assigns this after construction so
+    /// the GPU-unavailable case is visible in the trace instead of silently
+    /// going dark.</summary>
+    public ILogger? Logger { get; set; }
 
     public D2DOverlaySurface()
     {
@@ -51,10 +60,9 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
             // resample. This is what keeps canvas px == screen px == game-map px
             // at non-100% scaling.
             Stretch = Stretch.Fill,
-            // Click-through: mouse events route to the parent Viewport so the
-            // existing drag-to-correct gesture still works without a per-pin
-            // hit-test. Mirrors the WPF version's `IsHitTestVisible="False"`
-            // on the survey ItemsControl.
+            // Click-through: mouse events route to the parent so the
+            // consumer's drag/click gestures still work without a per-pin
+            // hit-test on this surface.
             IsHitTestVisible = false,
         };
         AddVisualChild(_hostImage);
@@ -68,7 +76,7 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
     /// <summary>
     /// Fires once per <see cref="CompositionTarget.Rendering"/> tick after the
     /// D2D BeginDraw + Clear and before EndDraw, so the consumer can paint into
-    /// <see cref="RenderEventArgs.RenderTarget"/> without managing the device
+    /// <see cref="D2DRenderEventArgs.RenderTarget"/> without managing the device
     /// lifecycle. Subscribers must not call BeginDraw / EndDraw themselves.
     /// </summary>
     public event EventHandler<D2DRenderEventArgs>? Render;
@@ -76,18 +84,18 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
     /// <summary>
     /// When true and no <see cref="Render"/> handler is attached, the surface
     /// paints a translucent magenta rectangle in the top-left so the GPU path
-    /// is visually verifiable. Set to false once the real renderer is wired.
+    /// is visually verifiable. Set to false once a real renderer is wired.
     /// </summary>
     public bool DebugFill { get; set; }
 
     /// <summary>
     /// Force a redraw. Currently a no-op stub — every render tick already
-    /// repaints; future dirty-rect work in step G can use this to schedule
+    /// repaints; future dirty-rect work can use this to schedule
     /// non-CompositionTarget driven invalidations.
     /// </summary>
     public void Invalidate()
     {
-        // Step G placeholder. Continuous render via CompositionTarget.Rendering
+        // Placeholder. Continuous render via CompositionTarget.Rendering
         // covers our needs today; an explicit Invalidate is here so callers
         // don't have to grow a new dependency when on-demand redraw lands.
     }
@@ -124,11 +132,20 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
             {
                 _lifecycle = new D3DDeviceLifecycle();
             }
-            catch
+            catch (Exception ex)
             {
                 // GPU init can fail on RDP, headless CI, locked-down VMs etc.
-                // Step G handles software fallback; step B fails silently so
-                // the rest of the overlay still works (sans pins).
+                // Software fallback is deferred; for the scaffold we surface
+                // the failure as a logged warning + a telemetry span (with the
+                // exception type tagged) so a production failure is *visible*
+                // in a perf trace. The UX side ("GPU unavailable" chip,
+                // SoftwareOnly fallback) belongs in the migration window when
+                // the overlay actually shows; this only stops the bare swallow.
+                Logger?.LogWarning(ex,
+                    "D2DOverlaySurface: D3D11/D3D9Ex device init failed ({ExceptionType}); the overlay surface will stay dark for this session.",
+                    ex.GetType().Name);
+                using var act = MithrilActivitySources.Overlay.StartActivity("device.init.failed");
+                act?.SetTag("error", ex.GetType().Name);
                 _lifecycle = null;
                 return;
             }
@@ -140,9 +157,8 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
 
     private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
-        // Pause the render loop when the overlay is hidden — matches
-        // FrameTimeLogger discipline so a hidden overlay doesn't burn CPU
-        // dispatching no-op draws.
+        // Pause the render loop when the overlay is hidden so a hidden
+        // overlay doesn't burn CPU dispatching no-op draws.
         HookRendering((bool)e.NewValue);
     }
 
@@ -170,7 +186,7 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
         // target's DPI must match so DIP-coordinate draw calls scale to
         // the right pixel size. On a 96-DPI monitor this is a no-op; on
         // 144-DPI / 192-DPI displays this is what makes the rendered
-        // pin layer crisp instead of blurry-upscaled.
+        // layer crisp instead of blurry-upscaled.
         var dpi = VisualTreeHelper.GetDpi(this);
         var w = (int)Math.Round(ActualWidth * dpi.DpiScaleX);
         var h = (int)Math.Round(ActualHeight * dpi.DpiScaleY);

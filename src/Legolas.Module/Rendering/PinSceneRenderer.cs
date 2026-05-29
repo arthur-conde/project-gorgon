@@ -1,5 +1,9 @@
 using System.Numerics;
 using Legolas.Domain;
+// #835: D2DBrushCache lifted to Mithril.Overlay.Internal — InternalsVisibleTo
+// keeps it reachable from this file until Migration step 6 retires the whole
+// Legolas-side renderer.
+using Mithril.Overlay.Internal;
 using Vortice.Direct2D1;
 using Vortice.DCommon;
 using Vortice.Mathematics;

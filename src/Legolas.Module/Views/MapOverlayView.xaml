@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:Legolas.Controls"
         xmlns:converters="clr-namespace:Legolas.Views.Converters"
         xmlns:views="clr-namespace:Legolas.Views"
-        xmlns:rendering="clr-namespace:Legolas.Rendering"
+        xmlns:rendering="clr-namespace:Mithril.Overlay.Internal;assembly=Mithril.Overlay"
         xmlns:icon="http://metro.mahapps.com/winfx/xaml/iconpacks"
         Title="Map Overlay"
         WindowStyle="None"
