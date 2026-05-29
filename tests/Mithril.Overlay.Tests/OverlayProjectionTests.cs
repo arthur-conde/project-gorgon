@@ -17,6 +17,9 @@ public sealed class OverlayProjectionTests
 {
     private sealed record TestStyle(string Tag) : IMarkerStyle;
 
+    private static MarkerSnapshot Snap(double x, double z, IMarkerStyle style)
+        => new(new MarkerHandle(Guid.NewGuid()), new WorldCoord(x, 0, z), style);
+
     [Fact]
     public void Projects_each_marker_through_WorldToWindow_when_area_is_calibrated()
     {
@@ -28,8 +31,8 @@ public sealed class OverlayProjectionTests
         var styleB = new TestStyle("b");
         var markers = new[]
         {
-            (new MarkerHandle(Guid.NewGuid()), 10.0, 20.0, (IMarkerStyle)styleA),
-            (new MarkerHandle(Guid.NewGuid()), -5.0, 7.0, (IMarkerStyle)styleB),
+            Snap(10.0, 20.0, styleA),
+            Snap(-5.0, 7.0, styleB),
         };
 
         var projected = OverlayWindowService.ProjectMarkers(markers, "A", calibration, currentZoom: 1.0);
@@ -46,7 +49,7 @@ public sealed class OverlayProjectionTests
         calibration.CalibratedAreas.Add("A");
 
         OverlayWindowService
-            .ProjectMarkers(Array.Empty<(MarkerHandle, double, double, IMarkerStyle)>(), "A", calibration, 1.0)
+            .ProjectMarkers(Array.Empty<MarkerSnapshot>(), "A", calibration, 1.0)
             .Should().BeEmpty();
     }
 
@@ -64,9 +67,9 @@ public sealed class OverlayProjectionTests
         var style = new TestStyle("s");
         var markers = new[]
         {
-            (new MarkerHandle(Guid.NewGuid()), 1.0, 1.0, (IMarkerStyle)style),
-            (new MarkerHandle(Guid.NewGuid()), -1.0, 1.0, (IMarkerStyle)style), // projector returns null
-            (new MarkerHandle(Guid.NewGuid()), 2.0, 2.0, (IMarkerStyle)style),
+            Snap(1.0, 1.0, style),
+            Snap(-1.0, 1.0, style), // projector returns null
+            Snap(2.0, 2.0, style),
         };
 
         var projected = OverlayWindowService.ProjectMarkers(markers, "A", calibration, 1.0);
@@ -83,7 +86,7 @@ public sealed class OverlayProjectionTests
         var style = new TestStyle("s");
         var markers = new[]
         {
-            (new MarkerHandle(Guid.NewGuid()), 1.0, 1.0, (IMarkerStyle)style),
+            Snap(1.0, 1.0, style),
         };
 
         OverlayWindowService.ProjectMarkers(markers, "AreaUncalibrated", calibration, 1.0)
@@ -98,7 +101,7 @@ public sealed class OverlayProjectionTests
         var style = new TestStyle("identity");
         var markers = new[]
         {
-            (new MarkerHandle(Guid.NewGuid()), 0.0, 0.0, (IMarkerStyle)style),
+            Snap(0.0, 0.0, style),
         };
 
         var projected = OverlayWindowService.ProjectMarkers(markers, "A", calibration, 1.0);

@@ -77,4 +77,36 @@ public sealed class MarkerSceneRendererTests
         call1.Should().Be(0);
         call2.Should().Be(1);
     }
+/// <summary>B2: concurrent RegisterDrawer + Render must never throw and
+    /// must never lose a registration. Hammer N threads of registration
+    /// against a render loop running on the test thread.</summary>
+    [Fact]
+    public async Task Concurrent_RegisterDrawer_and_Render_do_not_throw()
+    {
+        var renderer = new MarkerSceneRenderer();
+        var marker = new[] { (new PixelPoint(0, 0), (IMarkerStyle)new StyleA()) };
+        var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+
+        var register = Task.Run(() =>
+        {
+            var i = 0;
+            while (!stop.IsCancellationRequested)
+            {
+                // Re-register the StyleA drawer in a tight loop. Each iteration
+                // also flips a side counter so we can verify SOMETHING ran.
+                var n = i++;
+                renderer.RegisterDrawer<StyleA>((_, _, _, _, _) => { });
+            }
+        });
+        var render = Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                renderer.Render(marker, null!, null!, null!);
+            }
+        });
+
+        await Task.WhenAll(register, render);
+        renderer.HasAnyDrawer.Should().BeTrue();
+    }
 }

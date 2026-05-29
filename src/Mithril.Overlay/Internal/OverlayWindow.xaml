@@ -31,32 +31,36 @@
                         Background="#FF252525"
                         Padding="8,4"
                         MouseLeftButtonDown="HeaderChrome_MouseLeftButtonDown">
+                    <!--
+                        DataContext is set in OverlayWindowService.CreateWindowOnDispatcher
+                        to the service instance (which implements IOverlayWindow +
+                        INotifyPropertyChanged). Plain {Binding} resolves against
+                        the service's StatusMessage / HasStatusMessage. The previous
+                        RelativeSource=AncestorType=Window bound to the OverlayWindow
+                        class itself (which has no StatusMessage), silently never
+                        firing — a textbook docs/wpf-gotchas.md trap.
+                    -->
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="Overlay" Foreground="White" FontWeight="SemiBold" />
-                        <!--
-                            Status chip — surfaces IOverlayWindow.StatusMessage
-                            (e.g. "map not calibrated — use Legolas wizard").
-                            Hidden while the message is empty.
-                        -->
                         <TextBlock Text=" | " Foreground="#FF888888" Margin="6,0,0,0">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Visible" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasStatusMessage, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                        <DataTrigger Binding="{Binding HasStatusMessage}" Value="False">
                                             <Setter Property="Visibility" Value="Collapsed" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <TextBlock Text="{Binding StatusMessage, RelativeSource={RelativeSource AncestorType=Window}, Mode=OneWay}"
+                        <TextBlock Text="{Binding StatusMessage, Mode=OneWay}"
                                    Foreground="#FFE0B070">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Visible" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasStatusMessage, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
+                                        <DataTrigger Binding="{Binding HasStatusMessage}" Value="False">
                                             <Setter Property="Visibility" Value="Collapsed" />
                                         </DataTrigger>
                                     </Style.Triggers>

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration;
 
 namespace Mithril.Overlay.Internal;
 
@@ -19,6 +20,10 @@ namespace Mithril.Overlay.Internal;
 internal sealed class WorldOverlayMarkers : IWorldOverlayMarkers
 {
     private readonly Dictionary<MarkerHandle, Entry> _markers = new();
+    // O(N) on the insertion-order list for Remove; acceptable at expected
+    // scale (low-hundreds markers per consumer). Promote to
+    // LinkedList<MarkerHandle> + Dictionary<Handle, Node> if a consumer hits
+    // 10k and the linear remove becomes hot in a perf trace.
     private readonly List<MarkerHandle> _insertionOrder = new();
     private readonly Lock _lock = new();
     private readonly ILogger? _logger;
@@ -39,6 +44,9 @@ internal sealed class WorldOverlayMarkers : IWorldOverlayMarkers
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(areaKey);
         ArgumentNullException.ThrowIfNull(style);
+        if (!double.IsFinite(worldX) || !double.IsFinite(worldZ))
+            throw new ArgumentException(
+                $"World coords must be finite; got ({worldX}, {worldZ}). NaN/Infinity would poison the per-area projection downstream.");
 
         var handle = new MarkerHandle(Guid.NewGuid());
         lock (_lock)
@@ -76,6 +84,10 @@ internal sealed class WorldOverlayMarkers : IWorldOverlayMarkers
 
     public void UpdateMarker(MarkerHandle handle, double worldX, double worldZ)
     {
+        if (!double.IsFinite(worldX) || !double.IsFinite(worldZ))
+            throw new ArgumentException(
+                $"World coords must be finite; got ({worldX}, {worldZ}). NaN/Infinity would poison the per-area projection downstream.");
+
         lock (_lock)
         {
             if (!_markers.TryGetValue(handle, out var existing)) return;
@@ -86,24 +98,27 @@ internal sealed class WorldOverlayMarkers : IWorldOverlayMarkers
         }
     }
 
-    public IReadOnlyList<(MarkerHandle Handle, double WorldX, double WorldZ, IMarkerStyle Style)> CurrentAreaMarkers
+    public IReadOnlyList<MarkerSnapshot> CurrentAreaMarkers
     {
         get
         {
             var area = CurrentArea;
-            if (string.IsNullOrEmpty(area)) return Array.Empty<(MarkerHandle, double, double, IMarkerStyle)>();
+            if (string.IsNullOrEmpty(area)) return Array.Empty<MarkerSnapshot>();
 
             lock (_lock)
             {
                 if (_insertionOrder.Count == 0)
-                    return Array.Empty<(MarkerHandle, double, double, IMarkerStyle)>();
+                    return Array.Empty<MarkerSnapshot>();
 
-                var result = new List<(MarkerHandle, double, double, IMarkerStyle)>(_insertionOrder.Count);
+                var result = new List<MarkerSnapshot>(_insertionOrder.Count);
                 foreach (var handle in _insertionOrder)
                 {
                     var entry = _markers[handle];
                     if (string.Equals(entry.AreaKey, area, StringComparison.Ordinal))
-                        result.Add((handle, entry.WorldX, entry.WorldZ, entry.Style));
+                        result.Add(new MarkerSnapshot(
+                            handle,
+                            new WorldCoord(entry.WorldX, 0, entry.WorldZ),
+                            entry.Style));
                 }
                 return result;
             }

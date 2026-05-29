@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Mithril.MapCalibration;
 using Mithril.Overlay.Internal;
 using Xunit;
 
@@ -7,8 +8,8 @@ namespace Mithril.Overlay.Tests;
 /// <summary>
 /// Unit-level guards for the thread-safe marker registry:
 /// add/remove/update round-trips, per-area filter, idempotent remove,
-/// update-unknown is a no-op, and a contention smoke test that two threads
-/// adding doesn't lose markers.
+/// update-unknown is a no-op, input validation (NaN/Infinity/null), and a
+/// contention smoke test that two threads adding doesn't lose markers.
 /// </summary>
 public sealed class WorldOverlayMarkersTests
 {
@@ -24,7 +25,8 @@ public sealed class WorldOverlayMarkersTests
         var handle = markers.AddMarker("AreaEltibule", 10, 20, style);
 
         var snapshot = markers.CurrentAreaMarkers;
-        snapshot.Should().ContainSingle().Which.Should().Be((handle, 10.0, 20.0, (IMarkerStyle)style));
+        snapshot.Should().ContainSingle().Which.Should().Be(
+            new MarkerSnapshot(handle, new WorldCoord(10, 0, 20), style));
     }
 
     [Fact]
@@ -83,8 +85,8 @@ public sealed class WorldOverlayMarkersTests
         markers.CurrentArea = "A";
 
         markers.UpdateMarker(handle, 99, -42);
-        markers.CurrentAreaMarkers.Single().Should().Match<(MarkerHandle Handle, double X, double Z, IMarkerStyle Style)>(
-            m => m.X == 99 && m.Z == -42);
+        markers.CurrentAreaMarkers.Single().Should().Match<MarkerSnapshot>(
+            m => m.World.X == 99 && m.World.Z == -42);
 
         // Update an unknown handle — must not throw and must not pollute the
         // registry with a phantom entry.
@@ -132,5 +134,50 @@ public sealed class WorldOverlayMarkersTests
         await Task.WhenAll(t1, t2);
 
         markers.CurrentAreaMarkers.Should().HaveCount(perThread * 2);
+    }
+// -- Input validation (M7) --
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AddMarker_rejects_null_or_blank_area_key(string? areaKey)
+    {
+        var markers = new WorldOverlayMarkers();
+        var act = () => markers.AddMarker(areaKey!, 0, 0, new TestStyle("s"));
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void AddMarker_rejects_null_style()
+    {
+        var markers = new WorldOverlayMarkers();
+        var act = () => markers.AddMarker("A", 0, 0, null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 0)]
+    [InlineData(0, double.NaN)]
+    [InlineData(double.PositiveInfinity, 0)]
+    [InlineData(0, double.NegativeInfinity)]
+    public void AddMarker_rejects_non_finite_coords(double x, double z)
+    {
+        var markers = new WorldOverlayMarkers();
+        var act = () => markers.AddMarker("A", x, z, new TestStyle("s"));
+        act.Should().Throw<ArgumentException>().WithMessage("*finite*");
+    }
+
+    [Theory]
+    [InlineData(double.NaN, 0)]
+    [InlineData(0, double.NaN)]
+    [InlineData(double.PositiveInfinity, 0)]
+    [InlineData(0, double.NegativeInfinity)]
+    public void UpdateMarker_rejects_non_finite_coords(double x, double z)
+    {
+        var markers = new WorldOverlayMarkers();
+        var handle = markers.AddMarker("A", 0, 0, new TestStyle("s"));
+        var act = () => markers.UpdateMarker(handle, x, z);
+        act.Should().Throw<ArgumentException>().WithMessage("*finite*");
     }
 }

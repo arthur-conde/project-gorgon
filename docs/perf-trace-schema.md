@@ -281,6 +281,8 @@ Companion `Mithril.Overlay` meter instruments emitted in `meter_counter` records
 
 - `mithril.overlay.projection.latency_ms` — histogram, ms. Tag: `area`.
 - `mithril.overlay.frame.markers` — counter, per-tick marker count. Tag: `area`.
+- `mithril.overlay.projection.misses` — counter, per-marker `WorldToWindow` null on a calibrated area. Tag: `area`. First-time-per-area logged at Trace from `OverlayWindowService`. A flood here means calibration is in the registry but rejecting marker coords (out-of-range, NaN that slipped past producer guards).
+- `mithril.overlay.dispatch.misses` — counter, per-marker drawer-dispatch miss (no drawer registered for the marker style type). Tag: `style_type`. First-time-per-type logged at Trace from `MarkerSceneRenderer`. A flood here means a consumer is producing markers before its drawer registration ran.
 
 Scaffold-only — fires only after a Migration step 2+ PR registers Legolas drawers and shows the overlay. A clean scaffold-only build emits zero overlay records.
 

@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Microsoft.Extensions.Logging;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Vortice.Direct2D1;
 using Color4 = Vortice.Mathematics.Color4;
 
@@ -31,6 +33,14 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
     private D3DDeviceLifecycle? _lifecycle;
     private bool _renderingHooked;
     private bool _disposed;
+
+    /// <summary>Optional logger for device-init failures + lifecycle events.
+    /// Settable (rather than a ctor param) because the XAML host instantiates
+    /// the surface via the parameterless ctor &#8212;
+    /// <see cref="OverlayWindowService"/> assigns this after construction so
+    /// the GPU-unavailable case is visible in the trace instead of silently
+    /// going dark.</summary>
+    public ILogger? Logger { get; set; }
 
     public D2DOverlaySurface()
     {
@@ -122,11 +132,20 @@ public sealed class D2DOverlaySurface : FrameworkElement, IDisposable
             {
                 _lifecycle = new D3DDeviceLifecycle();
             }
-            catch
+            catch (Exception ex)
             {
                 // GPU init can fail on RDP, headless CI, locked-down VMs etc.
-                // Software fallback comes later; for now we fail silently so
-                // the rest of the overlay still works (sans rendered markers).
+                // Software fallback is deferred; for the scaffold we surface
+                // the failure as a logged warning + a telemetry span (with the
+                // exception type tagged) so a production failure is *visible*
+                // in a perf trace. The UX side ("GPU unavailable" chip,
+                // SoftwareOnly fallback) belongs in the migration window when
+                // the overlay actually shows; this only stops the bare swallow.
+                Logger?.LogWarning(ex,
+                    "D2DOverlaySurface: D3D11/D3D9Ex device init failed ({ExceptionType}); the overlay surface will stay dark for this session.",
+                    ex.GetType().Name);
+                using var act = MithrilActivitySources.Overlay.StartActivity("device.init.failed");
+                act?.SetTag("error", ex.GetType().Name);
                 _lifecycle = null;
                 return;
             }

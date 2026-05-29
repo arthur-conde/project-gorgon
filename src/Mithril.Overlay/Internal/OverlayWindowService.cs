@@ -28,7 +28,9 @@ namespace Mithril.Overlay.Internal;
 /// dispatcher; the projection callback runs on the dispatcher (it's the
 /// <see cref="D2DOverlaySurface.Render"/> handler). All marker registry
 /// reads happen there. <see cref="Dispose"/> may run on a non-UI thread
-/// (host shutdown) and marshals window disposal back onto the dispatcher.</para>
+/// (host shutdown) and marshals window + brush-cache disposal back onto the
+/// dispatcher (the cache's brushes are dispatcher-affined via the bound
+/// render target).</para>
 ///
 /// <para><b>Projection driver (Decision C from closed #832).</b>
 /// Per tick:
@@ -49,15 +51,21 @@ namespace Mithril.Overlay.Internal;
 /// The chip surfaces via <see cref="INotifyPropertyChanged"/> so XAML bindings
 /// update without polling.</para>
 /// </summary>
-internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
+internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDisposable
 {
     private const string UncalibratedMessage = "map not calibrated — use Legolas wizard";
 
+    // Inject the concrete type directly (not IWorldOverlayMarkers): the
+    // projection driver needs the internal CurrentArea setter and the
+    // concrete type is registered as a singleton ahead of the interface.
+    // Avoids a brittle down-cast hazard if a future caller overrides the
+    // IWorldOverlayMarkers registration with a fake.
     private readonly WorldOverlayMarkers _markers;
     private readonly MarkerSceneRenderer _renderer;
     private readonly IMapCalibrationService _calibration;
     private readonly IAreaState _areaState;
     private readonly IPositionState _positionState; // reserved for future consumers; ensures the DI shape matches Decision C
+    private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger? _logger;
     private readonly D2DBrushCache _brushCache = new();
 
@@ -67,24 +75,23 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
     private string? _statusMessage;
     private bool _firstFrameLogged;
     private string? _lastSeenUncalibratedArea;
+    private readonly HashSet<string> _projectionMissAreasLogged = new(StringComparer.Ordinal);
     private bool _disposed;
 
     public OverlayWindowService(
-        IWorldOverlayMarkers markers,
+        WorldOverlayMarkers markers,
         MarkerSceneRenderer renderer,
         IMapCalibrationService calibration,
         IAreaState areaState,
         IPositionState positionState,
         ILoggerFactory? loggerFactory = null)
     {
-        // The DI registration always hands us the concrete WorldOverlayMarkers
-        // singleton — we need the CurrentArea setter that's not on the public
-        // IWorldOverlayMarkers interface. Down-cast is safe and stays internal.
-        _markers = (WorldOverlayMarkers)markers;
+        _markers = markers;
         _renderer = renderer;
         _calibration = calibration;
         _areaState = areaState;
         _positionState = positionState;
+        _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger("Mithril.Overlay");
     }
 
@@ -111,11 +118,18 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
     public Task StartAsync(CancellationToken cancellationToken)
     {
         using var act = MithrilActivitySources.Overlay.StartActivity("service.start");
-        // Capture the dispatcher of whatever thread called StartAsync — in the
-        // shell that's the UI thread (Application is up before the host runs).
-        // The window itself is materialised lazily on first Window access so
-        // the scaffold ships dormant (per the migration plan in #835).
-        _dispatcher = Dispatcher.CurrentDispatcher;
+        // Resolve the WPF dispatcher off Application.Current rather than
+        // Dispatcher.CurrentDispatcher. The latter creates a *new* dispatcher
+        // on the calling thread if none exists — which silently passes in a
+        // unit test but means an overlay built off the wrong thread can never
+        // marshal back to the UI dispatcher. Mithril.Shell calls
+        // host.StartAsync() on the UI thread after `new App()`, so
+        // Application.Current.Dispatcher is the authoritative reference.
+        _dispatcher = Application.Current?.Dispatcher ?? throw new InvalidOperationException(
+            "OverlayWindowService.StartAsync requires an active WPF Application — "
+            + "Mithril.Shell calls host.StartAsync on the UI thread after `new App()`. "
+            + "If you see this from a test or non-shell host, ensure a WPF dispatcher is available "
+            + "(or skip the hosted-service registration and exercise the projection helper directly).");
         _logger?.LogInformation("OverlayWindowService starting (window will be created on first Window-access).");
         return Task.CompletedTask;
     }
@@ -130,6 +144,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
 
     private void EnsureWindow()
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (_window is not null) return;
         if (_dispatcher is null)
             throw new InvalidOperationException(
@@ -150,7 +165,18 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
         if (_window is not null) return;
         using var act = MithrilActivitySources.Overlay.StartActivity("window.create");
         _window = new OverlayWindow();
+        // DataContext = the service itself so the XAML chip bindings
+        // ({Binding StatusMessage} / {Binding HasStatusMessage}) resolve to
+        // *this* service's INPC-backed properties. The previous
+        // {Binding ..., RelativeSource=AncestorType=Window} bound to the
+        // OverlayWindow class, which has no StatusMessage — a silent
+        // never-fires gotcha exactly of the class docs/wpf-gotchas.md warns
+        // about.
+        _window.DataContext = this;
         _window.OverlaySurface.Render += OnSurfaceRender;
+        // Propagate the logger down so a D3D init failure inside the surface
+        // surfaces in the trace instead of going dark.
+        _window.OverlaySurface.Logger = _loggerFactory?.CreateLogger("Mithril.Overlay.Surface");
         _window.Closed += OnWindowClosed;
         _logger?.LogInformation("OverlayWindow created (not shown — consumer must Show() to surface it).");
     }
@@ -193,10 +219,15 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
             return;
         }
 
+        // Calibrated area — clear the uncalibrated-area dedup state so a
+        // re-entry into the same area later re-logs the "uncalibrated"
+        // observation if calibration is lost.
+        _lastSeenUncalibratedArea = null;
         SetStatusMessage(null);
 
         var snapshot = _markers.CurrentAreaMarkers;
-        var projected = ProjectMarkers(snapshot, areaKey, _calibration, currentZoom: 1.0);
+        var projected = ProjectMarkers(snapshot, areaKey, _calibration, currentZoom: 1.0,
+            onMiss: this, snapshotCount: snapshot.Count);
         if (!_firstFrameLogged)
         {
             _firstFrameLogged = true;
@@ -223,12 +254,28 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
 
     /// <summary>Pure projection helper &#8212; takes a snapshot + a calibration
     /// service and returns the projected pixel list. Carved out so tests can
-    /// exercise the projection without standing up a D3D surface.</summary>
+    /// exercise the projection without standing up a D3D surface.
+    /// Test-friendly overload (no miss callback).</summary>
     internal static IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> ProjectMarkers(
-        IReadOnlyList<(MarkerHandle Handle, double WorldX, double WorldZ, IMarkerStyle Style)> markers,
+        IReadOnlyList<MarkerSnapshot> markers,
         string areaKey,
         IMapCalibrationService calibration,
         double currentZoom)
+        => ProjectMarkers(markers, areaKey, calibration, currentZoom, onMiss: null, snapshotCount: markers.Count);
+
+    /// <summary>Projection helper with the service-side miss hook so the
+    /// production path emits the miss counter + Trace log when
+    /// <c>WorldToWindow</c> returns null for a calibrated area.
+    /// TODO(#835 migration steps): the production-time enhancement
+    /// ("all-null snapshot → surface a chip") is deferred until real
+    /// markers exist to validate the UX against.</summary>
+    private static IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> ProjectMarkers(
+        IReadOnlyList<MarkerSnapshot> markers,
+        string areaKey,
+        IMapCalibrationService calibration,
+        double currentZoom,
+        OverlayWindowService? onMiss,
+        int snapshotCount)
     {
         if (markers.Count == 0)
             return Array.Empty<(PixelPoint, IMarkerStyle)>();
@@ -236,22 +283,31 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
         var result = new List<(PixelPoint, IMarkerStyle)>(markers.Count);
         for (var i = 0; i < markers.Count; i++)
         {
-            var (_, wx, wz, style) = markers[i];
-            // WorldCoord constructor is (X, Y, Z) — Y is elevation, not
-            // consumed by the 2D map projection. Pass 0 for Y per the type's
-            // own remarks; what flows into WorldToWindow is the (X, Z) pair.
-            var pixel = calibration.WorldToWindow(areaKey, new WorldCoord(wx, 0, wz), currentZoom);
-            if (pixel is null) continue;
-            result.Add((pixel.Value, style));
+            var snap = markers[i];
+            var pixel = calibration.WorldToWindow(areaKey, snap.World, currentZoom);
+            if (pixel is null)
+            {
+                if (onMiss is not null)
+                {
+                    MithrilMeters.Overlay.ProjectionMisses.Add(1,
+                        new KeyValuePair<string, object?>("area", areaKey));
+                    if (onMiss._projectionMissAreasLogged.Add(areaKey))
+                    {
+                        onMiss._logger?.LogTrace(
+                            "OverlayWindowService: WorldToWindow returned null for a marker in calibrated area {AreaKey} (style={StyleType}); marker silently skipped.",
+                            areaKey, snap.Style.GetType().Name);
+                    }
+                }
+                continue;
+            }
+            result.Add((pixel.Value, snap.Style));
         }
         return result;
     }
 
-    /// <summary>Surface a Legolas-side drawer registration to the renderer.
-    /// Internal &#8212; the public path for the migration PRs is to inject
-    /// <see cref="MarkerSceneRenderer"/> directly and call
-    /// <c>RegisterDrawer</c> there, but tests need the hook through the
-    /// service.</summary>
+    /// <summary>Surface the renderer to test code &#8212; production
+    /// consumers inject <see cref="MarkerSceneRenderer"/> directly via DI
+    /// and call <c>RegisterDrawer</c> there.</summary>
     internal MarkerSceneRenderer Renderer => _renderer;
 
     private void SetReady(bool value)
@@ -274,26 +330,49 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow
         if (_disposed) return;
         _disposed = true;
         DisposeWindow();
-        _brushCache.Dispose();
+        // _brushCache.Dispose() is folded into DisposeWindow's dispatcher
+        // closure (the cache's brushes are dispatcher-affined via the bound
+        // render target; disposing them off-thread is a Vortice/D3D liability).
     }
 
     private void DisposeWindow()
     {
         var window = _window;
         var dispatcher = _dispatcher;
-        if (window is null) return;
+        if (window is null)
+        {
+            // No window — brush cache is empty / never bound. Still safe to
+            // dispose the empty cache off-thread.
+            _brushCache.Dispose();
+            return;
+        }
 
         void Close()
         {
-            try { window.OverlaySurface.Render -= OnSurfaceRender; } catch { /* surface gone */ }
-            try { window.Closed -= OnWindowClosed; } catch { /* gone */ }
-            try { window.Close(); } catch { /* already closed */ }
-            try { window.OverlaySurface.Dispose(); } catch { /* already disposed */ }
+            // Event detaches cannot throw under the contracts above; let any
+            // genuine bug surface instead of swallowing it.
+            window.OverlaySurface.Render -= OnSurfaceRender;
+            window.Closed -= OnWindowClosed;
+
+            try { window.Close(); }
+            catch (InvalidOperationException ex)
+            {
+                _logger?.LogTrace(ex, "OverlayWindow.Close threw — already closed or in non-closeable state; ignoring.");
+            }
+            try { window.OverlaySurface.Dispose(); }
+            catch (ObjectDisposedException) { /* idempotent dispose */ }
+            _brushCache.Dispose();
             _window = null;
             SetReady(false);
         }
 
-        if (dispatcher is null || dispatcher.CheckAccess()) Close();
+        // If we have a window, we must have a dispatcher (EnsureWindow throws
+        // otherwise). The null-coalesce is just to keep the compiler happy
+        // and to fail loudly if a future refactor reorders things.
+        if (dispatcher is null) throw new InvalidOperationException(
+            "OverlayWindowService.DisposeWindow: dispatcher missing but window exists. This indicates EnsureWindow was bypassed.");
+
+        if (dispatcher.CheckAccess()) Close();
         else dispatcher.Invoke(Close);
     }
 

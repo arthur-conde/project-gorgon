@@ -80,6 +80,14 @@ public static class MithrilMeters
         /// <summary>Per-tick marker count (one record per frame). Tag: <c>area</c> (area key).</summary>
         public static readonly Counter<long> FrameMarkers =
             Meter.CreateCounter<long>("mithril.overlay.frame.markers");
+
+        /// <summary>Per-marker <c>WorldToWindow</c> returned null (calibration shape rejected the marker even though the area is calibrated). Tag: <c>area</c>. Surfaces as a counter so a flood is observable; first-time-per-area logged at Trace.</summary>
+        public static readonly Counter<long> ProjectionMisses =
+            Meter.CreateCounter<long>("mithril.overlay.projection.misses");
+
+        /// <summary>Per-marker drawer-dispatch miss (no drawer registered for the marker's style type). Tag: <c>style_type</c>. Pairs with the first-time-per-type Trace log in <c>MarkerSceneRenderer</c>.</summary>
+        public static readonly Counter<long> DispatchMisses =
+            Meter.CreateCounter<long>("mithril.overlay.dispatch.misses");
     }
 
     // GameState per-service counters and subscriber-count gauges are deferred from PR B
