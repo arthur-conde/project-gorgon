@@ -242,6 +242,42 @@ The load-bearing evidence for the negative is therefore the **byte-string `scana
 
 A future re-run with `classdata.tpk` loaded for Unity 6000.3 could enumerate TeleportCircle GameObjects' full component lists and confirm exhaustively (rather than via class-name co-location) that no map-pin component rides on them — but `scanall` co-location already gives the answer with high confidence.
 
+## Tangential positive: the icon GRAPHICS *are* packaged (and reachable)
+
+The spike asked about icon **positions** and that answer is negative as documented above. But the related question — *are the icon graphics (the pin sprites themselves) packaged on disk?* — has a positive answer that I missed in the earlier scan passes and want to record here so future contributors don't re-do the work.
+
+**Where they live:** `WindowsPlayer_Data/sharedassets0.assets` (73 MB, the scene-shared assets companion to `level0` / the UI canvas scene). My earlier `scanall` and `inventory` phases covered Addressables bundles + level scene files but did **not** include the 44 `sharedassets<N>.assets` companion files — a genuine blind spot, since PG's UI sprites don't live in Addressables.
+
+**What's in there**, by raw `m_Name` extraction from the Texture2D byte offsets (`rawnames` probe phase, since these files have type-tree stripped same as level scenes):
+
+Landmark-type icons (1:1 with `landmarks.json` `Type` discriminator):
+
+| Texture name | pathId | Maps to landmark Type |
+|---|---|---|
+| `landmark_telepad` | 100 | `TeleportationPlatform` |
+| `landmark_medipillar` | 422 | `MeditationPillar` |
+| `landmark_portal` | 730 | `Portal` |
+| `landmark_npc` | 108 | NPCs |
+| `landmark_star` | 364 | (likely waypoint / generic marker) |
+
+Generic pin shapes: `MapPin_Circle` (637), `MapPin_Square` (515).
+
+Player + pet pins: ~18 variants across `LocalPlayerPin_*`, `RemotePlayerPin_*`, `PetPin_*` (Round / Square / Arrow / PointedSquare × Light / Dark theme × Up / Down orientation).
+
+Other map UI bitmaps: `MapFogGray` (486, fog-of-war overlay), `MapEffect_Shrinking` (924), `MapPing_Expansion` (259, ping ripple), `mapOn` (114, map-toggle button icon).
+
+Plus ~970 numbered `icon_NNNN` Texture2Ds — these are the ability / item icons, where the numeric suffix matches the `IconId` field in `items.json` / abilities (consistent with the CDN naming `cdn.projectgorgon.com/{version}/icons/icon_{IconId}.png`).
+
+**How to extract**: same AssetsTools.NET 3.0.4 pipeline as the substrate spike ([PR #828](https://github.com/moumantai-gg/mithril/pull/828)), just pointed at `sharedassets0.assets` instead of a bundle, and matched by `m_Name` instead of by bundle-filename prefix. The on-disk format is identical — Texture2D + `DecodeTextureRaw` + write PNG. (For type-tree-stripped files like sharedassets, decoding the texture data requires either a Unity 6000.3 `classdata.tpk` loaded into `AssetsManager`, or a small hand-parse of the Texture2D binary layout — the probe's `rawnames` phase already proves the m_Name + byte offsets are readable; full PNG extraction is the small remaining engineering step.)
+
+**Why this matters in context**:
+
+- The icon-positions outcome remains negative — Silmarillion still can't pin landmarks onto the map until calibration is supplied by hand-author / Legolas / per-user click.
+- But once calibration *is* supplied, Silmarillion can render pins using PG's actual in-game icons (not generic placeholders or custom Mithril art), via the same texture-extraction pattern Mithril already uses for map PNGs.
+- This also tangentially feeds [issue #830](https://github.com/moumantai-gg/mithril/issues/830) (`Mithril.MapAssets` productionization) — that productionization can extract both the map textures and the per-landmark-type icons in one pass.
+
+**Why this didn't change the spike outcome**: the spike question was specifically scoped to per-area pixel-position data (`world → pixel` calibration), not to icon graphics. Finding the graphics doesn't tell you where to place them on the map, which remains the calibration question this spike concluded negatively on.
+
 ## Artifacts
 
 - Probe tool: [`tools/MapIconProbe/`](../../tools/MapIconProbe/) — runnable via `dotnet run --project tools/MapIconProbe -c Release -- <phase>`. Phases: `inventory`, `names`, `dumpbundle <substring>`, `ggm`, `scenes`, `strings`, `scanall <substring>`.

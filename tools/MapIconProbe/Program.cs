@@ -78,6 +78,27 @@ internal static class Program
                     return RunDumpBundle(bundlesDir, args[1]);
                 case "ggm":
                     return RunGgm(ggmPath);
+                case "scenetypes":
+                    if (args.Length < 2)
+                    {
+                        Console.WriteLine("usage: scenetypes <levelN>");
+                        return 2;
+                    }
+                    return RunSceneTypes(pgInstall, args[1]);
+                case "assetnames":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("usage: assetnames <fileName> <type>  (type: Texture2D, Sprite, MonoBehaviour, GameObject, ...)");
+                        return 2;
+                    }
+                    return RunAssetNames(pgInstall, args[1], args[2]);
+                case "rawnames":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("usage: rawnames <fileName> <type>  (raw byte read of m_Name from byteStart)");
+                        return 2;
+                    }
+                    return RunRawNames(pgInstall, args[1], args[2]);
                 case "scenes":
                     return RunScenes(pgInstall);
                 case "strings":
@@ -526,6 +547,105 @@ internal static class Program
             }
         }
         Console.WriteLine($"[scanall] {hits} files contain '{substring}'");
+        return 0;
+    }
+
+    private static int RunSceneTypes(string pgInstall, string levelName)
+    {
+        // Full type histogram for one scene (the `scenes` phase only printed
+        // the top 5). Used here to count Sprite/Texture2D in UI scenes.
+        var scenePath = Path.Combine(pgInstall, "WindowsPlayer_Data", levelName);
+        if (!File.Exists(scenePath)) { Console.WriteLine($"missing: {scenePath}"); return 1; }
+        var manager = new AssetsManager();
+        var inst = manager.LoadAssetsFile(scenePath, false);
+        if (inst?.file?.AssetInfos is null) return 1;
+        var hist = new SortedDictionary<string, int>();
+        foreach (var info in inst.file.AssetInfos)
+        {
+            var t = ((AssetClassID)info.TypeId).ToString();
+            hist[t] = hist.TryGetValue(t, out var c) ? c + 1 : 1;
+        }
+        Console.WriteLine($"[scenetypes] {Path.GetFileName(scenePath)}: {inst.file.AssetInfos.Count} total assets");
+        foreach (var kv in hist.OrderByDescending(kv => kv.Value))
+        {
+            Console.WriteLine($"  {kv.Key}: {kv.Value}");
+        }
+        return 0;
+    }
+
+    private static int RunAssetNames(string pgInstall, string fileName, string typeName)
+    {
+        // List every asset of `typeName` in <fileName> with its m_Name.
+        // Used to enumerate Sprite / Texture2D names in sharedassets<N> where
+        // the icon graphics actually live.
+        var path = Path.Combine(pgInstall, "WindowsPlayer_Data", fileName);
+        if (!File.Exists(path)) { Console.WriteLine($"missing: {path}"); return 1; }
+        var manager = new AssetsManager();
+        var inst = manager.LoadAssetsFile(path, false);
+        if (inst?.file?.AssetInfos is null) return 1;
+        if (!Enum.TryParse<AssetClassID>(typeName, out var targetType))
+        {
+            Console.WriteLine($"unknown type '{typeName}'");
+            return 2;
+        }
+        Console.WriteLine($"[assetnames] {Path.GetFileName(path)} type={typeName}");
+        var named = 0; var nameless = 0;
+        foreach (var info in inst.file.AssetInfos)
+        {
+            if ((AssetClassID)info.TypeId != targetType) continue;
+            var name = TryGetAssetName(manager, inst, info);
+            if (name is null) { nameless++; continue; }
+            named++;
+            Console.WriteLine($"  pathId={info.PathId}\tname={name}");
+        }
+        Console.WriteLine($"[assetnames] {named} named, {nameless} nameless");
+        return 0;
+    }
+
+    private static int RunRawNames(string pgInstall, string fileName, string typeName)
+    {
+        // Fallback for type-tree-stripped files: AssetsTools.NET still gives us
+        // each asset's byteOffset + typeId. For types that begin with `m_Name`
+        // (Texture2D, Sprite, MonoBehaviour, etc.), we can read the length-
+        // prefixed UTF-8 string from the asset's start position without any
+        // tpk. Tells us asset names so we can find icon sprites in
+        // sharedassets<N>.
+        var path = Path.Combine(pgInstall, "WindowsPlayer_Data", fileName);
+        if (!File.Exists(path)) { Console.WriteLine($"missing: {path}"); return 1; }
+        var manager = new AssetsManager();
+        var inst = manager.LoadAssetsFile(path, false);
+        if (inst?.file?.AssetInfos is null) return 1;
+        if (!Enum.TryParse<AssetClassID>(typeName, out var targetType))
+        {
+            Console.WriteLine($"unknown type '{typeName}'");
+            return 2;
+        }
+
+        var bytes = File.ReadAllBytes(path);
+        var dataStart = (int)inst.file.Header.DataOffset;
+        Console.WriteLine($"[rawnames] {Path.GetFileName(path)} dataOffset=0x{dataStart:X} type={typeName}");
+        var hit = 0;
+        foreach (var info in inst.file.AssetInfos)
+        {
+            if ((AssetClassID)info.TypeId != targetType) continue;
+            var off = dataStart + (int)info.ByteOffset;
+            if (off + 4 > bytes.Length) continue;
+            // First field is m_Name: int32 length (little-endian) + utf-8 bytes,
+            // then padded to 4-byte alignment.
+            int len = BitConverter.ToInt32(bytes, off);
+            if (len < 0 || len > 256 || off + 4 + len > bytes.Length)
+            {
+                continue;
+            }
+            string name = System.Text.Encoding.UTF8.GetString(bytes, off + 4, len);
+            // Sanity check: m_Name should only contain printable ASCII for our purposes.
+            bool clean = true;
+            foreach (var ch in name) { if (ch < 32 && ch != 0) { clean = false; break; } }
+            if (!clean) continue;
+            Console.WriteLine($"  pathId={info.PathId}\tname={name}");
+            hit++;
+        }
+        Console.WriteLine($"[rawnames] {hit} names emitted");
         return 0;
     }
 
