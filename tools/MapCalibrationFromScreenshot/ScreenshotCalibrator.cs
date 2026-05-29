@@ -413,10 +413,13 @@ internal static class ScreenshotCalibrator
             Console.WriteLine("[scale] templates already at render size; using native per-icon dimensions");
         }
 
-        // Final detection pass — at the chosen render size if a scale was
+        // Final detection pass — at the chosen render HEIGHT if a scale was
         // selected, otherwise each template at its native dimensions (no
-        // resize), which matters when icons have heterogeneous shapes like
-        // the synthetic self-test.
+        // resize). User-verified 2026-05-29 on Serbule: PG renders all icon
+        // categories at a fixed on-screen HEIGHT (~16 px), with width scaling
+        // proportionally per template's source aspect. Earlier "scale longest
+        // dim" was wrong for wider-than-tall templates like landmark_telepad
+        // (256×245), giving width=16 height=15 instead of width≈17 height=16.
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
         var raw = new List<(IconMeta, Detection, int, int)>();
         foreach (var (icon, gray, alpha) in templates)
@@ -428,9 +431,8 @@ internal static class ScreenshotCalibrator
             }
             else
             {
-                int aspect = Math.Max(gray.Width, gray.Height);
-                rw = Math.Max(1, gray.Width * chosenSize / aspect);
-                rh = Math.Max(1, gray.Height * chosenSize / aspect);
+                rh = chosenSize;
+                rw = Math.Max(1, gray.Width * chosenSize / gray.Height);
             }
             var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
             var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
@@ -497,9 +499,10 @@ internal static class ScreenshotCalibrator
             int templatesWithHits = 0;
             foreach (var (_, gray, alpha) in templates)
             {
-                int aspect = Math.Max(gray.Width, gray.Height);
-                int rw = Math.Max(1, gray.Width * target / aspect);
-                int rh = Math.Max(1, gray.Height * target / aspect);
+                // Height-based scaling per PG's render convention; see
+                // matching comment in the final detection-pass loop.
+                int rh = target;
+                int rw = Math.Max(1, gray.Width * target / gray.Height);
                 var grayD = ImageIo.Resize(gray, rw, rh);
                 var alphaD = ImageIo.Resize(alpha, rw, rh);
                 var top = NccTemplateMatch.FindBest(screenshot, grayD, alphaD, threshold);
