@@ -425,27 +425,24 @@ internal static class ScreenshotCalibrator
             Console.WriteLine("[scale] templates already at render size; using native per-icon dimensions");
         }
 
-        // Final detection pass. User-verified 2026-05-29 on Serbule that PG's
-        // map renderer scales every icon so its SMALLER source dimension lands
-        // at the target on-screen size (16 px for Serbule). The larger
-        // dimension is then proportional, so e.g. a 256×245 telepad lands at
-        // 17×16 (height = min = 16), and a 235×256 portal lands at 16×17
-        // (width = min = 16). "Fill the box, allow the longer dim to overflow"
-        // — opposite of "fit inside the box, the longer dim is the limit".
-        //
-        // This unifies all four icon categories under one global render-size
-        // param. Earlier height-based scaling only matched icons whose height
-        // was the smaller dim (pillar, telepad).
+        // Final detection pass. Scale templates so the LARGEST source dimension
+        // lands at the target render size. The "right" answer per visual
+        // verification is min-dim scaling (PG renders all icons so the smaller
+        // source dim = ~16 px), but empirical NCC behaviour on PG's noisy
+        // terrain prefers max-dim scaled templates: they retain more of the
+        // source asset's distinguishing detail and produce sharper NCC peaks
+        // even when the template is slightly larger than the rendered icon.
+        // Min-dim scaling (verified visually correct) consistently produced
+        // worse RANSAC convergence than max-dim across multiple render sizes
+        // — bilinear-resize artifact appears to dominate at small templates.
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
         var raw = new List<(IconMeta, Detection, int, int)>();
         foreach (var (icon, gray, alpha) in templates)
         {
             int rw, rh;
             // Per-icon override beats the global render-size rule entirely.
-            // Used when PG renders a sprite with an aspect ratio that doesn't
-            // match the source asset (e.g. landmark_npc on Serbule: source
-            // 236×256 but PG renders 17×16 — an aspect inversion that no
-            // proportional scaling can reach).
+            // Useful when PG renders a sprite with an aspect ratio that doesn't
+            // match the source asset (e.g. landmark_npc on Serbule).
             if (perIconOverrides.TryGetValue(icon.Name, out var forced))
             {
                 rw = forced.W; rh = forced.H;
@@ -457,9 +454,9 @@ internal static class ScreenshotCalibrator
             }
             else
             {
-                int minDim = Math.Min(gray.Width, gray.Height);
-                rw = Math.Max(1, gray.Width * chosenSize / minDim);
-                rh = Math.Max(1, gray.Height * chosenSize / minDim);
+                int maxDim = Math.Max(gray.Width, gray.Height);
+                rw = Math.Max(1, gray.Width * chosenSize / maxDim);
+                rh = Math.Max(1, gray.Height * chosenSize / maxDim);
             }
             var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
             var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
@@ -526,11 +523,10 @@ internal static class ScreenshotCalibrator
             int templatesWithHits = 0;
             foreach (var (_, gray, alpha) in templates)
             {
-                // Min-dim scaling per PG's render convention; see matching
-                // comment in the final detection-pass loop.
-                int minDim = Math.Min(gray.Width, gray.Height);
-                int rw = Math.Max(1, gray.Width * target / minDim);
-                int rh = Math.Max(1, gray.Height * target / minDim);
+                // Max-dim scaling — see matching comment in the final pass.
+                int maxDim = Math.Max(gray.Width, gray.Height);
+                int rw = Math.Max(1, gray.Width * target / maxDim);
+                int rh = Math.Max(1, gray.Height * target / maxDim);
                 var grayD = ImageIo.Resize(gray, rw, rh);
                 var alphaD = ImageIo.Resize(alpha, rw, rh);
                 var top = NccTemplateMatch.FindBest(screenshot, grayD, alphaD, threshold);
