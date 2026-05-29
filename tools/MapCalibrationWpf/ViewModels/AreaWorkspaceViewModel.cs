@@ -37,6 +37,8 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
 
     public ObservableCollection<RefViewModel> Refs { get; } = new();
 
+    public ObservableCollection<ProjectionMarkerViewModel> Projections { get; } = new();
+
     [ObservableProperty]
     private AreaCalibration? _calibration;
 
@@ -71,6 +73,7 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
             Calibration = null;
             SolverReadout.Calibration = null;
             foreach (var r in Refs) r.ResidualPx = null;
+            Projections.Clear();
             return;
         }
 
@@ -84,6 +87,7 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
         if (cal is null)
         {
             foreach (var r in Refs) r.ResidualPx = null;
+            Projections.Clear();
             return;
         }
 
@@ -94,7 +98,25 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
             var dy = projected.Y - r.TexturePixel.Y;
             r.ResidualPx = Math.Sqrt(dx * dx + dy * dy);
         }
+
+        RefreshProjections(cal);
     }
+
+    private void RefreshProjections(AreaCalibration cal)
+    {
+        Projections.Clear();
+        foreach (var item in Picker.AllItems)
+        {
+            var px = cal.WorldToWindow(item.World);
+            var refMatch = RefForLandmark(item);
+            Projections.Add(new ProjectionMarkerViewModel(item.Name, px, refMatch?.ResidualPx));
+        }
+    }
+
+    private RefViewModel? RefForLandmark(LandmarkPickerItem item) =>
+        Refs.FirstOrDefault(r =>
+            Math.Abs(r.World.X - item.World.X) < 1e-6
+            && Math.Abs(r.World.Z - item.World.Z) < 1e-6);
 
     public AreaWorkspaceViewModel(string area, PgInstallResolver installResolver)
     {

@@ -25,6 +25,10 @@
       <Setter Property="Canvas.Left" Value="{Binding TexturePixel.X}" />
       <Setter Property="Canvas.Top" Value="{Binding TexturePixel.Y}" />
     </Style>
+    <Style x:Key="ProjectionMarkerContainerStyle" TargetType="ContentPresenter">
+      <Setter Property="Canvas.Left" Value="{Binding TexturePixel.X}" />
+      <Setter Property="Canvas.Top" Value="{Binding TexturePixel.Y}" />
+    </Style>
   </UserControl.Resources>
   <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
     <Grid>
@@ -38,7 +42,8 @@
               MouseLeftButtonDown="OnCanvasLeftClick">
         <ItemsControl x:Name="RefsLayer"
                       ItemsSource="{Binding Refs}"
-                      ItemContainerStyle="{StaticResource RefMarkerContainerStyle}">
+                      ItemContainerStyle="{StaticResource RefMarkerContainerStyle}"
+                      IsHitTestVisible="False">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
               <!-- IsItemsHost on a Canvas — required for Canvas.Left/Top
@@ -62,12 +67,24 @@
             </DataTemplate>
           </ItemsControl.ItemTemplate>
         </ItemsControl>
-        <ItemsControl x:Name="ProjectionsLayer">
+        <ItemsControl x:Name="ProjectionsLayer"
+                      ItemsSource="{Binding Projections}"
+                      ItemContainerStyle="{StaticResource ProjectionMarkerContainerStyle}"
+                      IsHitTestVisible="False">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
               <Canvas IsItemsHost="True" />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <!-- 8-px filled ellipse centred on (0,0); the container's
+                   Canvas.Left/Top puts that centre at the projected pixel. -->
+              <Ellipse Width="8" Height="8" Margin="-4,-4,0,0"
+                       Fill="{Binding MarkerBrush}" Opacity="0.8"
+                       ToolTip="{Binding Name}" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
         </ItemsControl>
       </Canvas>
     </Grid>
