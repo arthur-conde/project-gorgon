@@ -13,14 +13,26 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// <c>tools/MapAssetSpike/Program.cs</c> — bundle filenames are lowercased,
 /// each bundle contains exactly one Texture2D, no tpk needed because bundles
 /// ship inline type trees.
+///
+/// <para>The extracted texture is rotated 180° to match the orientation PG
+/// uses to render the in-game map (verified 2026-05-29 for Serbule — the
+/// raw bundle texture is stored 180° from how it renders). The cached PNG
+/// is what downstream consumers expect to see, so the rotation belongs in
+/// the cache write rather than as a post-load step.</para>
 /// </summary>
 internal static class MapTextureExtractor
 {
+    // Bump when the extracted PNG bytes change in a way that requires
+    // re-extracting (e.g. the 180° rotation fix). Stored as a suffix on the
+    // filename; old files become orphans rather than getting silently
+    // overwritten on a stale cache.
+    private const int CacheFormatVersion = 2;
+
     public static string EnsureExtracted(string pgInstall, string mapDir, string area)
     {
         Directory.CreateDirectory(mapDir);
         var textureName = "Map_" + area;
-        var outPng = Path.Combine(mapDir, textureName + ".png");
+        var outPng = Path.Combine(mapDir, $"{textureName}.v{CacheFormatVersion}.png");
 
         var bundleDir = SteamInstall.ResolveAreaBundleDir(pgInstall);
         var bundlePath = FindBundleForArea(bundleDir, area);
@@ -120,6 +132,11 @@ internal static class MapTextureExtractor
             }
         }
         finally { bmp.UnlockBits(data); }
+        // PG's per-area bundle textures are stored 180° from the in-game map
+        // render orientation. Apply the rotation in-place before saving so the
+        // cached PNG matches what users see in PG and what downstream consumers
+        // (Mithril's MapAssets overlay) expect.
+        bmp.RotateFlip(RotateFlipType.Rotate180FlipNone);
         bmp.Save(outPath, ImageFormat.Png);
     }
 }

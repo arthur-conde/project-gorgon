@@ -95,11 +95,18 @@ internal sealed record CliArgs(
             }
         }
 
-        if (screenshot is null && phase is not (Phase.ExtractIcons or Phase.SelfTest))
+        // Only the full pipeline needs --screenshot. extract-icons and
+        // extract-map are cache-population modes; self-test synthesises its
+        // own inputs.
+        if (screenshot is null && phase is Phase.Full)
         {
-            Console.Error.WriteLine("--screenshot required (except --phase extract-icons / self-test)");
+            Console.Error.WriteLine("--screenshot required for --phase full");
             return null;
         }
+        // --area is needed whenever we touch area-specific data (the map
+        // bundle in extract-map; landmarks/npcs in the full pipeline).
+        // extract-icons (sharedassets0-wide) and self-test (synthetic area)
+        // don't need it.
         if (area is null && phase is not (Phase.ExtractIcons or Phase.SelfTest))
         {
             Console.Error.WriteLine("--area required (e.g. --area AreaSerbule)");
