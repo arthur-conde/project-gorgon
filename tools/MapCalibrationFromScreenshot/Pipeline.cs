@@ -63,6 +63,7 @@ internal static class Pipeline
             DetectionThreshold: args.DetectionThreshold,
             IconRenderSizeOverride: args.IconRenderSize,
             IconSizeOverrides: args.IconSizeOverrides,
+            ExcludedLandmarkTypes: args.ExcludedLandmarkTypes,
             DebugImagePath: args.DebugImagePath,
             ProjectionOverlayPath: args.ProjectionOverlayPath);
 
@@ -191,6 +192,7 @@ internal sealed record CalibrationInputs(
     double DetectionThreshold,
     int IconRenderSizeOverride,
     IReadOnlyDictionary<string, (int W, int H)> IconSizeOverrides,
+    IReadOnlySet<string> ExcludedLandmarkTypes,
     string? DebugImagePath,
     string? ProjectionOverlayPath);
 

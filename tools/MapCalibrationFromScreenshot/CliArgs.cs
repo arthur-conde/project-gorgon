@@ -24,6 +24,7 @@ internal sealed record CliArgs(
     double DetectionThreshold,
     int IconRenderSize,
     IReadOnlyDictionary<string, (int W, int H)> IconSizeOverrides,
+    IReadOnlySet<string> ExcludedLandmarkTypes,
     string? DebugImagePath,
     string? ProjectionOverlayPath,
     double Zoom,
@@ -48,6 +49,7 @@ internal sealed record CliArgs(
         double detectionThreshold = 0.5;
         int iconRenderSize = 0;  // 0 = auto-detect
         var iconSizeOverrides = new Dictionary<string, (int, int)>(StringComparer.Ordinal);
+        var excludedTypes = new HashSet<string>(StringComparer.Ordinal);
         string? debugImagePath = null;
         string? projectionOverlayPath = null;
         double zoom = 1.0;
@@ -82,6 +84,9 @@ internal sealed record CliArgs(
                 case "--icon-size":
                     var (iconName, iconWh) = ParseIconSize(Next(argv, ref i));
                     iconSizeOverrides[iconName] = iconWh;
+                    break;
+                case "--exclude-type":
+                    excludedTypes.Add(Next(argv, ref i));
                     break;
                 case "--debug-image":
                     debugImagePath = Next(argv, ref i);
@@ -139,6 +144,7 @@ internal sealed record CliArgs(
             DetectionThreshold: detectionThreshold,
             IconRenderSize: iconRenderSize,
             IconSizeOverrides: iconSizeOverrides,
+            ExcludedLandmarkTypes: excludedTypes,
             DebugImagePath: debugImagePath,
             ProjectionOverlayPath: projectionOverlayPath,
             Zoom: zoom,
@@ -243,6 +249,12 @@ internal sealed record CliArgs(
                                             a sprite with a different aspect than its source asset
                                             (verified for landmark_npc on Serbule — 17x16 vs 236x256
                                             source). Overrides --icon-render-size for that icon
+              --exclude-type <Type>         drop a landmark Type from the RANSAC pool entirely.
+                                            Repeatable. Use when a type's template doesn't match
+                                            PG's actual sprite (verified for Npc on Serbule — the
+                                            landmark_npc source asset is not what PG renders for
+                                            NPC pins, and including noisy NPC matches in the pool
+                                            misleads RANSAC into wrong-but-self-consistent fits)
               --debug-image <path>          write an annotated PNG: cyan rects mark every detection
                                             that cleared threshold, red crosses mark the pivot-
                                             corrected anchor, green rect outlines the map rect

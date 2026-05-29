@@ -156,6 +156,7 @@ internal static class SelfTest
             DetectionThreshold: 0.5,
             IconRenderSizeOverride: 0,
             IconSizeOverrides: new Dictionary<string, (int, int)>(),
+            ExcludedLandmarkTypes: new HashSet<string>(),
             DebugImagePath: null,
             ProjectionOverlayPath: null);
         var result = ScreenshotCalibrator.Calibrate(inputs);

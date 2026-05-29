@@ -89,6 +89,18 @@ internal static class ScreenshotCalibrator
         // Phase: detect every landmark icon variant and pair with landmarks.json.
         var (detectionsByType, rawDetections) = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold, inputs.IconRenderSizeOverride, inputs.IconSizeOverrides);
 
+        // Drop excluded landmark types from the pool BEFORE RANSAC sees them.
+        // Used when a template doesn't match PG's actual sprite — keeping its
+        // noisy matches in the pool misleads RANSAC into wrong-but-self-
+        // consistent calibrations (verified for Npc on Serbule v1).
+        foreach (var excluded in inputs.ExcludedLandmarkTypes)
+        {
+            if (detectionsByType.Remove(excluded))
+            {
+                Console.WriteLine($"[exclude] dropped landmark type '{excluded}' from RANSAC pool");
+            }
+        }
+
         if (debugBgra is not null)
         {
             // Mark every NCC detection that cleared threshold. Cyan rect = match
