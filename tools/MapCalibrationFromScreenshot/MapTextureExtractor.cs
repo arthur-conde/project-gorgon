@@ -23,10 +23,10 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 internal static class MapTextureExtractor
 {
     // Bump when the extracted PNG bytes change in a way that requires
-    // re-extracting (e.g. the 180° rotation fix). Stored as a suffix on the
+    // re-extracting (e.g. the orientation fix). Stored as a suffix on the
     // filename; old files become orphans rather than getting silently
     // overwritten on a stale cache.
-    private const int CacheFormatVersion = 2;
+    private const int CacheFormatVersion = 3;
 
     public static string EnsureExtracted(string pgInstall, string mapDir, string area)
     {
@@ -132,11 +132,12 @@ internal static class MapTextureExtractor
             }
         }
         finally { bmp.UnlockBits(data); }
-        // PG's per-area bundle textures are stored 180° from the in-game map
-        // render orientation. Apply the rotation in-place before saving so the
-        // cached PNG matches what users see in PG and what downstream consumers
-        // (Mithril's MapAssets overlay) expect.
-        bmp.RotateFlip(RotateFlipType.Rotate180FlipNone);
+        // PG's per-area bundle textures need an orientation fix to match the
+        // in-game map render. User-verified on Serbule (2026-05-29): horizontal
+        // flip (left↔right) — NOT a 180° rotation (which would also swap top↔
+        // bottom). The artist appears to have authored the texture mirrored
+        // along the east-west axis, and PG flips on render.
+        bmp.RotateFlip(RotateFlipType.RotateNoneFlipX);
         bmp.Save(outPath, ImageFormat.Png);
     }
 }
