@@ -86,8 +86,36 @@ internal static class ScreenshotCalibrator
             Console.WriteLine($"[locate] map at screenshot ({mapRect.OriginX},{mapRect.OriginY}) size {mapRect.Width}x{mapRect.Height} (score={mapRect.AutoDetectScore:0.000}, downsample={mapRect.SourceScaleFactor:0.00})");
         }
 
+        // Restrict NCC search to the visible map area. Without this the search
+        // covers the entire screenshot including UI chrome, producing
+        // guaranteed-noise detections that flood the RANSAC pool and crowd
+        // out real matches. Detection coords come out in cropped-image space;
+        // translate back to screenshot space by adding mapRect.Origin* before
+        // anything else looks at them.
+        var mapCrop = ImageIo.Crop(screenshotGray, mapRect.OriginX, mapRect.OriginY, mapRect.Width, mapRect.Height);
+        Console.WriteLine($"[detect] cropped screenshot to map area {mapCrop.Width}x{mapCrop.Height} for NCC");
+
         // Phase: detect every landmark icon variant and pair with landmarks.json.
-        var (detectionsByType, rawDetections) = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold, inputs.IconRenderSizeOverride, inputs.IconSizeOverrides);
+        var (detectionsByType, rawDetections) = DetectIconsByType(mapCrop, inputs.IconsDir, iconIndex, inputs.DetectionThreshold, inputs.IconRenderSizeOverride, inputs.IconSizeOverrides);
+
+        // Translate every detection from crop-space to screenshot-space so
+        // downstream (ScreenshotToTexture, debug image, projection overlay)
+        // sees consistent coordinates.
+        foreach (var typeDets in detectionsByType.Values)
+        {
+            for (int i = 0; i < typeDets.Count; i++)
+            {
+                var d = typeDets[i];
+                typeDets[i] = d with
+                {
+                    AnchorScreenshotX = d.AnchorScreenshotX + mapRect.OriginX,
+                    AnchorScreenshotY = d.AnchorScreenshotY + mapRect.OriginY,
+                };
+            }
+        }
+        rawDetections = rawDetections
+            .Select(t => (t.Icon, t.Det with { X = t.Det.X + mapRect.OriginX, Y = t.Det.Y + mapRect.OriginY, SubX = t.Det.SubX + mapRect.OriginX, SubY = t.Det.SubY + mapRect.OriginY }, t.RenderW, t.RenderH))
+            .ToList();
 
         // Drop excluded landmark types from the pool BEFORE RANSAC sees them.
         // Used when a template doesn't match PG's actual sprite — keeping its

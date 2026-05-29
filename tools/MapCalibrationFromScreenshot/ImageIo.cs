@@ -134,6 +134,28 @@ internal static class ImageIo
         return new GrayImage(newW, newH, dst);
     }
 
+    /// <summary>
+    /// Crops a rectangular region out of a gray image. Used to restrict NCC
+    /// to the visible map area when --map-rect is supplied, avoiding spurious
+    /// detections in the UI chrome around the map (every detection outside
+    /// the map-rect is guaranteed noise and competes with real matches in
+    /// the RANSAC pool).
+    /// </summary>
+    public static GrayImage Crop(GrayImage src, int x, int y, int w, int h)
+    {
+        if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > src.Width || y + h > src.Height)
+        {
+            throw new ArgumentOutOfRangeException(
+                $"crop ({x},{y},{w},{h}) out of bounds for image {src.Width}x{src.Height}");
+        }
+        var dst = new byte[w * h];
+        for (int row = 0; row < h; row++)
+        {
+            Buffer.BlockCopy(src.Pixels, (y + row) * src.Width + x, dst, row * w, w);
+        }
+        return new GrayImage(w, h, dst);
+    }
+
     /// <summary>Saves a grayscale image as a PNG (for debug/diagnostics).</summary>
     public static void SaveGrayPng(GrayImage img, string path)
     {
