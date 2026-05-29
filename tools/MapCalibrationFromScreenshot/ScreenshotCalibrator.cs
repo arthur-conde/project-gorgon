@@ -186,8 +186,8 @@ internal static class ScreenshotCalibrator
     private static (Dictionary<string, List<TypedDetection>> ByType, List<(IconMeta Icon, Detection Det, int RenderW, int RenderH)> Raw)
         DetectIconsByType(GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold)
     {
-        var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
-        var raw = new List<(IconMeta, Detection, int, int)>();
+        // Load every template once, gray + alpha pair.
+        var templates = new List<(IconMeta Icon, GrayImage Gray, GrayImage Alpha)>();
         foreach (var icon in iconIndex.Icons)
         {
             var iconPath = Path.Combine(iconsDir, icon.File);
@@ -197,70 +197,120 @@ internal static class ScreenshotCalibrator
                 continue;
             }
             var (gray, alpha) = ImageIo.LoadGrayAndAlpha(iconPath);
+            templates.Add((icon, gray, alpha));
+        }
 
-            // Scale selection. sharedassets0 ships icon artwork at ~256 px but
-            // PG renders them on the map at ~20-30 px (verified 2026-05-29).
-            // We need to downsample large templates to the rendered size for
-            // NCC to find anything. For small templates (e.g. the synthetic
-            // self-test's 24-32 px ones, or any future tool that pre-renders
-            // at a known size), no multi-scale is needed — just match at
-            // native size.
-            int aspect = Math.Max(gray.Width, gray.Height);
-            int[] renderTargets = aspect > 64
-                ? [12, 16, 20, 24, 30, 40, 56]   // big artwork: search a ladder
-                : [aspect];                       // already render-sized: single scale
-            var best = new List<(Detection Det, int RenderW, int RenderH, double Score)>();
-            foreach (var target in renderTargets)
-            {
-                if (target > aspect) continue;  // no upsampling
-                int rw = target == aspect ? gray.Width : Math.Max(1, gray.Width * target / aspect);
-                int rh = target == aspect ? gray.Height : Math.Max(1, gray.Height * target / aspect);
-                var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
-                var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
-                var hits = NccTemplateMatch.FindAll(screenshot, grayD, alphaD, threshold, maxResults: 64);
-                if (hits.Count == 0) continue;
-                Console.WriteLine($"  [icon] {icon.Name} @ {rw}x{rh} (target {target}): {hits.Count} detections >= {threshold:0.00} (top {hits[0].Score:0.000})");
-                foreach (var h in hits) best.Add((h, rw, rh, h.Score));
-            }
+        // Pick the global render size: PG renders all map icons at a single
+        // consistent on-screen pixel size regardless of source artwork
+        // dimensions (verified 2026-05-29 user observation). Treating each
+        // icon's best scale independently invites cross-scale inconsistency;
+        // a single shared render size gives consistent geometry to the solver.
+        //
+        // For large templates (artwork at sharedassets0's ~256 px), sweep a
+        // ladder of target on-screen sizes and pick the one that maximises
+        // aggregate evidence (sum of top scores across all icons). For small
+        // templates already at render size (e.g. self-test's 24-32 px synth),
+        // skip the sweep and use native — there's nothing to choose.
+        int maxTemplateDim = templates.Count == 0 ? 0 : templates.Max(t => Math.Max(t.Gray.Width, t.Gray.Height));
+        bool needsScaleSearch = maxTemplateDim > 64;
+        int chosenSize = needsScaleSearch
+            ? SelectGlobalRenderSize(screenshot, templates, [12, 16, 20, 24, 30, 40, 56], threshold)
+            : 0;  // 0 = use each template's native size
+        if (!needsScaleSearch)
+        {
+            Console.WriteLine("[scale] templates already at render size; using native per-icon dimensions");
+        }
 
-            // Cross-scale dedup: a single rendered icon may match at multiple
-            // adjacent scales (e.g. 16 and 20). Keep best score per spatial
-            // location (anchor within ~6 px of an existing kept detection).
-            best.Sort((a, b) => b.Score.CompareTo(a.Score));
-            var kept = new List<(Detection Det, int RenderW, int RenderH, double Score)>();
-            foreach (var entry in best)
+        // Final detection pass — at the chosen render size if a scale was
+        // selected, otherwise each template at its native dimensions (no
+        // resize), which matters when icons have heterogeneous shapes like
+        // the synthetic self-test.
+        var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
+        var raw = new List<(IconMeta, Detection, int, int)>();
+        foreach (var (icon, gray, alpha) in templates)
+        {
+            int rw, rh;
+            if (chosenSize == 0)
             {
-                var (cx, cy) = entry.Det.Centre(entry.RenderW, entry.RenderH);
-                bool dup = kept.Any(k =>
-                {
-                    var (kx, ky) = k.Det.Centre(k.RenderW, k.RenderH);
-                    return Math.Abs(cx - kx) < 6 && Math.Abs(cy - ky) < 6;
-                });
-                if (!dup) kept.Add(entry);
+                rw = gray.Width; rh = gray.Height;
             }
-            Console.WriteLine($"  [icon] {icon.Name}: {kept.Count} unique detections after cross-scale dedup" +
-                              (kept.Count > 0 ? $" (best score {kept[0].Score:0.000})" : ""));
-            if (kept.Count == 0) continue;
+            else
+            {
+                int aspect = Math.Max(gray.Width, gray.Height);
+                rw = Math.Max(1, gray.Width * chosenSize / aspect);
+                rh = Math.Max(1, gray.Height * chosenSize / aspect);
+            }
+            var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
+            var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
+            var hits = NccTemplateMatch.FindAll(screenshot, grayD, alphaD, threshold, maxResults: 64);
+            Console.WriteLine($"  [icon] {icon.Name} @ {rw}x{rh}: {hits.Count} detections >= {threshold:0.00}" +
+                              (hits.Count > 0 ? $" (top {hits[0].Score:0.000})" : ""));
+            if (hits.Count == 0) continue;
 
             if (!byType.TryGetValue(icon.LandmarkType, out var list))
             {
                 list = new List<TypedDetection>();
                 byType[icon.LandmarkType] = list;
             }
-            foreach (var entry in kept)
+            foreach (var h in hits)
             {
-                raw.Add((icon, entry.Det, entry.RenderW, entry.RenderH));
-                var (cx, cy) = entry.Det.Centre(entry.RenderW, entry.RenderH);
-                var anchorX = cx + entry.RenderW * (icon.PivotX - 0.5);
-                var anchorY = cy + entry.RenderH * (0.5 - icon.PivotY);
+                raw.Add((icon, h, rw, rh));
+                var (cx, cy) = h.Centre(rw, rh);
+                var anchorX = cx + rw * (icon.PivotX - 0.5);
+                var anchorY = cy + rh * (0.5 - icon.PivotY);
                 list.Add(new TypedDetection(
                     IconName: icon.Name,
                     AnchorScreenshotX: anchorX,
                     AnchorScreenshotY: anchorY,
-                    MatchScore: entry.Score));
+                    MatchScore: h.Score));
             }
         }
         return (byType, raw);
+    }
+
+    private static int SelectGlobalRenderSize(
+        GrayImage screenshot,
+        List<(IconMeta Icon, GrayImage Gray, GrayImage Alpha)> templates,
+        int[] candidates,
+        double threshold)
+    {
+        if (candidates.Length == 1)
+        {
+            Console.WriteLine($"[scale] single candidate {candidates[0]} px (templates already at render size)");
+            return candidates[0];
+        }
+
+        int best = candidates[0];
+        double bestEvidence = double.NegativeInfinity;
+        Console.WriteLine($"[scale] sweeping {candidates.Length} render-size candidates across {templates.Count} templates");
+        foreach (var target in candidates)
+        {
+            // Aggregate evidence at this candidate: sum of top score per icon
+            // (above threshold). Captures "this scale gives at least one good
+            // match per icon" without letting one super-matched icon dominate.
+            double evidence = 0;
+            int templatesWithHits = 0;
+            foreach (var (_, gray, alpha) in templates)
+            {
+                int aspect = Math.Max(gray.Width, gray.Height);
+                int rw = Math.Max(1, gray.Width * target / aspect);
+                int rh = Math.Max(1, gray.Height * target / aspect);
+                var grayD = ImageIo.Resize(gray, rw, rh);
+                var alphaD = ImageIo.Resize(alpha, rw, rh);
+                var top = NccTemplateMatch.FindBest(screenshot, grayD, alphaD, threshold);
+                if (top is null) continue;
+                evidence += top.Value.Score;
+                templatesWithHits++;
+            }
+            Console.WriteLine($"[scale]   target={target}  evidence={evidence:0.000}  templatesWithHits={templatesWithHits}/{templates.Count}");
+            if (evidence > bestEvidence)
+            {
+                bestEvidence = evidence;
+                best = target;
+            }
+        }
+        Console.WriteLine($"[scale] chose render size {best} px (aggregate evidence {bestEvidence:0.000})");
+        return best;
     }
 
     private static IReadOnlyList<AssignedReference> AssignAndScore(
