@@ -2,8 +2,10 @@ namespace Mithril.Tools.MapCalibrationWpf.ViewModels;
 
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Mithril.Tools.MapCalibration.Common;
 using Mithril.Tools.MapCalibrationWpf.Services;
+using Mithril.Tools.MapCalibrationWpf.Views;
 
 /// <summary>
 /// Top-level workspace VM: holds the area picker, instantiates a per-area
@@ -35,10 +37,43 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>
     /// True when the icon-templates cache is missing (no <c>index.json</c>
-    /// in the icons cache dir). Drives the Task 12 header-button visibility.
+    /// in the icons cache dir). Drives the header-button visibility.
+    /// Phase 1 surfaces this button so a user can prime the cache before
+    /// future phases (NCC live overlay, screenshot-bbox modality) need it.
     /// </summary>
     [ObservableProperty]
     private bool _iconTemplatesMissing;
+
+    [RelayCommand]
+    private async Task ExtractIconTemplatesAsync()
+    {
+        ExtractionProgressDialog? dialog = null;
+        try
+        {
+            dialog = new ExtractionProgressDialog("Preparing icon-template extraction…")
+            {
+                Owner = Application.Current?.MainWindow,
+            };
+            dialog.Show();
+
+            var bootstrap = new AssetBootstrapService(_installResolver);
+            var progress = new Progress<string>(msg => dialog?.UpdateStatus(msg));
+            await bootstrap.EnsureIconTemplatesAsync(progress).ConfigureAwait(true);
+            IconTemplatesMissing = AssetBootstrapService.AreIconTemplatesMissing();
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                ex.Message,
+                "Icon-template extraction failed",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            try { dialog?.Close(); } catch { /* dialog may have been closed already */ }
+        }
+    }
 
     partial void OnSelectedAreaChanged(string? value)
     {
