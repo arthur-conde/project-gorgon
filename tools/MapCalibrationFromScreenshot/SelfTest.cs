@@ -153,7 +153,8 @@ internal static class SelfTest
             Zoom: 1.0,
             PlayerCoord: (playerWorld.X, playerWorld.Z),
             MapRectOverride: null,
-            DetectionThreshold: 0.5);
+            DetectionThreshold: 0.5,
+            DebugImagePath: null);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 
         if (result.Calibration is null)

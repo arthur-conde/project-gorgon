@@ -60,7 +60,8 @@ internal static class Pipeline
             Zoom: args.Zoom,
             PlayerCoord: ResolvePlayerCoord(args),
             MapRectOverride: args.MapRect,
-            DetectionThreshold: args.DetectionThreshold);
+            DetectionThreshold: args.DetectionThreshold,
+            DebugImagePath: args.DebugImagePath);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
         if (result.Calibration is null)
@@ -177,7 +178,8 @@ internal sealed record CalibrationInputs(
     double Zoom,
     (double X, double Z)? PlayerCoord,
     (int X, int Y, int W, int H)? MapRectOverride,
-    double DetectionThreshold);
+    double DetectionThreshold,
+    string? DebugImagePath);
 
 internal sealed record AssignedReference(
     string Label,

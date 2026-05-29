@@ -155,6 +155,49 @@ internal static class ImageIo
         WriteBgra(bgra, width, height, path);
     }
 
+    /// <summary>Loads a PNG into a BGRA byte buffer for in-place annotation.</summary>
+    public static (byte[] Bgra, int Width, int Height) LoadBgra(string path) => ReadBgra(path);
+
+    /// <summary>
+    /// Draws a 1-px rectangle outline into a BGRA buffer at (x, y, w, h). Used
+    /// by the --debug-image mode to mark detected icon positions on a copy of
+    /// the input screenshot. Clipped to image bounds.
+    /// </summary>
+    public static void DrawRect(byte[] bgra, int imgW, int imgH, int x, int y, int w, int h, byte r, byte g, byte b)
+    {
+        void Pixel(int px, int py)
+        {
+            if (px < 0 || px >= imgW || py < 0 || py >= imgH) return;
+            int idx = (py * imgW + px) * 4;
+            bgra[idx + 0] = b;
+            bgra[idx + 1] = g;
+            bgra[idx + 2] = r;
+            bgra[idx + 3] = 255;
+        }
+        for (int dx = 0; dx < w; dx++) { Pixel(x + dx, y); Pixel(x + dx, y + h - 1); }
+        for (int dy = 0; dy < h; dy++) { Pixel(x, y + dy); Pixel(x + w - 1, y + dy); }
+    }
+
+    /// <summary>
+    /// Draws a filled cross (+) at (cx, cy) of half-length <paramref name="halfLen"/>
+    /// for marking anchor points. Used in conjunction with <see cref="DrawRect"/>
+    /// to show the pivot-corrected anchor inside the matched icon rect.
+    /// </summary>
+    public static void DrawCross(byte[] bgra, int imgW, int imgH, int cx, int cy, int halfLen, byte r, byte g, byte b)
+    {
+        void Pixel(int px, int py)
+        {
+            if (px < 0 || px >= imgW || py < 0 || py >= imgH) return;
+            int idx = (py * imgW + px) * 4;
+            bgra[idx + 0] = b;
+            bgra[idx + 1] = g;
+            bgra[idx + 2] = r;
+            bgra[idx + 3] = 255;
+        }
+        for (int dx = -halfLen; dx <= halfLen; dx++) Pixel(cx + dx, cy);
+        for (int dy = -halfLen; dy <= halfLen; dy++) Pixel(cx, cy + dy);
+    }
+
     private static (byte[] Bgra, int Width, int Height) ReadBgra(string path)
     {
         using var bmp = new Bitmap(path);

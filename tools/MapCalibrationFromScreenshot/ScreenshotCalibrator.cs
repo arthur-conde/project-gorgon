@@ -37,6 +37,13 @@ internal static class ScreenshotCalibrator
         var textureGray = ImageIo.LoadGray(inputs.AreaMapPath);
         Console.WriteLine($"[screenshot] {screenshotGray.Width}x{screenshotGray.Height} / texture {textureGray.Width}x{textureGray.Height}");
 
+        byte[]? debugBgra = null;
+        int debugW = 0, debugH = 0;
+        if (inputs.DebugImagePath is not null)
+        {
+            (debugBgra, debugW, debugH) = ImageIo.LoadBgra(inputs.ScreenshotPath);
+        }
+
         var iconIndex = IconTemplateExtractor.Load(inputs.IconsDir);
         var landmarks = LandmarksReader.LoadForArea(inputs.LandmarksJsonPath, inputs.Area);
         var npcs = NpcsReader.LoadForArea(inputs.NpcsJsonPath, inputs.Area);
@@ -81,7 +88,23 @@ internal static class ScreenshotCalibrator
 
         // Phase: detect every landmark icon variant and pair with landmarks.json.
         var assigned = new List<AssignedReference>();
-        var detectionsByType = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold);
+        var (detectionsByType, rawDetections) = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold);
+
+        if (debugBgra is not null)
+        {
+            // Mark every NCC detection that cleared threshold. Cyan rect = match
+            // bbox, red cross = pivot-corrected anchor (the pixel fed to solver).
+            // Lets the user eyeball whether NCC is even hitting real icons before
+            // tuning thresholds or assignment.
+            foreach (var (icon, det) in rawDetections)
+            {
+                ImageIo.DrawRect(debugBgra, debugW, debugH, det.X, det.Y, icon.Width, icon.Height, 0, 255, 255);
+                var (cx, cy) = det.Centre(icon.Width, icon.Height);
+                int ax = (int)Math.Round(cx + icon.Width * (icon.PivotX - 0.5));
+                int ay = (int)Math.Round(cy + icon.Height * (0.5 - icon.PivotY));
+                ImageIo.DrawCross(debugBgra, debugW, debugH, ax, ay, 4, 255, 0, 0);
+            }
+        }
 
         foreach (var typeGroup in detectionsByType)
         {
@@ -134,6 +157,16 @@ internal static class ScreenshotCalibrator
                 FailureReason: $"only {assigned.Count} reference(s) usable; solver needs >= 2. Detected {detectionsByType.Sum(kv => kv.Value.Count)} icons total but assignment culled to {assigned.Count}.");
         }
 
+        // Phase: write debug image if requested (regardless of solve success).
+        if (debugBgra is not null && inputs.DebugImagePath is not null)
+        {
+            // Map-rect outline in green so the user can see what the locator picked.
+            ImageIo.DrawRect(debugBgra, debugW, debugH, mapRect.OriginX, mapRect.OriginY,
+                mapRect.Width, mapRect.Height, 0, 255, 0);
+            ImageIo.SaveBgraPng(debugBgra, debugW, debugH, inputs.DebugImagePath);
+            Console.WriteLine($"[debug] annotated screenshot -> {inputs.DebugImagePath}");
+        }
+
         // Phase: solve.
         var refs = assigned
             .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
@@ -151,10 +184,11 @@ internal static class ScreenshotCalibrator
         return new CalibrationResult(cal, assigned, FailureReason: null);
     }
 
-    private static Dictionary<string, List<TypedDetection>> DetectIconsByType(
-        GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold)
+    private static (Dictionary<string, List<TypedDetection>> ByType, List<(IconMeta Icon, Detection Det)> Raw)
+        DetectIconsByType(GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold)
     {
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
+        var raw = new List<(IconMeta, Detection)>();
         foreach (var icon in iconIndex.Icons)
         {
             var iconPath = Path.Combine(iconsDir, icon.File);
@@ -176,6 +210,7 @@ internal static class ScreenshotCalibrator
             }
             foreach (var d in detections)
             {
+                raw.Add((icon, d));
                 var (cx, cy) = d.Centre(icon.Width, icon.Height);
                 var anchorX = cx + icon.Width * (icon.PivotX - 0.5);
                 var anchorY = cy + icon.Height * (0.5 - icon.PivotY);
@@ -186,7 +221,7 @@ internal static class ScreenshotCalibrator
                     MatchScore: d.Score));
             }
         }
-        return byType;
+        return (byType, raw);
     }
 
     private static IReadOnlyList<AssignedReference> AssignAndScore(

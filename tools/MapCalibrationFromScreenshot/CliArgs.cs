@@ -22,6 +22,7 @@ internal sealed record CliArgs(
     (double X, double Z)? PlayerCoord,
     (int X, int Y, int W, int H)? MapRect,
     double DetectionThreshold,
+    string? DebugImagePath,
     double Zoom,
     Phase Phase,
     bool DryRun)
@@ -42,6 +43,7 @@ internal sealed record CliArgs(
         (double, double)? playerCoord = null;
         (int, int, int, int)? mapRect = null;
         double detectionThreshold = 0.5;
+        string? debugImagePath = null;
         double zoom = 1.0;
         Phase phase = Phase.Full;
         bool dryRun = false;
@@ -67,6 +69,9 @@ internal sealed record CliArgs(
                     break;
                 case "--detection-threshold":
                     detectionThreshold = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
+                    break;
+                case "--debug-image":
+                    debugImagePath = Next(argv, ref i);
                     break;
                 case "--zoom":
                     zoom = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
@@ -109,6 +114,7 @@ internal sealed record CliArgs(
             PlayerCoord: playerCoord,
             MapRect: mapRect,
             DetectionThreshold: detectionThreshold,
+            DebugImagePath: debugImagePath,
             Zoom: zoom,
             Phase: phase,
             DryRun: dryRun);
@@ -184,6 +190,9 @@ internal sealed record CliArgs(
               --detection-threshold <0..1>  min NCC score to accept a template match (default 0.5).
                                             Lower (e.g. 0.3) when real-screenshot recall is low;
                                             higher (e.g. 0.7) when there are too many false positives
+              --debug-image <path>          write an annotated PNG: cyan rects mark every detection
+                                            that cleared threshold, red crosses mark the pivot-
+                                            corrected anchor, green rect outlines the map rect
 
             paths (sane defaults):
               --baseline    <baseline.json> default: src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json
