@@ -6,11 +6,26 @@
       OverlayCanvas needs Background="Transparent" to receive clicks. A null
       Background means clicks fall through to the Image underneath.
 
+    ItemContainerStyle gotcha (docs/wpf-gotchas.md §"ItemContainerStyle"):
+      Canvas.Left/Top is set on the ContentPresenter (= the generated item
+      container), NOT on the DataTemplate root. Set via ItemContainerStyle.
+
     Coordinate model (issue #860 §Decisions):
       Image is shown 1:1 via Stretch="None" so the canvas pixel directly equals
       the texture pixel. ScrollViewer handles the case where the texture
       exceeds the viewport.
   -->
+  <UserControl.Resources>
+    <!--
+      Marker offsets: each marker template renders centred on (0,0) in its
+      own coord space, so the ContentPresenter pulls Canvas.Left/Top from
+      TexturePixel.X / TexturePixel.Y directly.
+    -->
+    <Style x:Key="RefMarkerContainerStyle" TargetType="ContentPresenter">
+      <Setter Property="Canvas.Left" Value="{Binding TexturePixel.X}" />
+      <Setter Property="Canvas.Top" Value="{Binding TexturePixel.Y}" />
+    </Style>
+  </UserControl.Resources>
   <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
     <Grid>
       <Image x:Name="MapImage"
@@ -21,15 +36,31 @@
               Height="{Binding ActualHeight, ElementName=MapImage}"
               Background="Transparent"
               MouseLeftButtonDown="OnCanvasLeftClick">
-        <ItemsControl x:Name="RefsLayer">
+        <ItemsControl x:Name="RefsLayer"
+                      ItemsSource="{Binding Refs}"
+                      ItemContainerStyle="{StaticResource RefMarkerContainerStyle}">
           <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
-              <!-- IsItemsHost on a Canvas is the correct host for Canvas.Left/Top
-                   positioning (per WPF gotchas: a StackPanel here would silently
-                   ignore Canvas.Left/Top). -->
+              <!-- IsItemsHost on a Canvas — required for Canvas.Left/Top
+                   to take effect on the generated containers. A StackPanel
+                   here would silently ignore the positioning Setters. -->
               <Canvas IsItemsHost="True" />
             </ItemsPanelTemplate>
           </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate>
+              <!--
+                ✕ marker: two crossed lines centred on (0,0). The container's
+                Canvas.Left/Top puts that (0,0) at the texture pixel; the
+                lines extend ±6 px so the cross visually sits on the click.
+                Path Tag carries the name as a tooltip.
+              -->
+              <Grid Width="14" Height="14" Margin="-7,-7,0,0" ToolTip="{Binding Name}">
+                <Path Stroke="#E33" StrokeThickness="2"
+                      Data="M 1,1 L 13,13 M 13,1 L 1,13" />
+              </Grid>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
         </ItemsControl>
         <ItemsControl x:Name="ProjectionsLayer">
           <ItemsControl.ItemsPanel>

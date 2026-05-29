@@ -50,7 +50,20 @@
       </ContentControl>
     </Border>
     <Border Grid.Row="1" Grid.Column="2" BorderBrush="#888" BorderThickness="1,0,0,0">
-      <TextBlock Text="(ref table + solver readout)" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#888" />
+      <ContentControl Content="{Binding Workspace}">
+        <ContentControl.ContentTemplate>
+          <DataTemplate>
+            <Grid>
+              <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <views:RefTable Grid.Row="0" />
+              <!-- SolverReadout slot — Task 9 inserts the readout view here. -->
+            </Grid>
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
     </Border>
   </Grid>
 </Window>
