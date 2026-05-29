@@ -13,12 +13,14 @@ namespace Legolas.Rendering;
 /// <para>For now, the registration helper is exercised by Legolas tests so
 /// the renderer dispatch path runs end-to-end with the lifted drawers.</para>
 ///
-/// <para>Calibration drawer note: per the brief, calibration markers are
-/// currently drawn by a WPF <c>ItemsControl</c> (per the <c>#495</c>
-/// commentary in <see cref="PinSceneRenderer"/>) so there is no
-/// <c>PinSceneRenderer</c> branch to lift and no D2D source-of-truth to
-/// byte-parity-compare against. The calibration drawer ships in step 5
-/// when the calibration markers switch over.</para>
+/// <para>#835 step 5: the calibration drawer
+/// (<see cref="LegolasCalibrationMarkerDrawer"/>) joins the family. Today's
+/// calibration markers (Drop / Pair walkthrough) are also rendered by a WPF
+/// <c>ItemsControl</c> in <c>MapOverlayView.xaml</c>; the marker pipeline
+/// takes over for areas with a baseline calibration, the <c>ItemsControl</c>
+/// stays as the fallback for brand-new areas with no baseline
+/// (<c>WindowToWorld</c> can't convert the click pixel to a world coord
+/// without a baseline calibration).</para>
 /// </summary>
 public static class LegolasOverlayDrawerRegistrations
 {
@@ -36,5 +38,7 @@ public static class LegolasOverlayDrawerRegistrations
         renderer.RegisterDrawer<LegolasMotherlodeMarkerStyle>(LegolasMotherlodeMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasMotherlodeGuidanceMarkerStyle>(LegolasMotherlodeGuidanceMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasPlayerMarkerStyle>(LegolasPlayerMarkerDrawer.Draw);
+        // #835 step 5: calibration drawer joins.
+        renderer.RegisterDrawer<LegolasCalibrationMarkerStyle>(LegolasCalibrationMarkerDrawer.Draw);
     }
 }

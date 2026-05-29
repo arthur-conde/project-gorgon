@@ -71,6 +71,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         if (_areaCalibration is not null)
             _areaCalibration.Changed += (_, _) => NotifyMotherlodeGuidanceChanged();
         if (_pinCal is not null)
+        {
             _pinCal.PropertyChanged += (_, e) =>
             {
                 if (e.PropertyName is nameof(PinCalibrationCoordinator.IsPairing)
@@ -84,6 +85,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                     // is suppressed while the user is actively calibrating.
                     OnPropertyChanged(nameof(IsZoomFieldVisible));
                     OnPropertyChanged(nameof(IsZoomMismatchWarningVisible));
+                    // #835 step 5: IsPairing on/off gates the marker
+                    // pipeline — re-derive every calibration marker so the
+                    // registry mirrors the live phase.
+                    RefreshAllCalibrationMarkers();
                 }
                 else if (e.PropertyName is nameof(PinCalibrationCoordinator.PromptText))
                 {
@@ -94,6 +99,19 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                     OnPropertyChanged(nameof(HasSelectedCalibrationMarker));
                 }
             };
+
+            // #835 step 5: wire the placed-marker collection into the marker
+            // pipeline. New markers register on add, IsSelected/Pixel updates
+            // re-derive in place, removals (Clear / partial undo) unregister.
+            if (_pinCal.PlacedMarkers is { } placed)
+            {
+                placed.CollectionChanged += OnCalibrationMarkersChanged;
+                foreach (var m in placed)
+                {
+                    m.PropertyChanged += OnCalibrationMarkerPropertyChanged;
+                }
+            }
+        }
         if (_settings is not null)
         {
             _settings.PropertyChanged += (_, e) =>
@@ -1000,6 +1018,129 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         if (_markers is null) return;
         foreach (var h in _motherlodeMarkers) _markers.RemoveMarker(h);
         _motherlodeMarkers.Clear();
+    }
+
+    // ---- #835 step 5: Calibration marker registry plumbing -------------
+
+    // Calibration marker -> marker handle. Keyed on the VM (CalibrationMarker
+    // is an ObservableObject; identity is stable across pixel updates).
+    private readonly Dictionary<CalibrationMarker, MarkerHandle> _calibrationMarkers = new();
+
+    /// <summary>Register or refresh one calibration marker. Pixel -> world
+    /// conversion uses <see cref="IMapCalibrationService.WindowToWorld"/>;
+    /// when the area has no baseline (<c>WindowToWorld</c> returns null), the
+    /// marker stays unregistered and the legacy WPF <c>ItemsControl</c> in
+    /// <c>MapOverlayView.xaml</c> continues to render it. Areas without a
+    /// baseline are the only case where the walkthrough starts from scratch,
+    /// so the fallback path stays meaningful.</summary>
+    private void RefreshCalibrationMarker(CalibrationMarker marker)
+    {
+        if (_markers is null) return;
+
+        // Drop previous registration so style / pixel updates land as a
+        // remove+re-add. Calibration markers are placed during the walkthrough
+        // only — interaction rate is human-scale; the churn cost is fine.
+        if (_calibrationMarkers.Remove(marker, out var prev))
+        {
+            _markers.RemoveMarker(prev);
+        }
+
+        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey) return;
+        // Only register while the Pair phase is live — Drop captures right-
+        // clicks to the game, the marker rendering is meaningless then. The
+        // legacy ItemsControl mirrors this with its IsCalibrationCapturing
+        // Visibility binding.
+        if (_pinCal?.IsPairing != true) return;
+
+        // Convert click pixel -> world via the calibration service. Uses the
+        // baseline / community / pre-confirm refinement to anchor the world
+        // coord; subsequent calibration changes re-project the marker (this
+        // is more correct than today's pixel-frozen rendering).
+        if (_areaCalibration is null) return;
+        var cal = _areaCalibration.CurrentCalibration;
+        if (cal is null) return;
+        if (cal.WindowToWorld(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal)) is not { } world)
+            return;
+
+        var style = BuildCalibrationMarkerStyle(marker.IsSelected);
+        _calibrationMarkers[marker] = _markers.AddMarker(areaKey, world.X, world.Z, style);
+    }
+
+    private LegolasCalibrationMarkerStyle BuildCalibrationMarkerStyle(bool isSelected)
+    {
+        var s = CalibrationPinStyle;
+        var outerStyle = new PinLayerStyle(
+            Shape: s.Outer.Shape,
+            FillColor: ParseColor(s.Outer.FillColor),
+            StrokeColor: ParseColor(s.Outer.StrokeColor),
+            StrokeStyle: s.Outer.StrokeStyle,
+            StrokeThickness: s.Outer.StrokeThickness,
+            Size: s.Outer.Size);
+        var centerStyle = new PinLayerStyle(
+            Shape: s.Center.Shape,
+            FillColor: ParseColor(s.Center.FillColor),
+            StrokeColor: ParseColor(s.Center.StrokeColor),
+            StrokeStyle: s.Center.StrokeStyle,
+            StrokeThickness: s.Center.StrokeThickness,
+            Size: s.Center.Size);
+        return new LegolasCalibrationMarkerStyle(outerStyle, centerStyle, isSelected);
+    }
+
+    private void UnregisterCalibrationMarker(CalibrationMarker marker)
+    {
+        if (_markers is null) return;
+        if (_calibrationMarkers.Remove(marker, out var h))
+        {
+            _markers.RemoveMarker(h);
+        }
+    }
+
+    private void UnregisterAllCalibrationMarkers()
+    {
+        if (_markers is null) return;
+        foreach (var (_, h) in _calibrationMarkers) _markers.RemoveMarker(h);
+        _calibrationMarkers.Clear();
+    }
+
+    private void RefreshAllCalibrationMarkers()
+    {
+        if (_markers is null) return;
+        if (CalibrationMarkers is null) return;
+        foreach (var m in CalibrationMarkers) RefreshCalibrationMarker(m);
+    }
+
+    private void OnCalibrationMarkersChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+        {
+            foreach (CalibrationMarker m in e.NewItems)
+            {
+                m.PropertyChanged += OnCalibrationMarkerPropertyChanged;
+                RefreshCalibrationMarker(m);
+            }
+        }
+        if (e.OldItems is not null)
+        {
+            foreach (CalibrationMarker m in e.OldItems)
+            {
+                m.PropertyChanged -= OnCalibrationMarkerPropertyChanged;
+                UnregisterCalibrationMarker(m);
+            }
+        }
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            UnregisterAllCalibrationMarkers();
+        }
+    }
+
+    private void OnCalibrationMarkerPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not CalibrationMarker m) return;
+        if (e.PropertyName is nameof(CalibrationMarker.Pixel)
+                           or nameof(CalibrationMarker.IsSelected))
+        {
+            RefreshCalibrationMarker(m);
+        }
     }
 
     public ObservableCollection<SurveyItemViewModel> Surveys => _session.Surveys;
