@@ -78,6 +78,27 @@ public class NotifyPropertyChangedOptionsMonitorTests
     }
 
     [Fact]
+    public void Same_delegate_subscribed_twice_disposing_one_leaves_the_other()
+    {
+        // Standard C# multicast `-=` removes a single matching invocation entry,
+        // so subscribing the same delegate twice then disposing one subscription
+        // must leave one live registration. Lock in that behaviour.
+        var settings = new TelemetrySettings();
+        using var monitor = new NotifyPropertyChangedOptionsMonitor<TelemetrySettings>(settings);
+
+        var count = 0;
+        Action<TelemetrySettings, string?> handler = (_, _) => count++;
+        var sub1 = monitor.OnChange(handler);
+        using var sub2 = monitor.OnChange(handler);
+
+        sub1.Dispose();
+        settings.ServiceName = "x";
+
+        count.Should().Be(1,
+            "disposing one of two subscriptions of the same delegate must leave exactly one live registration.");
+    }
+
+    [Fact]
     public void Disposing_monitor_detaches_from_PropertyChanged()
     {
         var settings = new TelemetrySettings();

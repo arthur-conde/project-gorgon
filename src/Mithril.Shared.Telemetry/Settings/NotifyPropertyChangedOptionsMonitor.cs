@@ -43,6 +43,7 @@ public sealed class NotifyPropertyChangedOptionsMonitor<T> : IOptionsMonitor<T>,
     where T : class, INotifyPropertyChanged
 {
     private readonly T _instance;
+    // auto-event accessors give us thread-safe +=/-=; ?.Invoke reads the field into a temp.
     private event Action<T, string?>? _listeners;
 
     public NotifyPropertyChangedOptionsMonitor(T instance)
@@ -65,11 +66,13 @@ public sealed class NotifyPropertyChangedOptionsMonitor<T> : IOptionsMonitor<T>,
 
     private void OnPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        // IOptionsMonitor.OnChange listeners receive the value + the named
-        // options instance (null for the default unnamed options). We forward
-        // the changed property name in that slot so a listener can filter on
-        // it if it wants finer granularity, while still working for listeners
-        // that ignore the name.
+        // The IOptionsMonitor.OnChange second argument is the named-options name
+        // string (Options.DefaultName == ""), not an options instance. We
+        // repurpose this slot for the changed property name: standard MEL
+        // listeners that switch on the named-options name will receive the
+        // property name instead of Options.DefaultName — a deliberate convention
+        // deviation. Currently no in-repo consumer cares (they read CurrentValue),
+        // and it gives subscribers finer-grained filtering for free.
         _listeners?.Invoke(_instance, e.PropertyName);
     }
 

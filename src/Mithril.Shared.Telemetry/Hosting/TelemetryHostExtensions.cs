@@ -144,7 +144,7 @@ public static class TelemetryHostExtensions
         // save / in-place-mutation path (mithril#833). Endpoint/headers/protocol/
         // service-name remain restart-required regardless — the OTel exporter
         // bakes them at provider-build time and never re-reads (see the
-        // restart-required note below and NotifyPropertyChangedOptionsMonitor).
+        // hot-reload note in this type's XML doc and NotifyPropertyChangedOptionsMonitor).
         services.AddSingleton<IOptionsMonitor<TelemetrySettings>>(sp =>
             new NotifyPropertyChangedOptionsMonitor<TelemetrySettings>(sp.GetRequiredService<TelemetrySettings>()));
 
