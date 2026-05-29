@@ -157,10 +157,17 @@ internal static class Pipeline
     private static void PrintCalibrationSummary(AreaCalibration cal, IReadOnlyList<AssignedReference> refs)
     {
         Console.WriteLine($"[solve] residualPixels={cal.ResidualPixels:0.00}  scale={cal.Scale:0.0000} px/unit  rotation={cal.RotationRadians:0.000} rad  origin=({cal.OriginX:0.0},{cal.OriginY:0.0})  mirrorNorth={cal.MirrorNorth}");
-        Console.WriteLine($"[solve] {cal.ReferenceCount} references used:");
+        Console.WriteLine($"[solve] {cal.ReferenceCount} references used (per-inlier residual = distance from projected to detected pixel):");
         foreach (var r in refs)
         {
-            Console.WriteLine($"        {r.Label,-32} world=({r.WorldX:0.0},{r.WorldZ:0.0})  pixel=({r.PixelX:0.0},{r.PixelY:0.0})  score={r.MatchScore:0.000}");
+            // Per-inlier residual — reveals whether the RMS is dominated by a
+            // single outlier (suggesting iterative RANSAC would help) or evenly
+            // distributed across all inliers (suggesting PG's non-affine ceiling).
+            var projected = cal.WorldToWindow(new Mithril.MapCalibration.WorldCoord(r.WorldX, 0, r.WorldZ));
+            var dx = projected.X - r.PixelX;
+            var dy = projected.Y - r.PixelY;
+            var dist = Math.Sqrt(dx * dx + dy * dy);
+            Console.WriteLine($"        {r.Label,-50} world=({r.WorldX,7:0.0},{r.WorldZ,7:0.0})  pixel=({r.PixelX,7:0.0},{r.PixelY,7:0.0})  res={dist,5:0.00}px  score={r.MatchScore:0.000}");
         }
         if (cal.ResidualPixels >= 12.0)
         {
