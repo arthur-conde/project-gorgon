@@ -395,7 +395,13 @@ internal static class ScreenshotCalibrator
             }
             var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
             var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
-            var hits = NccTemplateMatch.FindAll(screenshot, grayD, alphaD, threshold, maxResults: 64);
+            // No maxResults cap: NCC at 19 px on a complex map finds 100s of
+            // above-threshold patches per template. A 64-cap by score loses
+            // real matches that score lower than a glut of false-positive
+            // teardrop-shaped terrain patches. RANSAC handles the noise
+            // gracefully (geometric consistency wins) but it needs the real
+            // matches to be IN the pool to consider them.
+            var hits = NccTemplateMatch.FindAll(screenshot, grayD, alphaD, threshold, maxResults: null);
             Console.WriteLine($"  [icon] {icon.Name} @ {rw}x{rh}: {hits.Count} detections >= {threshold:0.00}" +
                               (hits.Count > 0 ? $" (top {hits[0].Score:0.000})" : ""));
             if (hits.Count == 0) continue;
