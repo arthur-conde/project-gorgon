@@ -77,25 +77,30 @@ public sealed class MarkerSceneRendererTests
         call1.Should().Be(0);
         call2.Should().Be(1);
     }
-/// <summary>B2: concurrent RegisterDrawer + Render must never throw and
-    /// must never lose a registration. Hammer N threads of registration
-    /// against a render loop running on the test thread.</summary>
+    /// <summary>B2 + F4: concurrent RegisterDrawer + Render must never throw,
+    /// must never lose a registration, AND must make actual render progress
+    /// (the drawer body must be invoked). The progress assertion guards
+    /// against a refactor where Render silently no-ops under contention
+    /// (e.g. always missing the dictionary lookup) — without it the test
+    /// would pass purely by not throwing.</summary>
     [Fact]
-    public async Task Concurrent_RegisterDrawer_and_Render_do_not_throw()
+    public async Task Concurrent_RegisterDrawer_and_Render_do_not_throw_and_dispatch_progresses()
     {
         var renderer = new MarkerSceneRenderer();
         var marker = new[] { (new PixelPoint(0, 0), (IMarkerStyle)new StyleA()) };
         var stop = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+        var drawerInvocations = 0;
 
         var register = Task.Run(() =>
         {
-            var i = 0;
             while (!stop.IsCancellationRequested)
             {
-                // Re-register the StyleA drawer in a tight loop. Each iteration
-                // also flips a side counter so we can verify SOMETHING ran.
-                var n = i++;
-                renderer.RegisterDrawer<StyleA>((_, _, _, _, _) => { });
+                // Re-register the StyleA drawer in a tight loop with a body
+                // that Interlocked-increments a counter. Subsequent
+                // registrations replace the previous drawer (per the renderer
+                // contract); whichever generation is live when Render dispatches
+                // still hits the same counter.
+                renderer.RegisterDrawer<StyleA>((_, _, _, _, _) => Interlocked.Increment(ref drawerInvocations));
             }
         });
         var render = Task.Run(() =>
@@ -108,5 +113,8 @@ public sealed class MarkerSceneRendererTests
 
         await Task.WhenAll(register, render);
         renderer.HasAnyDrawer.Should().BeTrue();
+        drawerInvocations.Should().BeGreaterThan(0,
+            "Render must have dispatched to the registered drawer at least once during the contention window — "
+            + "if zero, Render silently no-op'd (concurrent-dictionary lookup miss under contention, or similar)");
     }
 }

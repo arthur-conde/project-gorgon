@@ -75,7 +75,14 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     private string? _statusMessage;
     private bool _firstFrameLogged;
     private string? _lastSeenUncalibratedArea;
-    private readonly HashSet<string> _projectionMissAreasLogged = new(StringComparer.Ordinal);
+    // ConcurrentDictionary mirrors the MarkerSceneRenderer._missingDrawerLogged
+    // pattern: today this field is touched only from the dispatcher (via
+    // OnSurfaceRender → ProjectMarkers), but nothing in the type signature
+    // encodes that, and a future cross-thread caller would race silently on a
+    // plain HashSet. TryAdd is lock-free, so the per-tick cost stays a hashed
+    // lookup.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _projectionMissAreasLogged
+        = new(StringComparer.Ordinal);
     private bool _disposed;
 
     public OverlayWindowService(
@@ -184,7 +191,53 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     private void OnWindowClosed(object? sender, EventArgs e)
     {
         SetReady(false);
-        _logger?.LogInformation("OverlayWindow closed.");
+
+        // External-close defensive cleanup.
+        //
+        // The internal teardown path (DisposeWindow → Close closure) detaches
+        // this handler *before* calling window.Close(), so reaching this method
+        // with _window still non-null means a caller violated the
+        // IOverlayWindow.Window remarks ("Forbidden: Window.Close()") and
+        // closed the window directly. Without this branch the surface +
+        // brush cache would leak until IHostedService.StopAsync eventually
+        // fires Dispose.
+        //
+        // Runs on the dispatcher (Closed fires there); safe to call the same
+        // cleanup body the internal closure runs.
+        if (_window is not null)
+        {
+            _logger?.LogWarning(
+                "OverlayWindow closed externally — IOverlayWindow.Window.Close() is forbidden per the contract; the host owns teardown. Disposing surface + brush cache as a defensive measure.");
+            CleanupAfterClose(_window);
+        }
+        else
+        {
+            _logger?.LogInformation("OverlayWindow closed.");
+        }
+    }
+
+    /// <summary>Shared cleanup body for the close path. Runs on the dispatcher.
+    /// Symmetric with the closure inside <see cref="DisposeWindow"/> &#8212;
+    /// detach the surface Render handler, dispose the surface, dispose the
+    /// brush cache, null out <see cref="_window"/>. <see cref="OnWindowClosed"/>
+    /// is detached separately (the internal path detaches before calling
+    /// Close; the external path needs the handler intact to reach this method
+    /// in the first place, and the detach happens implicitly when
+    /// <see cref="_window"/> goes out of scope).</summary>
+    private void CleanupAfterClose(OverlayWindow window)
+    {
+        // Render is the only handler we attached besides Closed itself. Surface
+        // detach can race a final render tick (the surface unhooks
+        // CompositionTarget.Rendering on Unloaded), but the surface dispose
+        // below covers either ordering.
+        try { window.OverlaySurface.Render -= OnSurfaceRender; } catch (Exception ex)
+        {
+            _logger?.LogTrace(ex, "OverlayWindow.OverlaySurface.Render detach threw during close cleanup; surface likely already torn down.");
+        }
+        try { window.OverlaySurface.Dispose(); }
+        catch (ObjectDisposedException) { /* idempotent dispose */ }
+        _brushCache.Dispose();
+        _window = null;
     }
 
     private void OnSurfaceRender(object? sender, D2DRenderEventArgs e)
@@ -291,7 +344,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
                 {
                     MithrilMeters.Overlay.ProjectionMisses.Add(1,
                         new KeyValuePair<string, object?>("area", areaKey));
-                    if (onMiss._projectionMissAreasLogged.Add(areaKey))
+                    if (onMiss._projectionMissAreasLogged.TryAdd(areaKey, 0))
                     {
                         onMiss._logger?.LogTrace(
                             "OverlayWindowService: WorldToWindow returned null for a marker in calibrated area {AreaKey} (style={StyleType}); marker silently skipped.",
@@ -349,9 +402,10 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
 
         void Close()
         {
-            // Event detaches cannot throw under the contracts above; let any
-            // genuine bug surface instead of swallowing it.
-            window.OverlaySurface.Render -= OnSurfaceRender;
+            // Detach OnWindowClosed FIRST so window.Close() below doesn't
+            // re-trigger the external-close defensive branch. Render is
+            // detached inside CleanupAfterClose. Event detaches cannot throw
+            // under the contracts above; let any genuine bug surface.
             window.Closed -= OnWindowClosed;
 
             try { window.Close(); }
@@ -359,10 +413,7 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             {
                 _logger?.LogTrace(ex, "OverlayWindow.Close threw — already closed or in non-closeable state; ignoring.");
             }
-            try { window.OverlaySurface.Dispose(); }
-            catch (ObjectDisposedException) { /* idempotent dispose */ }
-            _brushCache.Dispose();
-            _window = null;
+            CleanupAfterClose(window);
             SetReady(false);
         }
 
