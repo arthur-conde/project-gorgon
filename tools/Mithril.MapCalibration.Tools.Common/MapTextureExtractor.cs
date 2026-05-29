@@ -5,7 +5,7 @@ using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Pulls the <c>Map_&lt;Area&gt;</c> Texture2D out of its per-area Addressables
@@ -20,7 +20,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// is what downstream consumers expect to see, so the rotation belongs in
 /// the cache write rather than as a post-load step.</para>
 /// </summary>
-internal static class MapTextureExtractor
+public static class MapTextureExtractor
 {
     // Bump when the extracted PNG bytes change in a way that requires
     // re-extracting (e.g. the orientation fix). Stored as a suffix on the

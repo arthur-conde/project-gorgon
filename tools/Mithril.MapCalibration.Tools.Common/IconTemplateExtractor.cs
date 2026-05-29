@@ -6,7 +6,7 @@ using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Extracts the named landmark + player-pin icon Texture2Ds from
@@ -16,17 +16,17 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 ///
 /// <para>The pivot is load-bearing: PG's landmark icons are teardrop-shaped and
 /// anchored at the bottom tip (pivot ≈ (0.5, 0)), not the centre. Template-match
-/// returns the icon centre; the world-anchor pixel is centre + (w*(pivot.x-0.5),
-/// h*(0.5-pivot.y)) — see <see cref="ScreenshotCalibrator"/>. Without this
-/// correction every landmark drifts by ~icon-height/2, blowing the 12 px residual
-/// threshold systematically (issue #852 comment).</para>
+/// returns the icon centre; the consumer recovers the world-anchor pixel as
+/// centre + (w*(pivot.x-0.5), h*(0.5-pivot.y)). Without this correction every
+/// landmark drifts by ~icon-height/2, blowing the 12 px residual threshold
+/// systematically (issue #852 comment).</para>
 ///
 /// <para>sharedassets0.assets is type-tree-stripped, so AssetsTools.NET can't
 /// decode <c>m_Pivot</c> without a Unity 6000.3 <c>classdata.tpk</c> loaded via
 /// <see cref="AssetsManager.LoadClassPackage"/>. The user supplies that — the
 /// tool errors with the download URL if missing.</para>
 /// </summary>
-internal static class IconTemplateExtractor
+public static class IconTemplateExtractor
 {
     // Bump when the extracted PNG bytes or sidecar shape change in a way that
     // requires re-extracting from sharedassets0.assets (e.g., the vertical-flip
@@ -254,7 +254,7 @@ internal static class IconTemplateExtractor
         // icon. NCC against a screenshot is shape-matching — if templates are
         // upside-down vs rendered icons, scores collapse and detection fails.
         // The Sprite.m_Pivot we cache alongside is in Unity Y-up coords; the
-        // formula in ScreenshotCalibrator (`h * (0.5 - pivotY)`) is written
+        // downstream pivot-correction formula (`h * (0.5 - pivotY)`) is written
         // against right-side-up rendered icons + Unity-Y-up pivot, so flipping
         // here keeps the pivot interpretation correct.
         int rowBytes = width * 4;
@@ -326,9 +326,9 @@ internal static class IconTemplateExtractor
     }
 }
 
-internal sealed record IconIndex(int Version, List<IconMeta> Icons);
+public sealed record IconIndex(int Version, List<IconMeta> Icons);
 
-internal sealed record IconMeta(
+public sealed record IconMeta(
     string Name,
     string File,
     int Width,

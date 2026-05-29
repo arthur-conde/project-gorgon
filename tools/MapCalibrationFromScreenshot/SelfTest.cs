@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Mithril.MapCalibration;
+using Mithril.Tools.MapCalibration.Common;
 
 namespace Mithril.Tools.MapCalibrationFromScreenshot;
 

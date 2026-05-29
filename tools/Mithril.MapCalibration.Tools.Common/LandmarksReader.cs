@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Mithril.MapCalibration;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Reads the subset of <c>landmarks.json</c> we need: per-area list of
@@ -10,7 +10,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// the solver — no point in dragging the whole reference-data project graph
 /// into this tool's build.
 /// </summary>
-internal static class LandmarksReader
+public static class LandmarksReader
 {
     public static IReadOnlyList<LandmarkRef> LoadForArea(string landmarksJsonPath, string area)
     {
@@ -41,4 +41,4 @@ internal static class LandmarksReader
     }
 }
 
-internal sealed record LandmarkRef(string Type, string Name, WorldCoord World);
+public sealed record LandmarkRef(string Type, string Name, WorldCoord World);

@@ -1,0 +1,21 @@
+<Solution>
+  <!--
+    Focused solution for the offline map-calibration tool family, kept separate
+    from Mithril.slnx on purpose: the tool projects opt out of the repo's central
+    package management + Directory.Build.targets so their AssetsTools.NET /
+    System.Drawing deps stay out of the main build/test/CI loop. Open this to
+    work on the CLI + shared lib (and, later, the WPF workspace) together.
+
+    src/Mithril.MapCalibration (the solver lib both tools ProjectReference) is
+    listed so a solution-level Release build maps it to Release too — a P2P
+    reference to a project outside the solution would otherwise build Debug.
+    It also lives in Mithril.slnx; multi-solution membership is fine.
+  -->
+  <Folder Name="/src/">
+    <Project Path="../src/Mithril.MapCalibration/Mithril.MapCalibration.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="Mithril.MapCalibration.Tools.Common/Mithril.MapCalibration.Tools.Common.csproj" />
+    <Project Path="MapCalibrationFromScreenshot/MapCalibrationFromScreenshot.csproj" />
+  </Folder>
+</Solution>

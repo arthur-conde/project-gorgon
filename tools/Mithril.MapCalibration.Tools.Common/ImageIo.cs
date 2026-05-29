@@ -2,7 +2,7 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Loads PNGs into <see cref="GrayImage"/> form for NCC consumption.
@@ -10,7 +10,7 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// <see cref="MapTextureExtractor"/> and <see cref="IconTemplateExtractor"/>;
 /// pure Windows desktop tool, no cross-platform concern.
 /// </summary>
-internal static class ImageIo
+public static class ImageIo
 {
     /// <summary>Loads a PNG as a grayscale image (ITU-R BT.601 luma).</summary>
     public static GrayImage LoadGray(string path)

@@ -1,14 +1,14 @@
 using System.Text;
 using Microsoft.Win32;
 
-namespace Mithril.Tools.MapCalibrationFromScreenshot;
+namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
 /// Locates the user's Steam install and the Project Gorgon application directory.
 /// Lifted from <c>tools/MapAssetSpike/Program.cs</c>; PG ships as Steam AppID 342940.
 /// Verified once at startup so subsequent code can assume the paths exist.
 /// </summary>
-internal static class SteamInstall
+public static class SteamInstall
 {
     private const int PgAppId = 342940;
 
