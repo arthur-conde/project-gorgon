@@ -413,13 +413,17 @@ internal static class ScreenshotCalibrator
             Console.WriteLine("[scale] templates already at render size; using native per-icon dimensions");
         }
 
-        // Final detection pass — at the chosen render HEIGHT if a scale was
-        // selected, otherwise each template at its native dimensions (no
-        // resize). User-verified 2026-05-29 on Serbule: PG renders all icon
-        // categories at a fixed on-screen HEIGHT (~16 px), with width scaling
-        // proportionally per template's source aspect. Earlier "scale longest
-        // dim" was wrong for wider-than-tall templates like landmark_telepad
-        // (256×245), giving width=16 height=15 instead of width≈17 height=16.
+        // Final detection pass. User-verified 2026-05-29 on Serbule that PG's
+        // map renderer scales every icon so its SMALLER source dimension lands
+        // at the target on-screen size (16 px for Serbule). The larger
+        // dimension is then proportional, so e.g. a 256×245 telepad lands at
+        // 17×16 (height = min = 16), and a 235×256 portal lands at 16×17
+        // (width = min = 16). "Fill the box, allow the longer dim to overflow"
+        // — opposite of "fit inside the box, the longer dim is the limit".
+        //
+        // This unifies all four icon categories under one global render-size
+        // param. Earlier height-based scaling only matched icons whose height
+        // was the smaller dim (pillar, telepad).
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
         var raw = new List<(IconMeta, Detection, int, int)>();
         foreach (var (icon, gray, alpha) in templates)
@@ -431,8 +435,9 @@ internal static class ScreenshotCalibrator
             }
             else
             {
-                rh = chosenSize;
-                rw = Math.Max(1, gray.Width * chosenSize / gray.Height);
+                int minDim = Math.Min(gray.Width, gray.Height);
+                rw = Math.Max(1, gray.Width * chosenSize / minDim);
+                rh = Math.Max(1, gray.Height * chosenSize / minDim);
             }
             var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
             var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
@@ -499,10 +504,11 @@ internal static class ScreenshotCalibrator
             int templatesWithHits = 0;
             foreach (var (_, gray, alpha) in templates)
             {
-                // Height-based scaling per PG's render convention; see
-                // matching comment in the final detection-pass loop.
-                int rh = target;
-                int rw = Math.Max(1, gray.Width * target / gray.Height);
+                // Min-dim scaling per PG's render convention; see matching
+                // comment in the final detection-pass loop.
+                int minDim = Math.Min(gray.Width, gray.Height);
+                int rw = Math.Max(1, gray.Width * target / minDim);
+                int rh = Math.Max(1, gray.Height * target / minDim);
                 var grayD = ImageIo.Resize(gray, rw, rh);
                 var alphaD = ImageIo.Resize(alpha, rw, rh);
                 var top = NccTemplateMatch.FindBest(screenshot, grayD, alphaD, threshold);
