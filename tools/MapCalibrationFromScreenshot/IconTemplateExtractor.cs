@@ -28,6 +28,13 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// </summary>
 internal static class IconTemplateExtractor
 {
+    // Bump when the extracted PNG bytes or sidecar shape change in a way that
+    // requires re-extracting from sharedassets0.assets (e.g., the vertical-flip
+    // fix changed icon orientation). Stored in index.json; mismatch with the
+    // cached value forces a full re-extract.
+    private const int CacheFormatVersion = 2;
+
+
     // Listed in spike doc §"Tangential positive". Maps to landmarks.json Type
     // discriminator (or "Player"/"Pet" for the player-self pins).
     private static readonly (string TextureName, string LandmarkType)[] LandmarkIcons =
@@ -55,17 +62,26 @@ internal static class IconTemplateExtractor
         var indexPath = Path.Combine(iconsDir, "index.json");
         if (File.Exists(indexPath))
         {
-            // Cheap freshness check: re-extract only if the source file has changed
-            // since the cache was last written.
+            // Freshness: re-extract when (a) sharedassets0 has been touched
+            // (PG patch) or (b) the cached format version is behind the current
+            // extractor (e.g., the orientation-flip fix changed PNG bytes).
             var sharedAssetsPath = SteamInstall.ResolveSharedAssets0(pgInstall);
             var srcMtime = File.GetLastWriteTimeUtc(sharedAssetsPath);
             var cacheMtime = File.GetLastWriteTimeUtc(indexPath);
-            if (cacheMtime >= srcMtime)
+            int cachedVersion = TryReadCachedFormatVersion(indexPath);
+            if (cacheMtime >= srcMtime && cachedVersion == CacheFormatVersion)
             {
-                Console.WriteLine($"[icons] cache fresh in {iconsDir} (skipping extract)");
+                Console.WriteLine($"[icons] cache fresh in {iconsDir} (v{cachedVersion}, skipping extract)");
                 return;
             }
-            Console.WriteLine($"[icons] cache stale (PG patched since {cacheMtime:s}); re-extracting");
+            if (cachedVersion != CacheFormatVersion)
+            {
+                Console.WriteLine($"[icons] cache format v{cachedVersion} != current v{CacheFormatVersion}; re-extracting");
+            }
+            else
+            {
+                Console.WriteLine($"[icons] cache stale (PG patched since {cacheMtime:s}); re-extracting");
+            }
         }
 
         if (!File.Exists(tpkPath))
@@ -259,13 +275,28 @@ internal static class IconTemplateExtractor
 
     private static void WriteIndex(string indexPath, List<IconMeta> icons)
     {
-        var doc = new IconIndex(1, icons);
+        var doc = new IconIndex(CacheFormatVersion, icons);
         var json = JsonSerializer.Serialize(doc, new JsonSerializerOptions
         {
             WriteIndented = true,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         });
         File.WriteAllText(indexPath, json);
+    }
+
+    private static int TryReadCachedFormatVersion(string indexPath)
+    {
+        try
+        {
+            using var stream = File.OpenRead(indexPath);
+            using var doc = JsonDocument.Parse(stream);
+            if (doc.RootElement.TryGetProperty("version", out var v) && v.ValueKind == JsonValueKind.Number)
+            {
+                return v.GetInt32();
+            }
+        }
+        catch { /* malformed or missing — caller treats as version mismatch */ }
+        return -1;
     }
 
     public static IconIndex Load(string iconsDir)
