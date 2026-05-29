@@ -75,6 +75,23 @@ internal sealed class MarkerSceneRenderer
     /// for diagnostics.</summary>
     internal int DrawerCount => _drawers.Count;
 
+    /// <summary>
+    /// True iff a drawer is registered for the exact concrete style type
+    /// <typeparamref name="TStyle"/>. Internal helper used by Legolas's
+    /// drawer-registration tests so they can verify each style type is wired
+    /// individually (a raw <see cref="DrawerCount"/> check would pass even
+    /// if one type were double-registered and another silently dropped).
+    ///
+    /// <para>TEMPORARY (#835 migration window): exposed for the Legolas
+    /// drawer-set composition tests. When step 6 retires Legolas's
+    /// own-renderer fallback path, the test surface owner becomes
+    /// <c>Mithril.Overlay.Tests</c> which already has internal access — this
+    /// accessor can stay or shrink to <c>private</c>, whichever the
+    /// then-canonical tests prefer.</para>
+    /// </summary>
+    internal bool IsRegistered<TStyle>() where TStyle : IMarkerStyle
+        => _drawers.ContainsKey(typeof(TStyle));
+
     /// <summary>Render one frame's projected markers. Each marker's style
     /// type is looked up in the drawer registry; misses are silently
     /// skipped (with a trace log on first encounter per type, plus a

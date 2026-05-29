@@ -6,6 +6,14 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
+    <!-- TEMPORARY (#835 migration step 2): Legolas.Tests reaches
+         LegolasOverlayDrawerRegistrations.RegisterAll (internal because the
+         MarkerSceneRenderer parameter is itself Mithril.Overlay-internal).
+         REMOVE in step 3 when production wiring lives behind a public
+         entry point. -->
+    <InternalsVisibleTo Include="Legolas.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />

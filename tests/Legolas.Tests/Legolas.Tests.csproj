@@ -5,12 +5,27 @@
     <IsPackable>false</IsPackable>
     <RootNamespace>Legolas.Tests</RootNamespace>
     <NoWarn>$(NoWarn);CS0618</NoWarn>
+    <!-- HeadlessD2DRenderTarget uses unsafe pointer arithmetic on the mapped
+         D3D11 staging texture (RowPitch may exceed width*4 due to driver
+         alignment; safe Marshal.Copy needs the row base pointer). Scoped to
+         the test assembly; production code stays safe-only. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!-- #835 R-C1 (iteration 2): [SkippableFact]/[SkippableTheory] + Skip.If
+         for the headless-D3D11 gate in LegolasMarkerDrawerSnapshotTests.
+         xunit 2.x has no built-in Skip; the runner reports Skipped (not
+         Failed) when Skip.If throws this package's marker exception. -->
+    <PackageReference Include="Xunit.SkippableFact" />
     <PackageReference Include="FluentAssertions" />
+    <!-- #835 step 2: snapshot tests render through Direct2D + D3D11 to a
+         headless RT, then byte-compare the encoded PNG against the
+         PinSceneRenderer baseline. -->
+    <PackageReference Include="Vortice.Direct2D1" />
+    <PackageReference Include="Vortice.Direct3D11" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />

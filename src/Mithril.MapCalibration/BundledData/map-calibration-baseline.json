@@ -1,5 +1,15 @@
 {
   "$schema": "https://moumantai-gg.github.io/mithril/map-calibration-baseline-v1.json",
   "schemaVersion": 1,
-  "anchors": {}
+  "anchors": {
+    "AreaSerbule": {
+      "scale": 0.8225888770409359,
+      "rotationRadians": 7.088147823900868E-05,
+      "originX": -159.67286441908084,
+      "originY": 2271.6816745475235,
+      "referenceCount": 8,
+      "residualPixels": 0.3030622255943075,
+      "source": "BundledBaseline"
+    }
+  }
 }
