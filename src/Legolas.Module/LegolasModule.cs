@@ -14,6 +14,7 @@ using Legolas.Diagnostics;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Hotkeys;
+using Legolas.Rendering;
 using Legolas.Services;
 using Legolas.Sharing;
 using Legolas.ViewModels;
@@ -210,6 +211,15 @@ public sealed class LegolasModule : IMithrilModule
 
         services.AddHostedService<OverlayController>();
         services.AddHostedService<AutoOverlayCoordinator>();
+
+        // #835 step 3: register the Legolas-side IMarkerStyle drawers with the
+        // shared MarkerSceneRenderer (lives in Mithril.Overlay). The hosted
+        // service runs once on host start, plugs Survey/Motherlode/Motherlode-
+        // guidance/Player/Calibration drawers in, then idles. Any later
+        // IWorldOverlayMarkers.AddMarker call from Legolas finds a drawer for
+        // these style types. (The calibration drawer is added in step 5 when
+        // calibration markers switch to the marker API.)
+        services.AddHostedService<LegolasOverlayDrawerHostedService>();
 
         services.AddSingleton<IHotkeyCommand, StartSessionCommand>();
         services.AddSingleton<IHotkeyCommand, MarkCurrentCollectedCommand>();

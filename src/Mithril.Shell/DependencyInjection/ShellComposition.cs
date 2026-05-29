@@ -8,6 +8,7 @@ using Arda.Wpf;
 using Arda.World.Chat;
 using Arda.World.Player;
 using Mithril.MapCalibration.DependencyInjection;
+using Mithril.Overlay.DependencyInjection;
 using Mithril.Shared.Audio;
 using Mithril.Shared.Character;
 using Mithril.Shared.DependencyInjection;
@@ -94,6 +95,15 @@ public static class ShellComposition
             .AddMithrilReferenceData(o.ReferenceCacheDir)
             .AddMithrilCommunityCalibration(o.CommunityCalibrationCacheDir)
             .AddMithrilMapCalibration(o.MapCalibrationDir)
+            // #835 step 3: wires Mithril.Overlay's shared overlay window
+            // (IOverlayWindow), marker registry (IWorldOverlayMarkers), and
+            // MarkerSceneRenderer. Consumer modules (Legolas today, Gwaihir
+            // tomorrow) plug drawers at activation; the window is materialised
+            // lazily on first IOverlayWindow.Window access — production
+            // visibility is still owned by Legolas's OverlayController +
+            // MapOverlayView during migration steps 3–5 (step 6 retires
+            // MapOverlayView and the new window becomes the canonical surface).
+            .AddMithrilOverlay()
             .AddMithrilIcons(o.IconCacheDir)
             .AddMithrilAudio()
             .AddMithrilHotkeys()
