@@ -26,7 +26,7 @@ internal static class MapTextureExtractor
     // re-extracting (e.g. the orientation fix). Stored as a suffix on the
     // filename; old files become orphans rather than getting silently
     // overwritten on a stale cache.
-    private const int CacheFormatVersion = 3;
+    private const int CacheFormatVersion = 4;
 
     public static string EnsureExtracted(string pgInstall, string mapDir, string area)
     {
@@ -132,12 +132,15 @@ internal static class MapTextureExtractor
             }
         }
         finally { bmp.UnlockBits(data); }
-        // PG's per-area bundle textures need an orientation fix to match the
-        // in-game map render. User-verified on Serbule (2026-05-29): horizontal
-        // flip (left↔right) — NOT a 180° rotation (which would also swap top↔
-        // bottom). The artist appears to have authored the texture mirrored
-        // along the east-west axis, and PG flips on render.
-        bmp.RotateFlip(RotateFlipType.RotateNoneFlipX);
+        // PG's per-area bundle textures are stored mirrored across the X axis
+        // (= top↔bottom vertical flip = Unity Y-up storage convention) from
+        // the in-game map render. Apply the flip on save so the cached PNG
+        // matches what users see in PG.
+        //
+        // System.Drawing naming gotcha: RotateNoneFlipY is the correct enum —
+        // "FlipY" flips the Y coordinate (top↔bottom), i.e. mirrors ACROSS
+        // the X axis. RotateNoneFlipX would be the opposite (left↔right).
+        bmp.RotateFlip(RotateFlipType.RotateNoneFlipY);
         bmp.Save(outPath, ImageFormat.Png);
     }
 }
