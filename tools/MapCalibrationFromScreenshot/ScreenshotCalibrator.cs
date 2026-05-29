@@ -264,13 +264,25 @@ internal static class ScreenshotCalibrator
                     PixelY: e.Ty,
                     MatchScore: e.Det.MatchScore));
             }
+            // Reject geometrically-degenerate inlier sets: if every inlier is
+            // at the SAME small region of the texture (e.g. an edge-artifact
+            // cluster where NCC false-positives at noisy small scales),
+            // any pairing through them yields a trivial-but-meaningless fit
+            // (tiny scale collapses world coords to a point). Require the
+            // bounding box of detected pixels to span at least 100 px in the
+            // larger dim — a real area calibration must cover meaningful
+            // ground.
+            if (inliers.Count < 2) continue;
+            double minX = inliers.Min(a => a.PixelX), maxX = inliers.Max(a => a.PixelX);
+            double minY = inliers.Min(a => a.PixelY), maxY = inliers.Max(a => a.PixelY);
+            if (Math.Max(maxX - minX, maxY - minY) < 100) continue;
+
             // Score the candidate: prefer more inliers, but tie-break by the
             // refit residual over those inliers. A "wrong" seed can collect
-            // inliers within the 50 px window by chance — the refit over those
-            // mis-paired points yields a high residual, while a "correct" seed
-            // with the same inlier count refits to near-zero residual. The
-            // residual-aware selection lets the correct seed beat the wrong one.
-            if (inliers.Count < 2) continue;
+            // inliers within the threshold window by chance — the refit over
+            // those mis-paired points yields a high residual, while a
+            // "correct" seed with the same inlier count refits to near-zero
+            // residual.
             var refitRefs = inliers
                 .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
                 .ToList();
