@@ -159,7 +159,12 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetService<IDomainEventSubscriber>(),
                 sp.GetService<IAreaCalibrationService>(),
                 sp.GetService<MotherlodeMeasurementCoordinator>(),
-                sp.GetService<ICharacterPinAnchor>()));
+                sp.GetService<ICharacterPinAnchor>(),
+                // #835 step 3: route Survey/Motherlode/calibration pins
+                // through the shared overlay marker registry. Optional so
+                // tests using the simpler ctors still build.
+                sp.GetService<Mithril.Overlay.IWorldOverlayMarkers>(),
+                sp.GetService<IAreaState>()));
         services.AddSingleton<InventoryGridSettingsViewModel>();
         services.AddSingleton<MotherlodeViewModel>();
         services.AddSingleton<NudgePadViewModel>();

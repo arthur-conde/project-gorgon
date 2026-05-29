@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Media;
 using Arda.Contracts;
 using Arda.World.Player;
 using Arda.World.Player.Events;
@@ -11,6 +12,7 @@ using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Rendering;
 using Legolas.Services;
+using Mithril.Overlay;
 
 namespace Legolas.ViewModels;
 
@@ -29,13 +31,27 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     private readonly ICharacterPinAnchor? _characterPin;
     private readonly IDisposable? _positionSub;
 
+    // #835 step 3: shared Mithril.Overlay marker registry. Survey pins are
+    // additionally registered as IWorldOverlayMarkers entries so the new
+    // overlay pipeline can render them; the legacy PinSceneRenderer path
+    // remains the visible production overlay until step 6 retires
+    // MapOverlayView. Optional — null in tests using the simpler ctor.
+    private readonly IWorldOverlayMarkers? _markers;
+    private readonly IAreaState? _areaState;
+
+    // Survey → marker handle map. Keyed on the VM (stable per pin) so a
+    // Survey.Model 'with' replace doesn't churn the dictionary. Reads + writes
+    // run on the WPF dispatcher (CollectionChanged + PropertyChanged fire
+    // there), so no extra locking needed.
+    private readonly Dictionary<SurveyItemViewModel, MarkerHandle> _surveyMarkers = new();
+
     // Cached latest position event — IPositionState has X/Y/Z but no timestamp/source.
     private TrackerFix? _latestTrackerFix;
 
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null)
     {
         _session = session;
         _projector = projector;
@@ -48,6 +64,8 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _areaCalibration = areaCalibration;
         _motherlode = motherlode;
         _characterPin = characterPin;
+        _markers = markers;
+        _areaState = areaState;
         if (_motherlode is not null)
             _motherlode.Changed += () => PostToUi(NotifyMotherlodeGuidanceChanged);
         if (_areaCalibration is not null)
@@ -98,6 +116,13 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _session.Surveys.CollectionChanged += OnSurveysCollectionChanged;
         _session.PropertyChanged += (_, e) =>
         {
+            // #835 step 3: selection drives active-pin treatment. Re-derive
+            // markers for both the previously-selected and newly-selected pin
+            // so the active treatment lands on the right one.
+            if (e.PropertyName is nameof(SessionState.SelectedSurvey))
+            {
+                RefreshAllSurveyMarkers();
+            }
             if (e.PropertyName is nameof(SessionState.PlayerPosition))
             {
                 OnPropertyChanged(nameof(PlayerPosition));
@@ -184,6 +209,10 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
                 OnPropertyChanged(nameof(IsOverlayHintVisible));
                 SetPositionCommand.NotifyCanExecuteChanged();
                 CancelSetPositionCommand.NotifyCanExecuteChanged();
+                // #835 step 3: FSM Listening⇄other gates the active-pin
+                // treatment in the existing MapOverlayView path. Mirror that
+                // in the marker pipeline by re-deriving styles.
+                RefreshAllSurveyMarkers();
             }
         };
 
@@ -732,6 +761,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             foreach (SurveyItemViewModel s in e.NewItems)
             {
                 s.PropertyChanged += OnSurveyPropertyChanged;
+                RegisterSurveyMarker(s);
             }
         }
         if (e.OldItems is not null)
@@ -739,7 +769,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             foreach (SurveyItemViewModel s in e.OldItems)
             {
                 s.PropertyChanged -= OnSurveyPropertyChanged;
+                UnregisterSurveyMarker(s);
             }
+        }
+        // A Reset (e.g. SessionState.ClearSurveys) reports no OldItems but
+        // the collection is now empty. Drop any markers still in the map.
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            UnregisterAllSurveyMarkers();
         }
         RebuildRouteGeometry();
         RebuildAllWedges();
@@ -750,7 +787,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         if (e.PropertyName is nameof(SurveyItemViewModel.Model))
         {
             RebuildRouteGeometry();
-            if (sender is SurveyItemViewModel s) RebuildWedgeFor(s);
+            if (sender is SurveyItemViewModel s)
+            {
+                RebuildWedgeFor(s);
+                // #835 step 3: a Model swap can flip Collected/Skipped/World
+                // — re-derive the marker so the registry mirrors current
+                // visibility + position.
+                RefreshSurveyMarker(s);
+            }
         }
         else if (e.PropertyName is nameof(SurveyItemViewModel.IsActiveTarget))
         {
@@ -759,6 +803,127 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             RebuildActiveSegment();
         }
     }
+
+    // ---- #835 step 3: Survey marker registry plumbing -------------------
+
+    /// <summary>Register or refresh the marker for a single Survey. Removes
+    /// any prior registration so style swaps (active treatment, fill-swap)
+    /// land via remove+re-add — preserves the insertion-order semantics that
+    /// <c>PinSceneRenderer</c>'s "active pin last" rule depends on (when the
+    /// active pin is re-registered last, it renders last in the marker list
+    /// and its halo sits on top of neighbours). No-op when the marker
+    /// registry isn't wired (tests using the simpler ctor) or when the survey
+    /// has no absolute world coord / area key (legacy relative pins).</summary>
+    private void RegisterSurveyMarker(SurveyItemViewModel s)
+    {
+        if (_markers is null) return;
+        UnregisterSurveyMarker(s);
+
+        // Skip pins that should not render: collected/skipped, no world coord,
+        // no current area. The legacy PinSceneRenderer path applies the same
+        // visibility filter via SurveyItemViewModel.IsVisible.
+        if (!s.IsVisible) return;
+        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey) return;
+        if (s.Model.World is not { } world) return;
+
+        var style = BuildSurveyMarkerStyle(s);
+        var handle = _markers.AddMarker(areaKey, world.X, world.Z, style);
+        _surveyMarkers[s] = handle;
+    }
+
+    /// <summary>Drop the marker for a single Survey if registered.</summary>
+    private void UnregisterSurveyMarker(SurveyItemViewModel s)
+    {
+        if (_markers is null) return;
+        if (_surveyMarkers.Remove(s, out var handle))
+        {
+            _markers.RemoveMarker(handle);
+        }
+    }
+
+    /// <summary>Drop every registered Survey marker. Called on a Reset
+    /// CollectionChanged (e.g. <see cref="SessionState.ClearSurveys"/>) so
+    /// the registry doesn't leak stale handles into the next area's session.</summary>
+    private void UnregisterAllSurveyMarkers()
+    {
+        if (_markers is null) return;
+        foreach (var (_, handle) in _surveyMarkers)
+        {
+            _markers.RemoveMarker(handle);
+        }
+        _surveyMarkers.Clear();
+    }
+
+    /// <summary>Refresh a single survey marker — used when its
+    /// <see cref="SurveyItemViewModel.Model"/> swaps. Idempotent for the
+    /// "no change" case (the remove+re-add does churn one handle, which is
+    /// acceptable because Model swaps are user-driven, not per-frame).</summary>
+    private void RefreshSurveyMarker(SurveyItemViewModel s)
+    {
+        if (_markers is null) return;
+        // Remove-then-re-add covers every possible transition uniformly:
+        // collected/skipped → unregister; uncollected → re-register; active
+        // selection flipped → re-add with the new style at end-of-list to
+        // mirror PinSceneRenderer's active-last ordering.
+        RegisterSurveyMarker(s);
+    }
+
+    /// <summary>Re-derive every survey marker. Cheaper than tearing the
+    /// whole list down — only the selected pin's style is actually
+    /// changing in the active-treatment case — but
+    /// <see cref="IWorldOverlayMarkers.UpdateMarker"/> doesn't accept a style
+    /// swap, so a full refresh is the simplest correct path. Called on
+    /// SelectedSurvey / FSM state flips.</summary>
+    private void RefreshAllSurveyMarkers()
+    {
+        if (_markers is null) return;
+        foreach (var s in Surveys)
+        {
+            RegisterSurveyMarker(s);
+        }
+    }
+
+    /// <summary>Build the marker style for a Survey. Mirrors the
+    /// <c>MapOverlayView.OnMapSurfaceRender</c> branch that builds
+    /// <c>PinScene.SurveyOuter/Center/SurveyOuterDiameter</c> +
+    /// <c>ActivePinIndex</c>/<c>ActiveTreatment</c>, so byte parity with
+    /// <c>PinSceneRenderer</c>'s output via the new
+    /// <see cref="LegolasSurveyMarkerDrawer"/> holds.</summary>
+    private LegolasSurveyMarkerStyle BuildSurveyMarkerStyle(SurveyItemViewModel s)
+    {
+        var pinStyle = PinStyle;
+        var outerStyle = new PinLayerStyle(
+            Shape: pinStyle.Outer.Shape,
+            FillColor: ParseColor(pinStyle.Outer.FillColor),
+            StrokeColor: ParseColor(pinStyle.Outer.StrokeColor),
+            StrokeStyle: pinStyle.Outer.StrokeStyle,
+            StrokeThickness: pinStyle.Outer.StrokeThickness,
+            // Survey outer Size is unused (driven by SurveyPinRadiusMetres).
+            Size: 0);
+        var centerStyle = new PinLayerStyle(
+            Shape: pinStyle.Center.Shape,
+            FillColor: ParseColor(pinStyle.Center.FillColor),
+            StrokeColor: ParseColor(pinStyle.Center.StrokeColor),
+            StrokeStyle: pinStyle.Center.StrokeStyle,
+            StrokeThickness: pinStyle.Center.StrokeThickness,
+            Size: pinStyle.Center.Size);
+
+        ActivePinTreatmentSpec? activeSpec = null;
+        if (IsListening && ReferenceEquals(s, _session.SelectedSurvey))
+        {
+            var aps = ActivePinStyle;
+            activeSpec = new ActivePinTreatmentSpec(
+                Treatment: aps.Treatment,
+                Color: ParseColor(aps.Color),
+                HaloPaddingPx: aps.HaloPaddingPx,
+                StrokeThickness: aps.HaloThickness,
+                GlowBlurRadius: aps.GlowBlurRadius);
+        }
+
+        return new LegolasSurveyMarkerStyle(outerStyle, centerStyle, PinDiameter, activeSpec);
+    }
+
+    private static Color ParseColor(string hex) => LegolasBrushes.Parse(hex);
 
     public ObservableCollection<SurveyItemViewModel> Surveys => _session.Surveys;
 
