@@ -171,18 +171,59 @@ internal static class NccTemplateMatch
                         if (scores[nx, ny] > s) { isLocalMax = false; break; }
                     }
                 }
-                if (isLocalMax) hits.Add(new Detection(sx, sy, s));
+                if (!isLocalMax) continue;
+
+                // Sub-pixel refinement: fit a 1D parabola through the 3 scores
+                // straddling the peak on each axis and take its analytical max.
+                // For y = ax² + bx + c through s(-1), s(0), s(+1):
+                //   sub-pixel offset = (s_left - s_right) / (2 * (s_left - 2 s_centre + s_right))
+                // Drops integer-pixel error (~1-2 px RMS) to ~0.1-0.5 px,
+                // which dominates the calibration residual in real screenshots.
+                // Skip refinement at search edges + when the neighborhood is
+                // flat (denominator near zero → no defined peak).
+                double subX = sx;
+                double subY = sy;
+                if (sx > 0 && sx < sw - 1)
+                {
+                    double sl = scores[sx - 1, sy], sc = s, sr = scores[sx + 1, sy];
+                    double denom = sl - 2 * sc + sr;
+                    if (Math.Abs(denom) > 1e-9)
+                    {
+                        double off = (sl - sr) / (2 * denom);
+                        if (off > -1 && off < 1) subX = sx + off;
+                    }
+                }
+                if (sy > 0 && sy < sh - 1)
+                {
+                    double su = scores[sx, sy - 1], sc = s, sd = scores[sx, sy + 1];
+                    double denom = su - 2 * sc + sd;
+                    if (Math.Abs(denom) > 1e-9)
+                    {
+                        double off = (su - sd) / (2 * denom);
+                        if (off > -1 && off < 1) subY = sy + off;
+                    }
+                }
+
+                hits.Add(new Detection(sx, sy, s, subX, subY));
             }
         }
         return hits;
     }
 }
 
-/// <summary>Detection result: top-left pixel of the match rect + NCC score.</summary>
-internal readonly record struct Detection(int X, int Y, double Score)
+/// <summary>
+/// Detection result: integer-pixel top-left of the match rect + NCC score,
+/// plus the sub-pixel-refined position via parabolic interpolation around the
+/// score peak (X/Y if refinement was skipped, e.g. at a search edge).
+/// Downstream consumers should prefer <see cref="Centre"/> which uses the
+/// sub-pixel values automatically.
+/// </summary>
+internal readonly record struct Detection(int X, int Y, double Score, double SubX, double SubY)
 {
+    public Detection(int x, int y, double score) : this(x, y, score, x, y) { }
+
     public (double Cx, double Cy) Centre(int templateWidth, int templateHeight) =>
-        (X + templateWidth / 2.0, Y + templateHeight / 2.0);
+        (SubX + templateWidth / 2.0, SubY + templateHeight / 2.0);
 }
 
 /// <summary>
