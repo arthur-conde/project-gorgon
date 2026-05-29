@@ -214,6 +214,15 @@ public sealed class LegolasModule : IMithrilModule
         services.Replace(ServiceDescriptor.Singleton<IHotkeyGate>(
             sp => sp.GetRequiredService<ForegroundFocusGate>()));
 
+        // #835 step 6: override the platform's default FixedOverlayZoomSource(1.0)
+        // with Legolas's adapter so the shared overlay's projection driver +
+        // IOverlaySceneContext.Project read the live in-game zoom that the
+        // title-bar slider drives (SessionState.CurrentMapZoom). Replace
+        // (not TryAdd) so this wins regardless of registration order with
+        // Mithril.Overlay's AddMithrilOverlay extension.
+        services.Replace(ServiceDescriptor.Singleton<Mithril.Overlay.IOverlayZoomSource>(
+            sp => new LegolasOverlayZoomSource(sp.GetRequiredService<SessionState>())));
+
         services.AddHostedService<OverlayController>();
         services.AddHostedService<AutoOverlayCoordinator>();
 

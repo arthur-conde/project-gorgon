@@ -2,19 +2,28 @@ using System.Windows.Media;
 using Vortice.Direct2D1;
 using Color4 = Vortice.Mathematics.Color4;
 
-namespace Mithril.Overlay.Internal;
+namespace Mithril.Overlay;
 
 /// <summary>
 /// Caches <see cref="ID2D1SolidColorBrush"/> instances keyed on packed ARGB
-/// so the renderer doesn't allocate a new brush per draw call. Brushes are
+/// so a scene drawer doesn't allocate a new brush per draw call. Brushes are
 /// tied to a specific render target; on render-target rebuild (resize,
 /// device-lost) call <see cref="Reset"/> and the cache discards everything.
 ///
-/// WPF's <c>SolidColorBrush.Freeze</c> hides the equivalent allocation cost
-/// behind reference-counted internals; we don't get that for free in D2D
-/// land, hence the explicit cache.
+/// <para>WPF's <c>SolidColorBrush.Freeze</c> hides the equivalent allocation
+/// cost behind reference-counted internals; we don't get that for free in
+/// D2D land, hence the explicit cache.</para>
+///
+/// <para><b>Public for scene drawers (#835 step 6).</b> Lifted out of
+/// <c>Mithril.Overlay.Internal</c> so an
+/// <see cref="IOverlaySceneContext"/> consumer (Legolas's scene drawer
+/// today; any future overlay consumer tomorrow) can call
+/// <see cref="Get"/> directly without leaning on the
+/// <c>InternalsVisibleTo</c> seam. The cache is still owned by
+/// <c>OverlayWindowService</c> and bound to the current render target
+/// before the scene drawers fire — consumers don't construct their own.</para>
 /// </summary>
-internal sealed class D2DBrushCache : IDisposable
+public sealed class D2DBrushCache : IDisposable
 {
     private readonly Dictionary<uint, ID2D1SolidColorBrush> _brushes = new();
     private ID2D1RenderTarget? _renderTarget;

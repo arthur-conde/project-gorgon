@@ -7,6 +7,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration;
 using Mithril.Shared.Diagnostics.Telemetry;
+using Vortice.Direct2D1;
 
 namespace Mithril.Overlay.Internal;
 
@@ -18,38 +19,35 @@ namespace Mithril.Overlay.Internal;
 /// <para><b>Lifetime.</b> Constructed via DI when the host starts.
 /// <see cref="StartAsync"/> is intentionally cheap &#8212; it does not
 /// <c>Show()</c> the window. The window is materialised lazily on first
-/// <see cref="Window"/> access so the scaffold can ship "registered but
-/// dormant"; the migration PRs that wire Legolas's drawers will be the ones
-/// to actually surface the overlay. The perf-floor commitment ("zero impact
-/// when not enabled") matters once consumers attach &#8212; the scaffold
-/// pays only the cost of a null lifecycle field.</para>
-///
-/// <para><b>Threading.</b> Window/surface construction must happen on the
-/// dispatcher; the projection callback runs on the dispatcher (it's the
-/// <see cref="D2DOverlaySurface.Render"/> handler). All marker registry
-/// reads happen there. <see cref="Dispose"/> may run on a non-UI thread
+/// <see cref="Window"/> access; consumers <c>Show()</c> it once their
+/// drawers are registered. <see cref="Dispose"/> may run on a non-UI thread
 /// (host shutdown) and marshals window + brush-cache disposal back onto the
 /// dispatcher (the cache's brushes are dispatcher-affined via the bound
 /// render target).</para>
 ///
-/// <para><b>Projection driver (Decision C from closed #832).</b>
-/// Per tick:
+/// <para><b>Threading.</b> Window/surface construction must happen on the
+/// dispatcher; the projection callback runs on the dispatcher (it's the
+/// <see cref="D2DOverlaySurface.Render"/> handler). All marker registry
+/// reads + scene-drawer dispatch happen there. Scene-drawer registration
+/// (<see cref="RegisterScene"/>) is lock-free and safe from any thread.</para>
+///
+/// <para><b>Per-tick draw order (#835 step 6).</b>
 /// <list type="number">
 /// <item>read <c>IAreaState.CurrentArea</c> &#8211; the area key</item>
-/// <item>set <see cref="WorldOverlayMarkers.CurrentArea"/> so the snapshot
-/// filter matches</item>
-/// <item>for each current-area marker, call
-/// <see cref="IMapCalibrationService.WorldToWindow"/> with <c>currentZoom = 1.0</c>
-/// (TODO(#835 migration steps): the Legolas zoom slider wires through in
-/// Migration step 3 when Survey switches over)</item>
-/// <item>hand the projected <c>(pixel, style)</c> list to
-/// <see cref="MarkerSceneRenderer.Render"/></item>
+/// <item>uncalibrated area: surface the chip, skip both scene drawers
+/// <em>and</em> the marker renderer (the scene drawers depend on
+/// <see cref="IOverlaySceneContext.Project"/> which would always return
+/// null)</item>
+/// <item>set <see cref="WorldOverlayMarkers.CurrentArea"/></item>
+/// <item>invoke each registered scene drawer in registration order with an
+/// <see cref="IOverlaySceneContext"/> bound to this frame's target / factory
+/// / brushes / area key / live zoom</item>
+/// <item>project the registry markers and dispatch through
+/// <see cref="MarkerSceneRenderer"/></item>
 /// </list>
-/// For uncalibrated areas (<c>IsCalibrated(areaKey) == false</c> or
-/// <c>WorldToWindow</c> returning null) the renderer is skipped and
-/// <see cref="StatusMessage"/> flips to the "not calibrated" chip text.
-/// The chip surfaces via <see cref="INotifyPropertyChanged"/> so XAML bindings
-/// update without polling.</para>
+/// Scene drawers run BEFORE the marker renderer so any layer-3 markers
+/// (Gwaihir POI pins, calibration placement) sit on top of layer-2 scene
+/// geometry (route polylines, wedges, survey/motherlode pin layers).</para>
 /// </summary>
 internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDisposable
 {
@@ -58,13 +56,12 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     // Inject the concrete type directly (not IWorldOverlayMarkers): the
     // projection driver needs the internal CurrentArea setter and the
     // concrete type is registered as a singleton ahead of the interface.
-    // Avoids a brittle down-cast hazard if a future caller overrides the
-    // IWorldOverlayMarkers registration with a fake.
     private readonly WorldOverlayMarkers _markers;
     private readonly MarkerSceneRenderer _renderer;
     private readonly IMapCalibrationService _calibration;
     private readonly IAreaState _areaState;
     private readonly IPositionState _positionState; // reserved for future consumers; ensures the DI shape matches Decision C
+    private readonly IOverlayZoomSource _zoomSource;
     private readonly ILoggerFactory? _loggerFactory;
     private readonly ILogger? _logger;
     private readonly D2DBrushCache _brushCache = new();
@@ -85,12 +82,25 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         = new(StringComparer.Ordinal);
     private bool _disposed;
 
+    // Scene-drawer registry. Volatile snapshot-array pattern: registrations
+    // CAS-swap a fresh array, render-time enumeration reads the snapshot
+    // once + iterates by index. Per-tick allocation: zero (no enumerator,
+    // no copy). Lock-free for registration; lock-free for render.
+    private SceneDrawerRegistration[] _sceneDrawers = Array.Empty<SceneDrawerRegistration>();
+    private readonly object _sceneDrawersLock = new();
+
+    // Reusable scene context — bound to this frame's target/factory/area at
+    // the top of OnSurfaceRender. Lives as a field to avoid per-tick
+    // allocation; only ever touched on the dispatcher.
+    private readonly OverlaySceneContext _sceneContext;
+
     public OverlayWindowService(
         WorldOverlayMarkers markers,
         MarkerSceneRenderer renderer,
         IMapCalibrationService calibration,
         IAreaState areaState,
         IPositionState positionState,
+        IOverlayZoomSource zoomSource,
         ILoggerFactory? loggerFactory = null)
     {
         _markers = markers;
@@ -98,8 +108,10 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         _calibration = calibration;
         _areaState = areaState;
         _positionState = positionState;
+        _zoomSource = zoomSource;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory?.CreateLogger("Mithril.Overlay");
+        _sceneContext = new OverlaySceneContext(this);
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -118,9 +130,47 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     public string? StatusMessage => _statusMessage;
 
     /// <summary>Convenience for XAML triggers that need a bool instead of
-    /// null-vs-non-null. Mirrors the IsPlayerAnchorStatusVisible idiom in
-    /// MapOverlayView.</summary>
+    /// null-vs-non-null.</summary>
     public bool HasStatusMessage => !string.IsNullOrEmpty(_statusMessage);
+
+    public IDisposable RegisterScene(Action<IOverlaySceneContext> draw)
+    {
+        ArgumentNullException.ThrowIfNull(draw);
+        var registration = new SceneDrawerRegistration(draw);
+        lock (_sceneDrawersLock)
+        {
+            var current = _sceneDrawers;
+            var next = new SceneDrawerRegistration[current.Length + 1];
+            Array.Copy(current, next, current.Length);
+            next[current.Length] = registration;
+            // Volatile.Write semantics via plain assignment is fine here —
+            // ConcurrentDictionary-style: writers serialize on the lock, the
+            // reader reads a single reference (atomic on any supported
+            // runtime). The array itself is never mutated after publishing.
+            _sceneDrawers = next;
+        }
+        _logger?.LogInformation(
+            "Scene drawer registered (now {Count}).",
+            _sceneDrawers.Length);
+        return new SceneDrawerHandle(this, registration);
+    }
+
+    private void UnregisterScene(SceneDrawerRegistration registration)
+    {
+        lock (_sceneDrawersLock)
+        {
+            var current = _sceneDrawers;
+            var idx = Array.IndexOf(current, registration);
+            if (idx < 0) return;
+            var next = new SceneDrawerRegistration[current.Length - 1];
+            Array.Copy(current, next, idx);
+            Array.Copy(current, idx + 1, next, idx, current.Length - idx - 1);
+            _sceneDrawers = next;
+        }
+        _logger?.LogInformation(
+            "Scene drawer deregistered (now {Count}).",
+            _sceneDrawers.Length);
+    }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -172,17 +222,8 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         if (_window is not null) return;
         using var act = MithrilActivitySources.Overlay.StartActivity("window.create");
         _window = new OverlayWindow();
-        // DataContext = the service itself so the XAML chip bindings
-        // ({Binding StatusMessage} / {Binding HasStatusMessage}) resolve to
-        // *this* service's INPC-backed properties. The previous
-        // {Binding ..., RelativeSource=AncestorType=Window} bound to the
-        // OverlayWindow class, which has no StatusMessage — a silent
-        // never-fires gotcha exactly of the class docs/wpf-gotchas.md warns
-        // about.
         _window.DataContext = this;
         _window.OverlaySurface.Render += OnSurfaceRender;
-        // Propagate the logger down so a D3D init failure inside the surface
-        // surfaces in the trace instead of going dark.
         _window.OverlaySurface.Logger = _loggerFactory?.CreateLogger("Mithril.Overlay.Surface");
         _window.Closed += OnWindowClosed;
         _logger?.LogInformation("OverlayWindow created (not shown — consumer must Show() to surface it).");
@@ -191,19 +232,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     private void OnWindowClosed(object? sender, EventArgs e)
     {
         SetReady(false);
-
-        // External-close defensive cleanup.
-        //
-        // The internal teardown path (DisposeWindow → Close closure) detaches
-        // this handler *before* calling window.Close(), so reaching this method
-        // with _window still non-null means a caller violated the
-        // IOverlayWindow.Window remarks ("Forbidden: Window.Close()") and
-        // closed the window directly. Without this branch the surface +
-        // brush cache would leak until IHostedService.StopAsync eventually
-        // fires Dispose.
-        //
-        // Runs on the dispatcher (Closed fires there); safe to call the same
-        // cleanup body the internal closure runs.
         if (_window is not null)
         {
             _logger?.LogWarning(
@@ -216,20 +244,8 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         }
     }
 
-    /// <summary>Shared cleanup body for the close path. Runs on the dispatcher.
-    /// Symmetric with the closure inside <see cref="DisposeWindow"/> &#8212;
-    /// detach the surface Render handler, dispose the surface, dispose the
-    /// brush cache, null out <see cref="_window"/>. <see cref="OnWindowClosed"/>
-    /// is detached separately (the internal path detaches before calling
-    /// Close; the external path needs the handler intact to reach this method
-    /// in the first place, and the detach happens implicitly when
-    /// <see cref="_window"/> goes out of scope).</summary>
     private void CleanupAfterClose(OverlayWindow window)
     {
-        // Render is the only handler we attached besides Closed itself. Surface
-        // detach can race a final render tick (the surface unhooks
-        // CompositionTarget.Rendering on Unloaded), but the surface dispose
-        // below covers either ordering.
         try { window.OverlaySurface.Render -= OnSurfaceRender; } catch (Exception ex)
         {
             _logger?.LogTrace(ex, "OverlayWindow.OverlaySurface.Render detach threw during close cleanup; surface likely already torn down.");
@@ -256,52 +272,62 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             return;
         }
 
-        // Uncalibrated-area guard. Surface the chip and skip projection — the
-        // surface still clears + composites a transparent frame, so the
-        // window's chrome (header + status) stays interactive.
+        // Uncalibrated-area guard. Surface the chip and skip BOTH scene
+        // drawers AND projection — the surface still clears + composites a
+        // transparent frame, so the window's chrome (header + status) stays
+        // interactive. Scene drawers depend on Project() which would always
+        // return null in this state, so there is nothing meaningful for them
+        // to draw.
         if (!_calibration.IsCalibrated(areaKey))
         {
             if (!string.Equals(_lastSeenUncalibratedArea, areaKey, StringComparison.Ordinal))
             {
                 _lastSeenUncalibratedArea = areaKey;
                 _logger?.LogInformation(
-                    "OverlayWindowService: area {AreaKey} is uncalibrated; surfacing 'not calibrated' chip and skipping projection.",
+                    "OverlayWindowService: area {AreaKey} is uncalibrated; surfacing 'not calibrated' chip and skipping projection + scene drawers.",
                     areaKey);
             }
             SetStatusMessage(UncalibratedMessage);
             return;
         }
 
-        // Calibrated area — clear the uncalibrated-area dedup state so a
-        // re-entry into the same area later re-logs the "uncalibrated"
-        // observation if calibration is lost.
         _lastSeenUncalibratedArea = null;
         SetStatusMessage(null);
 
+        // Snapshot the live zoom once per frame so scene drawers and the
+        // registry projection see the same value (no per-Project read
+        // inconsistency across the frame).
+        var currentZoom = SnapshotZoom();
+
+        // Scene drawers — fire BEFORE the marker renderer. Snapshot the
+        // drawer array reference once so a concurrent register/unregister
+        // can't shift it mid-iteration.
+        var drawers = _sceneDrawers;
+        if (drawers.Length > 0)
+        {
+            _sceneContext.BeginFrame(e.RenderTarget, e.Factory, _brushCache, areaKey, currentZoom);
+            using (var sceneAct = MithrilActivitySources.Overlay.StartActivity("scene"))
+            {
+                sceneAct?.SetTag("area", areaKey);
+                sceneAct?.SetTag("drawer_count", drawers.Length);
+                for (var i = 0; i < drawers.Length; i++)
+                {
+                    drawers[i].Invoke(_sceneContext);
+                }
+            }
+        }
+
         var snapshot = _markers.CurrentAreaMarkers;
-        // TODO(#835 step 6): plumb the live in-game zoom (Legolas's
-        // SessionState.CurrentMapZoom slider) into the projection driver.
-        // Calibration markers registered via WindowToWorld(pixel,
-        // EffectiveZoom(_session.CurrentMapZoom, cal)) Legolas-side already
-        // depend on the zoom factor; passing 1.0 here means the round-trip
-        // (register at slider-zoom Z, project at hardcoded 1.0) lands the
-        // marker at the wrong pixel whenever the user has the slider off
-        // 1.0. Dormant today (the overlay window isn't shown — see PR
-        // #863's "Window not shown in production" architectural note),
-        // but step 6 must wire a zoom provider through OverlayWindow
-        // Service before the window goes live.
-        var projected = ProjectMarkers(snapshot, areaKey, _calibration, currentZoom: 1.0,
+        var projected = ProjectMarkers(snapshot, areaKey, _calibration, currentZoom,
             onMiss: this, snapshotCount: snapshot.Count);
         if (!_firstFrameLogged)
         {
             _firstFrameLogged = true;
             _logger?.LogInformation(
-                "OverlayWindowService: first frame projected for area {AreaKey} ({Count} markers, {DrawerCount} drawers registered).",
-                areaKey, projected.Count, _renderer.DrawerCount);
+                "OverlayWindowService: first frame projected for area {AreaKey} ({Count} markers, {DrawerCount} drawers registered, {SceneCount} scene drawers, zoom={Zoom:F2}).",
+                areaKey, projected.Count, _renderer.DrawerCount, drawers.Length, currentZoom);
         }
 
-        // Telemetry: per-tick latency histogram + marker count counter. Both
-        // are no-ops when no listener is attached (Meter producer semantics).
         var sw = ValueStopwatch.StartNew();
         using (var renderAct = MithrilActivitySources.Overlay.StartActivity("project"))
         {
@@ -316,10 +342,18 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             new KeyValuePair<string, object?>("area", areaKey));
     }
 
+    /// <summary>Read the live zoom from the injected source, defensively
+    /// substituting 1.0 if the producer surfaced a non-finite value. Per
+    /// <see cref="IOverlayZoomSource"/>'s remarks: producers should never
+    /// let NaN reach here, but the projection driver tolerates it.</summary>
+    private double SnapshotZoom()
+    {
+        var z = _zoomSource.CurrentZoom;
+        return double.IsFinite(z) && z > 0 ? z : 1.0;
+    }
+
     /// <summary>Pure projection helper &#8212; takes a snapshot + a calibration
-    /// service and returns the projected pixel list. Carved out so tests can
-    /// exercise the projection without standing up a D3D surface.
-    /// Test-friendly overload (no miss callback).</summary>
+    /// service and returns the projected pixel list. Test-friendly overload.</summary>
     internal static IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
         string areaKey,
@@ -327,12 +361,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         double currentZoom)
         => ProjectMarkers(markers, areaKey, calibration, currentZoom, onMiss: null, snapshotCount: markers.Count);
 
-    /// <summary>Projection helper with the service-side miss hook so the
-    /// production path emits the miss counter + Trace log when
-    /// <c>WorldToWindow</c> returns null for a calibrated area.
-    /// TODO(#835 migration steps): the production-time enhancement
-    /// ("all-null snapshot → surface a chip") is deferred until real
-    /// markers exist to validate the UX against.</summary>
     private static IReadOnlyList<(PixelPoint Pixel, IMarkerStyle Style)> ProjectMarkers(
         IReadOnlyList<MarkerSnapshot> markers,
         string areaKey,
@@ -374,6 +402,38 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
     /// and call <c>RegisterDrawer</c> there.</summary>
     internal MarkerSceneRenderer Renderer => _renderer;
 
+    /// <summary>Test seam: the current scene-drawer count. Exposed so
+    /// <c>Mithril.Overlay.Tests</c> can verify register / dispose mechanics
+    /// without standing up a D3D surface.</summary>
+    internal int SceneDrawerCount => _sceneDrawers.Length;
+
+    /// <summary>Test seam: drive one scene-tick against a supplied render
+    /// target / factory, with the supplied area key + zoom override.
+    /// Bypasses the D3D surface so unit tests can exercise scene-drawer
+    /// dispatch + the uncalibrated-area gate.</summary>
+    internal void DriveSceneForTest(
+        ID2D1RenderTarget renderTarget,
+        ID2D1Factory factory,
+        string areaKey,
+        double currentZoom)
+    {
+        _brushCache.Bind(renderTarget);
+        if (!_calibration.IsCalibrated(areaKey))
+        {
+            SetStatusMessage(UncalibratedMessage);
+            return;
+        }
+        SetStatusMessage(null);
+
+        var drawers = _sceneDrawers;
+        if (drawers.Length == 0) return;
+        _sceneContext.BeginFrame(renderTarget, factory, _brushCache, areaKey, currentZoom);
+        for (var i = 0; i < drawers.Length; i++)
+        {
+            drawers[i].Invoke(_sceneContext);
+        }
+    }
+
     private void SetReady(bool value)
     {
         if (_isReady == value) return;
@@ -394,9 +454,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         if (_disposed) return;
         _disposed = true;
         DisposeWindow();
-        // _brushCache.Dispose() is folded into DisposeWindow's dispatcher
-        // closure (the cache's brushes are dispatcher-affined via the bound
-        // render target; disposing them off-thread is a Vortice/D3D liability).
     }
 
     private void DisposeWindow()
@@ -405,20 +462,13 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         var dispatcher = _dispatcher;
         if (window is null)
         {
-            // No window — brush cache is empty / never bound. Still safe to
-            // dispose the empty cache off-thread.
             _brushCache.Dispose();
             return;
         }
 
         void Close()
         {
-            // Detach OnWindowClosed FIRST so window.Close() below doesn't
-            // re-trigger the external-close defensive branch. Render is
-            // detached inside CleanupAfterClose. Event detaches cannot throw
-            // under the contracts above; let any genuine bug surface.
             window.Closed -= OnWindowClosed;
-
             try { window.Close(); }
             catch (InvalidOperationException ex)
             {
@@ -428,9 +478,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             SetReady(false);
         }
 
-        // If we have a window, we must have a dispatcher (EnsureWindow throws
-        // otherwise). The null-coalesce is just to keep the compiler happy
-        // and to fail loudly if a future refactor reorders things.
         if (dispatcher is null) throw new InvalidOperationException(
             "OverlayWindowService.DisposeWindow: dispatcher missing but window exists. This indicates EnsureWindow was bypassed.");
 
@@ -438,9 +485,6 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         else dispatcher.Invoke(Close);
     }
 
-    /// <summary>Allocation-free elapsed-ms measurement &#8212; same pattern
-    /// as <c>System.Diagnostics.Stopwatch.GetElapsedTime</c> on .NET 7+.
-    /// Inlined so the meter producer pays one ticks read on the off path.</summary>
     private readonly struct ValueStopwatch
     {
         private static readonly double TicksToMs = 1000.0 / Stopwatch.Frequency;
@@ -448,5 +492,88 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         private ValueStopwatch(long start) { _startTicks = start; }
         public static ValueStopwatch StartNew() => new(Stopwatch.GetTimestamp());
         public double GetElapsedMilliseconds() => (Stopwatch.GetTimestamp() - _startTicks) * TicksToMs;
+    }
+
+    /// <summary>Wraps a scene-drawer callback with object identity so the
+    /// returned <see cref="IDisposable"/> can locate + remove its own entry
+    /// without an enumeration over Action&lt;...&gt; equality (Delegate
+    /// equality matches by Target+Method, so two registrations of the same
+    /// instance method would collide).</summary>
+    private sealed class SceneDrawerRegistration
+    {
+        private readonly Action<IOverlaySceneContext> _draw;
+        public SceneDrawerRegistration(Action<IOverlaySceneContext> draw) { _draw = draw; }
+        public void Invoke(IOverlaySceneContext ctx) => _draw(ctx);
+    }
+
+    private sealed class SceneDrawerHandle : IDisposable
+    {
+        private OverlayWindowService? _owner;
+        private readonly SceneDrawerRegistration _registration;
+        public SceneDrawerHandle(OverlayWindowService owner, SceneDrawerRegistration r)
+        {
+            _owner = owner;
+            _registration = r;
+        }
+        public void Dispose()
+        {
+            var owner = Interlocked.Exchange(ref _owner, null);
+            owner?.UnregisterScene(_registration);
+        }
+    }
+
+    /// <summary>Per-instance scene context. Bound at the top of
+    /// <see cref="OnSurfaceRender"/> via <see cref="BeginFrame"/> so the
+    /// per-tick allocation is zero. Drawers must not retain the instance
+    /// past the callback — fields rebind on the next frame.</summary>
+    private sealed class OverlaySceneContext : IOverlaySceneContext
+    {
+        private readonly OverlayWindowService _owner;
+        private ID2D1RenderTarget? _renderTarget;
+        private ID2D1Factory? _factory;
+        private D2DBrushCache? _brushes;
+        private string _areaKey = string.Empty;
+        private double _currentZoom = 1.0;
+
+        public OverlaySceneContext(OverlayWindowService owner) { _owner = owner; }
+
+        public void BeginFrame(
+            ID2D1RenderTarget renderTarget,
+            ID2D1Factory factory,
+            D2DBrushCache brushes,
+            string areaKey,
+            double currentZoom)
+        {
+            _renderTarget = renderTarget;
+            _factory = factory;
+            _brushes = brushes;
+            _areaKey = areaKey;
+            _currentZoom = currentZoom;
+        }
+
+        public ID2D1RenderTarget RenderTarget =>
+            _renderTarget ?? throw new InvalidOperationException(
+                "IOverlaySceneContext.RenderTarget accessed outside the scene-drawer callback.");
+
+        public ID2D1Factory Factory =>
+            _factory ?? throw new InvalidOperationException(
+                "IOverlaySceneContext.Factory accessed outside the scene-drawer callback.");
+
+        public D2DBrushCache Brushes =>
+            _brushes ?? throw new InvalidOperationException(
+                "IOverlaySceneContext.Brushes accessed outside the scene-drawer callback.");
+
+        public string CurrentAreaKey => _areaKey;
+
+        public PixelPoint? Project(double worldX, double worldZ)
+        {
+            // Calibrated-area gate is enforced before drawers fire, so we
+            // can call WorldToWindow directly. A null return here means the
+            // calibration service couldn't project this specific point
+            // (e.g. NaN inputs); the drawer treats that as "skip this pin"
+            // — same shape as the marker renderer's null-skip branch.
+            return _owner._calibration.WorldToWindow(
+                _areaKey, new WorldCoord(worldX, 0, worldZ), _currentZoom);
+        }
     }
 }

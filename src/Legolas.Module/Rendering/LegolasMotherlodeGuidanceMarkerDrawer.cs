@@ -1,5 +1,6 @@
 using System.Numerics;
 using Mithril.MapCalibration;
+using Mithril.Overlay;
 using Mithril.Overlay.Internal;
 using Vortice.Direct2D1;
 

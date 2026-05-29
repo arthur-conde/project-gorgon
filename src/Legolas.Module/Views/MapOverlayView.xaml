@@ -153,95 +153,20 @@
                     MouseLeftButtonDown="Viewport_MouseLeftButtonDown"
                     MouseMove="Viewport_MouseMove"
                     MouseLeftButtonUp="Viewport_MouseLeftButtonUp">
-                <!-- D2D pin / route / wedge / anchor layer. Routes, active
-                     segment (with marching-ants animation), bearing wedges,
-                     survey pins (with active-pin treatments), and the player
-                     anchor all render here via Direct2D. The WPF visual tree
-                     this replaced is gone; mouse events still flow to the
-                     parent Viewport via IsHitTestVisible="False". Tooltips
-                     on hover are not reproduced — see commit history. -->
+                <!-- #835 step 6: the D2D pin / route / wedge / anchor layer
+                     and the CalibrationMarkers/CalibrationGhosts ItemsControls
+                     are gone from this view; the shared Mithril.Overlay
+                     window is the sole rendering surface now. This view is
+                     no longer Show()n in production (OverlayController routes
+                     to IOverlayWindow.Window instead), but the Viewport hit
+                     target stays so step 7's deletion pass can find the
+                     mouse-handler call sites cleanly. -->
+                <!--
                 <rendering:D2DOverlaySurface x:Name="MapSurface" IsHitTestVisible="False" />
+                <ItemsControl ItemsSource="{Binding CalibrationMarkers}" ... />
+                <ItemsControl ItemsSource="{Binding CalibrationGhosts}" ... />
+                -->
 
-                <!-- #460/#477A: guided calibration, Pair phase. Viewport clicks
-                     pair the wizard-named pin or grab a placed marker for
-                     drag/nudge correction (hit-test is VM-side). Markers are
-                     IsHitTestVisible=False so clicks reach the Viewport
-                     handler. Zero-size Canvas + negative offsets so the dot
-                     sits exactly on the click (WPF Grid would re-centre it).
-                     #478: appearance is driven by
-                     LegolasSettings.CalibrationPinStyle — Outer = the selection
-                     ring (shown only while selected), Center = the always-on
-                     dot — via the same converter/brush infra the survey pins
-                     use, so live setting edits repaint without a restart.
-                     Defaults reproduce the pre-#478 hardcoded look. -->
-                <ItemsControl ItemsSource="{Binding CalibrationMarkers}" IsHitTestVisible="False"
-                              Visibility="{Binding IsCalibrationCapturing, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemContainerStyle>
-                        <Style TargetType="ContentPresenter">
-                            <Setter Property="Canvas.Left" Value="{Binding X}" />
-                            <Setter Property="Canvas.Top" Value="{Binding Y}" />
-                        </Style>
-                    </ItemsControl.ItemContainerStyle>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <!-- Zero-size Canvas so the dot's screen position
-                                 is independent of the selection ring: a Grid
-                                 auto-resizes when IsSelected flips, which slid
-                                 already-placed dots down/right as selection
-                                 moved to the next pin. Canvas pins each Path at
-                                 -Size/2 from (X,Y) so the geometry box (built
-                                 0..Size by PinShapeToGeometryConverter) centres
-                                 exactly on the click. Style + brushes live on
-                                 the ItemsControl's DataContext (the overlay VM);
-                                 the item DataContext is the CalibrationMarker
-                                 (IsSelected). -->
-                            <Canvas Width="0" Height="0">
-                                <!-- Outer = selection ring (only while selected). -->
-                                <Path Canvas.Left="{Binding DataContext.CalibrationPinStyle.Outer.Size, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:NegativeHalfConverter.Instance}}"
-                                      Canvas.Top="{Binding DataContext.CalibrationPinStyle.Outer.Size, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:NegativeHalfConverter.Instance}}"
-                                      Fill="{Binding DataContext.Brushes.CalibrationOuterFill, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                      Stroke="{Binding DataContext.Brushes.CalibrationOuterStroke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                      StrokeDashArray="{Binding DataContext.CalibrationPinStyle.Outer.StrokeStyle, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}"
-                                      Visibility="{Binding IsSelected, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                                    <Path.StrokeThickness>
-                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
-                                            <Binding Path="DataContext.CalibrationPinStyle.Outer.StrokeStyle" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
-                                            <Binding Path="DataContext.CalibrationPinStyle.Outer.StrokeThickness" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
-                                        </MultiBinding>
-                                    </Path.StrokeThickness>
-                                    <Path.Data>
-                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
-                                            <Binding Path="DataContext.CalibrationPinStyle.Outer.Shape" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
-                                            <Binding Path="DataContext.CalibrationPinStyle.Outer.Size" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
-                                        </MultiBinding>
-                                    </Path.Data>
-                                </Path>
-                                <!-- Center = the always-on dot. -->
-                                <Path Canvas.Left="{Binding DataContext.CalibrationPinStyle.Center.Size, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:NegativeHalfConverter.Instance}}"
-                                      Canvas.Top="{Binding DataContext.CalibrationPinStyle.Center.Size, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:NegativeHalfConverter.Instance}}"
-                                      Fill="{Binding DataContext.Brushes.CalibrationCenterFill, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                      Stroke="{Binding DataContext.Brushes.CalibrationCenterStroke, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                      StrokeDashArray="{Binding DataContext.CalibrationPinStyle.Center.StrokeStyle, RelativeSource={RelativeSource AncestorType=ItemsControl}, Converter={x:Static converters:StrokeStyleToDashArrayConverter.Instance}}">
-                                    <Path.StrokeThickness>
-                                        <MultiBinding Converter="{x:Static converters:StrokeStyleToThicknessConverter.Instance}">
-                                            <Binding Path="DataContext.CalibrationPinStyle.Center.StrokeStyle" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
-                                            <Binding Path="DataContext.CalibrationPinStyle.Center.StrokeThickness" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
-                                        </MultiBinding>
-                                    </Path.StrokeThickness>
-                                    <Path.Data>
-                                        <MultiBinding Converter="{x:Static converters:PinShapeToGeometryConverter.Instance}">
-                                            <Binding Path="DataContext.CalibrationPinStyle.Center.Shape" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
-                                            <Binding Path="DataContext.CalibrationPinStyle.Center.Size" RelativeSource="{RelativeSource AncestorType=ItemsControl}" />
-                                        </MultiBinding>
-                                    </Path.Data>
-                                </Path>
-                            </Canvas>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
 
                 <Border HorizontalAlignment="Center" VerticalAlignment="Top"
                         Margin="0,12,0,0" Padding="14,8"
@@ -252,46 +177,13 @@
                                Foreground="#FFE0F4FF" TextWrapping="Wrap" TextAlignment="Center" FontSize="13" />
                 </Border>
 
-                <!-- #495: "Validate calibration" reference markers. Known
-                     landmarks/NPCs projected through the persisted calibration
-                     (MapOverlayViewModel.CalibrationGhosts) so the user can
-                     eyeball alignment. WPF layered over the D2D surface (the
-                     CalibrationMarkers idiom above) so each marker carries a
-                     readable label; ShowLabel is the greedy declutter decision
-                     (the dot always draws — only crowded labels suppress).
-                     IsHitTestVisible=False so clicks reach the Viewport. -->
-                <ItemsControl ItemsSource="{Binding CalibrationGhosts}" IsHitTestVisible="False"
-                              Visibility="{Binding ShowCalibrationGhosts, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemContainerStyle>
-                        <Style TargetType="ContentPresenter">
-                            <Setter Property="Canvas.Left" Value="{Binding Pixel.X}" />
-                            <Setter Property="Canvas.Top" Value="{Binding Pixel.Y}" />
-                        </Style>
-                    </ItemsControl.ItemContainerStyle>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <!-- Zero-size Canvas: every part at an exact
-                                 negative offset so the ring centres pixel-
-                                 accurately on the projected point (a Grid would
-                                 re-centre). Magenta = "projected reference",
-                                 matching the standalone calibration window. -->
-                            <Canvas Width="0" Height="0">
-                                <Ellipse Canvas.Left="-8" Canvas.Top="-8" Width="16" Height="16"
-                                         Stroke="#FFE040E0" StrokeThickness="2" />
-                                <Ellipse Canvas.Left="-2" Canvas.Top="-2" Width="4" Height="4"
-                                         Fill="#FFE040E0" />
-                                <Border Canvas.Left="9" Canvas.Top="-9"
-                                        Background="#CC000000" CornerRadius="2" Padding="3,1"
-                                        Visibility="{Binding ShowLabel, Converter={x:Static controls:BoolToVisibilityConverter.Instance}}">
-                                    <TextBlock Text="{Binding Name}" Foreground="#FFF0B6F0" FontSize="11" />
-                                </Border>
-                            </Canvas>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <!-- #835 step 6: CalibrationGhosts ItemsControl removed —
+                     #495's calibration-validation reference markers no
+                     longer render in this view. Step 7 owns full deletion
+                     of MapOverlayView; if a future calibration-validation
+                     surface is needed, it should land via the shared
+                     overlay's scene-hook + marker registry. -->
+
 
                 <!-- #495: on-overlay validation status banner (the in-wizard
                      status line moved here when the toggle moved to the

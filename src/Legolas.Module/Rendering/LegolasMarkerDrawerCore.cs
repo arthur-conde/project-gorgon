@@ -1,6 +1,7 @@
 using System.Numerics;
 using Legolas.Domain;
 using Mithril.MapCalibration;
+using Mithril.Overlay;
 using Mithril.Overlay.Internal;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;

@@ -1,12 +1,15 @@
 using System.ComponentModel;
 using System.Windows;
 using Mithril.Shared.Modules;
+using Mithril.Shared.Settings;
+using Legolas.Controls;
 using Legolas.Domain;
 using Legolas.Services;
 using Legolas.ViewModels;
 using Legolas.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Mithril.Overlay;
 
 namespace Legolas.Hotkeys;
 
@@ -28,10 +31,17 @@ public sealed class OverlayController : IHostedService
     private readonly SessionState _session;
     private readonly LegolasSettings _settings;
     private readonly ForegroundFocusGate _focusGate;
+    private readonly IOverlayWindow _overlayWindow;
+    private readonly SettingsAutoSaver<LegolasSettings> _settingsSaver;
     private readonly CancellationTokenSource _stopCts = new();
     private Task? _activationTask;
     private bool _subscribed;
-    private MapOverlayView? _map;
+    private bool _sharedMapWired;
+    // #835 step 6: MapOverlayView is no longer shown in production — the
+    // shared IOverlayWindow.Window is the visible map overlay. The legacy
+    // view's class file isn't deleted (step 7 owns that) but the field +
+    // EnsureMap glue here is gone, and its production Show() site (was
+    // SyncMap) routes to _overlayWindow.Window instead.
     private InventoryOverlayView? _inventory;
     private CalibrationOverlayView? _calibration;
 
@@ -40,13 +50,17 @@ public sealed class OverlayController : IHostedService
         ModuleGates gates,
         SessionState session,
         LegolasSettings settings,
-        ForegroundFocusGate focusGate)
+        ForegroundFocusGate focusGate,
+        IOverlayWindow overlayWindow,
+        SettingsAutoSaver<LegolasSettings> settingsSaver)
     {
         _services = services;
         _gates = gates;
         _session = session;
         _settings = settings;
         _focusGate = focusGate;
+        _overlayWindow = overlayWindow;
+        _settingsSaver = settingsSaver;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -87,10 +101,14 @@ public sealed class OverlayController : IHostedService
                 _focusGate.PropertyChanged -= OnFocusGatePropertyChanged;
                 _settings.PropertyChanged -= OnSettingsPropertyChanged;
             }
-            _map?.Close();
+            // The shared overlay window is owned by OverlayWindowService's
+            // hosted-service lifecycle — DO NOT Close() it from here per
+            // the IOverlayWindow.Window remarks (host owns teardown).
+            // Hide is harmless and matches the legacy view's Close+null
+            // semantics for the user-visible state.
+            if (_sharedMapWired) _overlayWindow.Window.Hide();
             _inventory?.Close();
             _calibration?.Close();
-            _map = null;
             _inventory = null;
             _calibration = null;
         });
@@ -128,8 +146,79 @@ public sealed class OverlayController : IHostedService
 
     private void SyncMap()
     {
-        if (ShouldRender(_session.IsMapVisible)) EnsureMap().Show();
-        else _map?.Hide();
+        // #835 step 6: the shared Mithril.Overlay.IOverlayWindow.Window is
+        // now the visible map overlay; MapOverlayView is no longer Show()n.
+        // Legolas's WindowLayoutBinder + KeepTopmost + ClickThrough chrome
+        // behaviors are applied to the shared window lazily on first
+        // attach. Step 7 lifts those behaviors into Mithril.Overlay and
+        // retires this Legolas-side glue.
+        if (ShouldRender(_session.IsMapVisible))
+        {
+            EnsureSharedMapWired();
+            _overlayWindow.Window.Show();
+        }
+        else
+        {
+            // First-time access to the shared window forces lazy construction;
+            // guard so we don't materialise it just to hide it. The window
+            // is wired on the first ShouldRender=true path above.
+            if (_sharedMapWired) _overlayWindow.Window.Hide();
+        }
+    }
+
+    /// <summary>One-shot attach of Legolas's window-level chrome behaviors
+    /// (layout persistence, topmost re-assertion, click-through) to the
+    /// shared <see cref="IOverlayWindow.Window"/>. Runs on the dispatcher
+    /// (this method is called from <see cref="SyncMap"/> which itself runs
+    /// from a Dispatcher.InvokeAsync). Idempotent &#8212; the
+    /// <see cref="_sharedMapWired"/> latch guards against re-attaching.
+    /// Step 7 owns the lift of <see cref="ClickThrough"/> /
+    /// <see cref="WindowLayoutBinder"/> into Mithril.Overlay.</summary>
+    private void EnsureSharedMapWired()
+    {
+        if (_sharedMapWired) return;
+        var window = _overlayWindow.Window;
+        // The shared window has a HeaderChrome border at the top (see
+        // Mithril.Overlay/Internal/OverlayWindow.xaml). Click-through
+        // carves out that header so the chip + drag handle stay reachable
+        // when the body passes clicks through to the game. The carve-out
+        // requires a FrameworkElement reference — we pick it up from the
+        // visual tree by name.
+        FrameworkElement? headerChrome = null;
+        if (window.IsLoaded)
+        {
+            headerChrome = window.FindName("HeaderChrome") as FrameworkElement;
+        }
+        else
+        {
+            window.Loaded += (_, _) =>
+            {
+                headerChrome = window.FindName("HeaderChrome") as FrameworkElement;
+                ApplySharedClickThrough(window, headerChrome);
+            };
+        }
+
+        WindowLayoutBinder.Bind(window, _settings.MapOverlay, _settingsSaver.Touch);
+        ClickThrough.KeepTopmost(window);
+        ApplySharedClickThrough(window, headerChrome);
+
+        _settings.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(LegolasSettings.ClickThroughMap))
+                ApplySharedClickThrough(window, headerChrome);
+        };
+
+        _sharedMapWired = true;
+    }
+
+    private void ApplySharedClickThrough(Window window, FrameworkElement? headerChrome)
+    {
+        // No calibration-phase override here — the calibration capture
+        // mouse handlers live on MapOverlayView and don't translate to the
+        // shared window in step 6 (step 7 lifts them). Honour the user's
+        // ClickThroughMap setting verbatim; the headerChrome carve-out
+        // keeps the chip + drag area reachable either way.
+        ClickThrough.Apply(window, _settings.ClickThroughMap, headerChrome);
     }
 
     private void SyncInventory()
@@ -142,18 +231,6 @@ public sealed class OverlayController : IHostedService
     {
         if (ShouldRender(_session.IsCalibrationVisible)) EnsureCalibration().Show();
         else _calibration?.Hide();
-    }
-
-    private MapOverlayView EnsureMap()
-    {
-        if (_map is not null) return _map;
-        _map = _services.GetRequiredService<MapOverlayView>();
-        _map.Closed += (_, _) =>
-        {
-            _map = null;
-            _session.IsMapVisible = false;
-        };
-        return _map;
     }
 
     private InventoryOverlayView EnsureInventory()

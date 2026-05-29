@@ -34,23 +34,24 @@ public static class LegolasOverlayDrawerRegistrations
     internal static void RegisterAll(MarkerSceneRenderer renderer)
     {
         ArgumentNullException.ThrowIfNull(renderer);
+        // #835 step 6: Survey / Motherlode / Motherlode-guidance / Player
+        // pins are now drawn by LegolasOverlaySceneDrawer.Draw (the freeform
+        // scene-hook callback), not via the marker registry. Their drawers
+        // stay registered here because the snapshot baselines in
+        // LegolasMarkerDrawerSnapshotTests / MarkerPipelineSnapshotTests
+        // exercise them directly via MarkerSceneRenderer to keep byte parity
+        // with PinSceneRenderer (the soon-to-be-retired reference). Once
+        // step 7 deletes those snapshot tests' parity reference, the four
+        // pin-drawer registrations below can be retired with their
+        // companion drawer + style classes.
         renderer.RegisterDrawer<LegolasSurveyMarkerStyle>(LegolasSurveyMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasMotherlodeMarkerStyle>(LegolasMotherlodeMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasMotherlodeGuidanceMarkerStyle>(LegolasMotherlodeGuidanceMarkerDrawer.Draw);
-        // TODO(#835 step 6): player anchor producer deferred — currently
-        // rendered by the legacy WPF binding to
-        // MapOverlayViewModel.PlayerMarkerPixel inside
-        // MapOverlayView.OnMapSurfaceRender. The drawer registration is
-        // here to keep the visual contract pinned via
-        // LegolasMarkerDrawerSnapshotTests + MarkerPipelineSnapshotTests
-        // until the producer side lands (a Survey-mode IPositionState
-        // -> AddMarker for the projected GPS anchor, and a Motherlode-mode
-        // HasPlayerPosition -> AddMarker for the manual-click anchor —
-        // both today live in PlayerMarkerPixel as a computed pixel property
-        // the legacy renderer reads per-frame). Once the producer ships
-        // in step 6, this comment retires.
         renderer.RegisterDrawer<LegolasPlayerMarkerStyle>(LegolasPlayerMarkerDrawer.Draw);
-        // #835 step 5: calibration drawer joins.
+        // Calibration placement pins remain on the registry path — they
+        // render in the second pass on top of the scene drawer's geometry,
+        // matching the legacy WPF ItemsControl layering above the D2D
+        // surface (calibration markers visually above route lines).
         renderer.RegisterDrawer<LegolasCalibrationMarkerStyle>(LegolasCalibrationMarkerDrawer.Draw);
     }
 }

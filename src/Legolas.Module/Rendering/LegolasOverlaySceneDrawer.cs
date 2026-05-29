@@ -1,10 +1,8 @@
 using System.Numerics;
 using Legolas.Domain;
-// #835: D2DBrushCache lifted to Mithril.Overlay.Internal — InternalsVisibleTo
-// keeps it reachable from this file until Migration step 6 retires the whole
-// Legolas-side renderer.
+using Legolas.ViewModels;
+using Mithril.MapCalibration;
 using Mithril.Overlay;
-using Mithril.Overlay.Internal;
 using Vortice.Direct2D1;
 using Vortice.DCommon;
 using Vortice.Mathematics;
@@ -12,24 +10,169 @@ using Vortice.Mathematics;
 namespace Legolas.Rendering;
 
 /// <summary>
-/// Pure draw logic for the D2D-rendered pin layer. Stateless static class —
-/// every render reads from a <see cref="PinScene"/> snapshot, draws against
-/// the supplied <see cref="ID2D1RenderTarget"/>, and uses a
-/// <see cref="D2DBrushCache"/> to avoid per-call allocation. Stroke styles
-/// are recreated each call; they're cheap factory-side objects in D2D and
-/// optimising that comes in step G if it ever shows up in a profile.
+/// Legolas's overlay scene drawer (#835 step 6). Near-verbatim relocation of
+/// the body of <see cref="PinSceneRenderer.Render"/> so the same wedges +
+/// route polyline + active segment + survey pins + motherlode pins +
+/// motherlode guidance ring + player anchor are drawn against the shared
+/// <see cref="IOverlayWindow"/>'s surface via the
+/// <see cref="IOverlaySceneContext"/> handed in per tick.
 ///
-/// Step C scope: route polyline (dashed) + active segment (dashed, thicker)
-/// + bearing-uncertainty wedges. Pins, treatments, and the player anchor
-/// land in steps D/E/F.
+/// <para><b>Scope.</b> Per the dissolved-#866/#867/#868 decisions on the
+/// platform reframe, this drawer is responsible for Legolas's <em>full
+/// scene</em>: route polylines, pixel nudges, world-projected pins,
+/// guidance ring, player anchor. Calibration placement pins remain on the
+/// shared marker registry (<see cref="IWorldOverlayMarkers"/> +
+/// <see cref="LegolasCalibrationMarkerDrawer"/>) and render in the second
+/// pass on top of this scene drawer's geometry — keeps the calibration
+/// markers visually above the route lines like the legacy WPF
+/// <c>ItemsControl</c> did.</para>
+///
+/// <para><b>Coordinate handling.</b> World geometry uses
+/// <see cref="IOverlaySceneContext.Project"/> (zoom-aware); pixel-native
+/// data (route polyline points, motherlode guidance, player anchor,
+/// already-projected survey pin pixels stored on the survey model) uses
+/// pixels directly. The <see cref="PinScene"/> intermediate model already
+/// caches the per-survey projected pixel, so this drawer feeds the
+/// existing per-frame path: it builds the scene from the live
+/// <see cref="MapOverlayViewModel"/> + <see cref="MarchingAntsClock"/> and
+/// hands it off to the shared
+/// <see cref="DrawScene(PinScene, ID2D1RenderTarget, ID2D1Factory, D2DBrushCache)"/>
+/// helper below (the relocated bodies of the old static
+/// <see cref="PinSceneRenderer"/>).</para>
+///
+/// <para><b>Threading.</b> The shared overlay invokes
+/// <see cref="Draw(IOverlaySceneContext)"/> on the WPF dispatcher inside
+/// the surface's <c>BeginDraw</c>/<c>EndDraw</c> pair. The drawer reads
+/// the VM's observable properties directly &#8212; same threading
+/// contract as today's <c>MapOverlayView.OnMapSurfaceRender</c>.</para>
 /// </summary>
-internal static class PinSceneRenderer
+internal sealed class LegolasOverlaySceneDrawer
 {
     private const float RouteThickness = 2f;
     private const float ActiveSegmentThickness = 4f;
     private const float WedgeStrokeThickness = 1f;
 
-    public static void Render(
+    private readonly MapOverlayViewModel _vm;
+    private readonly MarchingAntsClock _antsClock = new();
+
+    public LegolasOverlaySceneDrawer(MapOverlayViewModel vm)
+    {
+        _vm = vm;
+    }
+
+    /// <summary>The scene-drawer callback registered via
+    /// <see cref="IOverlayWindow.RegisterScene"/>. Builds a fresh
+    /// <see cref="PinScene"/> from the VM each tick (same data flow as the
+    /// legacy <c>MapOverlayView.OnMapSurfaceRender</c>) and hands it to
+    /// <see cref="DrawScene"/>.</summary>
+    public void Draw(IOverlaySceneContext ctx)
+    {
+        var scene = BuildScene();
+        DrawScene(scene, ctx.RenderTarget, ctx.Factory, ctx.Brushes);
+    }
+
+    /// <summary>Test seam: build the per-tick PinScene from the VM exactly
+    /// as <see cref="Draw"/> would. Lets the
+    /// <c>MapOverlayMarkerRegistrationOrderTests</c> assert that the
+    /// scene-drawer's enumeration of <c>SessionState.Surveys</c> + the
+    /// renderer's "active pin last" path replaces the previous registry's
+    /// "active-last insertion order" invariant.</summary>
+    internal PinScene BuildSceneForTest() => BuildScene();
+
+    private PinScene BuildScene()
+    {
+        var vm = _vm;
+        var wedges = new List<WedgeArc>(vm.Surveys.Count);
+        var pins = new List<PixelPoint>(vm.Surveys.Count);
+        var selected = vm.Session.SelectedSurvey;
+        var listening = vm.IsListening;
+        int? activeIndex = null;
+        foreach (var s in vm.Surveys)
+        {
+            if (s.WedgeArc is { } arc) wedges.Add(arc);
+            if (s.IsVisible)
+            {
+                if (listening && ReferenceEquals(s, selected))
+                    activeIndex = pins.Count;
+                pins.Add(s.EffectivePixel!.Value);
+            }
+        }
+
+        ActivePinTreatmentSpec? activeSpec = null;
+        if (activeIndex.HasValue)
+        {
+            var aps = vm.ActivePinStyle;
+            activeSpec = new ActivePinTreatmentSpec(
+                Treatment: aps.Treatment,
+                Color: ParseColor(aps.Color),
+                HaloPaddingPx: aps.HaloPaddingPx,
+                StrokeThickness: aps.HaloThickness,
+                GlowBlurRadius: aps.GlowBlurRadius);
+        }
+
+        var pinStyle = vm.PinStyle;
+        var outerStyle = new PinLayerStyle(
+            Shape: pinStyle.Outer.Shape,
+            FillColor: ParseColor(pinStyle.Outer.FillColor),
+            StrokeColor: ParseColor(pinStyle.Outer.StrokeColor),
+            StrokeStyle: pinStyle.Outer.StrokeStyle,
+            StrokeThickness: pinStyle.Outer.StrokeThickness,
+            Size: 0);
+        var centerStyle = new PinLayerStyle(
+            Shape: pinStyle.Center.Shape,
+            FillColor: ParseColor(pinStyle.Center.FillColor),
+            StrokeColor: ParseColor(pinStyle.Center.StrokeColor),
+            StrokeStyle: pinStyle.Center.StrokeStyle,
+            StrokeThickness: pinStyle.Center.StrokeThickness,
+            Size: pinStyle.Center.Size);
+
+        var playerStyle = vm.PlayerPinStyle;
+        var playerOuterStyle = new PinLayerStyle(
+            Shape: playerStyle.Outer.Shape,
+            FillColor: ParseColor(playerStyle.Outer.FillColor),
+            StrokeColor: ParseColor(playerStyle.Outer.StrokeColor),
+            StrokeStyle: playerStyle.Outer.StrokeStyle,
+            StrokeThickness: playerStyle.Outer.StrokeThickness,
+            Size: playerStyle.Outer.Size);
+        var playerCenterStyle = new PinLayerStyle(
+            Shape: playerStyle.Center.Shape,
+            FillColor: ParseColor(playerStyle.Center.FillColor),
+            StrokeColor: ParseColor(playerStyle.Center.StrokeColor),
+            StrokeStyle: playerStyle.Center.StrokeStyle,
+            StrokeThickness: playerStyle.Center.StrokeThickness,
+            Size: playerStyle.Center.Size);
+
+        return new PinScene(
+            RoutePoints: vm.RoutePoints,
+            ActiveSegmentPoints: vm.ActiveSegmentPoints,
+            Wedges: wedges,
+            SurveyPins: pins,
+            MotherlodePins: vm.MotherlodeMarkerPixels,
+            MotherlodeGuidance: vm.MotherlodeGuidanceOverlay,
+            ActivePinIndex: activeIndex,
+            ActiveTreatment: activeSpec,
+            SurveyOuter: outerStyle,
+            SurveyCenter: centerStyle,
+            SurveyOuterDiameter: vm.PinDiameter,
+            PlayerPosition: vm.PlayerMarkerPixel,
+            PlayerOuter: playerOuterStyle,
+            PlayerCenter: playerCenterStyle,
+            RouteLineColor: vm.Brushes.RouteLine.Color,
+            WedgeFillColor: vm.Brushes.BearingWedgeFill.Color,
+            WedgeStrokeColor: vm.Brushes.BearingWedgeStroke.Color,
+            ActiveSegmentDashOffset: _antsClock.Advance());
+    }
+
+    private static System.Windows.Media.Color ParseColor(string hex) => LegolasBrushes.Parse(hex);
+
+    // ============================================================
+    // Below: relocated PinSceneRenderer body. Near-verbatim from
+    // src/Legolas.Module/Rendering/PinSceneRenderer.cs (#835 step 2).
+    // Step 7 deletes the original; the snapshot baselines keep the
+    // legacy renderer as the byte-parity reference until then.
+    // ============================================================
+
+    internal static void DrawScene(
         PinScene scene,
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
@@ -44,17 +187,8 @@ internal static class PinSceneRenderer
         DrawMotherlodePins(scene, rt, factory, brushes);
         DrawMotherlodeGuidance(scene, rt, factory, brushes);
         DrawPlayerAnchor(scene, rt, factory, brushes);
-        // #495: the calibration-validation reference markers are no longer
-        // drawn here — they moved to a WPF ItemsControl layered over this
-        // surface so each can carry a readable, decluttered label (D2D has no
-        // DirectWrite). WPF draws above the D2D surface, preserving the
-        // "markers never occluded by a real pin" property.
     }
 
-    // #113 Layer 5: solved-treasure markers. Survey and Motherlode modes are
-    // mutually exclusive, so reusing the survey pin style keeps the marker
-    // theme-consistent without threading a second style through the cache.
-    // No active-pin treatment (no per-target identity to single out).
     private static void DrawMotherlodePins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
     {
         for (var i = 0; i < scene.MotherlodePins.Count; i++)
@@ -75,7 +209,6 @@ internal static class PinSceneRenderer
         var ellipse = new Ellipse(new Vector2(cx, cy), r, r);
         rt.DrawEllipse(ellipse, stroke, 2f, dashStyle);
 
-        // Centre tick — visible even when the ring is large.
         const float tick = 5f;
         rt.DrawLine(new Vector2(cx - tick, cy), new Vector2(cx + tick, cy), stroke, 2f, dashStyle);
         rt.DrawLine(new Vector2(cx, cy - tick), new Vector2(cx, cy + tick), stroke, 2f, dashStyle);
@@ -84,9 +217,6 @@ internal static class PinSceneRenderer
     private static void DrawPlayerAnchor(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
     {
         if (scene.PlayerPosition is not { } pos) return;
-        // Player pin's outer Size is meaningful (drives the visible diameter)
-        // unlike survey pins where outer size comes from SurveyPinRadiusMetres.
-        // See LegolasPinStyle.PlayerDefaults() for the rationale.
         DrawPin(rt, factory, brushes, pos, scene.PlayerOuter, scene.PlayerCenter, scene.PlayerOuter.Size);
     }
 
@@ -111,7 +241,6 @@ internal static class PinSceneRenderer
         var brush = brushes.Get(scene.RouteLineColor);
         if (brush is null) return;
 
-        // Matches the WPF version's StrokeDashArray="4 2" on the static route polyline.
         using var dashStyle = CreateDashStyle(factory, new[] { 4f, 2f }, dashOffset: 0f);
         DrawPolyline(rt, scene.RoutePoints, brush, RouteThickness, dashStyle);
     }
@@ -122,10 +251,6 @@ internal static class PinSceneRenderer
         var brush = brushes.Get(scene.RouteLineColor);
         if (brush is null) return;
 
-        // Matches the WPF Storyboard: StrokeDashArray="6 3", animating
-        // StrokeDashOffset 0 → -9 over 0.6s. The clock advance lives in
-        // step F's MarchingAntsClock; for step C we accept whatever value
-        // the scene carries (default 0 = static dashes).
         using var dashStyle = CreateDashStyle(factory, new[] { 6f, 3f }, dashOffset: (float)scene.ActiveSegmentDashOffset);
         DrawPolyline(rt, scene.ActiveSegmentPoints, brush, ActiveSegmentThickness, dashStyle);
     }
@@ -150,8 +275,6 @@ internal static class PinSceneRenderer
 
     private static ID2D1StrokeStyle CreateDashStyle(ID2D1Factory factory, float[] dashes, float dashOffset)
     {
-        // CapStyle.Flat keeps dash ends crisp at the configured length; Round
-        // would balloon them. LineJoin.Miter matches WPF's default polyline join.
         var props = new StrokeStyleProperties
         {
             StartCap = CapStyle.Flat,
@@ -168,10 +291,6 @@ internal static class PinSceneRenderer
     private static void DrawSurveyPins(PinScene scene, ID2D1RenderTarget rt, ID2D1Factory factory, D2DBrushCache brushes)
     {
         if (scene.SurveyPins.Count == 0) return;
-        // Render non-active pins first; the active pin (if any) layers its
-        // treatment on top so glow halos can't be occluded by neighbouring
-        // pins. Halo + Glow add visuals around the normal pin draw; ScaleUp
-        // and FillSwap replace it.
         for (var i = 0; i < scene.SurveyPins.Count; i++)
         {
             if (i == scene.ActivePinIndex) continue;
@@ -212,10 +331,6 @@ internal static class PinSceneRenderer
                 break;
 
             case ActivePinTreatment.ScaleUp:
-                // 1.5× scale matches a comfortable "noticeably bigger but not
-                // overwhelming" jump for a 16px default pin (-> 24px). Both
-                // outer diameter and centre size scale together so the
-                // proportions stay right.
                 const double scale = 1.5;
                 var scaledCenter = scene.SurveyCenter with { Size = scene.SurveyCenter.Size * scale };
                 DrawPin(rt, factory, brushes, pos,
@@ -223,10 +338,6 @@ internal static class PinSceneRenderer
                 break;
 
             case ActivePinTreatment.FillSwap:
-                // Outer fill becomes the active colour. The default outer fill
-                // is near-transparent (#01000000) so users get a vivid solid
-                // disc; if they've already coloured the outer, the swap is
-                // still visible because the colour changes outright.
                 var swappedOuter = scene.SurveyOuter with { FillColor = spec.Color };
                 DrawPin(rt, factory, brushes, pos, swappedOuter, scene.SurveyCenter, scene.SurveyOuterDiameter);
                 break;
@@ -238,8 +349,6 @@ internal static class PinSceneRenderer
         PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         var haloDiameter = pinDiameter + 2 * spec.HaloPaddingPx;
-        // Transparent fill so the halo is a ring, not a filled blob obscuring
-        // the pin underneath.
         var haloStyle = new PinLayerStyle(
             Shape: shape,
             FillColor: System.Windows.Media.Color.FromArgb(0, 0, 0, 0),
@@ -255,20 +364,12 @@ internal static class PinSceneRenderer
         PixelPoint pos, PinShape shape, double pinDiameter, ActivePinTreatmentSpec spec)
     {
         if (spec.GlowBlurRadius <= 0) return;
-        // Multi-ring fake blur: 4 concentric filled rings with falling alpha,
-        // approximates a soft Gaussian glow without setting up a Direct2D
-        // effect chain (which needs ID2D1DeviceContext + a separate
-        // intermediate bitmap). Step G can swap this for a real D2D Gaussian
-        // if the difference is visible at extreme blur radii.
         const int rings = 4;
         var pinRadius = pinDiameter / 2.0;
         for (var i = 0; i < rings; i++)
         {
-            // Outer rings are larger and dimmer; t goes 1 → 1/rings.
             var t = (rings - i) / (double)rings;
             var radius = pinRadius + spec.GlowBlurRadius * t;
-            // Alpha ramp: nearest ring keeps ~50% of the configured colour
-            // alpha, outermost ring fades almost to nothing.
             var alphaScale = 0.5 * (1 - (double)i / rings);
             var c = spec.Color;
             var glowColor = System.Windows.Media.Color.FromArgb(
@@ -284,13 +385,6 @@ internal static class PinSceneRenderer
         }
     }
 
-    /// <summary>
-    /// Draw one shape (fill + optional stroke) centred on the given pixel
-    /// with the given outer-bound diameter. Stroke is inset so the outer
-    /// extent of the rendered shape matches <paramref name="diameter"/>,
-    /// matching the WPF version's <c>Stretch="Uniform"</c> behaviour where
-    /// the stroke fits inside the layout slot rather than overflowing it.
-    /// </summary>
     private static void DrawPinLayer(
         ID2D1RenderTarget rt,
         ID2D1Factory factory,
@@ -302,8 +396,6 @@ internal static class PinSceneRenderer
         if (style.Shape == PinShape.None || diameter <= 0) return;
 
         var thickness = style.StrokeStyle == PinStrokeStyle.None ? 0 : (float)style.StrokeThickness;
-        // Outer-bound diameter -> geometry size = diameter - thickness so
-        // the half-stroke on each side stays within the layout slot.
         var geomSize = (float)(diameter - thickness);
         if (geomSize <= 0) return;
         var halfGeom = geomSize / 2f;
@@ -316,8 +408,6 @@ internal static class PinSceneRenderer
         ID2D1StrokeStyle? strokeStyle = null;
         if (stroke is not null && style.StrokeStyle == PinStrokeStyle.Dashed)
         {
-            // Matches LegolasPinShapeStyle's "4 2" dash convention from the
-            // legacy WPF PinShapeStyleToDashArrayConverter.
             strokeStyle = CreateDashStyle(factory, new[] { 4f, 2f }, dashOffset: 0f);
         }
         try
@@ -345,7 +435,6 @@ internal static class PinSceneRenderer
                     break;
 
                 case PinShape.Cross:
-                    // Cross is stroke-only; ignore fill.
                     if (stroke is not null)
                     {
                         rt.DrawLine(new Vector2(cx - halfGeom, cy), new Vector2(cx + halfGeom, cy), stroke, thickness, strokeStyle);

@@ -1,5 +1,7 @@
+using Legolas.ViewModels;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Mithril.Overlay;
 using Mithril.Overlay.Internal;
 
 namespace Legolas.Rendering;
@@ -36,23 +38,42 @@ namespace Legolas.Rendering;
 internal sealed class LegolasOverlayDrawerHostedService : IHostedService
 {
     private readonly MarkerSceneRenderer _renderer;
+    private readonly IOverlayWindow _overlayWindow;
+    private readonly MapOverlayViewModel _mapVm;
     private readonly ILogger? _logger;
+    private IDisposable? _sceneRegistration;
 
     public LegolasOverlayDrawerHostedService(
         MarkerSceneRenderer renderer,
+        IOverlayWindow overlayWindow,
+        MapOverlayViewModel mapVm,
         ILoggerFactory? loggerFactory = null)
     {
         _renderer = renderer;
+        _overlayWindow = overlayWindow;
+        _mapVm = mapVm;
         _logger = loggerFactory?.CreateLogger("Legolas.Overlay");
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
         LegolasOverlayDrawerRegistrations.RegisterAll(_renderer);
+
+        // #835 step 6: register Legolas's freeform scene drawer with the
+        // shared overlay window. Holds the IDisposable for the lifetime of
+        // this service — released on StopAsync (and on host shutdown).
+        var sceneDrawer = new LegolasOverlaySceneDrawer(_mapVm);
+        _sceneRegistration = _overlayWindow.RegisterScene(sceneDrawer.Draw);
+
         _logger?.LogInformation(
-            "Legolas overlay drawers registered with shared MarkerSceneRenderer.");
+            "Legolas overlay drawers registered with shared MarkerSceneRenderer + scene drawer wired to IOverlayWindow.");
         return Task.CompletedTask;
     }
 
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        _sceneRegistration?.Dispose();
+        _sceneRegistration = null;
+        return Task.CompletedTask;
+    }
 }
