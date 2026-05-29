@@ -93,15 +93,14 @@ internal static class ScreenshotCalibrator
         if (debugBgra is not null)
         {
             // Mark every NCC detection that cleared threshold. Cyan rect = match
-            // bbox, red cross = pivot-corrected anchor (the pixel fed to solver).
-            // Lets the user eyeball whether NCC is even hitting real icons before
-            // tuning thresholds or assignment.
-            foreach (var (icon, det) in rawDetections)
+            // bbox (at the multi-scale render size), red cross = pivot-corrected
+            // anchor (the pixel fed to solver).
+            foreach (var (icon, det, rw, rh) in rawDetections)
             {
-                ImageIo.DrawRect(debugBgra, debugW, debugH, det.X, det.Y, icon.Width, icon.Height, 0, 255, 255);
-                var (cx, cy) = det.Centre(icon.Width, icon.Height);
-                int ax = (int)Math.Round(cx + icon.Width * (icon.PivotX - 0.5));
-                int ay = (int)Math.Round(cy + icon.Height * (0.5 - icon.PivotY));
+                ImageIo.DrawRect(debugBgra, debugW, debugH, det.X, det.Y, rw, rh, 0, 255, 255);
+                var (cx, cy) = det.Centre(rw, rh);
+                int ax = (int)Math.Round(cx + rw * (icon.PivotX - 0.5));
+                int ay = (int)Math.Round(cy + rh * (0.5 - icon.PivotY));
                 ImageIo.DrawCross(debugBgra, debugW, debugH, ax, ay, 4, 255, 0, 0);
             }
         }
@@ -184,11 +183,11 @@ internal static class ScreenshotCalibrator
         return new CalibrationResult(cal, assigned, FailureReason: null);
     }
 
-    private static (Dictionary<string, List<TypedDetection>> ByType, List<(IconMeta Icon, Detection Det)> Raw)
+    private static (Dictionary<string, List<TypedDetection>> ByType, List<(IconMeta Icon, Detection Det, int RenderW, int RenderH)> Raw)
         DetectIconsByType(GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold)
     {
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
-        var raw = new List<(IconMeta, Detection)>();
+        var raw = new List<(IconMeta, Detection, int, int)>();
         foreach (var icon in iconIndex.Icons)
         {
             var iconPath = Path.Combine(iconsDir, icon.File);
@@ -198,27 +197,67 @@ internal static class ScreenshotCalibrator
                 continue;
             }
             var (gray, alpha) = ImageIo.LoadGrayAndAlpha(iconPath);
-            var detections = NccTemplateMatch.FindAll(screenshot, gray, alpha, threshold, maxResults: 64);
-            Console.WriteLine($"  [icon] {icon.Name} ({icon.Width}x{icon.Height}, pivot=({icon.PivotX:0.00},{icon.PivotY:0.00})): {detections.Count} detections >= {threshold:0.00}" +
-                              (detections.Count > 0 ? $" (top score {detections[0].Score:0.000})" : ""));
-            if (detections.Count == 0) continue;
+
+            // Scale selection. sharedassets0 ships icon artwork at ~256 px but
+            // PG renders them on the map at ~20-30 px (verified 2026-05-29).
+            // We need to downsample large templates to the rendered size for
+            // NCC to find anything. For small templates (e.g. the synthetic
+            // self-test's 24-32 px ones, or any future tool that pre-renders
+            // at a known size), no multi-scale is needed — just match at
+            // native size.
+            int aspect = Math.Max(gray.Width, gray.Height);
+            int[] renderTargets = aspect > 64
+                ? [12, 16, 20, 24, 30, 40, 56]   // big artwork: search a ladder
+                : [aspect];                       // already render-sized: single scale
+            var best = new List<(Detection Det, int RenderW, int RenderH, double Score)>();
+            foreach (var target in renderTargets)
+            {
+                if (target > aspect) continue;  // no upsampling
+                int rw = target == aspect ? gray.Width : Math.Max(1, gray.Width * target / aspect);
+                int rh = target == aspect ? gray.Height : Math.Max(1, gray.Height * target / aspect);
+                var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
+                var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
+                var hits = NccTemplateMatch.FindAll(screenshot, grayD, alphaD, threshold, maxResults: 64);
+                if (hits.Count == 0) continue;
+                Console.WriteLine($"  [icon] {icon.Name} @ {rw}x{rh} (target {target}): {hits.Count} detections >= {threshold:0.00} (top {hits[0].Score:0.000})");
+                foreach (var h in hits) best.Add((h, rw, rh, h.Score));
+            }
+
+            // Cross-scale dedup: a single rendered icon may match at multiple
+            // adjacent scales (e.g. 16 and 20). Keep best score per spatial
+            // location (anchor within ~6 px of an existing kept detection).
+            best.Sort((a, b) => b.Score.CompareTo(a.Score));
+            var kept = new List<(Detection Det, int RenderW, int RenderH, double Score)>();
+            foreach (var entry in best)
+            {
+                var (cx, cy) = entry.Det.Centre(entry.RenderW, entry.RenderH);
+                bool dup = kept.Any(k =>
+                {
+                    var (kx, ky) = k.Det.Centre(k.RenderW, k.RenderH);
+                    return Math.Abs(cx - kx) < 6 && Math.Abs(cy - ky) < 6;
+                });
+                if (!dup) kept.Add(entry);
+            }
+            Console.WriteLine($"  [icon] {icon.Name}: {kept.Count} unique detections after cross-scale dedup" +
+                              (kept.Count > 0 ? $" (best score {kept[0].Score:0.000})" : ""));
+            if (kept.Count == 0) continue;
 
             if (!byType.TryGetValue(icon.LandmarkType, out var list))
             {
                 list = new List<TypedDetection>();
                 byType[icon.LandmarkType] = list;
             }
-            foreach (var d in detections)
+            foreach (var entry in kept)
             {
-                raw.Add((icon, d));
-                var (cx, cy) = d.Centre(icon.Width, icon.Height);
-                var anchorX = cx + icon.Width * (icon.PivotX - 0.5);
-                var anchorY = cy + icon.Height * (0.5 - icon.PivotY);
+                raw.Add((icon, entry.Det, entry.RenderW, entry.RenderH));
+                var (cx, cy) = entry.Det.Centre(entry.RenderW, entry.RenderH);
+                var anchorX = cx + entry.RenderW * (icon.PivotX - 0.5);
+                var anchorY = cy + entry.RenderH * (0.5 - icon.PivotY);
                 list.Add(new TypedDetection(
                     IconName: icon.Name,
                     AnchorScreenshotX: anchorX,
                     AnchorScreenshotY: anchorY,
-                    MatchScore: d.Score));
+                    MatchScore: entry.Score));
             }
         }
         return (byType, raw);
