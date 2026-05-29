@@ -74,12 +74,14 @@ internal static class IconTemplateExtractor
                 classdata.tpk not found at: {tpkPath}
 
                 sharedassets0.assets is type-tree-stripped so AssetsTools.NET needs a
-                Unity 6000.3 class-data package to decode the Texture2D + Sprite assets.
+                class-data package to decode the Texture2D + Sprite assets. The canonical
+                build ships in the UABEA repo (covers all Unity versions including 6000.x);
+                the AssetsTools.NET releases page does NOT attach it directly.
 
-                Download 'classdata.tpk' from:
-                  https://github.com/nesrak1/AssetsTools.NET/releases/latest
+                Download (~290 KB):
+                  https://github.com/nesrak1/UABEA/raw/master/ReleaseFiles/classdata.tpk
 
-                …and either place it at the expected path above, or pass --tpk <path>.
+                Place it at the path above, or pass --tpk <path>.
                 """);
         }
 

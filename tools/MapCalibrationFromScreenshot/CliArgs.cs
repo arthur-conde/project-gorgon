@@ -151,8 +151,8 @@ internal sealed record CliArgs(
               --landmarks   <landmarks.json> default: src/Mithril.Shared/Reference/BundledData/landmarks.json
               --icons-dir   <dir>           where to read/cache extracted icon PNGs
               --map-dir     <dir>           where to read/cache extracted area-map PNGs
-              --tpk         <classdata.tpk> Unity 6000.3 class-data package
-                                            (download from github.com/nesrak1/AssetsTools.NET/releases)
+              --tpk         <classdata.tpk> AssetsTools.NET class-data package (~290 KB)
+                                            (download from github.com/nesrak1/UABEA/raw/master/ReleaseFiles/classdata.tpk)
 
             modes:
               --phase extract-icons         only extract the icon templates from sharedassets0.assets

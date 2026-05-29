@@ -33,8 +33,10 @@ dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- --phase se
 Real usage (single area):
 
 ```bash
-# One-time prerequisite: download classdata.tpk for Unity 6000.3 from
-#   https://github.com/nesrak1/AssetsTools.NET/releases/latest
+# One-time prerequisite: download classdata.tpk (~290 KB, covers all Unity versions
+# the UABEA build supports — including 6000.x). It lives in the UABEA repo, NOT in
+# AssetsTools.NET's release attachments:
+#   https://github.com/nesrak1/UABEA/raw/master/ReleaseFiles/classdata.tpk
 # Place it next to the tool binary or pass --tpk <path>.
 
 # Pre-extract icon templates (cached; re-run only after a PG patch):
