@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -222,5 +223,32 @@ public sealed class TelemetrySettingsViewModelTests
         await Task.Run(() => observer.Note("brand.new.tag"));
 
         vm.NewlySeenChips.Select(c => c.Key).Should().Contain("brand.new.tag");
+    }
+
+    [Theory]
+    [InlineData("Endpoint [Restart Required]")]
+    [InlineData("Protocol [Restart Required]")]
+    [InlineData("Service name [Restart Required]")]
+    [InlineData("Headers [Restart Required]")]
+    public void TelemetrySettingsControl_marks_restart_required_fields(string expectedLabel)
+    {
+        // Smoke check (mithril#833): the OTel SDK bakes endpoint/headers/protocol/
+        // service-name into the exporter at provider build, so these fields are
+        // restart-required. The settings UI must say so on each field label.
+        var xaml = ReadShellSourceFile(Path.Combine("Views", "TelemetrySettingsControl.xaml"));
+        xaml.Should().Contain(expectedLabel,
+            $"the telemetry settings UI must label '{expectedLabel}' so users know the field " +
+            "does not apply live (mithril#833).");
+    }
+
+    private static string ReadShellSourceFile(string relativePath)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Mithril.slnx")))
+            dir = dir.Parent;
+        dir.Should().NotBeNull("the test must run inside the repo tree (Mithril.slnx not found walking up)");
+        var path = Path.Combine(dir!.FullName, "src", "Mithril.Shell", relativePath);
+        File.Exists(path).Should().BeTrue($"expected source file at {path}");
+        return File.ReadAllText(path);
     }
 }

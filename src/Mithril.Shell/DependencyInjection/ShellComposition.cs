@@ -133,7 +133,7 @@ public static class ShellComposition
         //      change. Must receive the SAME TelemetrySettings instance the
         //      versioned-settings registration produced so settings-UI mutations
         //      to TagExports flow through to the scrubber per span without
-        //      restart (see SingletonOptionsMonitor in TelemetryHostExtensions).
+        //      restart (see NotifyPropertyChangedOptionsMonitor in TelemetryHostExtensions).
         services.AddMithrilVersionedSettings<TelemetrySettings>(
             Path.Combine(o.ShellSettingsDir, "telemetry.json"),
             TelemetrySettingsJsonContext.Default.TelemetrySettings);
