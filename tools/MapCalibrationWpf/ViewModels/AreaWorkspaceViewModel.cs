@@ -28,6 +28,16 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     [ObservableProperty]
     private string? _loadError;
 
+    /// <summary>
+    /// Click handler hook from <see cref="Views.SourceMapCanvas"/>. Task 8
+    /// fills this in to materialise a <c>RefViewModel</c> at the click pixel.
+    /// </summary>
+    public void PlaceRefAt(double x, double y)
+    {
+        // Task 8 implements this.
+        _ = (x, y);
+    }
+
     public AreaWorkspaceViewModel(string area, PgInstallResolver installResolver)
     {
         Area = area;

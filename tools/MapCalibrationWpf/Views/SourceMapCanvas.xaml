@@ -1,0 +1,44 @@
+<UserControl x:Class="Mithril.Tools.MapCalibrationWpf.Views.SourceMapCanvas"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!--
+    Canvas hit-testing gotcha (docs/wpf-gotchas.md §"Click capture & hit-testing"):
+      OverlayCanvas needs Background="Transparent" to receive clicks. A null
+      Background means clicks fall through to the Image underneath.
+
+    Coordinate model (issue #860 §Decisions):
+      Image is shown 1:1 via Stretch="None" so the canvas pixel directly equals
+      the texture pixel. ScrollViewer handles the case where the texture
+      exceeds the viewport.
+  -->
+  <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+    <Grid>
+      <Image x:Name="MapImage"
+             Source="{Binding SourceMapImage}"
+             Stretch="None" />
+      <Canvas x:Name="OverlayCanvas"
+              Width="{Binding ActualWidth, ElementName=MapImage}"
+              Height="{Binding ActualHeight, ElementName=MapImage}"
+              Background="Transparent"
+              MouseLeftButtonDown="OnCanvasLeftClick">
+        <ItemsControl x:Name="RefsLayer">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <!-- IsItemsHost on a Canvas is the correct host for Canvas.Left/Top
+                   positioning (per WPF gotchas: a StackPanel here would silently
+                   ignore Canvas.Left/Top). -->
+              <Canvas IsItemsHost="True" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+        <ItemsControl x:Name="ProjectionsLayer">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <Canvas IsItemsHost="True" />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+        </ItemsControl>
+      </Canvas>
+    </Grid>
+  </ScrollViewer>
+</UserControl>
