@@ -1,0 +1,32 @@
+<Window x:Class="Mithril.Tools.MapCalibrationWpf.Views.PgInstallPickerDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Locate Project Gorgon install"
+        Width="640" Height="200"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+  <Grid Margin="12">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <TextBlock Grid.Row="0" Margin="0,0,0,8" TextWrapping="Wrap">
+      Steam auto-detect couldn't find the Project Gorgon install. Pick the install folder
+      (the one that contains <Run FontFamily="Consolas">WindowsPlayer_Data\</Run>).
+    </TextBlock>
+    <DockPanel Grid.Row="1">
+      <Button x:Name="BrowseButton" Content="Browse…" DockPanel.Dock="Right"
+              Margin="4,0,0,0" Padding="8,2" Click="OnBrowseClick" />
+      <TextBox x:Name="PathTextBox" />
+    </DockPanel>
+    <TextBlock x:Name="ErrorText" Grid.Row="2" Foreground="#C44"
+               Margin="0,8,0,0" TextWrapping="Wrap" />
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button Content="OK" Width="80" Margin="4,0,0,0" Padding="0,4" IsDefault="True" Click="OnOkClick" />
+      <Button Content="Cancel" Width="80" Margin="4,0,0,0" Padding="0,4" IsCancel="True" />
+    </StackPanel>
+  </Grid>
+</Window>
