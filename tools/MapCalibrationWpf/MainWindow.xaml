@@ -14,7 +14,9 @@
     </Grid.ColumnDefinitions>
     <DockPanel Grid.Row="0" Grid.ColumnSpan="3" LastChildFill="False">
       <TextBlock Text="Area: " VerticalAlignment="Center" Margin="8,0,0,0" />
-      <ComboBox Width="240" Margin="4,4,4,4" />
+      <ComboBox Width="240" Margin="4,4,4,4"
+                ItemsSource="{Binding Areas}"
+                SelectedItem="{Binding SelectedArea}" />
       <Button Content="Commit anchor" DockPanel.Dock="Right" Margin="4,4,8,4" Padding="8,4" IsEnabled="False" />
     </DockPanel>
     <Border Grid.Row="1" Grid.Column="0" BorderBrush="#888" BorderThickness="0,0,1,0">
