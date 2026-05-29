@@ -3,7 +3,6 @@ using Legolas.Domain;
 using Mithril.MapCalibration;
 using Mithril.Overlay.Internal;
 using Vortice.Direct2D1;
-using Vortice.DCommon;
 using Vortice.Mathematics;
 
 namespace Legolas.Rendering;

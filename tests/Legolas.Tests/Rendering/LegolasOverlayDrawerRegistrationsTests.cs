@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Legolas.Rendering;
 using Mithril.Overlay.Internal;
-using Xunit;
 
 namespace Legolas.Tests.Rendering;
 

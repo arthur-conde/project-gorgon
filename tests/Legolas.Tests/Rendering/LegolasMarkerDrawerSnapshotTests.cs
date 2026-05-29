@@ -4,7 +4,6 @@ using Legolas.Rendering;
 using Mithril.MapCalibration;
 using Mithril.Overlay;
 using Mithril.Overlay.Internal;
-using Xunit;
 using Color = System.Windows.Media.Color;
 using Color4 = Vortice.Mathematics.Color4;
 

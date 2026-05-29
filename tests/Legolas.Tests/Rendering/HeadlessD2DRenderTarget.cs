@@ -4,7 +4,6 @@ using System.Windows.Media.Imaging;
 using Vortice.Direct2D1;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
-using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1.D2D1;
 using D3D11Pkg = Vortice.Direct3D11.D3D11;
 using D2DFeatureLevel = Vortice.Direct2D1.FeatureLevel;
