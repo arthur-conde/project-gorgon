@@ -19,6 +19,7 @@ internal sealed record CliArgs(
     string? TpkPath,
     string? PlayerLogPath,
     (double X, double Z)? PlayerCoord,
+    (int X, int Y, int W, int H)? MapRect,
     double Zoom,
     Phase Phase,
     bool DryRun)
@@ -36,6 +37,7 @@ internal sealed record CliArgs(
         string? tpk = null;
         string? playerLog = null;
         (double, double)? playerCoord = null;
+        (int, int, int, int)? mapRect = null;
         double zoom = 1.0;
         Phase phase = Phase.Full;
         bool dryRun = false;
@@ -54,6 +56,9 @@ internal sealed record CliArgs(
                 case "--player-log": playerLog = Next(argv, ref i); break;
                 case "--player-coord":
                     playerCoord = ParseCoord(Next(argv, ref i));
+                    break;
+                case "--map-rect":
+                    mapRect = ParseMapRect(Next(argv, ref i));
                     break;
                 case "--zoom":
                     zoom = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
@@ -93,9 +98,24 @@ internal sealed record CliArgs(
             TpkPath: tpk,
             PlayerLogPath: playerLog,
             PlayerCoord: playerCoord,
+            MapRect: mapRect,
             Zoom: zoom,
             Phase: phase,
             DryRun: dryRun);
+    }
+
+    private static (int, int, int, int) ParseMapRect(string s)
+    {
+        var parts = s.Split(',', 4);
+        if (parts.Length != 4)
+        {
+            throw new UserFacingException($"--map-rect wants 'x,y,w,h' (got '{s}')");
+        }
+        return (
+            int.Parse(parts[0].Trim(), CultureInfo.InvariantCulture),
+            int.Parse(parts[1].Trim(), CultureInfo.InvariantCulture),
+            int.Parse(parts[2].Trim(), CultureInfo.InvariantCulture),
+            int.Parse(parts[3].Trim(), CultureInfo.InvariantCulture));
     }
 
     private static string Next(string[] argv, ref int i)
@@ -145,6 +165,10 @@ internal sealed record CliArgs(
               --player-coord <x,z>          player's world coord at screenshot time (signed)
               --player-log  <Player.log>    alternative: extract from most recent [Status]
               --zoom <float>                in-game map zoom (default 1.0 = CalibrationZoom default)
+
+            map-rect override (skip auto-detect):
+              --map-rect <x,y,w,h>          visible map's bbox in the screenshot (px); use when
+                                            auto-detect can't find the map or picks the wrong scale
 
             paths (sane defaults):
               --baseline    <baseline.json> default: src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json

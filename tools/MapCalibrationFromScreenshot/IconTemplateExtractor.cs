@@ -222,17 +222,35 @@ internal static class IconTemplateExtractor
 
     private static void WritePng(byte[] bgra32, int width, int height, string outPath)
     {
-        // Same pattern as MapAssetSpike.WritePng — Format32bppArgb is BGRA in
-        // memory on Windows; DecodeTextureRaw has already done the vertical flip.
+        // Unity stores Texture2Ds bottom-up. AssetsTools.NET's TextureFile flips
+        // automatically for COMPRESSED formats (DXT/ETC/etc., what PG's area
+        // bundles use) but NOT for raw RGBA — which is the storage these
+        // sharedassets0.assets icons use. The MapAssetSpike comment claimed
+        // DecodeTextureRaw always flips; that's a half-truth that bites here.
+        //
+        // Always flip the row order so the PNG comes out the way PG renders the
+        // icon. NCC against a screenshot is shape-matching — if templates are
+        // upside-down vs rendered icons, scores collapse and detection fails.
+        // The Sprite.m_Pivot we cache alongside is in Unity Y-up coords; the
+        // formula in ScreenshotCalibrator (`h * (0.5 - pivotY)`) is written
+        // against right-side-up rendered icons + Unity-Y-up pivot, so flipping
+        // here keeps the pivot interpretation correct.
+        int rowBytes = width * 4;
+        var flipped = new byte[bgra32.Length];
+        for (int srcRow = 0; srcRow < height; srcRow++)
+        {
+            int dstRow = height - 1 - srcRow;
+            Buffer.BlockCopy(bgra32, srcRow * rowBytes, flipped, dstRow * rowBytes, rowBytes);
+        }
+
         using var bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
         var rect = new Rectangle(0, 0, width, height);
         var data = bmp.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
         try
         {
-            int rowBytes = width * 4;
             for (int row = 0; row < height; row++)
             {
-                Marshal.Copy(bgra32, row * rowBytes, data.Scan0 + row * data.Stride, rowBytes);
+                Marshal.Copy(flipped, row * rowBytes, data.Scan0 + row * data.Stride, rowBytes);
             }
         }
         finally { bmp.UnlockBits(data); }

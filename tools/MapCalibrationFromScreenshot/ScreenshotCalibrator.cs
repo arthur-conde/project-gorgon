@@ -38,27 +38,40 @@ internal static class ScreenshotCalibrator
         Console.WriteLine($"[refs] {landmarks.Count} landmarks for {inputs.Area} from {Path.GetFileName(inputs.LandmarksJsonPath)}");
 
         // Phase: locate the map rect inside the screenshot.
-        var screenshotDown = ImageIo.Downsample(screenshotGray, 2);
-        Console.WriteLine($"[locate] running NCC scale-ladder vs downsampled screenshot ({screenshotDown.Width}x{screenshotDown.Height})");
-        var rectDown = MapRectLocator.AutoDetect(screenshotDown, textureGray, minScore: 0.4);
-        if (rectDown is null)
+        MapRect mapRect;
+        if (inputs.MapRectOverride is { } o)
         {
-            return new CalibrationResult(
-                Calibration: null,
-                AssignedReferences: [],
-                FailureReason: "map rect auto-detect found no match >= 0.4. Was the in-game map fully zoomed out + visible in the screenshot? Pass --map-rect to skip auto-detect.");
+            mapRect = new MapRect(o.X, o.Y, o.W, o.H, textureGray.Width, textureGray.Height);
+            Console.WriteLine($"[locate] using --map-rect override: ({mapRect.OriginX},{mapRect.OriginY}) size {mapRect.Width}x{mapRect.Height}");
         }
-        // Re-scale the downsampled-screenshot rect back to full-screenshot coords.
-        var mapRect = new MapRect(
-            OriginX: rectDown.OriginX * 2,
-            OriginY: rectDown.OriginY * 2,
-            Width: rectDown.Width * 2,
-            Height: rectDown.Height * 2,
-            TextureWidth: rectDown.TextureWidth,
-            TextureHeight: rectDown.TextureHeight,
-            AutoDetectScore: rectDown.AutoDetectScore,
-            SourceScaleFactor: rectDown.SourceScaleFactor);
-        Console.WriteLine($"[locate] map at screenshot ({mapRect.OriginX},{mapRect.OriginY}) size {mapRect.Width}x{mapRect.Height} (score={mapRect.AutoDetectScore:0.000}, downsample={mapRect.SourceScaleFactor})");
+        else
+        {
+            // Coarse pass at half-resolution to keep NCC sub-second per scale, then
+            // scale the result back. Fractional downsample factors on the texture
+            // side cover the "map fills the whole screenshot" case that integer
+            // factors miss badly.
+            var screenshotDown = ImageIo.Downsample(screenshotGray, 2);
+            var textureDown = ImageIo.Downsample(textureGray, 2);
+            Console.WriteLine($"[locate] coarse NCC scale-ladder (screenshot {screenshotDown.Width}x{screenshotDown.Height}, texture {textureDown.Width}x{textureDown.Height})");
+            var rectDown = MapRectLocator.AutoDetect(screenshotDown, textureDown, minScore: 0.4);
+            if (rectDown is null)
+            {
+                return new CalibrationResult(
+                    Calibration: null,
+                    AssignedReferences: [],
+                    FailureReason: "map rect auto-detect found no match >= 0.4. Pass --map-rect <x,y,w,h> to skip auto-detect (read the bbox of the visible map area off the screenshot in any image viewer).");
+            }
+            mapRect = new MapRect(
+                OriginX: rectDown.OriginX * 2,
+                OriginY: rectDown.OriginY * 2,
+                Width: rectDown.Width * 2,
+                Height: rectDown.Height * 2,
+                TextureWidth: textureGray.Width,
+                TextureHeight: textureGray.Height,
+                AutoDetectScore: rectDown.AutoDetectScore,
+                SourceScaleFactor: rectDown.SourceScaleFactor);
+            Console.WriteLine($"[locate] map at screenshot ({mapRect.OriginX},{mapRect.OriginY}) size {mapRect.Width}x{mapRect.Height} (score={mapRect.AutoDetectScore:0.000}, downsample={mapRect.SourceScaleFactor:0.00})");
+        }
 
         // Phase: detect every landmark icon variant and pair with landmarks.json.
         var assigned = new List<AssignedReference>();

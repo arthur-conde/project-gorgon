@@ -25,22 +25,25 @@ internal static class MapRectLocator
     {
         // Candidate downsample factors for the texture — each gives a different
         // "rendered map size" hypothesis. The match's score peak picks the
-        // closest hypothesis.
+        // closest hypothesis. Fractional factors are essential when the user
+        // zooms the in-game map all the way out so the entire texture fits
+        // exactly in the visible window — the right factor is ~texture/screen
+        // and integer-only resampling skips past it.
         var candidates = BuildCandidateScales(screenshot, texture);
         if (candidates.Count == 0) return null;
 
         MapRect? bestRect = null;
         double bestScore = double.NegativeInfinity;
+        Console.WriteLine($"[locate] trying {candidates.Count} scales:");
         foreach (var (factor, downsampledTexture) in candidates)
         {
-            // NCC the downsampled texture (template) over the screenshot (image).
-            // Screenshot is large; downsampled texture should be smaller than it.
-            if (downsampledTexture.Width >= screenshot.Width || downsampledTexture.Height >= screenshot.Height)
+            var hit = NccTemplateMatch.FindBest(screenshot, downsampledTexture, templateMask: null, minScore: -1.0);
+            if (hit is null)
             {
+                Console.WriteLine($"        f={factor:0.00}  template={downsampledTexture.Width}x{downsampledTexture.Height}  no NCC position");
                 continue;
             }
-            var hit = NccTemplateMatch.FindBest(screenshot, downsampledTexture, templateMask: null, minScore);
-            if (hit is null) continue;
+            Console.WriteLine($"        f={factor:0.00}  template={downsampledTexture.Width}x{downsampledTexture.Height}  best=({hit.Value.X},{hit.Value.Y})  score={hit.Value.Score:0.000}");
             if (hit.Value.Score > bestScore)
             {
                 bestScore = hit.Value.Score;
@@ -55,24 +58,42 @@ internal static class MapRectLocator
                     SourceScaleFactor: factor);
             }
         }
-        return bestRect;
+        return (bestRect is not null && bestScore >= minScore) ? bestRect : null;
     }
 
-    private static List<(int Factor, GrayImage Downsampled)> BuildCandidateScales(
+    private static List<(double Factor, GrayImage Downsampled)> BuildCandidateScales(
         GrayImage screenshot, GrayImage texture)
     {
-        var result = new List<(int, GrayImage)>();
-        // Aim for downsampled textures that span 30%–80% of the screenshot's
-        // smaller dimension. PG textures are ~2000 px, screenshots typically
-        // 1080 px high — factor of 3..8 covers the common range.
-        int smaller = Math.Min(screenshot.Width, screenshot.Height);
-        for (int factor = 2; factor <= 12; factor++)
+        var result = new List<(double, GrayImage)>();
+        int sw = screenshot.Width;
+        int sh = screenshot.Height;
+
+        // Fractional factors over the full range of plausible map-renders:
+        //   - factor ≈ texture/screenshot when the in-game map fills the whole
+        //     screenshot (the "zoomed all the way out" case — common, and where
+        //     integer-only factors badly bracket the right scale)
+        //   - factor in 3..6 when the map UI panel is a smaller region
+        // Each candidate is bilinearly resampled so we can test factors like 2.1
+        // that integer downsampling can't represent.
+        var factors = new double[]
         {
-            int dw = texture.Width / factor;
-            int dh = texture.Height / factor;
+            // Down to 1.0 to cover the "screenshot already at native scale"
+            // case (e.g., the synthetic test, or any caller that pre-downsamples
+            // both inputs to the same coarse resolution).
+            1.0, 1.1, 1.2, 1.35, 1.5, 1.75, 2.0, 2.1, 2.2, 2.4, 2.6, 2.8,
+            3.0, 3.25, 3.5, 4.0, 4.5, 5.0, 6.0, 8.0, 10.0,
+        };
+        foreach (var f in factors)
+        {
+            int dw = (int)Math.Round(texture.Width / f);
+            int dh = (int)Math.Round(texture.Height / f);
+            // Template must fit inside the search image; below 25% of screen
+            // is unlikely to be a real map render and is dominated by noise.
+            if (dw > sw || dh > sh) continue;
             int dsmaller = Math.Min(dw, dh);
-            if (dsmaller < smaller * 0.25 || dsmaller > smaller * 0.95) continue;
-            result.Add((factor, ImageIo.Downsample(texture, factor)));
+            int smaller = Math.Min(sw, sh);
+            if (dsmaller < smaller * 0.25) continue;
+            result.Add((f, ImageIo.Resize(texture, dw, dh)));
         }
         return result;
     }
@@ -90,7 +111,7 @@ internal sealed record MapRect(
     int TextureWidth,
     int TextureHeight,
     double? AutoDetectScore = null,
-    int? SourceScaleFactor = null)
+    double? SourceScaleFactor = null)
 {
     public (double Tx, double Ty) ScreenshotToTexture(double sx, double sy)
     {

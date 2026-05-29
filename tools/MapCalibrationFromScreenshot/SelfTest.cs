@@ -145,7 +145,8 @@ internal static class SelfTest
             LandmarksJsonPath: landmarksJson,
             Area: "AreaSelfTest",
             Zoom: 1.0,
-            PlayerCoord: (playerWorld.X, playerWorld.Z));
+            PlayerCoord: (playerWorld.X, playerWorld.Z),
+            MapRectOverride: null);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 
         if (result.Calibration is null)

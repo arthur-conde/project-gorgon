@@ -57,7 +57,8 @@ internal static class Pipeline
             LandmarksJsonPath: ResolveLandmarksPath(args),
             Area: args.Area,
             Zoom: args.Zoom,
-            PlayerCoord: ResolvePlayerCoord(args));
+            PlayerCoord: ResolvePlayerCoord(args),
+            MapRectOverride: args.MapRect);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
         if (result.Calibration is null)
@@ -160,7 +161,8 @@ internal sealed record CalibrationInputs(
     string LandmarksJsonPath,
     string Area,
     double Zoom,
-    (double X, double Z)? PlayerCoord);
+    (double X, double Z)? PlayerCoord,
+    (int X, int Y, int W, int H)? MapRectOverride);
 
 internal sealed record AssignedReference(
     string Label,
