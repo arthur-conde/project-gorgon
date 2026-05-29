@@ -395,13 +395,20 @@ internal static class ScreenshotCalibrator
             }
             var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
             var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
-            // No maxResults cap: NCC at 19 px on a complex map finds 100s of
-            // above-threshold patches per template. A 64-cap by score loses
-            // real matches that score lower than a glut of false-positive
-            // teardrop-shaped terrain patches. RANSAC handles the noise
-            // gracefully (geometric consistency wins) but it needs the real
-            // matches to be IN the pool to consider them.
-            var hits = NccTemplateMatch.FindAll(screenshot, grayD, alphaD, threshold, maxResults: null);
+            // 64-cap per template by score. Tried unlimited briefly and it
+            // made things worse: hundreds of mid-score (~0.65) false-positive
+            // teardrop patches entered the pool, and RANSAC found
+            // wrong-but-self-consistent seeds with more "inliers" at lower
+            // average score than the correct 7-inlier @ 0.85-score solution.
+            // The cap acts as a quality filter — only the highest-confidence
+            // NCC matches per template, which are mostly true icons.
+            //
+            // Trade-off: legitimate icons in dense clusters whose NCC score
+            // is mediocre (e.g. small icons near other icons) may fall below
+            // the top-64 by score and be missed. That's currently the v1
+            // limitation; a smarter cap (e.g. top-N per spatial region) would
+            // give clusters fair representation without flooding the pool.
+            var hits = NccTemplateMatch.FindAll(screenshot, grayD, alphaD, threshold, maxResults: 64);
             Console.WriteLine($"  [icon] {icon.Name} @ {rw}x{rh}: {hits.Count} detections >= {threshold:0.00}" +
                               (hits.Count > 0 ? $" (top {hits[0].Score:0.000})" : ""));
             if (hits.Count == 0) continue;
