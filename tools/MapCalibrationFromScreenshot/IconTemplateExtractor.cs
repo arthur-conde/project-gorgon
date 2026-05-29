@@ -32,7 +32,7 @@ internal static class IconTemplateExtractor
     // requires re-extracting from sharedassets0.assets (e.g., the vertical-flip
     // fix changed icon orientation). Stored in index.json; mismatch with the
     // cached value forces a full re-extract.
-    private const int CacheFormatVersion = 2;
+    private const int CacheFormatVersion = 3;
 
 
     // Listed in spike doc §"Tangential positive". Maps to landmarks.json Type
@@ -46,15 +46,21 @@ internal static class IconTemplateExtractor
         // landmark_star is generic waypoint; skip for v1 — no Type to match on.
     ];
 
-    // Spike doc lists ~18 LocalPlayerPin_* + RemotePlayerPin_* + PetPin_* variants
-    // (Round/Square/Arrow/PointedSquare × Light/Dark × Up/Down). Extract any
-    // texture whose name starts with one of these prefixes; the calibrator picks
-    // the best-scoring variant at match time so we don't have to guess which
-    // theme the user runs.
-    private static readonly string[] PlayerPinPrefixes =
-    [
-        "LocalPlayerPin_",
-    ];
+    // Player-pin variants are intentionally NOT extracted in v1.
+    //
+    // PG's player pin rotates 0..360° to indicate the player's facing
+    // direction (user observation 2026-05-29). Single-scale NCC against a
+    // fixed-orientation template can't reliably match a rotated render;
+    // residual scores collapse for any non-trivial rotation. Sweeping 36
+    // angles per variant × ~18 variants would 600× the detection cost for
+    // a reference point whose value is only an anchor (the solver already
+    // converges on landmarks alone for any area with >= 2 of them).
+    //
+    // A future revision can re-enable a single user-chosen variant via
+    // --player-pin + multi-angle sweep when the residual without the player
+    // anchor proves insufficient. For now the cleanest path is: solve from
+    // landmarks only; --player-coord becomes documentation.
+    private static readonly string[] PlayerPinPrefixes = [];
 
     public static void EnsureExtracted(string pgInstall, string iconsDir, string tpkPath)
     {
