@@ -28,3 +28,7 @@ garden/
 
 # Worktrees
 worktrees/
+
+# Repo-root scratch screenshots (e.g. test inputs for tools/MapCalibrationFromScreenshot)
+/*.png
+/*.jpg

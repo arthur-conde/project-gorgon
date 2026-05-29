@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Mithril.Tools.MapCalibrationFromScreenshot</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      Offline calibration tool, not part of Mithril.slnx. Same isolation pattern
+      as tools/MapAssetSpike: keep AssetsTools.NET out of Directory.Packages.props
+      and avoid the repo's Directory.Build.targets (versionless analyzer / GitVersioning
+      package adds that clash with non-central versioning).
+    -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
+    <!-- Reads the registry (Steam install) and writes PNGs via System.Drawing — Windows-only. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AssetsTools.NET" Version="3.0.4" />
+    <PackageReference Include="AssetsTools.NET.Texture" Version="3.0.2" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Reuse the canonical 2D-similarity solver + AreaCalibration record so we
+      can't drift from what BundledBaselineLoader expects. The referenced
+      project itself stays on the repo's central package management — that's
+      independent of this csproj's local opt-out.
+    -->
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+  </ItemGroup>
+</Project>
