@@ -32,10 +32,22 @@ public static class BaselineFile
     {
         if (!File.Exists(baselinePath)) return null;
         var text = File.ReadAllText(baselinePath);
-        if (JsonNode.Parse(text) is not JsonObject root) return null;
+        JsonNode? rootNode;
+        try
+        {
+            rootNode = JsonNode.Parse(text);
+        }
+        catch (JsonException ex)
+        {
+            // Wrap parse failures as UserFacingException so the caller's
+            // existing catch surface (and the WPF tool's error dialogs) handle
+            // a corrupt baseline the same way they handle a missing one.
+            throw new UserFacingException($"baseline JSON at {baselinePath} is malformed: {ex.Message}");
+        }
+        if (rootNode is not JsonObject root) return null;
         if (root["anchors"] is not JsonObject anchors) return null;
         if (anchors[area] is not JsonObject obj) return null;
-        return DeserializeAreaCalibration(obj);
+        return DeserializeAreaCalibration(obj, baselinePath, area);
     }
 
     public static void UpsertAnchor(string baselinePath, string area, AreaCalibration cal)
@@ -66,17 +78,18 @@ public static class BaselineFile
         File.WriteAllText(baselinePath, json + Environment.NewLine);
     }
 
-    private static AreaCalibration DeserializeAreaCalibration(JsonObject obj)
+    private static AreaCalibration DeserializeAreaCalibration(JsonObject obj, string baselinePath, string area)
     {
-        // Required fields — UpsertAnchor always writes these; treat missing as
-        // a default of 0 / 0 rather than throwing so an externally-edited
-        // baseline with omissions still loads.
-        var scale = obj["scale"]?.GetValue<double>() ?? 0.0;
-        var rotation = obj["rotationRadians"]?.GetValue<double>() ?? 0.0;
-        var originX = obj["originX"]?.GetValue<double>() ?? 0.0;
-        var originY = obj["originY"]?.GetValue<double>() ?? 0.0;
-        var refCount = obj["referenceCount"]?.GetValue<int>() ?? 0;
-        var residual = obj["residualPixels"]?.GetValue<double>() ?? 0.0;
+        // Required fields — UpsertAnchor always writes all six, so a missing
+        // one means the JSON was hand-edited badly or truncated. Throw rather
+        // than coercing to 0.0 (which would silently yield an all-zeros
+        // "calibration" the dirty-check compares against — round-2 review nit).
+        var scale = RequireDouble(obj, "scale", baselinePath, area);
+        var rotation = RequireDouble(obj, "rotationRadians", baselinePath, area);
+        var originX = RequireDouble(obj, "originX", baselinePath, area);
+        var originY = RequireDouble(obj, "originY", baselinePath, area);
+        var refCount = RequireInt(obj, "referenceCount", baselinePath, area);
+        var residual = RequireDouble(obj, "residualPixels", baselinePath, area);
 
         var cal = new AreaCalibration(scale, rotation, originX, originY, refCount, residual);
 
@@ -89,6 +102,36 @@ public static class BaselineFile
         }
         if (obj["schemaVersion"]?.GetValue<int>() is int sv) cal = cal with { SchemaVersion = sv };
         return cal;
+    }
+
+    private static double RequireDouble(JsonObject obj, string key, string baselinePath, string area)
+    {
+        if (obj[key] is not JsonNode node)
+        {
+            throw new UserFacingException(
+                $"baseline JSON at {baselinePath} is missing required field anchors[{area}].{key}");
+        }
+        try { return node.GetValue<double>(); }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        {
+            throw new UserFacingException(
+                $"baseline JSON at {baselinePath} field anchors[{area}].{key} is not a number");
+        }
+    }
+
+    private static int RequireInt(JsonObject obj, string key, string baselinePath, string area)
+    {
+        if (obj[key] is not JsonNode node)
+        {
+            throw new UserFacingException(
+                $"baseline JSON at {baselinePath} is missing required field anchors[{area}].{key}");
+        }
+        try { return node.GetValue<int>(); }
+        catch (Exception ex) when (ex is InvalidOperationException or FormatException)
+        {
+            throw new UserFacingException(
+                $"baseline JSON at {baselinePath} field anchors[{area}].{key} is not an integer");
+        }
     }
 
     private static JsonObject SerializeAreaCalibration(AreaCalibration cal)

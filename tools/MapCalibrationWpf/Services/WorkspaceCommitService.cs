@@ -38,9 +38,13 @@ public sealed class WorkspaceCommitService
         }
         catch (UserFacingException)
         {
-            // Baseline file missing (running outside the repo); pretend "no
-            // stored anchor" so the commit button surfaces a useful error
-            // when the user clicks it.
+            // Either the baseline path doesn't resolve (running outside the
+            // repo — RepoPaths throws), or the JSON is malformed / has a
+            // required field missing for this area (TryReadAnchor throws).
+            // Either way pretend "no stored anchor" so the workspace treats
+            // the in-progress calibration as dirty and the commit button
+            // stays available — the user can see the underlying issue when
+            // they try to commit (UpsertAnchor will re-surface the error).
             return null;
         }
     }

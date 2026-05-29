@@ -63,6 +63,20 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     {
         if (Calibration is not { } cal) return;
         _commitService.Commit(Area, cal);
+        // LandmarkCalibrationSolver.Solve always emits Source=UserRefinement
+        // (record default) but the service stamps Source=BundledBaseline
+        // (+ Zoom=1.0 + SchemaVersion=1) into the JSON. Stamp the in-memory
+        // copy to match what's now on disk — otherwise ApproximatelyEqual
+        // would never report a match after commit and the button would
+        // stay enabled forever (round-2 review blocker). Mirror exactly what
+        // WorkspaceCommitService.Commit writes.
+        Calibration = cal with
+        {
+            Source = CalibrationSource.BundledBaseline,
+            CalibrationZoom = 1.0,
+            SchemaVersion = 1,
+        };
+        SolverReadout.Calibration = Calibration;
         // Refresh the stored cache so HasUncommittedRefs flips to false (and
         // the button greys out) until the user changes a ref again.
         _storedCalibration = _commitService.ReadStored(Area);
@@ -191,11 +205,10 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
         // Fire-and-forget: the dialog runs on the UI thread; the bg work
         // updates UI properties when complete. Caller (MainViewModel) doesn't
         // await — area-switch responsiveness wins over linearised completion.
-        // try/catch around the assignment so any sync throw that escapes
-        // before the first await inside LoadAsync (e.g. the dialog ctor) gets
-        // funnelled into LoadError rather than silently lost.
-        try { _ = LoadAsync(); }
-        catch (Exception ex) { LoadError = ex.Message; }
+        // The async state machine captures pre-first-await throws into the
+        // returned Task, so an outer try/catch here would be dead code —
+        // LoadAsync's own try/catch funnels every failure path into LoadError.
+        _ = LoadAsync();
     }
 
     private void OnRefsChanged(object? sender, NotifyCollectionChangedEventArgs e)
