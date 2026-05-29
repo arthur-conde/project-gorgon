@@ -5,6 +5,7 @@ using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Mithril.MapCalibration;
 using Mithril.Tools.MapCalibration.Common;
 using Mithril.Tools.MapCalibrationWpf.Services;
@@ -24,6 +25,8 @@ using Mithril.Tools.MapCalibrationWpf.Views;
 public sealed partial class AreaWorkspaceViewModel : ObservableObject
 {
     private readonly PgInstallResolver _installResolver;
+    private readonly WorkspaceCommitService _commitService;
+    private AreaCalibration? _storedCalibration;
 
     public string Area { get; }
 
@@ -45,11 +48,59 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     public SolverReadoutViewModel SolverReadout { get; } = new();
 
     /// <summary>
-    /// True when the user has placed refs that haven't been committed to the
-    /// baseline JSON yet. Wired in Task 11 — for now it just tracks the
-    /// presence of refs so the area-switch guard has a signal to gate on.
+    /// True when the user has placed refs whose solved calibration differs
+    /// from what's stored in <c>map-calibration-baseline.json</c> for this
+    /// area. Used by both the commit-button CanExecute and the area-switch
+    /// guard dialog in <see cref="MainViewModel"/>.
     /// </summary>
-    public bool HasUncommittedRefs => Refs.Count > 0;
+    public bool HasUncommittedRefs =>
+        Refs.Count >= 2
+        && Calibration is { } current
+        && !ApproximatelyEqual(current, _storedCalibration);
+
+    [RelayCommand(CanExecute = nameof(CanCommit))]
+    private void Commit()
+    {
+        if (Calibration is not { } cal) return;
+        _commitService.Commit(Area, cal);
+        // Refresh the stored cache so HasUncommittedRefs flips to false (and
+        // the button greys out) until the user changes a ref again.
+        _storedCalibration = _commitService.ReadStored(Area);
+        OnPropertyChanged(nameof(HasUncommittedRefs));
+        CommitCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool CanCommit() =>
+        Calibration is not null && Refs.Count >= 2 && HasUncommittedRefs;
+
+    /// <summary>
+    /// ULP-tolerant comparison: two calibrations are "the same" if every
+    /// numeric field matches within a tight epsilon AND the bool/enum fields
+    /// match exactly. Threshold chosen to be tighter than any visible-pixel
+    /// effect (Scale + Origin float-rounds round-trip via JSON well below
+    /// 1e-9 on values in the px-per-unit / origin-pixel range we see).
+    /// </summary>
+    private static bool ApproximatelyEqual(AreaCalibration a, AreaCalibration? b)
+    {
+        if (b is null) return false;
+        const double eps = 1e-9;
+        return Math.Abs(a.Scale - b.Scale) < eps
+            && Math.Abs(a.RotationRadians - b.RotationRadians) < eps
+            && Math.Abs(a.OriginX - b.OriginX) < eps
+            && Math.Abs(a.OriginY - b.OriginY) < eps
+            && Math.Abs(a.ResidualPixels - b.ResidualPixels) < eps
+            && a.ReferenceCount == b.ReferenceCount
+            && a.MirrorNorth == b.MirrorNorth
+            && Math.Abs(a.CalibrationZoom - b.CalibrationZoom) < eps
+            && a.Source == b.Source
+            && a.SchemaVersion == b.SchemaVersion;
+    }
+
+    partial void OnCalibrationChanged(AreaCalibration? value)
+    {
+        OnPropertyChanged(nameof(HasUncommittedRefs));
+        CommitCommand.NotifyCanExecuteChanged();
+    }
 
     /// <summary>
     /// Click handler hook from <see cref="Views.SourceMapCanvas"/>. Materialises
@@ -122,11 +173,21 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     {
         Area = area;
         _installResolver = installResolver;
+        _commitService = new WorkspaceCommitService();
         Picker = new LandmarkPickerViewModel(
             area,
             RepoPaths.LandmarksJsonPath(),
             RepoPaths.NpcsJsonPath());
         Refs.CollectionChanged += OnRefsChanged;
+        _storedCalibration = _commitService.ReadStored(area);
+        // If a stored anchor exists, render its projections immediately so the
+        // user sees the existing baseline overlay before they place any refs.
+        if (_storedCalibration is { } stored)
+        {
+            Calibration = stored;
+            SolverReadout.Calibration = stored;
+            RefreshProjections(stored);
+        }
         // Fire-and-forget: the dialog runs modally on the UI thread; the bg work
         // updates UI properties when complete. Caller (MainViewModel) doesn't
         // await — area-switch responsiveness wins over linearised completion.
