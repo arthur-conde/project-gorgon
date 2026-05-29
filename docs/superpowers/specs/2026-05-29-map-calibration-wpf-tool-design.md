@@ -53,13 +53,17 @@ interactive surface.
 - The merged CLI (`tools/MapCalibrationFromScreenshot/`) is refactored to
   `ProjectReference` the new common lib and stripped of the moved files.
   Its CLI surface, recipe, and behaviour are unchanged.
-- Phase 1 WPF surface — area picker, screenshot paste (`Ctrl+V`), mouse-drawn
-  map-rect, source-map canvas with overlaid markers, landmark/NPC list,
-  source-map-click ref-capture modality, live solver readout
+- Phase 1 WPF surface — area picker, source-map canvas with overlaid markers,
+  landmark/NPC list, source-map-click ref-capture modality, live solver readout
   (`Scale`, `RotationDegrees`, `MirrorNorth`, `ResidualPixels`, `ReferenceCount`),
   per-ref residual in the ref-table, projection overlay on the source map,
   "Commit anchor" button that upserts into
   `src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json`.
+- Asset bootstrap exposed in the WPF itself — first-launch detection of
+  missing PG install / missing icon templates / missing per-area map
+  textures, with in-app extraction buttons (and auto-extract on area open
+  when the source PNG is missing). No need to leave the WPF tool to run
+  the CLI's `--phase extract-*` for any reason.
 
 **Out of scope for Phase 1** (deferred to follow-up phases — see [Phasing](#phasing)):
 
@@ -93,7 +97,8 @@ interactive surface.
 | Relationship to #857 / #858? | **Supersedes #857** — WPF does the click-calibrate job with a better integrated loop, close #857 with a pointer here. **#858 (swap-detection) stays open** — it benefits the headless CLI on the few areas where NCC works at all. |
 | Phase 1 ref-capture modalities? | Source-map click only. User picks a landmark from a filtered list, clicks on the source PNG to anchor it; texture pixel = click position directly. Screenshot-bbox modality lands in Phase 3. |
 | Does the solver run incrementally? | Yes — every time the ref-set mutates, re-solve via `LandmarkCalibrationSolver.Solve`, push the result + residual to the readout, redraw the projection overlay on the source-map canvas. |
-| What happens when an area has no source PNG? | Phase 1 fails the workspace open with a clear message ("no extracted map texture for AreaX — run the CLI's `--phase extract-map` first"). Bundled assets are gated by what the CLI's existing extractor produces; not the WPF tool's job to re-derive. |
+| What happens when an area has no source PNG? | Phase 1 runs `MapTextureExtractor` from the common lib in-process and shows a progress indicator. If the PG install path isn't known, prompt the user to point at it once and persist via `SteamInstall` discovery + manual override. The WPF tool *is* the surface for asset extraction; it never punts to the CLI. |
+| Does the WPF tool expose icon-template extraction too? | Yes. First-launch check: if `landmark_*` / `LocalPlayerPin_*` templates aren't on disk, surface a "Extract icon templates from PG assets" button (or auto-run on first need). Used by Phase 2's NCC overlay but extracted in Phase 1 so the workspace is self-sufficient. |
 | Dirty-state on area switch? | Confirm-discard dialog if there are uncommitted refs. |
 | Schema migrations? | None. `AreaCalibration` (the persisted record) is unchanged; the tool only constructs solver-produced instances at `SchemaVersion = 1`. |
 
@@ -256,8 +261,9 @@ User clicks "Commit anchor"
 
 | Failure | Behaviour |
 |---|---|
-| No source PNG for area (extractor never run on this machine) | Workspace fails to open with a message: "No extracted map texture for AreaX. Run `dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- --phase extract-map --area AreaX`." Pointer to merged CLI keeps the responsibility split clean. |
-| `landmarks.json` / `npcs.json` not on disk | Same gating — pointer to the CLI's extractor recipe. |
+| No source PNG for area (extractor never run on this machine) | Workspace auto-runs `MapTextureExtractor.EnsurePng(area)` in-process behind a modal progress indicator. On success, the workspace opens as normal. On failure (PG install not found, Addressables bundle missing/changed), surface the underlying error in the modal and offer a "Pick PG install folder" override that persists via the common lib's install-resolution path. |
+| Icon templates not extracted | Surface a one-click "Extract icon templates from PG assets" action in the workspace header (visible only when missing). Used by Phase 2's NCC overlay; extracted in Phase 1 so the substrate is self-sufficient regardless of phase. |
+| `landmarks.json` / `npcs.json` not on disk | These ship bundled with `Mithril.Shared` and are also fetched from CDN by `ReferenceDataService`. The common lib's readers resolve them from the same locations the rest of Mithril already uses — should never be missing. If they somehow are, surface the underlying IO error verbatim. |
 | `LandmarkCalibrationSolver.Solve` returns `null` (<2 non-degenerate refs) | Solver readout shows "Insufficient refs (need ≥2 spread points)"; commit button stays disabled; projection layer is hidden. |
 | Residual > 12 px after all available refs added | Red badge on readout, refs flagged red-by-residual in the table. User decides whether to commit (the JSON carries the residual; consumers already render "approximate" affordances over the threshold). |
 | User switches area with uncommitted refs | Confirm-discard dialog. Default: cancel. |
