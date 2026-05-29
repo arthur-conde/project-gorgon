@@ -96,6 +96,13 @@ internal static class Program
                         return 2;
                     }
                     return RunStringsFile(args[1], args.Length > 2 ? args[2] : null);
+                case "scenefind":
+                    if (args.Length < 3)
+                    {
+                        Console.WriteLine("usage: scenefind <levelN> <gameobjectname-substring>");
+                        return 2;
+                    }
+                    return RunSceneFind(pgInstall, args[1], args[2]);
                 default:
                     Console.WriteLine($"unknown phase '{phase}'. expected: inventory | names | dumpbundle | ggm");
                     return 2;
@@ -512,6 +519,75 @@ internal static class Program
             }
         }
         Console.WriteLine($"[scanall] {hits} files contain '{substring}'");
+        return 0;
+    }
+
+    private static int RunSceneFind(string pgInstall, string levelName, string nameSubstring)
+    {
+        // Load a single scene file, find every GameObject whose m_Name matches
+        // the substring, and dump its full component list with field trees.
+        // Goal: see whether a TeleportCircle (or any other landmark prefab in
+        // a scene) carries hidden map-pixel-coord fields, OR whether its only
+        // serialized data is the world Transform.
+        var scenePath = Path.Combine(pgInstall, "WindowsPlayer_Data", levelName);
+        if (!File.Exists(scenePath)) { Console.WriteLine($"missing: {scenePath}"); return 1; }
+        var manager = new AssetsManager();
+        var inst = manager.LoadAssetsFile(scenePath, false);
+        if (inst?.file?.AssetInfos is null) { Console.WriteLine("no assets"); return 1; }
+        Console.WriteLine($"[scenefind] {Path.GetFileName(scenePath)}: {inst.file.AssetInfos.Count} assets, looking for GameObject m_Name~='{nameSubstring}'");
+
+        // Build pathId -> AssetFileInfo lookup so we can chase PPtr<Component>
+        // links from each matching GameObject.
+        var byId = new Dictionary<long, AssetFileInfo>();
+        foreach (var info in inst.file.AssetInfos) byId[info.PathId] = info;
+
+        var matches = 0;
+        var gameobjects = 0; var nameless = 0; var named = 0;
+        foreach (var info in inst.file.AssetInfos)
+        {
+            if ((AssetClassID)info.TypeId != AssetClassID.GameObject) continue;
+            gameobjects++;
+            var goName = TryGetAssetName(manager, inst, info);
+            if (goName is null) { nameless++; continue; }
+            named++;
+            if (!goName.Contains(nameSubstring, StringComparison.OrdinalIgnoreCase)) continue;
+            matches++;
+            Console.WriteLine($"\n=== GameObject '{goName}' (pathId={info.PathId}) ===");
+
+            AssetTypeValueField? goField;
+            try { goField = manager.GetBaseField(inst, info); }
+            catch (Exception ex) { Console.WriteLine($"  <load fail: {ex.Message}>"); continue; }
+            if (goField is null) continue;
+
+            var componentsArr = goField["m_Component"]?["Array"];
+            if (componentsArr is null || componentsArr.Children.Count == 0)
+            {
+                Console.WriteLine("  <no m_Component>");
+                continue;
+            }
+            foreach (var compEntry in componentsArr.Children)
+            {
+                var pptr = compEntry["component"];
+                if (pptr is null) continue;
+                var fileId = pptr["m_FileID"].AsInt;
+                var pathId = pptr["m_PathID"].AsLong;
+                if (fileId != 0) { Console.WriteLine($"  component -> external file {fileId} pathId={pathId} (skipped)"); continue; }
+                if (!byId.TryGetValue(pathId, out var compInfo)) { Console.WriteLine($"  component pathId={pathId} not found"); continue; }
+                var compClass = (AssetClassID)compInfo.TypeId;
+                Console.WriteLine($"  -- component {compClass} (pathId={pathId}) --");
+                try
+                {
+                    var compField = manager.GetBaseField(inst, compInfo);
+                    if (compField is null) { Console.WriteLine("    <no base field>"); continue; }
+                    DumpField(compField, "    ", depth: 0, maxDepth: 4);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"    <load fail: {ex.Message}>");
+                }
+            }
+        }
+        Console.WriteLine($"\n[scenefind] {matches} GameObject matches ({gameobjects} GameObjects total, named={named}, nameless={nameless})");
         return 0;
     }
 

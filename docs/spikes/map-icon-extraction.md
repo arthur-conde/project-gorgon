@@ -156,6 +156,46 @@ Catalog parsing — printable-string dump of `catalog.bin` (every Addressables k
 
 The one remaining surface that *could* hold a hardcoded icon-position table is `Plugins/x86_64/GameAssembly.dll` — the IL2CPP-compiled C# code itself, where `const Vector2[]` arrays or embedded JSON resource strings would live. Reading the compiled assembly to extract those is foreclosed by PG's anti-injector posture (see memory `pg_anti_injector_stance`) and is out of scope here. Even if extraction were attempted, a `const` table would be a snapshot frozen to whatever PG release shipped it — the recurring per-patch maintenance cost the spike was trying to avoid would resurface as "decompile-and-diff after each PG patch."
 
+## "What about TeleportCircle GameObjects in scenes?"
+
+The `TeleportationPlatform` entries in `landmarks.json` are named `TeleportCircle_<Name>` (e.g. `TeleportCircle_CasinoFoyer`, `TeleportCircle_HauntedTown`). The corresponding GameObjects exist in 16 area scenes:
+
+| Scene | TeleportCircle entries |
+|---|---|
+| `level6` | NewbieIsland1 |
+| `level8` | TigerFields, TownSquare, WolfDais, WolfFields |
+| `level10` | MycoEntrance |
+| `level11` | AbandonedCourtyard, BFE1, Courtyard, PlateauAlt, PlateauCity, SieAntry |
+| `level13` | Crevice, KurIceberg, KurMountainsWerewolfForest, Lamashu, Tundra1NearInn |
+| `level16` | AnimalTown, Landing, NearDruids, Sand, TrollRegion, Underwater |
+| `level17` | Amulna, DeadTown1 |
+| `level20` | Rahu1, Rahu2, Rahu3 |
+| `level21` | Serbule2Estate, Serbule2Forest, Serbule2Hub, Serbule2Wilderness |
+| `level22` | HauntedTown, NearGazlukCity, OrcCamps, PlateauCenter |
+| `level23` | GazlukCaves1 |
+| `level25` | CasinoFoyer |
+| `level31` | NearTown |
+| `level37` | AnimalCamp |
+| `level38` | FrozenMushroom, NearOrcs, NearSoldiers, Rubywall, VidariaTown |
+| `level41` | OldTown, OtherInTown |
+
+These are real in-world entities — `Transform` + mesh + collider + likely a particle effect. They give the **world position** of every teleport circle, matching the `.Loc` in `landmarks.json` (potentially a cleaner source than the CDN file for that subset of landmarks).
+
+But — they do **not** carry pixel-coord data. Checked via `scanall` co-location:
+
+- `MapMarker` appears in `globalgamemanagers.assets`, `level0`, `level40` (UI scenes) only — disjoint from the 16 TeleportCircle-containing area scenes.
+- `MapLandmark` appears in `globalgamemanagers.assets` only.
+
+So no scene has a `MapMarker` or `MapLandmark` MonoBehaviour attached to a TeleportCircle. The map UI must look these entities up by name at runtime and project their world coords to map pixels via the same code-resident transform we'd be trying to extract — i.e. they don't shortcut the calibration problem.
+
+### Probe limitation honestly noted
+
+The `names` and `scenes` phases keyword-filter on `m_Name`, which requires `AssetsTools.NET.GetBaseField` to succeed. For Addressables bundles this works (bundles ship inline type trees). For Unity scene files (`level<N>`), the type tree is **stripped** to save space, so `GetBaseField` returns null on every scene asset without a Unity 6000.3 `classdata.tpk` package loaded — meaning my scene keyword-filter said "0 hits" because it couldn't read any GameObject's name at all (`24,183 GameObjects scanned in level25, 0 named, 0 nameless lookups returned a string`).
+
+The load-bearing evidence for the negative is therefore the **byte-string `scanall` phase**, which reads raw file bytes and is unaffected by type-tree availability. All class-name and area-name conclusions above derive from `scanall`, not from the limited m_Name filter.
+
+A future re-run with `classdata.tpk` loaded for Unity 6000.3 could enumerate TeleportCircle GameObjects' full component lists and confirm exhaustively (rather than via class-name co-location) that no map-pin component rides on them — but `scanall` co-location already gives the answer with high confidence.
+
 ## Artifacts
 
 - Probe tool: [`tools/MapIconProbe/`](../../tools/MapIconProbe/) — runnable via `dotnet run --project tools/MapIconProbe -c Release -- <phase>`. Phases: `inventory`, `names`, `dumpbundle <substring>`, `ggm`, `scenes`, `strings`, `scanall <substring>`.
