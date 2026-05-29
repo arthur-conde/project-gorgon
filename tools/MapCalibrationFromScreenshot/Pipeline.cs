@@ -55,10 +55,12 @@ internal static class Pipeline
             AreaMapPath: mapPng,
             IconsDir: iconsDir,
             LandmarksJsonPath: ResolveLandmarksPath(args),
+            NpcsJsonPath: ResolveNpcsPath(args),
             Area: args.Area,
             Zoom: args.Zoom,
             PlayerCoord: ResolvePlayerCoord(args),
-            MapRectOverride: args.MapRect);
+            MapRectOverride: args.MapRect,
+            DetectionThreshold: args.DetectionThreshold);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
         if (result.Calibration is null)
@@ -116,6 +118,17 @@ internal static class Pipeline
         return p;
     }
 
+    private static string ResolveNpcsPath(CliArgs args)
+    {
+        if (args.NpcsPath is not null) return args.NpcsPath;
+        var p = Path.Combine(RepoRoot(), "src", "Mithril.Shared", "Reference", "BundledData", "npcs.json");
+        if (!File.Exists(p))
+        {
+            throw new UserFacingException($"default npcs.json path not found: {p} (pass --npcs)");
+        }
+        return p;
+    }
+
     private static string RepoRoot()
     {
         // Climb from the tool's bin dir up to the repo root (it has Mithril.slnx).
@@ -159,10 +172,12 @@ internal sealed record CalibrationInputs(
     string AreaMapPath,
     string IconsDir,
     string LandmarksJsonPath,
+    string NpcsJsonPath,
     string Area,
     double Zoom,
     (double X, double Z)? PlayerCoord,
-    (int X, int Y, int W, int H)? MapRectOverride);
+    (int X, int Y, int W, int H)? MapRectOverride,
+    double DetectionThreshold);
 
 internal sealed record AssignedReference(
     string Label,

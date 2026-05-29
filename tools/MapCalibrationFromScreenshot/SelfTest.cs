@@ -138,15 +138,22 @@ internal static class SelfTest
         // ---------------------------------------------------------------------
         // 7. Run the calibrator and check the recovered transform.
         // ---------------------------------------------------------------------
+        // No NPCs in the synthetic test — write an empty npcs.json so the
+        // calibrator's NpcsReader.LoadForArea returns an empty list.
+        var npcsJson = Path.Combine(workDir, "npcs.json");
+        File.WriteAllText(npcsJson, "{}");
+
         var inputs = new CalibrationInputs(
             ScreenshotPath: screenshotPath,
             AreaMapPath: texturePath,
             IconsDir: iconsDir,
             LandmarksJsonPath: landmarksJson,
+            NpcsJsonPath: npcsJson,
             Area: "AreaSelfTest",
             Zoom: 1.0,
             PlayerCoord: (playerWorld.X, playerWorld.Z),
-            MapRectOverride: null);
+            MapRectOverride: null,
+            DetectionThreshold: 0.5);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 
         if (result.Calibration is null)

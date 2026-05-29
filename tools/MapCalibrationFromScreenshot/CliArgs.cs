@@ -14,12 +14,14 @@ internal sealed record CliArgs(
     string Area,
     string? BaselinePath,
     string? LandmarksPath,
+    string? NpcsPath,
     string? IconsDir,
     string? MapDir,
     string? TpkPath,
     string? PlayerLogPath,
     (double X, double Z)? PlayerCoord,
     (int X, int Y, int W, int H)? MapRect,
+    double DetectionThreshold,
     double Zoom,
     Phase Phase,
     bool DryRun)
@@ -32,12 +34,14 @@ internal sealed record CliArgs(
         string? area = null;
         string? baseline = null;
         string? landmarks = null;
+        string? npcs = null;
         string? iconsDir = null;
         string? mapDir = null;
         string? tpk = null;
         string? playerLog = null;
         (double, double)? playerCoord = null;
         (int, int, int, int)? mapRect = null;
+        double detectionThreshold = 0.5;
         double zoom = 1.0;
         Phase phase = Phase.Full;
         bool dryRun = false;
@@ -50,6 +54,7 @@ internal sealed record CliArgs(
                 case "--area": area = Next(argv, ref i); break;
                 case "--baseline": baseline = Next(argv, ref i); break;
                 case "--landmarks": landmarks = Next(argv, ref i); break;
+                case "--npcs": npcs = Next(argv, ref i); break;
                 case "--icons-dir": iconsDir = Next(argv, ref i); break;
                 case "--map-dir": mapDir = Next(argv, ref i); break;
                 case "--tpk": tpk = Next(argv, ref i); break;
@@ -59,6 +64,9 @@ internal sealed record CliArgs(
                     break;
                 case "--map-rect":
                     mapRect = ParseMapRect(Next(argv, ref i));
+                    break;
+                case "--detection-threshold":
+                    detectionThreshold = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
                     break;
                 case "--zoom":
                     zoom = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
@@ -93,12 +101,14 @@ internal sealed record CliArgs(
             Area: area ?? "",
             BaselinePath: baseline,
             LandmarksPath: landmarks,
+            NpcsPath: npcs,
             IconsDir: iconsDir,
             MapDir: mapDir,
             TpkPath: tpk,
             PlayerLogPath: playerLog,
             PlayerCoord: playerCoord,
             MapRect: mapRect,
+            DetectionThreshold: detectionThreshold,
             Zoom: zoom,
             Phase: phase,
             DryRun: dryRun);
@@ -170,9 +180,15 @@ internal sealed record CliArgs(
               --map-rect <x,y,w,h>          visible map's bbox in the screenshot (px); use when
                                             auto-detect can't find the map or picks the wrong scale
 
+            detection tuning:
+              --detection-threshold <0..1>  min NCC score to accept a template match (default 0.5).
+                                            Lower (e.g. 0.3) when real-screenshot recall is low;
+                                            higher (e.g. 0.7) when there are too many false positives
+
             paths (sane defaults):
               --baseline    <baseline.json> default: src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json
               --landmarks   <landmarks.json> default: src/Mithril.Shared/Reference/BundledData/landmarks.json
+              --npcs        <npcs.json>      default: src/Mithril.Shared/Reference/BundledData/npcs.json
               --icons-dir   <dir>           where to read/cache extracted icon PNGs
               --map-dir     <dir>           where to read/cache extracted area-map PNGs
               --tpk         <classdata.tpk> AssetsTools.NET class-data package (~290 KB)

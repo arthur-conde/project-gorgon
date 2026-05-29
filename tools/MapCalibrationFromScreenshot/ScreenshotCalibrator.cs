@@ -22,10 +22,14 @@ namespace Mithril.Tools.MapCalibrationFromScreenshot;
 /// </summary>
 internal static class ScreenshotCalibrator
 {
-    // NCC threshold for accepting a detection. NCC peaks at 1.0; clean PG icons
-    // typically score 0.6–0.9 against an in-game screenshot. 0.5 keeps weak-but-
-    // real matches in play; the brute-force assignment step culls noise.
-    private const double DetectionScoreMin = 0.5;
+    // Default NCC threshold for accepting a detection. NCC peaks at 1.0.
+    // 0.5 is a reasonable default — clean PG icon matches typically score
+    // 0.5–0.9; the synthetic self-test relies on this floor to suppress
+    // cross-shape false positives. Real screenshots may need tuning: PG's
+    // rendering effects (shading, color tint, anti-aliasing) push some valid
+    // matches into the 0.3–0.45 band. Override via --detection-threshold
+    // when a real area has low recall, then verify the assignment is sane
+    // before committing the result.
 
     public static CalibrationResult Calibrate(CalibrationInputs inputs)
     {
@@ -35,7 +39,9 @@ internal static class ScreenshotCalibrator
 
         var iconIndex = IconTemplateExtractor.Load(inputs.IconsDir);
         var landmarks = LandmarksReader.LoadForArea(inputs.LandmarksJsonPath, inputs.Area);
-        Console.WriteLine($"[refs] {landmarks.Count} landmarks for {inputs.Area} from {Path.GetFileName(inputs.LandmarksJsonPath)}");
+        var npcs = NpcsReader.LoadForArea(inputs.NpcsJsonPath, inputs.Area);
+        var allRefs = landmarks.Concat(npcs).ToList();
+        Console.WriteLine($"[refs] {landmarks.Count} landmarks + {npcs.Count} NPCs for {inputs.Area} from {Path.GetFileName(inputs.LandmarksJsonPath)} / {Path.GetFileName(inputs.NpcsJsonPath)}");
 
         // Phase: locate the map rect inside the screenshot.
         MapRect mapRect;
@@ -75,14 +81,14 @@ internal static class ScreenshotCalibrator
 
         // Phase: detect every landmark icon variant and pair with landmarks.json.
         var assigned = new List<AssignedReference>();
-        var detectionsByType = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex);
+        var detectionsByType = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold);
 
         foreach (var typeGroup in detectionsByType)
         {
             if (typeGroup.Key == "Player") continue; // handled below
 
             var dets = typeGroup.Value;
-            var areaRefs = landmarks.Where(l => string.Equals(l.Type, typeGroup.Key, StringComparison.Ordinal)).ToList();
+            var areaRefs = allRefs.Where(l => string.Equals(l.Type, typeGroup.Key, StringComparison.Ordinal)).ToList();
             if (areaRefs.Count == 0)
             {
                 Console.WriteLine($"[detect] {typeGroup.Key}: {dets.Count} detections — no landmark of this type in {inputs.Area}; skipping");
@@ -146,7 +152,7 @@ internal static class ScreenshotCalibrator
     }
 
     private static Dictionary<string, List<TypedDetection>> DetectIconsByType(
-        GrayImage screenshot, string iconsDir, IconIndex iconIndex)
+        GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold)
     {
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
         foreach (var icon in iconIndex.Icons)
@@ -158,7 +164,9 @@ internal static class ScreenshotCalibrator
                 continue;
             }
             var (gray, alpha) = ImageIo.LoadGrayAndAlpha(iconPath);
-            var detections = NccTemplateMatch.FindAll(screenshot, gray, alpha, DetectionScoreMin, maxResults: 32);
+            var detections = NccTemplateMatch.FindAll(screenshot, gray, alpha, threshold, maxResults: 64);
+            Console.WriteLine($"  [icon] {icon.Name} ({icon.Width}x{icon.Height}, pivot=({icon.PivotX:0.00},{icon.PivotY:0.00})): {detections.Count} detections >= {threshold:0.00}" +
+                              (detections.Count > 0 ? $" (top score {detections[0].Score:0.000})" : ""));
             if (detections.Count == 0) continue;
 
             if (!byType.TryGetValue(icon.LandmarkType, out var list))
