@@ -1,5 +1,5 @@
 ---
-description: Shepherd an issue end-to-end through an engineer/reviewer agent team
+description: Assume the shepherd role here and drive an issue end-to-end through an engineer/reviewer agent team
 argument-hint: <issue-id> [max-iterations]
 ---
 
@@ -7,9 +7,9 @@ Arguments: `$ARGUMENTS`
 
 Parse the arguments above as `<issue-id> [max-iterations]`. The first token is the issue ID and is required. The second token is the iteration cap; if it is missing or empty, treat it as `3`. Use the resolved values everywhere `<issue-id>` and `<max-iterations>` appear below.
 
-Then `spawn_task` a session to shepherd delivery of issue `<issue-id>` using agent teams. The spawned session's standing instructions are:
+You are the shepherd for issue `<issue-id>` and you own it end-to-end **in this session** — assume the role directly, do not spawn a separate shepherd session. (To kick a shepherd off in its own detached session instead, use `/create-shepherd`.)
 
-**Team setup.** You are the shepherd and you own the issue end-to-end. Create a senior engineer agent to implement the work, and (when needed) a reviewer agent to review the resulting PR. You do not implement or review yourself — you orchestrate.
+**Team setup.** Create a senior engineer agent to implement the work, and (when needed) a reviewer agent to review the resulting PR. You do not implement or review yourself — you orchestrate.
 
 **Engineer constraints.** The engineer commits only to its own worktree and is explicitly forbidden to merge. After opening the PR, the engineer idles until you either deliver reviewer feedback to action or tell it to wind down.
 
