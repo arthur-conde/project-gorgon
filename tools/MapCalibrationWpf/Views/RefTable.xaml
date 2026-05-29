@@ -1,0 +1,19 @@
+<UserControl x:Class="Mithril.Tools.MapCalibrationWpf.Views.RefTable"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <DataGrid ItemsSource="{Binding Refs}"
+            AutoGenerateColumns="False"
+            CanUserAddRows="False"
+            CanUserDeleteRows="True"
+            HeadersVisibility="Column"
+            GridLinesVisibility="Horizontal"
+            SelectionMode="Single">
+    <DataGrid.Columns>
+      <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" IsReadOnly="True" />
+      <DataGridTextColumn Header="Kind" Binding="{Binding Kind}" Width="60" IsReadOnly="True" />
+      <DataGridTextColumn Header="TX" Binding="{Binding TexturePixel.X, StringFormat={}{0:F0}}" Width="46" IsReadOnly="True" />
+      <DataGridTextColumn Header="TY" Binding="{Binding TexturePixel.Y, StringFormat={}{0:F0}}" Width="46" IsReadOnly="True" />
+      <DataGridTextColumn Header="Residual" Binding="{Binding ResidualPx, StringFormat={}{0:F2} px}" Width="72" IsReadOnly="True" />
+    </DataGrid.Columns>
+  </DataGrid>
+</UserControl>
