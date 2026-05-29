@@ -188,6 +188,52 @@ But — they do **not** carry pixel-coord data. Checked via `scanall` co-locatio
 
 So no scene has a `MapMarker` or `MapLandmark` MonoBehaviour attached to a TeleportCircle. The map UI must look these entities up by name at runtime and project their world coords to map pixels via the same code-resident transform we'd be trying to extract — i.e. they don't shortcut the calibration problem.
 
+### TeleportationPlatform + MeditationPillar are confirmed real
+
+The `Type` field of `landmarks.json` (`Portal`, `MeditationPillar`, `TeleportationPlatform`) corresponds 1:1 to C# class names found in IL2CPP and as scene MonoBehaviour instances:
+
+| Type discriminator | Scene instances |
+|---|---|
+| `TeleportationPlatform` | 16 area scenes (same set as TeleportCircle) |
+| `MeditationPillar` | 13 area scenes |
+| `PortalLandmark` | 0 (Portal type in landmarks.json may use a different class name) |
+
+So PG genuinely has per-landmark in-world MonoBehaviour instances. The question is whether those MonoBehaviours carry a serialized `Vector2 mapPosition` (or similar) field. The IL2CPP string-context dump (`neighbors` phase) doesn't show any map-coord field name near `TeleportationPlatform` / `MeditationPillar` — fields visible were `TeleportAbility`, `Teleportation Platform`, `UseMeditationPillar`, all gameplay-side, none UI/pixel-related. (IL2CPP's `global-metadata.dat` groups field names by section, so adjacency isn't a definitive scan — but it's the cheapest probe and the absence of any map-shaped field name in the alphabetical neighborhood is suggestive.)
+
+### `AreaConfig` is per-area but doesn't hold map calibration
+
+`AreaConfig` is a MonoBehaviour on a singleton GameObject in 38 of the 44 scenes (PG's per-area config object — `Fatal error: the scene does not contain a GameObject called AreaConfig` confirms this is required infrastructure). Its IL2CPP-visible fields include `AreaName`, `AreaFriendlyName`, `AreaForest` (boolean? terrain hint). No `MapTexture` / `MapOrigin` / `MapScale` / `MapBounds` / `MapPivot` field name appears anywhere in the metadata.
+
+### `MapCameraSpot` exists in 5 scenes but is just a Transform anchor
+
+`MapCameraSpot` (and the broader `MapCamera*` substring) appears in `level15`, `level35`, `level36`, `level37`, `level39` only — not all scenes. Neighbor scan shows it's a plain GameObject with no Camera component, no orthographic size, no Texture2D reference. Most likely a dev-time artist convention ("place camera here when re-rendering the area map"), preserved in only some scenes. Not the runtime calibration source we'd need.
+
+### `PreParsed` cache pattern — the decisive negative
+
+PG uses a consistent `Factory + Class + ClassPreParsed` pattern (visible from IL2CPP class names + their `.cs` source paths):
+
+- `LandmarkFactory` + `Landmark` + `LandmarkPreParsed` (with `landmarksByArea` dictionary field)
+- `ItemFactory` + `ItemInfo` + `ItemInfoPreParsed`
+- `NpcInfoFactory` + `NpcInfo` + `NpcInfoPreParsed`
+- `LoreBookFactory` + `LoreBook` + `LoreBookPreParsed`
+- `QuestFactory` + `Quest` + `QuestPreParsed`
+- All inheriting from `PreParsedAsset` / `PreParsedBundle`
+
+If landmark map-pixel positions were shipped on disk, they would live in `LandmarkPreParsed` instances — typically as ScriptableObject assets inside a `PreParsedBundle`. `scanall` for every class name in this hierarchy:
+
+| Class | Files containing the literal name |
+|---|---|
+| `PreParsedBundle` | `globalgamemanagers.assets` + `global-metadata.dat` (class def only) |
+| `PreParsedAsset` | `globalgamemanagers.assets` + `global-metadata.dat` (class def only) |
+| `LandmarkPreParsed` | `globalgamemanagers.assets` + `global-metadata.dat` (class def only) |
+| `ItemInfoPreParsed` | `globalgamemanagers.assets` + `global-metadata.dat` (class def only) |
+| `NpcInfoPreParsed` | `globalgamemanagers.assets` + `global-metadata.dat` (class def only) |
+| `landmarksByArea` (field name) | `global-metadata.dat` only |
+
+**Zero baked PreParsed instances anywhere on disk.** The PreParsed system is a class pattern with no shipped data — the caches must be populated at runtime from CDN JSON (the same `landmarks.json` / `npcs.json` we already consume in `Mithril.Reference`). That accounts neatly for *why* PG ships those JSON files via CDN: they are the source data the IL2CPP-compiled `*Factory.Get*ForArea` methods parse to populate the PreParsed runtime caches.
+
+This means even the entity-class lead (TeleportationPlatform / MeditationPillar exist in scenes) cannot help: PG's runtime fetches landmark data from CDN JSON, builds `LandmarkPreParsed` objects, and projects each to map pixels via a code-resident world→pixel transform. The transform itself is the one piece we cannot extract without reading the compiled IL2CPP — and even then, what we'd extract is a snapshot frozen to one PG release, recreating the "decompile-and-diff after each PG patch" cost the spike was trying to avoid.
+
 ### Probe limitation honestly noted
 
 The `names` and `scenes` phases keyword-filter on `m_Name`, which requires `AssetsTools.NET.GetBaseField` to succeed. For Addressables bundles this works (bundles ship inline type trees). For Unity scene files (`level<N>`), the type tree is **stripped** to save space, so `GetBaseField` returns null on every scene asset without a Unity 6000.3 `classdata.tpk` package loaded — meaning my scene keyword-filter said "0 hits" because it couldn't read any GameObject's name at all (`24,183 GameObjects scanned in level25, 0 named, 0 nameless lookups returned a string`).

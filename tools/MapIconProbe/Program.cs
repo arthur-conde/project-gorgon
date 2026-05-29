@@ -103,6 +103,13 @@ internal static class Program
                         return 2;
                     }
                     return RunSceneFind(pgInstall, args[1], args[2]);
+                case "neighbors":
+                    if (args.Length < 4)
+                    {
+                        Console.WriteLine("usage: neighbors <path> <needle> <window-bytes>");
+                        return 2;
+                    }
+                    return RunNeighbors(args[1], args[2], int.Parse(args[3]));
                 default:
                     Console.WriteLine($"unknown phase '{phase}'. expected: inventory | names | dumpbundle | ggm");
                     return 2;
@@ -622,6 +629,57 @@ internal static class Program
         }
         foreach (var h in hits) Console.WriteLine(h);
         Console.WriteLine($"[stringsfile] {hits.Count} strings");
+        return 0;
+    }
+
+    private static int RunNeighbors(string path, string needle, int window)
+    {
+        // For every occurrence of `needle` in the file, extract printable-ASCII
+        // runs of >=4 chars within ±window bytes. Reveals nearby field names /
+        // referenced classes for inspection. Used to find field names attached
+        // to a MonoBehaviour class without a tpk-loaded type tree.
+        if (!File.Exists(path)) { Console.WriteLine($"missing: {path}"); return 1; }
+        var bytes = File.ReadAllBytes(path);
+        var needleBytes = System.Text.Encoding.ASCII.GetBytes(needle);
+        var occurrences = 0;
+        int searchFrom = 0;
+        while (true)
+        {
+            int hit = -1;
+            for (int i = searchFrom; i <= bytes.Length - needleBytes.Length; i++)
+            {
+                bool ok = true;
+                for (int j = 0; j < needleBytes.Length; j++)
+                {
+                    if (bytes[i + j] != needleBytes[j]) { ok = false; break; }
+                }
+                if (ok) { hit = i; break; }
+            }
+            if (hit < 0) break;
+            occurrences++;
+            Console.WriteLine($"\n=== occurrence #{occurrences} at offset 0x{hit:X} ===");
+            var start = Math.Max(0, hit - window);
+            var end = Math.Min(bytes.Length, hit + needleBytes.Length + window);
+            var hits = new SortedSet<string>(StringComparer.Ordinal);
+            int runStart = -1;
+            for (int i = start; i < end; i++)
+            {
+                var b = bytes[i];
+                if (b >= 32 && b < 127) { if (runStart < 0) runStart = i; }
+                else
+                {
+                    if (runStart >= 0 && i - runStart >= 4)
+                    {
+                        hits.Add(System.Text.Encoding.ASCII.GetString(bytes, runStart, i - runStart));
+                    }
+                    runStart = -1;
+                }
+            }
+            foreach (var h in hits) Console.WriteLine($"  {h}");
+            searchFrom = hit + needleBytes.Length;
+            if (occurrences >= 5) { Console.WriteLine("\n...(stopping after 5 occurrences)"); break; }
+        }
+        Console.WriteLine($"\n[neighbors] {occurrences} total occurrences");
         return 0;
     }
 
