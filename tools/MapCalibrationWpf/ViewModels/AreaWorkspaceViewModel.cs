@@ -28,6 +28,8 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     [ObservableProperty]
     private string? _loadError;
 
+    public LandmarkPickerViewModel Picker { get; }
+
     /// <summary>
     /// Click handler hook from <see cref="Views.SourceMapCanvas"/>. Task 8
     /// fills this in to materialise a <c>RefViewModel</c> at the click pixel.
@@ -42,6 +44,10 @@ public sealed partial class AreaWorkspaceViewModel : ObservableObject
     {
         Area = area;
         _installResolver = installResolver;
+        Picker = new LandmarkPickerViewModel(
+            area,
+            RepoPaths.LandmarksJsonPath(),
+            RepoPaths.NpcsJsonPath());
         // Fire-and-forget: the dialog runs modally on the UI thread; the bg work
         // updates UI properties when complete. Caller (MainViewModel) doesn't
         // await — area-switch responsiveness wins over linearised completion.

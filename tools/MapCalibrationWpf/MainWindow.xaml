@@ -21,7 +21,13 @@
       <Button Content="Commit anchor" DockPanel.Dock="Right" Margin="4,4,8,4" Padding="8,4" IsEnabled="False" />
     </DockPanel>
     <Border Grid.Row="1" Grid.Column="0" BorderBrush="#888" BorderThickness="0,0,1,0">
-      <TextBlock Text="(landmark picker)" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#888" />
+      <ContentControl Content="{Binding Workspace.Picker}">
+        <ContentControl.ContentTemplate>
+          <DataTemplate>
+            <views:LandmarkPicker />
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
     </Border>
     <Border Grid.Row="1" Grid.Column="1">
       <!--
