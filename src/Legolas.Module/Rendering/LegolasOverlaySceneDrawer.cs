@@ -20,12 +20,12 @@ namespace Legolas.Rendering;
 /// <para><b>Scope.</b> Per the dissolved-#866/#867/#868 decisions on the
 /// platform reframe, this drawer is responsible for Legolas's <em>full
 /// scene</em>: route polylines, pixel nudges, world-projected pins,
-/// guidance ring, player anchor. Calibration placement pins remain on the
-/// shared marker registry (<see cref="IWorldOverlayMarkers"/> +
-/// <see cref="LegolasCalibrationMarkerDrawer"/>) and render in the second
-/// pass on top of this scene drawer's geometry — keeps the calibration
-/// markers visually above the route lines like the legacy WPF
-/// <c>ItemsControl</c> did.</para>
+/// guidance ring, player anchor, calibration-validation ghosts, and
+/// calibration placement pins. Calibration placement pins are drawn
+/// pixel-native by <see cref="DrawCalibrationPlacementPins"/> per the
+/// dissolved-#868 framing ("no seed-calibration requirement"); the
+/// registry-side <c>LegolasCalibrationMarkerDrawer</c> is unregistered
+/// from <see cref="MarkerSceneRenderer"/> as part of this step.</para>
 ///
 /// <para><b>Coordinate handling.</b> World geometry uses
 /// <see cref="IOverlaySceneContext.Project"/> (zoom-aware); pixel-native
@@ -74,7 +74,63 @@ internal sealed class LegolasOverlaySceneDrawer
         var scene = BuildScene();
         DrawScene(scene, ctx.RenderTarget, ctx.Factory, ctx.Brushes);
         DrawCalibrationGhosts(ctx);
+        DrawCalibrationPlacementPins(ctx);
     }
+
+    /// <summary>Render in-flight calibration placement pins pixel-native
+    /// (per dissolved-#868 framing on #835): each
+    /// <see cref="MapOverlayViewModel.CalibrationMarkers"/> entry draws a
+    /// center dot at the click pixel, with an outer ring layered over the
+    /// selected marker only — matching the legacy
+    /// <c>MapOverlayView.xaml</c> <c>CalibrationMarkers</c>
+    /// <c>ItemsControl</c> contract (zero-size Canvas + selection-ring
+    /// visibility binding). Gated on
+    /// <see cref="MapOverlayViewModel.IsCalibrationCapturing"/> so the
+    /// pass is a no-op outside the Drop/Pair walkthrough. Reuses the
+    /// same <see cref="DrawPinLayer"/> helper as the survey/motherlode/
+    /// player pin drawers, so shape (Circle/Square/Diamond/Cross),
+    /// stroke style, and fill are all honored from
+    /// <see cref="MapOverlayViewModel.CalibrationPinStyle"/>.</summary>
+    private void DrawCalibrationPlacementPins(IOverlaySceneContext ctx)
+    {
+        var vm = _vm;
+        if (!vm.IsCalibrationCapturing) return;
+        var markers = vm.CalibrationMarkers;
+        if (markers is null || markers.Count == 0) return;
+
+        var pinStyle = vm.CalibrationPinStyle;
+        var outerStyle = BuildPlacementPinLayer(pinStyle.Outer);
+        var centerStyle = BuildPlacementPinLayer(pinStyle.Center);
+
+        for (var i = 0; i < markers.Count; i++)
+        {
+            var m = markers[i];
+            // Center dot — always drawn (matches the legacy "always-on dot"
+            // Path element in the placement ItemsControl).
+            DrawPinLayer(ctx.RenderTarget, ctx.Factory, ctx.Brushes, m.Pixel, centerStyle.Size, centerStyle);
+            // Outer ring — selected marker only (matches the legacy
+            // Visibility=IsSelected binding on the outer Path element).
+            if (m.IsSelected)
+                DrawPinLayer(ctx.RenderTarget, ctx.Factory, ctx.Brushes, m.Pixel, outerStyle.Size, outerStyle);
+        }
+    }
+
+    private static PinLayerStyle BuildPlacementPinLayer(LegolasPinShapeStyle s) =>
+        new PinLayerStyle(
+            Shape: s.Shape,
+            FillColor: ParseColor(s.FillColor),
+            StrokeColor: ParseColor(s.StrokeColor),
+            StrokeStyle: s.StrokeStyle,
+            StrokeThickness: s.StrokeThickness,
+            Size: s.Size);
+
+    /// <summary>Test seam (#835 step 6 iter-1 touch-up B placement pins):
+    /// drive the placement-pin pass against a supplied context exactly as
+    /// <see cref="Draw"/> would. Lets future unit tests assert the
+    /// draw-path-entered/short-circuited contract without standing up a
+    /// real D2D render target. Mirrors
+    /// <see cref="DrawCalibrationGhostsForTest"/>.</summary>
+    internal void DrawCalibrationPlacementPinsForTest(IOverlaySceneContext ctx) => DrawCalibrationPlacementPins(ctx);
 
     /// <summary>Render the #495 calibration-validation ghost markers as a
     /// magenta hollow ring + a magenta center dot per

@@ -270,39 +270,16 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     /// <see cref="CalibrationPhase.Pair"/> when ≥3 usable pins already exist
     /// (the common case), else <see cref="CalibrationPhase.Drop"/>.
     ///
-    /// <para><b>Bootstrap gate (#835 step 6, review iteration-1 B2).</b>
-    /// Refuses to Arm on an area with no baseline calibration:
-    /// <see cref="IAreaCalibrationService.IsCurrentAreaCalibrated"/> is
-    /// <see langword="false"/> &#8212; the registry-only calibration
-    /// marker pipeline can't anchor placed pins without a baseline
-    /// (<c>WindowToWorld</c> returns null), so the walkthrough would be
-    /// invisible to the user. Surfaces the rejection via
-    /// <see cref="BootstrapBlockedMessage"/> for the wizard panel; the
-    /// shared overlay's "not calibrated" chip already flags the area
-    /// state. Step 7 wires a chip-mutation surface on
-    /// <see cref="IOverlayWindow"/> so this method can surface the
-    /// area-specific message directly on the overlay too.</para></summary>
+    /// <para>No seed-calibration gate. The #835 issue body's dissolved-#868
+    /// decision is explicit: <em>"calibration placement pins are drawn by
+    /// the scene hook ... no seed-calibration requirement."</em> Placement
+    /// pins render pixel-native via
+    /// <c>LegolasOverlaySceneDrawer.DrawCalibrationPlacementPins</c>, so
+    /// the walkthrough works in both calibrated and uncalibrated areas.
+    /// Earlier iter-1 work added a gate here that contradicted the
+    /// dissolution; reverted in the iter-1 touch-up.</para></summary>
     public void Arm()
     {
-        if (!_service.IsCurrentAreaCalibrated)
-        {
-            BootstrapBlockedMessage =
-                "Calibration walkthrough needs a baseline for this area first. " +
-                "Use the Mithril MapCalibration workspace (or a community baseline) to seed one.";
-            // LogInformation (not Warning) per review iteration-1 B2: a
-            // refused-on-precondition is a normal lifecycle event the user
-            // initiated, not a recovered-from-degraded situation. The
-            // wizard-panel message + the overlay's existing
-            // "not calibrated" chip carry the user-visible signal.
-            _logger?.LogInformation(
-                "PinCalibrationCoordinator.Arm refused — area {AreaKey} has no baseline calibration; " +
-                "the registry-only marker pipeline can't anchor placed pins without one. " +
-                "Bootstrap a baseline via the MapCalibration workspace tool.",
-                _service.CurrentAreaKey ?? "(none)");
-            return;
-        }
-        BootstrapBlockedMessage = null;
-
         _pairs.Clear();
         _skipped.Clear();
         PlacedMarkers.Clear();
@@ -315,14 +292,6 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
         IsArmed = true;
         RaiseAll();
     }
-
-    /// <summary>User-visible message when <see cref="Arm"/> is refused
-    /// because the area has no baseline calibration. <see langword="null"/>
-    /// on the success path. Surfaces in the wizard panel so the user
-    /// understands what action to take (bootstrap a baseline via the
-    /// MapCalibration workspace tool). See #835 step 6, review iter-1 B2.</summary>
-    [ObservableProperty]
-    private string? _bootstrapBlockedMessage;
 
     /// <summary>Disarm and flush — leaving the calibration step, or after a
     /// confirm.</summary>

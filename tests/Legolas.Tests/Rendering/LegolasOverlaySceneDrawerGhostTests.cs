@@ -35,8 +35,8 @@ public sealed class LegolasOverlaySceneDrawerGhostTests
     public void Ghost_pass_draws_when_populated_and_visible()
     {
         var (drawer, vm) = BuildDrawer();
-        vm.CalibrationGhosts.Add(new GhostMarker(new PixelPoint(100, 200), "Landmark", ShowLabel: true));
-        vm.CalibrationGhosts.Add(new GhostMarker(new PixelPoint(140, 260), "NPC", ShowLabel: false));
+        vm.CalibrationGhosts.Add(new GhostMarker("Landmark", new PixelPoint(100, 200), ShowLabel: true));
+        vm.CalibrationGhosts.Add(new GhostMarker("NPC", new PixelPoint(140, 260), ShowLabel: false));
         vm.ShowCalibrationGhosts = true;
 
         var ctx = new CountingSceneContext();
@@ -52,7 +52,7 @@ public sealed class LegolasOverlaySceneDrawerGhostTests
     public void Ghost_pass_is_skipped_when_validation_off()
     {
         var (drawer, vm) = BuildDrawer();
-        vm.CalibrationGhosts.Add(new GhostMarker(new PixelPoint(100, 200), "Landmark", ShowLabel: true));
+        vm.CalibrationGhosts.Add(new GhostMarker("Landmark", new PixelPoint(100, 200), ShowLabel: true));
         vm.ShowCalibrationGhosts = false; // user hasn't toggled validation
 
         var ctx = new CountingSceneContext();

@@ -48,10 +48,15 @@ public static class LegolasOverlayDrawerRegistrations
         renderer.RegisterDrawer<LegolasMotherlodeMarkerStyle>(LegolasMotherlodeMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasMotherlodeGuidanceMarkerStyle>(LegolasMotherlodeGuidanceMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasPlayerMarkerStyle>(LegolasPlayerMarkerDrawer.Draw);
-        // Calibration placement pins remain on the registry path — they
-        // render in the second pass on top of the scene drawer's geometry,
-        // matching the legacy WPF ItemsControl layering above the D2D
-        // surface (calibration markers visually above route lines).
-        renderer.RegisterDrawer<LegolasCalibrationMarkerStyle>(LegolasCalibrationMarkerDrawer.Draw);
+        // Calibration placement pins are now drawn pixel-native by
+        // LegolasOverlaySceneDrawer.DrawCalibrationPlacementPins, per the
+        // dissolved-#868 framing on #835 ("no seed-calibration requirement").
+        // The registry-side LegolasCalibrationMarkerStyle drawer is no
+        // longer registered — producer plumbing in
+        // MapOverlayViewModel.RefreshCalibrationMarker still calls
+        // _markers.AddMarker for areas with a baseline, but render-time
+        // silently drops those markers since no drawer matches.
+        // Producer-side cleanup + style/drawer file deletion are step-7
+        // work, mirroring the PinScene / MapOverlayView.xaml deferral.
     }
 }

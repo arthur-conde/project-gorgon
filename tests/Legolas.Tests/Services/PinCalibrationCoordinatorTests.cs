@@ -437,67 +437,15 @@ public class PinCalibrationCoordinatorTests
         coord.PairedCount.Should().Be(3, "pairs are preserved across a failed Confirm");
     }
 
-    // ---- #835 step 6 review iteration-1 B2: bootstrap-gate Arm ----
-
-    [Fact]
-    public void Arm_in_uncalibrated_area_is_refused_with_BootstrapBlockedMessage_and_Info_log()
-    {
-        // Review iter-1 B2: opening Drop/Pair on an area with no baseline
-        // calibration is a no-op — the registry-only marker pipeline can't
-        // anchor placed pins without a baseline (WindowToWorld returns
-        // null), so the walkthrough would be invisible to the user. The
-        // coordinator must refuse cleanly: surface a user-visible message
-        // via BootstrapBlockedMessage, log an Info lifecycle event so the
-        // refusal is observable in diagnostics, and stay IsArmed=false so
-        // the wizard panel can branch on it.
-        var calib = new FakeCalib { IsCurrentAreaCalibrated = false };
-        var pins = new FakeMapPinState();
-        var bus = new TestDomainEventBus();
-        var settings = new LegolasSettings();
-        var loggerFactory = new TestLoggerFactory();
-        var coord = new PinCalibrationCoordinator(
-            calib, pins, bus, settings, session: null, loggerFactory);
-
-        coord.Arm();
-
-        coord.IsArmed.Should().BeFalse(
-            "Arm must refuse on an uncalibrated area — opening Drop/Pair " +
-            "without a seed leaves the calibration walkthrough invisible.");
-        coord.BootstrapBlockedMessage.Should().NotBeNullOrEmpty(
-            "BootstrapBlockedMessage must surface so the wizard panel can " +
-            "tell the user to bootstrap a baseline first.");
-        loggerFactory.Entries.Should().Contain(e =>
-            e.Level == Microsoft.Extensions.Logging.LogLevel.Information
-            && e.Category == "Legolas.PinCalibrationCoordinator"
-            && e.Message.Contains("Arm refused"),
-            "the refusal must surface as a LogInformation lifecycle event " +
-            "(not Warning — this is a user-initiated, expected refusal).");
-    }
-
-    [Fact]
-    public void Arm_in_calibrated_area_succeeds_and_clears_BootstrapBlockedMessage()
-    {
-        var calib = new FakeCalib { IsCurrentAreaCalibrated = true };
-        var pins = new FakeMapPinState();
-        var bus = new TestDomainEventBus();
-        var settings = new LegolasSettings();
-        var coord = new PinCalibrationCoordinator(calib, pins, bus, settings);
-
-        // Pre-seed a stale BootstrapBlockedMessage via a prior refusal:
-        // first flip uncalibrated, Arm (refused), then flip back to
-        // calibrated. The subsequent successful Arm must clear the prior
-        // message so the wizard panel doesn't display stale guidance.
-        calib.IsCurrentAreaCalibrated = false;
-        coord.Arm();
-        coord.BootstrapBlockedMessage.Should().NotBeNull("setup: prior refusal");
-        calib.IsCurrentAreaCalibrated = true;
-
-        coord.Arm();
-
-        coord.IsArmed.Should().BeTrue();
-        coord.BootstrapBlockedMessage.Should().BeNull(
-            "successful Arm must clear the prior refusal's message.");
-    }
+    // #835 step 6 iter-1 touch-up: the bootstrap-gate Arm() tests that
+    // lived here were retired alongside the gate itself. The dissolved-#868
+    // framing in the #835 issue body is explicit ("no seed-calibration
+    // requirement"); calibration placement pins now draw pixel-native via
+    // LegolasOverlaySceneDrawer.DrawCalibrationPlacementPins, so the
+    // walkthrough works in both calibrated and uncalibrated areas. The
+    // tests that asserted the gate refused on uncalibrated areas + that a
+    // stale BootstrapBlockedMessage cleared on success contradicted the
+    // dissolution and were removed when the gate was reverted.
 
     private sealed class TestLoggerFactory : Microsoft.Extensions.Logging.ILoggerFactory
     {
