@@ -87,7 +87,6 @@ internal static class ScreenshotCalibrator
         }
 
         // Phase: detect every landmark icon variant and pair with landmarks.json.
-        var assigned = new List<AssignedReference>();
         var (detectionsByType, rawDetections) = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold);
 
         if (debugBgra is not null)
@@ -105,82 +104,194 @@ internal static class ScreenshotCalibrator
             }
         }
 
+        // Per-type summary (informational; assignment happens via RANSAC below
+        // over the full pool).
         foreach (var typeGroup in detectionsByType)
         {
-            if (typeGroup.Key == "Player") continue; // handled below
-
-            var dets = typeGroup.Value;
             var areaRefs = allRefs.Where(l => string.Equals(l.Type, typeGroup.Key, StringComparison.Ordinal)).ToList();
-            if (areaRefs.Count == 0)
-            {
-                Console.WriteLine($"[detect] {typeGroup.Key}: {dets.Count} detections — no landmark of this type in {inputs.Area}; skipping");
-                continue;
-            }
-            Console.WriteLine($"[detect] {typeGroup.Key}: {dets.Count} detections vs {areaRefs.Count} landmarks in area");
-
-            // Assignment: when same count, pair lexicographically (the solver
-            // tolerates this — handedness selection absorbs any rotation). When
-            // n_detected != n_in_area, try brute-force subsets, keep lowest-residual.
-            var typeAssigned = AssignAndScore(dets, areaRefs, mapRect, typeGroup.Key);
-            assigned.AddRange(typeAssigned);
-        }
-
-        if (inputs.PlayerCoord is { } pc && detectionsByType.TryGetValue("Player", out var playerDets))
-        {
-            // Player pin: best variant wins. Pair its world-anchor pixel with the
-            // user-supplied player coord (or coord read from the log).
-            var best = playerDets.OrderByDescending(d => d.MatchScore).FirstOrDefault();
-            if (best is not null)
-            {
-                var (tx, ty) = mapRect.ScreenshotToTexture(best.AnchorScreenshotX, best.AnchorScreenshotY);
-                assigned.Add(new AssignedReference(
-                    Label: $"Player ({best.IconName})",
-                    WorldX: pc.X,
-                    WorldZ: pc.Z,
-                    PixelX: tx,
-                    PixelY: ty,
-                    MatchScore: best.MatchScore));
-                Console.WriteLine($"[detect] Player: best variant '{best.IconName}' score={best.MatchScore:0.000}");
-            }
-            else
-            {
-                Console.WriteLine("[detect] Player: no variant scored >= threshold; --player-coord ignored");
-            }
-        }
-
-        if (assigned.Count < 2)
-        {
-            return new CalibrationResult(
-                Calibration: null,
-                AssignedReferences: assigned,
-                FailureReason: $"only {assigned.Count} reference(s) usable; solver needs >= 2. Detected {detectionsByType.Sum(kv => kv.Value.Count)} icons total but assignment culled to {assigned.Count}.");
+            Console.WriteLine($"[detect] {typeGroup.Key}: {typeGroup.Value.Count} detections vs {areaRefs.Count} landmarks in area");
         }
 
         // Phase: write debug image if requested (regardless of solve success).
         if (debugBgra is not null && inputs.DebugImagePath is not null)
         {
-            // Map-rect outline in green so the user can see what the locator picked.
             ImageIo.DrawRect(debugBgra, debugW, debugH, mapRect.OriginX, mapRect.OriginY,
                 mapRect.Width, mapRect.Height, 0, 255, 0);
             ImageIo.SaveBgraPng(debugBgra, debugW, debugH, inputs.DebugImagePath);
             Console.WriteLine($"[debug] annotated screenshot -> {inputs.DebugImagePath}");
         }
 
-        // Phase: solve.
+        // Phase: assignment via RANSAC over the full (detection, ref) pool.
+        // Sequential pairing per-type produced geometrically-incoherent results
+        // (sub-meter NPCs paired by file order, not by actual map position).
+        // RANSAC picks 2 random same-type pairs, solves a candidate calibration,
+        // counts how many other detections project within threshold of a
+        // same-type ref. Best inlier count wins.
+        var assigned = RansacAssign(detectionsByType, allRefs, mapRect);
+        Console.WriteLine($"[ransac] {assigned.Count} inlier references kept");
+
+        if (assigned.Count < 2)
+        {
+            return new CalibrationResult(
+                Calibration: null,
+                AssignedReferences: assigned,
+                FailureReason: $"RANSAC could not find a calibration with >= 2 geometrically-consistent (detection, ref) pairs. Total detections: {detectionsByType.Sum(kv => kv.Value.Count)}. Inspect --debug-image to see if detections are clustered on actual icons.");
+        }
+
+        // Final solve over the inlier set (refines the 2-point RANSAC seed).
         var refs = assigned
             .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
             .ToList();
         var cal = LandmarkCalibrationSolver.Solve(refs);
         if (cal is null)
         {
-            return new CalibrationResult(null, assigned, "solver returned null (degenerate references — all collinear?)");
+            return new CalibrationResult(null, assigned, "solver returned null on RANSAC inliers (degenerate — all collinear?)");
         }
-
-        // Persist CalibrationZoom = 1.0 because we've already rescaled to
-        // texture coords via mapRect. Source = UserRefinement (issue #852 says
-        // these populate the bundled baseline; rewriter sets source on write).
         cal = cal with { CalibrationZoom = inputs.Zoom, Source = CalibrationSource.BundledBaseline };
         return new CalibrationResult(cal, assigned, FailureReason: null);
+    }
+
+    // Inlier threshold for RANSAC: a detection is an inlier of a candidate
+    // calibration if its pivot-corrected pixel is within this many texture
+    // pixels of where the calibration projects a same-type ref. 50 px is
+    // generous (~2.5% of a 2000-px texture); RANSAC just needs the seed to
+    // be roughly right — the final solve refines over all inliers.
+    private const double RansacInlierPx = 50.0;
+
+    // Random-sample iterations. 800 handles ~80% outliers at 95% confidence
+    // for a 2-point seed; cheap because each iteration is just a 2-point
+    // solver invocation + a linear inlier scan over the pool.
+    private const int RansacIterations = 800;
+
+    private static IReadOnlyList<AssignedReference> RansacAssign(
+        Dictionary<string, List<TypedDetection>> detectionsByType,
+        List<LandmarkRef> allRefs,
+        MapRect mapRect)
+    {
+        // Build pool: (texture-pixel detection, candidate refs of same type).
+        // Work in texture-pixel space so the inlier predicate is in a stable
+        // coord system independent of the screenshot's pan/zoom.
+        var pool = new List<(TypedDetection Det, double Tx, double Ty, IReadOnlyList<LandmarkRef> Candidates)>();
+        foreach (var kv in detectionsByType)
+        {
+            var typeRefs = allRefs.Where(r => string.Equals(r.Type, kv.Key, StringComparison.Ordinal)).ToList();
+            if (typeRefs.Count == 0) continue;
+            foreach (var det in kv.Value)
+            {
+                var (tx, ty) = mapRect.ScreenshotToTexture(det.AnchorScreenshotX, det.AnchorScreenshotY);
+                pool.Add((det, tx, ty, typeRefs));
+            }
+        }
+        if (pool.Count < 2) return [];
+
+        var rng = new Random(852);  // deterministic seed for reproducible runs
+        int bestInlierCount = 0;
+        double bestResidual = double.PositiveInfinity;
+        List<AssignedReference> bestAssigned = [];
+
+        for (int iter = 0; iter < RansacIterations; iter++)
+        {
+            int i1 = rng.Next(pool.Count);
+            int i2 = rng.Next(pool.Count);
+            if (i1 == i2) continue;
+            var e1 = pool[i1];
+            var e2 = pool[i2];
+            if (Math.Abs(e1.Tx - e2.Tx) < 5 && Math.Abs(e1.Ty - e2.Ty) < 5) continue;
+
+            var r1 = e1.Candidates[rng.Next(e1.Candidates.Count)];
+            var r2 = e2.Candidates[rng.Next(e2.Candidates.Count)];
+            if (r1.World.X == r2.World.X && r1.World.Z == r2.World.Z) continue;
+
+            var seed = LandmarkCalibrationSolver.Solve([
+                new LandmarkCalibrationSolver.Reference(r1.World.X, r1.World.Z, new PixelPoint(e1.Tx, e1.Ty)),
+                new LandmarkCalibrationSolver.Reference(r2.World.X, r2.World.Z, new PixelPoint(e2.Tx, e2.Ty)),
+            ]);
+            if (seed is null) continue;
+
+            // For each pool entry, project each of its candidate refs through
+            // the seed; the closest projection wins. If within RansacInlierPx
+            // of the detected pixel, it's a candidate inlier.
+            //
+            // Two-stage de-dup: (a) per detection, keep the single best ref
+            // (already in the inner loop). (b) per ref, keep the single best
+            // detection — otherwise multiple noisy detections all "claim" the
+            // same real landmark, inflating the inlier count and dragging the
+            // final solve's residual upward.
+            var perDetCandidates = new List<(int PoolIdx, LandmarkRef Ref, double Dist)>();
+            for (int pi = 0; pi < pool.Count; pi++)
+            {
+                var e = pool[pi];
+                LandmarkRef? best = null;
+                double bestDist = double.PositiveInfinity;
+                foreach (var cand in e.Candidates)
+                {
+                    var pred = seed.WorldToWindow(cand.World);
+                    var dx = pred.X - e.Tx;
+                    var dy = pred.Y - e.Ty;
+                    var d = Math.Sqrt(dx * dx + dy * dy);
+                    if (d < bestDist) { bestDist = d; best = cand; }
+                }
+                if (best is not null && bestDist <= RansacInlierPx)
+                {
+                    perDetCandidates.Add((pi, best, bestDist));
+                }
+            }
+
+            // Per ref, keep the detection with the smallest distance.
+            var bestPerRef = new Dictionary<(double, double), (int PoolIdx, LandmarkRef Ref, double Dist)>();
+            foreach (var cand in perDetCandidates)
+            {
+                var key = (cand.Ref.World.X, cand.Ref.World.Z);
+                if (!bestPerRef.TryGetValue(key, out var existing) || cand.Dist < existing.Dist)
+                {
+                    bestPerRef[key] = cand;
+                }
+            }
+
+            var inliers = new List<AssignedReference>(bestPerRef.Count);
+            foreach (var cand in bestPerRef.Values)
+            {
+                var e = pool[cand.PoolIdx];
+                inliers.Add(new AssignedReference(
+                    Label: $"{e.Det.IconName}:{cand.Ref.Name}",
+                    WorldX: cand.Ref.World.X,
+                    WorldZ: cand.Ref.World.Z,
+                    PixelX: e.Tx,
+                    PixelY: e.Ty,
+                    MatchScore: e.Det.MatchScore));
+            }
+            // Score the candidate: prefer more inliers, but tie-break by the
+            // refit residual over those inliers. A "wrong" seed can collect
+            // inliers within the 50 px window by chance — the refit over those
+            // mis-paired points yields a high residual, while a "correct" seed
+            // with the same inlier count refits to near-zero residual. The
+            // residual-aware selection lets the correct seed beat the wrong one.
+            if (inliers.Count < 2) continue;
+            var refitRefs = inliers
+                .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
+                .ToList();
+            var refit = LandmarkCalibrationSolver.Solve(refitRefs);
+            if (refit is null) continue;
+
+            bool wins = inliers.Count > bestInlierCount
+                     || (inliers.Count == bestInlierCount && refit.ResidualPixels < bestResidual);
+            if (wins)
+            {
+                bestInlierCount = inliers.Count;
+                bestResidual = refit.ResidualPixels;
+                bestAssigned = inliers;
+            }
+        }
+
+        if (bestInlierCount > 0)
+        {
+            Console.WriteLine($"[ransac] best seed had {bestInlierCount} inliers out of {pool.Count} pool entries");
+            foreach (var a in bestAssigned)
+            {
+                Console.WriteLine($"  {a.Label}  world=({a.WorldX:0.0},{a.WorldZ:0.0}) tex=({a.PixelX:0.0},{a.PixelY:0.0}) score={a.MatchScore:0.000}");
+            }
+        }
+        return bestAssigned;
     }
 
     private static (Dictionary<string, List<TypedDetection>> ByType, List<(IconMeta Icon, Detection Det, int RenderW, int RenderH)> Raw)
@@ -313,6 +424,7 @@ internal static class ScreenshotCalibrator
         return best;
     }
 
+#pragma warning disable IDE0051  // kept for potential future per-type fallback
     private static IReadOnlyList<AssignedReference> AssignAndScore(
         List<TypedDetection> detections, List<LandmarkRef> areaRefs, MapRect mapRect, string typeName)
     {
@@ -361,4 +473,5 @@ internal static class ScreenshotCalibrator
     }
 
     private sealed record TypedDetection(string IconName, double AnchorScreenshotX, double AnchorScreenshotY, double MatchScore);
+#pragma warning restore IDE0051
 }
