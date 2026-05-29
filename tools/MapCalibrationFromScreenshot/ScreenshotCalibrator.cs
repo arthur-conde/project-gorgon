@@ -141,16 +141,21 @@ internal static class ScreenshotCalibrator
                 FailureReason: $"RANSAC could not find a calibration with >= 2 geometrically-consistent (detection, ref) pairs. Total detections: {detectionsByType.Sum(kv => kv.Value.Count)}. Inspect --debug-image to see if detections are clustered on actual icons.");
         }
 
-        // Final solve over the inlier set (refines the 2-point RANSAC seed).
-        var refs = assigned
-            .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
-            .ToList();
-        var cal = LandmarkCalibrationSolver.Solve(refs);
+        // Final solve + iterative refinement. Standard LO-RANSAC pattern:
+        // after the seed-derived inlier set is solved, drop the worst-residual
+        // inlier and re-solve; repeat until residual stops improving or only
+        // 3 refs remain. Catches the case where one inlier was paired to a
+        // nearby ref's icon (e.g. Selphie ↔ Tadion in Serbule's central
+        // cluster — 14 world units apart, RANSAC's per-ref dedup gives one
+        // detection to one of the two refs and the other ref has to pair
+        // with a different — wrong — detection).
+        var (cal, finalAssigned) = IterativeRefine(assigned);
         if (cal is null)
         {
             return new CalibrationResult(null, assigned, "solver returned null on RANSAC inliers (degenerate — all collinear?)");
         }
         cal = cal with { CalibrationZoom = inputs.Zoom, Source = CalibrationSource.BundledBaseline };
+        assigned = finalAssigned;
 
         // Phase: render the projection overlay on a fresh screenshot copy.
         // Projects every landmark + NPC ref through the recovered calibration
@@ -218,6 +223,63 @@ internal static class ScreenshotCalibrator
         }
 
         return new CalibrationResult(cal, assigned, FailureReason: null);
+    }
+
+    private static (AreaCalibration? Cal, List<AssignedReference> Refined) IterativeRefine(
+        IReadOnlyList<AssignedReference> initial)
+    {
+        // Solve, identify worst inlier by per-inlier residual, drop it if its
+        // residual is significantly worse than the median, re-solve. Stop when
+        // dropping the worst doesn't improve overall residual or we're down
+        // to 3 inliers (similarity solver needs >= 2; 3 gives a real residual
+        // to evaluate).
+        var current = initial.ToList();
+        AreaCalibration? bestCal = SolveOver(current);
+        if (bestCal is null) return (null, current);
+
+        const int MinInliers = 3;
+        // Up to 10 iterations to drop accumulated outliers; usually 1-2.
+        for (int iter = 0; iter < 10 && current.Count > MinInliers; iter++)
+        {
+            var perInlier = current.Select(a =>
+            {
+                var p = bestCal.WorldToWindow(new Mithril.MapCalibration.WorldCoord(a.WorldX, 0, a.WorldZ));
+                var dx = p.X - a.PixelX;
+                var dy = p.Y - a.PixelY;
+                return (Ref: a, Dist: Math.Sqrt(dx * dx + dy * dy));
+            }).ToList();
+            perInlier.Sort((x, y) => x.Dist.CompareTo(y.Dist));
+
+            var median = perInlier[perInlier.Count / 2].Dist;
+            var worst = perInlier[^1];
+            // Drop only if the worst is meaningfully worse than the median —
+            // otherwise we're carving into legitimate non-affine ceiling
+            // residual.
+            if (worst.Dist < Math.Max(median * 2.0, 3.0))
+            {
+                break;
+            }
+
+            var candidate = current.Where(r => !ReferenceEquals(r, worst.Ref)).ToList();
+            var candidateCal = SolveOver(candidate);
+            if (candidateCal is null) break;
+            if (candidateCal.ResidualPixels >= bestCal.ResidualPixels)
+            {
+                break;
+            }
+            Console.WriteLine($"[refine] iter {iter + 1}: dropped {worst.Ref.Label} (res {worst.Dist:0.00} px); RMS {bestCal.ResidualPixels:0.00} → {candidateCal.ResidualPixels:0.00}");
+            bestCal = candidateCal;
+            current = candidate;
+        }
+        return (bestCal, current);
+    }
+
+    private static AreaCalibration? SolveOver(IEnumerable<AssignedReference> refs)
+    {
+        var input = refs
+            .Select(a => new LandmarkCalibrationSolver.Reference(a.WorldX, a.WorldZ, new PixelPoint(a.PixelX, a.PixelY)))
+            .ToList();
+        return LandmarkCalibrationSolver.Solve(input);
     }
 
     // Inlier threshold for RANSAC: a detection is an inlier of a candidate
