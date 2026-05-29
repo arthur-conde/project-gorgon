@@ -154,6 +154,7 @@ internal static class SelfTest
             PlayerCoord: (playerWorld.X, playerWorld.Z),
             MapRectOverride: null,
             DetectionThreshold: 0.5,
+            IconRenderSizeOverride: 0,
             DebugImagePath: null);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 

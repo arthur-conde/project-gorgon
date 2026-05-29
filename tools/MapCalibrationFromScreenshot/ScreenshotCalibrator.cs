@@ -87,7 +87,7 @@ internal static class ScreenshotCalibrator
         }
 
         // Phase: detect every landmark icon variant and pair with landmarks.json.
-        var (detectionsByType, rawDetections) = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold);
+        var (detectionsByType, rawDetections) = DetectIconsByType(screenshotGray, inputs.IconsDir, iconIndex, inputs.DetectionThreshold, inputs.IconRenderSizeOverride);
 
         if (debugBgra is not null)
         {
@@ -153,10 +153,14 @@ internal static class ScreenshotCalibrator
 
     // Inlier threshold for RANSAC: a detection is an inlier of a candidate
     // calibration if its pivot-corrected pixel is within this many texture
-    // pixels of where the calibration projects a same-type ref. 50 px is
-    // generous (~2.5% of a 2000-px texture); RANSAC just needs the seed to
-    // be roughly right — the final solve refines over all inliers.
-    private const double RansacInlierPx = 50.0;
+    // pixels of where the calibration projects a same-type ref. Tightened
+    // from 50 → 15 after first real-screenshot run (Serbule): the looser
+    // threshold let noisy NPC detections in the central-town cluster pair
+    // with NPCs they weren't actually positioned at, dragging a 3-perfect-
+    // landmark fit into a wrong-but-self-consistent 11-inlier fit. 15 px in
+    // texture space is ~7 px on a typical screenshot — tighter than icon
+    // size, so a detection must be on a real icon to qualify.
+    private const double RansacInlierPx = 15.0;
 
     // Random-sample iterations. 800 handles ~80% outliers at 95% confidence
     // for a 2-point seed; cheap because each iteration is just a 2-point
@@ -295,7 +299,7 @@ internal static class ScreenshotCalibrator
     }
 
     private static (Dictionary<string, List<TypedDetection>> ByType, List<(IconMeta Icon, Detection Det, int RenderW, int RenderH)> Raw)
-        DetectIconsByType(GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold)
+        DetectIconsByType(GrayImage screenshot, string iconsDir, IconIndex iconIndex, double threshold, int iconRenderSizeOverride)
     {
         // Load every template once, gray + alpha pair.
         var templates = new List<(IconMeta Icon, GrayImage Gray, GrayImage Alpha)>();
@@ -324,11 +328,19 @@ internal static class ScreenshotCalibrator
         // skip the sweep and use native — there's nothing to choose.
         int maxTemplateDim = templates.Count == 0 ? 0 : templates.Max(t => Math.Max(t.Gray.Width, t.Gray.Height));
         bool needsScaleSearch = maxTemplateDim > 64;
-        int chosenSize = needsScaleSearch
-            ? SelectGlobalRenderSize(screenshot, templates, [12, 16, 20, 24, 30, 40, 56], threshold)
-            : 0;  // 0 = use each template's native size
-        if (!needsScaleSearch)
+        int chosenSize;
+        if (iconRenderSizeOverride > 0)
         {
+            chosenSize = iconRenderSizeOverride;
+            Console.WriteLine($"[scale] using --icon-render-size override: {chosenSize} px");
+        }
+        else if (needsScaleSearch)
+        {
+            chosenSize = SelectGlobalRenderSize(screenshot, templates, [12, 16, 20, 24, 30, 40, 56], threshold);
+        }
+        else
+        {
+            chosenSize = 0;  // 0 = use each template's native size
             Console.WriteLine("[scale] templates already at render size; using native per-icon dimensions");
         }
 

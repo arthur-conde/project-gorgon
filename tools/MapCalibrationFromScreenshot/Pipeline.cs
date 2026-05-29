@@ -61,6 +61,7 @@ internal static class Pipeline
             PlayerCoord: ResolvePlayerCoord(args),
             MapRectOverride: args.MapRect,
             DetectionThreshold: args.DetectionThreshold,
+            IconRenderSizeOverride: args.IconRenderSize,
             DebugImagePath: args.DebugImagePath);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
@@ -179,6 +180,7 @@ internal sealed record CalibrationInputs(
     (double X, double Z)? PlayerCoord,
     (int X, int Y, int W, int H)? MapRectOverride,
     double DetectionThreshold,
+    int IconRenderSizeOverride,
     string? DebugImagePath);
 
 internal sealed record AssignedReference(

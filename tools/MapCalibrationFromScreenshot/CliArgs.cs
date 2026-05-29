@@ -22,6 +22,7 @@ internal sealed record CliArgs(
     (double X, double Z)? PlayerCoord,
     (int X, int Y, int W, int H)? MapRect,
     double DetectionThreshold,
+    int IconRenderSize,
     string? DebugImagePath,
     double Zoom,
     Phase Phase,
@@ -43,6 +44,7 @@ internal sealed record CliArgs(
         (double, double)? playerCoord = null;
         (int, int, int, int)? mapRect = null;
         double detectionThreshold = 0.5;
+        int iconRenderSize = 0;  // 0 = auto-detect
         string? debugImagePath = null;
         double zoom = 1.0;
         Phase phase = Phase.Full;
@@ -69,6 +71,9 @@ internal sealed record CliArgs(
                     break;
                 case "--detection-threshold":
                     detectionThreshold = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
+                    break;
+                case "--icon-render-size":
+                    iconRenderSize = int.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
                     break;
                 case "--debug-image":
                     debugImagePath = Next(argv, ref i);
@@ -114,6 +119,7 @@ internal sealed record CliArgs(
             PlayerCoord: playerCoord,
             MapRect: mapRect,
             DetectionThreshold: detectionThreshold,
+            IconRenderSize: iconRenderSize,
             DebugImagePath: debugImagePath,
             Zoom: zoom,
             Phase: phase,
@@ -190,6 +196,10 @@ internal sealed record CliArgs(
               --detection-threshold <0..1>  min NCC score to accept a template match (default 0.5).
                                             Lower (e.g. 0.3) when real-screenshot recall is low;
                                             higher (e.g. 0.7) when there are too many false positives
+              --icon-render-size <px>       on-screen pixel size PG renders icons at; bypasses the
+                                            auto-detect sweep. Measure by opening the screenshot in
+                                            an image viewer and reading an icon's bbox dimension
+                                            (e.g. PG renders ~19 px at 1080p UI scale)
               --debug-image <path>          write an annotated PNG: cyan rects mark every detection
                                             that cleared threshold, red crosses mark the pivot-
                                             corrected anchor, green rect outlines the map rect
