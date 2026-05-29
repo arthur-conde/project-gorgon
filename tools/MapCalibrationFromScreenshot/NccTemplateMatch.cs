@@ -95,11 +95,15 @@ internal static class NccTemplateMatch
         int sh = image.Height - th + 1;
         var scores = new double[image.Width, image.Height];
 
-        for (int sy = 0; sy < sh; sy++)
+        // Parallelise the outer search-position row loop — each (sx, sy) write
+        // is independent. Cuts wall time by ~core-count on a modern CPU; the
+        // brute-force ~1 billion ops per template stay the same, just spread.
+        // Captures (image, template, mask, tw, th, tMean, tNorm, tCount, sw)
+        // are all read-only.
+        Parallel.For(0, sh, sy =>
         {
             for (int sx = 0; sx < sw; sx++)
             {
-                // Window mean over mask-passing pixels (matched to template's mask).
                 double wSum = 0;
                 for (int ty = 0; ty < th; ty++)
                 {
@@ -112,7 +116,6 @@ internal static class NccTemplateMatch
                 }
                 double wMean = wSum / tCount;
 
-                // Cross-correlation + window variance, both centred.
                 double cross = 0;
                 double wSq = 0;
                 for (int ty = 0; ty < th; ty++)
@@ -131,7 +134,7 @@ internal static class NccTemplateMatch
                 double wNorm = Math.Sqrt(wSq);
                 scores[sx, sy] = (wNorm < 1e-9) ? 0 : cross / (tNorm * wNorm);
             }
-        }
+        });
         return scores;
     }
 
