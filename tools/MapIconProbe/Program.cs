@@ -89,6 +89,13 @@ internal static class Program
                         return 2;
                     }
                     return RunScanAll(pgInstall, args[1]);
+                case "stringsfile":
+                    if (args.Length < 2)
+                    {
+                        Console.WriteLine("usage: stringsfile <path> [needle]");
+                        return 2;
+                    }
+                    return RunStringsFile(args[1], args.Length > 2 ? args[2] : null);
                 default:
                     Console.WriteLine($"unknown phase '{phase}'. expected: inventory | names | dumpbundle | ggm");
                     return 2;
@@ -452,30 +459,44 @@ internal static class Program
 
     private static int RunScanAll(string pgInstall, string substring)
     {
-        // Brute-force byte-string scan of every bundle + every scene file +
-        // ggm. Counts how many files contain the substring and reports them.
-        // Cheap: 4GB+ of data but linear sequential read.
+        // Brute-force byte-string scan across every file plausibly carrying
+        // packaged-with-the-game (vs. streamed-via-Addressables) PG data:
+        //   - all Addressables bundles (StreamingAssets/aa/StandaloneWindows64/)
+        //   - the Addressables catalog + settings (StreamingAssets/aa/*)
+        //   - the AddressablesLink XML manifest
+        //   - the StreamingAssets root (in case PG ships non-Addressables JSON)
+        //   - globalgamemanagers + globalgamemanagers.assets (engine + script tables)
+        //   - every level<N> scene file (the "baked-into-the-game" path)
+        //   - Resources/unity default resources + Resources/unity_builtin_extra
+        //   - il2cpp_data/Metadata/global-metadata.dat (compiled C# strings)
+        // Counts hits and lists files. Linear sequential read across ~26 GB.
         var needle = System.Text.Encoding.ASCII.GetBytes(substring);
-        var roots = new List<string>
+        var data = Path.Combine(pgInstall, "WindowsPlayer_Data");
+        var files = new List<string>();
+
+        void AddIfFile(string p) { if (File.Exists(p)) files.Add(p); }
+        void AddDir(string dir, string pattern = "*", bool recursive = false)
         {
-            Path.Combine(pgInstall, "WindowsPlayer_Data", "StreamingAssets", "aa", "StandaloneWindows64"),
-        };
-        var single = new List<string>
-        {
-            Path.Combine(pgInstall, "WindowsPlayer_Data", "globalgamemanagers.assets"),
-            Path.Combine(pgInstall, "WindowsPlayer_Data", "globalgamemanagers"),
-        };
-        var files = new List<string>(single);
-        foreach (var r in roots)
-        {
-            if (Directory.Exists(r)) files.AddRange(Directory.EnumerateFiles(r));
+            if (!Directory.Exists(dir)) return;
+            files.AddRange(Directory.EnumerateFiles(dir, pattern,
+                recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly));
         }
-        var levelDir = Path.Combine(pgInstall, "WindowsPlayer_Data");
-        if (Directory.Exists(levelDir))
-        {
-            files.AddRange(Directory.EnumerateFiles(levelDir, "level*")
-                .Where(p => !p.EndsWith(".resS", StringComparison.OrdinalIgnoreCase)));
-        }
+
+        AddIfFile(Path.Combine(data, "globalgamemanagers"));
+        AddIfFile(Path.Combine(data, "globalgamemanagers.assets"));
+        AddIfFile(Path.Combine(data, "RuntimeInitializeOnLoads.json"));
+        AddIfFile(Path.Combine(data, "ScriptingAssemblies.json"));
+        AddDir(data, "level*");
+        AddDir(Path.Combine(data, "Resources"));
+        AddDir(Path.Combine(data, "il2cpp_data"), "*", recursive: true);
+        AddDir(Path.Combine(data, "StreamingAssets"), "*", recursive: false);
+        AddDir(Path.Combine(data, "StreamingAssets", "aa"), "*", recursive: false);
+        AddDir(Path.Combine(data, "StreamingAssets", "aa", "AddressablesLink"), "*", recursive: true);
+        AddDir(Path.Combine(data, "StreamingAssets", "aa", "StandaloneWindows64"));
+
+        // Filter: exclude the .resS streaming-data sidecars (they hold raw pixel
+        // bytes for textures — searching them is pure noise).
+        files = files.Where(p => !p.EndsWith(".resS", StringComparison.OrdinalIgnoreCase)).ToList();
 
         Console.WriteLine($"[scanall] needle='{substring}' across {files.Count} files");
         var hits = 0;
@@ -491,6 +512,40 @@ internal static class Program
             }
         }
         Console.WriteLine($"[scanall] {hits} files contain '{substring}'");
+        return 0;
+    }
+
+    private static int RunStringsFile(string path, string? needle)
+    {
+        // Pull every printable-ASCII run of >=6 chars from a file. If needle
+        // supplied, filter to runs containing it (case-insensitive). Sorted &
+        // deduped. Used to see what classes/keys live in a single file.
+        if (!File.Exists(path)) { Console.WriteLine($"missing: {path}"); return 1; }
+        var bytes = File.ReadAllBytes(path);
+        var hits = new SortedSet<string>(StringComparer.Ordinal);
+        int runStart = -1;
+        for (int i = 0; i < bytes.Length; i++)
+        {
+            var b = bytes[i];
+            if (b >= 32 && b < 127)
+            {
+                if (runStart < 0) runStart = i;
+            }
+            else
+            {
+                if (runStart >= 0 && i - runStart >= 6)
+                {
+                    var s = System.Text.Encoding.ASCII.GetString(bytes, runStart, i - runStart);
+                    if (needle is null || s.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                    {
+                        hits.Add(s);
+                    }
+                }
+                runStart = -1;
+            }
+        }
+        foreach (var h in hits) Console.WriteLine(h);
+        Console.WriteLine($"[stringsfile] {hits.Count} strings");
         return 0;
     }
 

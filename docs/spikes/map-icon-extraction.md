@@ -128,6 +128,34 @@ Per the issue's "Verification owed" section: if the spike had succeeded, the rec
 
 Hand-authoring a 36-area baseline JSON (the original [#836](https://github.com/moumantai-gg/mithril/issues/836) Tier 2(a) plan) remains a possibility if a real need surfaces, but per the spike's intent the negative result is itself an acceptable outcome — we now know the recurring authoring cost is the only way to pay for it.
 
+## "What if the map icons are packaged in the game, not streamed via Addressables?"
+
+Sharpening the original scope, which leaned heavily on the Addressables bundles. The wider question: across **every** packaged surface a Unity build can carry data in (not just Addressables), is there a per-area icon-position table?
+
+Surfaces scanned (`scanall` byte-string scan across 1176 files):
+
+| Surface | Path | Map-icon instance data? |
+|---|---|---|
+| Addressables bundles | `StreamingAssets/aa/StandaloneWindows64/*.bundle` (1117 files) | No |
+| Addressables catalog | `StreamingAssets/aa/catalog.bin` (1 MB) | No — keys enumerated, only `Map_<area>.png` + `BlankMap.psd` + `NoMap.png` |
+| Addressables settings + link | `StreamingAssets/aa/settings.json` + `AddressablesLink/*` | No |
+| StreamingAssets root | `StreamingAssets/UnityServicesProjectConfiguration.json` | No |
+| Engine config | `globalgamemanagers` (8 MB), `globalgamemanagers.assets` (740 KB) | Only class definitions (`AreaMapScriptableObject`, `MapMarker`, `MapLandmark`, `LandmarkManager`, `LandmarkFactory`, `LandmarkPreParsed`, `UIMapControllerNew`) — no instances |
+| Scenes (all 44) | `level0` … `level43` | Only `MapMarker` + `UIMapControllerNew` MonoScript-name interns in `level0` + `level40` (UI canvas scenes). A `TowerLandmark` GameObject in `level22` and a `Landmarks` group in `level31` — single in-world references, not a per-area collection. A lore-book mentions "landmark" in `level11`. |
+| Unity builtins | `Resources/unity default resources` (5.9 MB) + `Resources/unity_builtin_extra` (17 MB) | No |
+| JSON manifests | `RuntimeInitializeOnLoads.json`, `ScriptingAssemblies.json` | No |
+| IL2CPP metadata | `il2cpp_data/Metadata/global-metadata.dat` (14.5 MB) | Class names registered (`AreaMapScriptableObject`, `EntityPinCollection`, …) but this is the IL2CPP type registry, not instance data. `Calibration` substring matches `s_LightMeterCalibrationConstant` (engine render setting). `MapData` substring matches `HeightmapData` / `SplatmapData` (Unity terrain), not map-icon data. |
+
+Catalog parsing — printable-string dump of `catalog.bin` (every Addressables key the runtime can load) — yielded **263 map-related strings**, all of which are either:
+
+- The 50+ `Map_<AreaName>.png` texture keys (the per-area map images we already extract).
+- The matching `maps_assets_assets_art_maps_map_<area>.png_<hash>.bundle` filenames.
+- Unrelated keys whose name happens to contain "map" as a substring (`MaterialTextureAtlas`, `Deer_Fur_FurMap1.png`).
+
+**There is no Addressables key, scene asset, builtin resource, or JSON manifest that ships per-area icon-position data.** The map-UI classes exist in compiled IL2CPP code (`GameAssembly.dll`) but have zero serialized instances anywhere a Unity build can hold data — Addressables, scenes, `Resources/`, or `globalgamemanagers`.
+
+The one remaining surface that *could* hold a hardcoded icon-position table is `Plugins/x86_64/GameAssembly.dll` — the IL2CPP-compiled C# code itself, where `const Vector2[]` arrays or embedded JSON resource strings would live. Reading the compiled assembly to extract those is foreclosed by PG's anti-injector posture (see memory `pg_anti_injector_stance`) and is out of scope here. Even if extraction were attempted, a `const` table would be a snapshot frozen to whatever PG release shipped it — the recurring per-patch maintenance cost the spike was trying to avoid would resurface as "decompile-and-diff after each PG patch."
+
 ## Artifacts
 
 - Probe tool: [`tools/MapIconProbe/`](../../tools/MapIconProbe/) — runnable via `dotnet run --project tools/MapIconProbe -c Release -- <phase>`. Phases: `inventory`, `names`, `dumpbundle <substring>`, `ggm`, `scenes`, `strings`, `scanall <substring>`.
