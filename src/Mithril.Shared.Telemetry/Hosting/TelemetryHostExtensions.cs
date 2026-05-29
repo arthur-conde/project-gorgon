@@ -60,16 +60,24 @@ namespace Mithril.Shared.Telemetry.Hosting;
 /// surfaces but <see cref="ValueRedactor"/> still scrubs paths + character
 /// name from string values and the formatted log body.</para>
 ///
-/// <para><strong>Hot-reload — partial in v1.</strong>
-/// <see cref="TelemetrySettings.TagExports"/> mutations on the singleton
-/// flow through to the scrubber live (per-span read of
-/// <c>IOptionsMonitor.CurrentValue.TagExports</c>) — the settings UI can
-/// toggle a tag and the next exported span honours it. Endpoint, headers,
-/// protocol, and service-name changes still require a process restart in
-/// v1: the OTel SDK <c>AddOtlpExporter</c> callback captures those once at
-/// registration, and threading per-field <c>OnChange</c> notifications
-/// through the exporter wrapper is non-trivial. Filed as a follow-up
-/// enhancement.</para>
+/// <para><strong>Hot-reload — partial.</strong>
+/// The <see cref="IOptionsMonitor{T}"/> registered here is a real
+/// <see cref="NotifyPropertyChangedOptionsMonitor{T}"/> that fires
+/// <c>OnChange</c> on every settings-singleton mutation (the settings UI's
+/// in-place edit + <c>Touch()</c> path). <see cref="TelemetrySettings.TagExports"/>
+/// mutations flow through to the scrubber live (per-record read of
+/// <c>IOptionsMonitor.CurrentValue.TagExports</c>) — the settings UI can toggle
+/// a tag and the next exported span honours it.
+/// Endpoint, headers, protocol, and service-name changes still require a
+/// process restart: OTel SDK 1.15.x captures them in the exporter instance at
+/// provider-build time (the <c>AddOtlpExporter(Action&lt;OtlpExporterOptions&gt;)</c>
+/// callback runs once and <c>OtlpTraceExporter</c> snapshots them into its
+/// transmission handler in its constructor — it never re-reads). A per-export
+/// <c>IServiceProvider</c> factory overload that would permit live re-reads is
+/// an open upstream request (open-telemetry/opentelemetry-dotnet#6537); until it
+/// lands, live swapping these fields would require a full
+/// <c>TracerProvider</c>/<c>MeterProvider</c>/<c>LoggerProvider</c> rebuild.
+/// Tracked as a follow-up. mithril#833.</para>
 ///
 /// <para><strong>Exporter health.</strong> An
 /// <see cref="OtlpExporterEventListener"/> singleton is constructed eagerly so
@@ -131,10 +139,14 @@ public static class TelemetryHostExtensions
         // one the host eventually builds (e.g. when the caller resolved settings
         // from a temp ServiceProvider for the EnableOtlpExport gating decision).
         // Resolve through sp instead so the scrubber always sees the live
-        // host-singleton dictionary. OnChange notifications are a v1 no-op — the
-        // scrubber polls CurrentValue, doesn't subscribe.
+        // host-singleton dictionary. The monitor subscribes to the singleton's
+        // PropertyChanged so OnChange listeners actually fire on the settings-UI
+        // save / in-place-mutation path (mithril#833). Endpoint/headers/protocol/
+        // service-name remain restart-required regardless — the OTel exporter
+        // bakes them at provider-build time and never re-reads (see the
+        // restart-required note below and NotifyPropertyChangedOptionsMonitor).
         services.AddSingleton<IOptionsMonitor<TelemetrySettings>>(sp =>
-            new SingletonOptionsMonitor<TelemetrySettings>(sp.GetRequiredService<TelemetrySettings>()));
+            new NotifyPropertyChangedOptionsMonitor<TelemetrySettings>(sp.GetRequiredService<TelemetrySettings>()));
 
         // Scrubber graph. Process-wide singletons; the processor references
         // the catalog + redactor + observer + settings monitor.
@@ -383,25 +395,5 @@ public static class TelemetryHostExtensions
         }
 
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// IOptionsMonitor shim that returns the DI singleton on every CurrentValue
-    /// read so in-place mutations (TagExports add/remove) are picked up per
-    /// scrub. OnChange notification is a no-op for v1 — the scrubber polls
-    /// CurrentValue, doesn't subscribe. The full OnChange path lands with the
-    /// IOptionsMonitor hot-reload follow-up (see XML doc on AddMithrilOtlpExport).
-    /// </summary>
-    private sealed class SingletonOptionsMonitor<T>(T instance) : IOptionsMonitor<T> where T : class
-    {
-        public T CurrentValue => instance;
-        public T Get(string? name) => instance;
-        public IDisposable OnChange(Action<T, string?> listener) => NoSubscription.Instance;
-
-        private sealed class NoSubscription : IDisposable
-        {
-            public static readonly NoSubscription Instance = new();
-            public void Dispose() { }
-        }
     }
 }

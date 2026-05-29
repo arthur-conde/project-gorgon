@@ -92,6 +92,78 @@ public class TelemetryHostExtensionsTests
     }
 
     [Fact]
+    public void OptionsMonitor_OnChange_fires_on_singleton_mutation()
+    {
+        // The prior SingletonOptionsMonitor shim's OnChange was a no-op, so any
+        // subscriber (settings UI, future live consumers) silently never heard
+        // about edits. The replacement must actually fire (mithril#833).
+        var settings = new TelemetrySettings
+        {
+            EnableOtlpExport = true,
+            Endpoint = "http://localhost:65535/",
+        };
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(settings);
+                services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
+                services.AddMithrilOtlpExport(settings);
+            })
+            .Build();
+
+        var monitor = host.Services.GetRequiredService<IOptionsMonitor<TelemetrySettings>>();
+        TelemetrySettings? observed = null;
+        var fireCount = 0;
+        using var sub = monitor.OnChange((value, _) => { observed = value; fireCount++; });
+
+        // A scalar field edit (Endpoint) — restart-required for the exporter, but
+        // the OnChange signal must still fire so the UI / future consumers react.
+        settings.Endpoint = "http://localhost:4318/";
+
+        fireCount.Should().BeGreaterThanOrEqualTo(1,
+            "OnChange listeners must fire on the settings-singleton mutation path; " +
+            "a no-op OnChange silently strands every subscriber.");
+        observed.Should().BeSameAs(settings,
+            "the change callback must hand back the live singleton, not a snapshot copy.");
+    }
+
+    [Fact]
+    public void OptionsMonitor_OnChange_subscription_dispose_stops_callbacks()
+    {
+        var settings = new TelemetrySettings
+        {
+            EnableOtlpExport = true,
+            Endpoint = "http://localhost:65535/",
+        };
+
+        using var host = Host.CreateDefaultBuilder()
+            .ConfigureServices(services =>
+            {
+                services.AddSingleton(settings);
+                services.AddSingleton<ITagDescriptorProvider, MithrilSharedTagDescriptors>();
+                services.AddMithrilOtlpExport(settings);
+            })
+            .Build();
+
+        var monitor = host.Services.GetRequiredService<IOptionsMonitor<TelemetrySettings>>();
+        var fireCount = 0;
+        var sub = monitor.OnChange((_, _) => fireCount++);
+        sub.Should().NotBeNull("the real monitor returns a live subscription, not the BCL's nullable no-op");
+
+        settings.ServiceName = "first";
+        var afterFirst = fireCount;
+        afterFirst.Should().BeGreaterThanOrEqualTo(1);
+
+        sub!.Dispose();
+        settings.ServiceName = "second";
+
+        fireCount.Should().Be(afterFirst,
+            "disposing the OnChange subscription must detach the listener so post-dispose " +
+            "mutations don't invoke it (no leak, no use-after-dispose).");
+    }
+
+    [Fact]
     public void TagExports_mutations_are_visible_when_settings_resolved_via_AddMithrilVersionedSettings()
     {
         // Mirror the production Shell composition: settings come from a persisted

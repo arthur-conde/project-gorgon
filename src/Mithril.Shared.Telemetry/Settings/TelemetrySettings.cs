@@ -11,11 +11,16 @@ namespace Mithril.Shared.Telemetry.Settings;
 public enum OtlpProtocol { Grpc, HttpProtobuf }
 
 /// <summary>
-/// Persisted opt-in OTLP export configuration. Hot-reloaded via
-/// <see cref="Microsoft.Extensions.Options.IOptionsMonitor{T}"/> for
-/// endpoint/headers/scrubber changes; <see cref="EnableOtlpExport"/>
-/// requires a restart so off-mode preserves zero
-/// <see cref="System.Diagnostics.ActivitySource.HasListeners"/> cost.
+/// Persisted opt-in OTLP export configuration. Mutations are surfaced via
+/// <see cref="Microsoft.Extensions.Options.IOptionsMonitor{T}"/>
+/// (<c>NotifyPropertyChangedOptionsMonitor</c>) which fires <c>OnChange</c> on
+/// every in-place edit. <see cref="TagExports"/> is read live per exported
+/// record so chip toggles apply without restart. <see cref="Endpoint"/>,
+/// <see cref="Headers"/>, <see cref="Protocol"/>, and <see cref="ServiceName"/>
+/// are <strong>restart-required</strong>: the OTel SDK bakes them into the
+/// exporter instance at provider-build time and never re-reads (mithril#833).
+/// <see cref="EnableOtlpExport"/> also requires a restart so off-mode preserves
+/// zero <see cref="System.Diagnostics.ActivitySource.HasListeners"/> cost.
 ///
 /// Header values are DPAPI-wrapped at rest via
 /// <see cref="HeaderValueProtection"/>. Round-trip is transparent — the

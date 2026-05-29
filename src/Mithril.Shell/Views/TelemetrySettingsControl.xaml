@@ -73,19 +73,24 @@
                 </StackPanel>
             </Border>
 
-            <!-- Endpoint -->
-            <TextBlock Text="Endpoint" Foreground="#88FFFFFF"
+            <!-- Endpoint. Restart-required: the OTel SDK 1.15.x exporter captures
+                 the endpoint in its transmission handler at provider build; a live
+                 swap needs a provider rebuild (tracked in follow-up). -->
+            <TextBlock Text="Endpoint [Restart Required]" Foreground="#88FFFFFF"
                        FontWeight="SemiBold" Margin="0,4,0,4"/>
             <TextBox Text="{Binding Settings.Endpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      Background="#FF252525" Foreground="#FFE8E8E8" BorderBrush="#44FFFFFF"
-                     Padding="6,4" Margin="0,0,0,12"/>
+                     Padding="6,4" Margin="0,0,0,12"
+                     ToolTip="Restart required to apply. OTel SDK 1.15.x captures the endpoint in the exporter at provider build; live swap needs a provider rebuild (tracked in follow-up)."/>
 
-            <!-- Protocol -->
-            <TextBlock Text="Protocol" Foreground="#88FFFFFF"
+            <!-- Protocol. Restart-required for the same reason as Endpoint:
+                 the protocol selects the exporter transport at provider build. -->
+            <TextBlock Text="Protocol [Restart Required]" Foreground="#88FFFFFF"
                        FontWeight="SemiBold" Margin="0,0,0,4"/>
             <ComboBox ItemsSource="{Binding Source={x:Static vm:TelemetrySettingsViewModel.ProtocolOptions}}"
                       SelectedItem="{Binding Settings.Protocol, Mode=TwoWay}"
-                      Width="220" HorizontalAlignment="Left" Margin="0,0,0,12">
+                      Width="220" HorizontalAlignment="Left" Margin="0,0,0,12"
+                      ToolTip="Restart required to apply. OTel SDK 1.15.x selects the exporter transport at provider build; live swap needs a provider rebuild (tracked in follow-up).">
                 <!-- Explicit ItemTemplate so the selection box renders the enum name
                      consistently with the dropdown items (avoids the
                      ComboBox-renders-ToString fallback called out in wpf-gotchas.md). -->
@@ -96,19 +101,23 @@
                 </ComboBox.ItemTemplate>
             </ComboBox>
 
-            <!-- Service name -->
-            <TextBlock Text="Service name" Foreground="#88FFFFFF"
+            <!-- Service name. Restart-required: service.name flows into the OTel
+                 ResourceBuilder, captured at provider build and cached on the
+                 exporter's first export. -->
+            <TextBlock Text="Service name [Restart Required]" Foreground="#88FFFFFF"
                        FontWeight="SemiBold" Margin="0,0,0,4"/>
             <TextBox Text="{Binding Settings.ServiceName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      Background="#FF252525" Foreground="#FFE8E8E8" BorderBrush="#44FFFFFF"
-                     Padding="6,4" Width="280" HorizontalAlignment="Left" Margin="0,0,0,16"/>
+                     Padding="6,4" Width="280" HorizontalAlignment="Left" Margin="0,0,0,16"
+                     ToolTip="Restart required to apply. service.name flows into the OTel resource, captured at provider build; live swap needs a provider rebuild (tracked in follow-up)."/>
 
-            <!-- Headers -->
-            <TextBlock Text="Headers" Foreground="#88FFFFFF"
+            <!-- Headers. Restart-required: header values are baked into the
+                 exporter's HTTP transmission handler at provider build. -->
+            <TextBlock Text="Headers [Restart Required]" Foreground="#88FFFFFF"
                        FontWeight="SemiBold" Margin="0,0,0,4"/>
             <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,6"
-                       Text="HTTP headers added to every OTLP request (typically an API key / bearer token). Save each row after editing — values are DPAPI-wrapped at rest before persisting."/>
+                       Text="HTTP headers added to every OTLP request (typically an API key / bearer token). Save each row after editing — values are DPAPI-wrapped at rest before persisting. Restart required to apply: header values are baked into the exporter transport at provider build (tracked in follow-up)."/>
 
             <DataGrid ItemsSource="{Binding Headers}"
                       AutoGenerateColumns="False"
