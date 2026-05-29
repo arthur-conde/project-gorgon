@@ -13,12 +13,14 @@ namespace Legolas.Rendering;
 /// <para>For now, the registration helper is exercised by Legolas tests so
 /// the renderer dispatch path runs end-to-end with the lifted drawers.</para>
 ///
-/// <para>Calibration drawer note: per the brief, calibration markers are
-/// currently drawn by a WPF <c>ItemsControl</c> (per the <c>#495</c>
-/// commentary in <see cref="PinSceneRenderer"/>) so there is no
-/// <c>PinSceneRenderer</c> branch to lift and no D2D source-of-truth to
-/// byte-parity-compare against. The calibration drawer ships in step 5
-/// when the calibration markers switch over.</para>
+/// <para>#835 step 5: the calibration drawer
+/// (<see cref="LegolasCalibrationMarkerDrawer"/>) joins the family. Today's
+/// calibration markers (Drop / Pair walkthrough) are also rendered by a WPF
+/// <c>ItemsControl</c> in <c>MapOverlayView.xaml</c>; the marker pipeline
+/// takes over for areas with a baseline calibration, the <c>ItemsControl</c>
+/// stays as the fallback for brand-new areas with no baseline
+/// (<c>WindowToWorld</c> can't convert the click pixel to a world coord
+/// without a baseline calibration).</para>
 /// </summary>
 public static class LegolasOverlayDrawerRegistrations
 {
@@ -35,6 +37,20 @@ public static class LegolasOverlayDrawerRegistrations
         renderer.RegisterDrawer<LegolasSurveyMarkerStyle>(LegolasSurveyMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasMotherlodeMarkerStyle>(LegolasMotherlodeMarkerDrawer.Draw);
         renderer.RegisterDrawer<LegolasMotherlodeGuidanceMarkerStyle>(LegolasMotherlodeGuidanceMarkerDrawer.Draw);
+        // TODO(#835 step 6): player anchor producer deferred — currently
+        // rendered by the legacy WPF binding to
+        // MapOverlayViewModel.PlayerMarkerPixel inside
+        // MapOverlayView.OnMapSurfaceRender. The drawer registration is
+        // here to keep the visual contract pinned via
+        // LegolasMarkerDrawerSnapshotTests + MarkerPipelineSnapshotTests
+        // until the producer side lands (a Survey-mode IPositionState
+        // -> AddMarker for the projected GPS anchor, and a Motherlode-mode
+        // HasPlayerPosition -> AddMarker for the manual-click anchor —
+        // both today live in PlayerMarkerPixel as a computed pixel property
+        // the legacy renderer reads per-frame). Once the producer ships
+        // in step 6, this comment retires.
         renderer.RegisterDrawer<LegolasPlayerMarkerStyle>(LegolasPlayerMarkerDrawer.Draw);
+        // #835 step 5: calibration drawer joins.
+        renderer.RegisterDrawer<LegolasCalibrationMarkerStyle>(LegolasCalibrationMarkerDrawer.Draw);
     }
 }
