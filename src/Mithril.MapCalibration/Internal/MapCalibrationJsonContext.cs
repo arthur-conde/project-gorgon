@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using Mithril.MapCalibration.Detection.Internal;
 
 namespace Mithril.MapCalibration.Internal;
 
@@ -16,6 +17,7 @@ namespace Mithril.MapCalibration.Internal;
 [JsonSerializable(typeof(UserRefinementFile))]
 [JsonSerializable(typeof(Dictionary<string, AreaCalibration>))]
 [JsonSerializable(typeof(AreaCalibration))]
+[JsonSerializable(typeof(IconTemplateManifest))]
 internal sealed partial class MapCalibrationJsonContext : JsonSerializerContext;
 
 /// <summary>On-disk shape for the embedded baseline JSON resource.</summary>

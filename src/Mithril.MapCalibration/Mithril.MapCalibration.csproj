@@ -18,5 +18,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="BundledData\map-calibration-baseline.json" />
+    <EmbeddedResource Include="BundledData\icon-templates.json" />
+    <EmbeddedResource Include="BundledData\icon-templates.bin" />
   </ItemGroup>
 </Project>

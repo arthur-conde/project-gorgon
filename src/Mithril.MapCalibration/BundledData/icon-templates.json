@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "pixelSha256": "fff2d2615fa12592856c167cce0617602e2ec1809343ebe5c802160a2c2e86ef",
+  "icons": [
+    {
+      "name": "landmark_telepad",
+      "landmarkType": "TeleportationPlatform",
+      "pivotX": 0.5,
+      "pivotY": 0,
+      "width": 28,
+      "height": 22
+    },
+    {
+      "name": "landmark_medipillar",
+      "landmarkType": "MeditationPillar",
+      "pivotX": 0.5,
+      "pivotY": 0.5,
+      "width": 18,
+      "height": 40
+    },
+    {
+      "name": "landmark_portal",
+      "landmarkType": "Portal",
+      "pivotX": 0.5,
+      "pivotY": 0,
+      "width": 24,
+      "height": 32
+    },
+    {
+      "name": "landmark_npc",
+      "landmarkType": "Npc",
+      "pivotX": 0.5,
+      "pivotY": 0.5,
+      "width": 17,
+      "height": 16
+    }
+  ]
+}

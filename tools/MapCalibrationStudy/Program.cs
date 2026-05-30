@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration;
 using Mithril.Tools.MapCalibration.Common;
 
@@ -217,8 +218,8 @@ internal static class Program
                 rh = Math.Max(1, gray.Height * chosen / md);
             }
 
-            var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
-            var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
+            var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageOps.Resize(gray, rw, rh);
+            var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageOps.Resize(alpha, rw, rh);
             var hits = NccTemplateMatch.FindAll(screen, grayD, alphaD, iconMinScore, maxResults: 64);
             Console.WriteLine($"  [icon] {area}/{meta.Name} @ {rw}x{rh}: {hits.Count} hit(s)"
                               + (hits.Count > 0 ? $" (top {hits[0].Score:0.000})" : ""));
@@ -257,7 +258,7 @@ internal static class Program
                 var md = Math.Max(gray.Width, gray.Height);
                 var rw = Math.Max(1, gray.Width * target / md);
                 var rh = Math.Max(1, gray.Height * target / md);
-                var top = NccTemplateMatch.FindBest(screenshot, ImageIo.Resize(gray, rw, rh), ImageIo.Resize(alpha, rw, rh), threshold);
+                var top = NccTemplateMatch.FindBest(screenshot, ImageOps.Resize(gray, rw, rh), ImageOps.Resize(alpha, rw, rh), threshold);
                 if (top is null) continue;
                 evidence += top.Value.Score;
                 withHits++;

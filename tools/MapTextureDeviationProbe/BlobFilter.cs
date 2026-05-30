@@ -1,3 +1,4 @@
+using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration;
 using Mithril.Tools.MapCalibration.Common;
 
@@ -164,8 +165,8 @@ internal static class BlobStage
                 rw = Math.Max(1, g.Width * t.RenderSize / maxDim);
                 rh = Math.Max(1, g.Height * t.RenderSize / maxDim);
             }
-            var gd = (rw == g.Width && rh == g.Height) ? g : ImageIo.Resize(g, rw, rh);
-            var ad = (rw == a.Width && rh == a.Height) ? a : ImageIo.Resize(a, rw, rh);
+            var gd = (rw == g.Width && rh == g.Height) ? g : ImageOps.Resize(g, rw, rh);
+            var ad = (rw == a.Width && rh == a.Height) ? a : ImageOps.Resize(a, rw, rh);
             templates.Add((icon, gd, ad, rw, rh));
         }
 
@@ -179,7 +180,7 @@ internal static class BlobStage
             int x0 = Math.Max(0, blob.MinX - pad), y0 = Math.Max(0, blob.MinY - pad);
             int x1 = Math.Min(w - 1, blob.MaxX + pad), y1 = Math.Min(h - 1, blob.MaxY + pad);
             int cw = x1 - x0 + 1, ch = y1 - y0 + 1;
-            var crop = ImageIo.Crop(shotGray, x0, y0, cw, ch);
+            var crop = ImageOps.Crop(shotGray, x0, y0, cw, ch);
 
             (IconMeta Icon, Detection Det, int RW, int RH)? best = null;
             foreach (var (icon, g, a, rw, rh) in templates)

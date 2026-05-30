@@ -1,4 +1,7 @@
-namespace Mithril.Tools.MapCalibration.Common;
+using System;
+using System.Collections.Generic;
+
+namespace Mithril.MapCalibration.Detection;
 
 /// <summary>
 /// Finds where the area map's rendered window sits inside a screenshot.
@@ -10,8 +13,11 @@ namespace Mithril.Tools.MapCalibration.Common;
 /// <para>Auto-detect attempts NCC of the downsampled area map against the
 /// downsampled screenshot at several scales; if the best match's confidence is
 /// below the threshold, the caller is expected to fall back to a user-supplied
-/// <c>--map-rect</c>. Zoomed-in screenshots (where the visible map is only a
-/// pan window) defeat this v1 approach — the user must zoom out first.</para>
+/// region. Zoomed-in screenshots (where the visible map is only a pan window)
+/// defeat this v1 approach — the user must zoom out first.</para>
+///
+/// <para>Lifted from the gate-study tool; the per-scale console diagnostics were
+/// dropped (a library doesn't write to stdout).</para>
 /// </summary>
 public static class MapRectLocator
 {
@@ -34,16 +40,13 @@ public static class MapRectLocator
 
         MapRect? bestRect = null;
         double bestScore = double.NegativeInfinity;
-        Console.WriteLine($"[locate] trying {candidates.Count} scales:");
         foreach (var (factor, downsampledTexture) in candidates)
         {
             var hit = NccTemplateMatch.FindBest(screenshot, downsampledTexture, templateMask: null, minScore: -1.0);
             if (hit is null)
             {
-                Console.WriteLine($"        f={factor:0.00}  template={downsampledTexture.Width}x{downsampledTexture.Height}  no NCC position");
                 continue;
             }
-            Console.WriteLine($"        f={factor:0.00}  template={downsampledTexture.Width}x{downsampledTexture.Height}  best=({hit.Value.X},{hit.Value.Y})  score={hit.Value.Score:0.000}");
             if (hit.Value.Score > bestScore)
             {
                 bestScore = hit.Value.Score;
@@ -93,7 +96,7 @@ public static class MapRectLocator
             int dsmaller = Math.Min(dw, dh);
             int smaller = Math.Min(sw, sh);
             if (dsmaller < smaller * 0.25) continue;
-            result.Add((f, ImageIo.Resize(texture, dw, dh)));
+            result.Add((f, ImageOps.Resize(texture, dw, dh)));
         }
         return result;
     }

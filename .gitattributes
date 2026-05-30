@@ -21,3 +21,4 @@
 *.jpg binary
 *.ico binary
 *.xcf binary
+*.bin binary

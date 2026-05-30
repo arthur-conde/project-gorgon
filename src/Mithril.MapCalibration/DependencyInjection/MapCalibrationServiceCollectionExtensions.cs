@@ -1,6 +1,8 @@
 using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Detection;
+using Mithril.MapCalibration.Detection.Internal;
 using Mithril.MapCalibration.Internal;
 
 namespace Mithril.MapCalibration.DependencyInjection;
@@ -56,5 +58,29 @@ public static class MapCalibrationServiceCollectionExtensions
         var store = new UserRefinementStore(storageDirectory, storeLogger);
         var baseline = BundledBaselineLoader.Load(serviceLogger);
         return new MapCalibrationService(baseline, store, goodResidualThresholdPx, serviceLogger);
+    }
+
+    /// <summary>
+    /// Register the headless detect→solve engine (Phase 1): the deviation-blob
+    /// <see cref="ICalibrationDetector"/>, the
+    /// <see cref="ICalibrationConfidenceGate"/>, the
+    /// <see cref="MapCalibrationSolveEngine"/>, and the bundled
+    /// <see cref="IconTemplateSet"/> (loaded once via
+    /// <c>BundledIconTemplateLoader</c>). Independent of
+    /// <see cref="AddMithrilMapCalibration"/> (the persistence registration) —
+    /// register either or both.
+    /// </summary>
+    public static IServiceCollection AddMithrilMapCalibrationEngine(this IServiceCollection services)
+    {
+        services.AddSingleton<IconTemplateSet>(sp =>
+            BundledIconTemplateLoader.Load(
+                sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Templates")));
+        services.AddSingleton<ICalibrationDetector, DeviationBlobCalibrationDetector>();
+        services.AddSingleton<ICalibrationConfidenceGate, CalibrationConfidenceGate>();
+        services.AddSingleton(sp => new MapCalibrationSolveEngine(
+            sp.GetRequiredService<ICalibrationDetector>(),
+            sp.GetRequiredService<ICalibrationConfidenceGate>(),
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Engine")));
+        return services;
     }
 }

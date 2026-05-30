@@ -34,6 +34,53 @@ Self-test (no PG / no `classdata.tpk` needed — synthesises a fake screenshot e
 dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- --phase self-test
 ```
 
+## Regenerating the bundled icon templates (`--phase emit-templates`)
+
+The in-process detection engine (`src/Mithril.MapCalibration/Detection/`) ships
+the icon templates **pre-decoded** as two embedded resources so the runtime
+needs no image decoder and no AssetsTools.NET:
+
+- `src/Mithril.MapCalibration/BundledData/icon-templates.json` — diffable,
+  schema-versioned metadata manifest (`schemaVersion`, `pixelSha256`, per-icon
+  name/landmarkType/pivot/dims).
+- `src/Mithril.MapCalibration/BundledData/icon-templates.bin` —
+  `DeflateStream`-compressed gray+alpha pixel payload (per icon, in manifest
+  order: `w*h` gray bytes then `w*h` alpha bytes). `pixelSha256` is the SHA-256
+  of the **decompressed** stream; the runtime loader verifies it (fail-soft →
+  empty set) and a CI test asserts it (hard gate).
+
+`emit-templates` is the **only** place AssetsTools.NET is touched for this
+artifact, and it stays here in `tools/`.
+
+**Regen from a real PG install** (needs `classdata.tpk` + the extracted icon
+PNGs once):
+
+```bash
+# 1. extract icon PNGs from sharedassets0.assets
+dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- \
+  --phase extract-icons --icons-dir <icons-out> --tpk <classdata.tpk>
+# 2. write the manifest + deflated blob into BundledData/
+dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- \
+  --phase emit-templates --icons-dir <icons-out>
+```
+
+**Regen synthetic placeholders** (no PG — deterministic teardrop templates; the
+shape the synthetic end-to-end test relies on):
+
+```bash
+dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- \
+  --phase emit-templates --synthetic
+```
+
+`--emit-out <dir>` overrides the default `src/Mithril.MapCalibration/BundledData`.
+After regen, run `dotnet test tests/Mithril.MapCalibration.Tests` — the
+`BundledIconTemplateLoaderTests` `pixelSha256` assertion fails loudly if the
+manifest and blob drift.
+
+> **Note:** the templates currently committed are the **synthetic** placeholders
+> (no PG install was available at authoring time). Re-run the real-PG path above
+> to ship the production sprites before the detector is wired live (Phase 2/3).
+
 ## Real usage
 
 **One-time prerequisites:**

@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Globalization;
+using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration;
 using Mithril.Tools.MapCalibration.Common;
 

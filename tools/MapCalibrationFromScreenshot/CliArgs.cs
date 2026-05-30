@@ -157,7 +157,7 @@ internal sealed record CliArgs(
         // bundle in extract-map; landmarks/npcs in the full pipeline).
         // extract-icons (sharedassets0-wide) and self-test (synthetic area)
         // don't need it.
-        if (area is null && phase is not (Phase.ExtractIcons or Phase.SelfTest))
+        if (area is null && phase is not (Phase.ExtractIcons or Phase.SelfTest or Phase.EmitTemplates))
         {
             Console.Error.WriteLine("--area required (e.g. --area AreaSerbule)");
             return null;
@@ -291,7 +291,8 @@ internal sealed record CliArgs(
         "extract-map" => Phase.ExtractMap,
         "full" => Phase.Full,
         "self-test" => Phase.SelfTest,
-        _ => throw new UserFacingException($"unknown phase '{s}' (extract-icons | extract-map | full | self-test)"),
+        "emit-templates" => Phase.EmitTemplates,
+        _ => throw new UserFacingException($"unknown phase '{s}' (extract-icons | extract-map | full | self-test | emit-templates)"),
     };
 
     public static void PrintUsage()
@@ -402,4 +403,5 @@ internal enum Phase
     ExtractIcons,
     ExtractMap,
     SelfTest,
+    EmitTemplates,
 }
