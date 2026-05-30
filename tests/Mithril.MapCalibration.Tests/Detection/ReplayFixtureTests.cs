@@ -44,6 +44,29 @@ public sealed class ReplayFixtureTests
         return null;
     }
 
+    // The bundled map textures carry a version infix — study/textures holds
+    // Map_<area>.v4.png (e.g. Map_AreaSerbule.v4.png), not Map_<area>.png. Try
+    // the unversioned name first for forward-compat, then the .v4 name, then
+    // glob Map_<area>*.png so a future .v5 still resolves without a test edit.
+    private static string? ResolveTexture(string root, string area)
+    {
+        var texDir = Path.Combine(root, "textures");
+        var plain = Path.Combine(texDir, "Map_" + area + ".png");
+        if (File.Exists(plain)) return plain;
+        var v4 = Path.Combine(texDir, "Map_" + area + ".v4.png");
+        if (File.Exists(v4)) return v4;
+        if (Directory.Exists(texDir))
+        {
+            var matches = Directory.GetFiles(texDir, "Map_" + area + "*.png");
+            if (matches.Length > 0)
+            {
+                Array.Sort(matches, StringComparer.Ordinal);
+                return matches[^1];
+            }
+        }
+        return null;
+    }
+
     public static IEnumerable<object?[]> PresentAreas()
     {
         var root = StudyRoot();
@@ -53,8 +76,8 @@ public sealed class ReplayFixtureTests
             foreach (var area in Areas)
             {
                 var shot = Path.Combine(root, "screenshots", area + ".png");
-                var tex = Path.Combine(root, "textures", "Map_" + area + ".png");
-                if (File.Exists(shot) && File.Exists(tex))
+                var tex = ResolveTexture(root, area);
+                if (File.Exists(shot) && tex is not null)
                 {
                     any = true;
                     yield return new object?[] { area, shot, tex };
@@ -105,19 +128,53 @@ public sealed class ReplayFixtureTests
         var refs = LoadStudyRefs(area);
         refs.Should().NotBeEmpty($"study/refs/{area}.json must list the area's landmark/NPC references for replay");
 
+        // Proven gate-study recipe: render size pinned at 16 px (the empirical
+        // sweet-spot), per-blob type-NCC floor 0.80. A lower floor (0.65) floods
+        // false positives and RANSAC converges on a degenerate few-inlier fit at
+        // the wrong orientation; the auto render-size sweep collapses to the
+        // smallest/blurriest size that correlates with everything (mithril#916).
         var request = new DetectionRequest(shot, tex, rect, templates, RimMaskMode.DeviationFlood,
-            LowNcc: 0.5, TypeFloor: 0.65,
-            BlobOptions: new BlobOptions(MinArea: 12, MaxIconArea: 900, MinSolidity: 0.35, MaxAspect: 2.5, MinPeak: 0.7));
+            LowNcc: 0.5, TypeFloor: 0.80,
+            BlobOptions: new BlobOptions(MinArea: 12, MaxIconArea: 900, MinSolidity: 0.35, MaxAspect: 2.5, MinPeak: 0.7))
+        {
+            RenderSizePx = 16,
+        };
 
         var engine = new MapCalibrationSolveEngine(new DeviationBlobCalibrationDetector(), new CalibrationConfidenceGate());
         var result = engine.Solve(request, refs);
 
         result.Calibration.Should().NotBeNull($"the engine must cold-solve {area}");
         var cal = result.Calibration!;
+
+        // Emit the recovered-vs-baseline numbers so a replay run is self-documenting
+        // (the headline evidence for #916: the lifted engine reproduces the
+        // #897/#913 gate-study cold solves end-to-end).
+        _output.WriteLine(
+            $"[{area}] recovered: scale={cal.Scale:0.000000} rot={cal.RotationRadians:0.######} " +
+            $"origin=({cal.OriginX:0.000},{cal.OriginY:0.000}) residual={cal.ResidualPixels:0.000}px refs={cal.ReferenceCount}");
+        _output.WriteLine(
+            $"[{area}] baseline : scale={expected.Scale:0.000000} rot={expected.RotationRadians:0.######} " +
+            $"origin=({expected.OriginX:0.000},{expected.OriginY:0.000}) residual={expected.ResidualPixels:0.000}px refs={expected.ReferenceCount}");
+        _output.WriteLine(
+            $"[{area}] delta    : scale={(Math.Abs(cal.Scale - expected.Scale) / expected.Scale) * 100:0.000}% " +
+            $"originX={Math.Abs(cal.OriginX - expected.OriginX):0.000}px originY={Math.Abs(cal.OriginY - expected.OriginY):0.000}px");
+
         (Math.Abs(cal.Scale - expected.Scale) / expected.Scale).Should().BeLessThan(0.02, "scale within 2%");
         Math.Abs(cal.OriginX - expected.OriginX).Should().BeLessThan(5.0, "origin X within 5 px");
         Math.Abs(cal.OriginY - expected.OriginY).Should().BeLessThan(5.0, "origin Y within 5 px");
-        Math.Sign(cal.RotationRadians).Should().Be(Math.Sign(expected.RotationRadians), "orientation class matches");
+        // Compare orientation CLASS (the engine enumerates the discrete {0, π} map
+        // orientation), not raw sign: Serbule's baseline rotation is +7e-5 rad —
+        // numerically zero — so a recovered −1e-9 has the opposite Math.Sign while
+        // being the same orientation. Bucket by nearest-to-0 vs nearest-to-π.
+        NearPi(cal.RotationRadians).Should().Be(NearPi(expected.RotationRadians), "orientation class (0 vs π) matches");
+    }
+
+    // Orientation class: true when the rotation is closer to ±π than to 0 (the
+    // mirrored/180° map orientation). Robust to near-zero sign flips.
+    private static bool NearPi(double radians)
+    {
+        double a = Math.Abs(radians);
+        return Math.Abs(a - Math.PI) < a; // closer to π than to 0
     }
 
     private sealed record StudyRef(string Type, string Name, double X, double Z);
