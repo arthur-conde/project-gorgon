@@ -1,6 +1,8 @@
-using Mithril.MapCalibration.Detection;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
-namespace Mithril.Tools.MapCalibration.Common;
+namespace Mithril.MapCalibration.Detection;
 
 /// <summary>
 /// Hand-rolled normalised cross-correlation (NCC) for template matching against
