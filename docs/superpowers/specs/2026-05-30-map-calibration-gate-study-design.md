@@ -30,14 +30,36 @@ texturePx = origin + scale · R(θ) · H · worldXZ
 
 where `H` is an axis-aligned handedness/reflection (per-area, discrete) and:
 
-- **H1 (rotation≈0):** `|θ| ≈ 0` for all areas — maps are north-up.
+- **H1 (axis-aligned orientation):** `θ` is one of a small **discrete** set — empirically `{0, π}` — not an arbitrary angle. (Refined from the wiki's "rotation≈0": the author's local store already shows 4/6 areas at ≈0° but **Eltibule and KurMountains at ≈±180°**, within 0.004° of π — see §3 Data source 0. A π rotation is a discrete flip, not drift; combined with handedness it is exactly the "4 axis-aligned states" the cold bootstrap enumerates. The engine must **not** assume `θ=0`; it must enumerate the discrete orientation set.)
 - **H2 (isotropy):** a single uniform `scale` suffices; a full affine fit yields no meaningful residual improvement over the similarity.
 - **H3 (inset-consistency):** the landmark world-bbox projects into a sub-rectangle of the texture whose margin, **expressed as a fraction of texture dimension, is ~constant across areas** — i.e. there's a fixed authoring border. This is what makes `scale` computable cold from `texture_dim / world_span`.
 - **H4 (cold-correspondence):** a zero-prior solver (scale-from-bbox → try handedness → best icon-fit) recovers the *same* world↔icon correspondence as a careful manual solve, to sub-gate residual.
 
-Handedness (`H`) is **expected to vary** between areas — that is not a failure; the solver chooses it per-area from geometry.
+The discrete orientation state (`H` together with `θ∈{0,π}`) is **expected to vary** between areas — that is not a failure; the solver chooses it per-area from geometry. Note that "rotation 0/π with fixed handedness" and "rotation 0 with varying handedness" are two parameterizations of the same discrete-4-state group (rot-π ≡ reflect-both-axes); the bootstrap enumerates the set regardless of which label the solver reports.
 
 ## 3 — Corpus & capture protocol
+
+### Data source 0 — existing persisted calibrations (free, n=6, rotation+handedness only)
+
+The author's local store `%LocalAppData%/Mithril/MapCalibration/refinements.json` already holds **6 solved calibrations** (Serbule, Eltibule, KurMountains, Cave1, Casino, MyconianCave) spanning outdoor / cave / indoor maps, all sub-pixel residual (0.006–0.53 px). These are an **immediate, zero-capture sample** for two sub-hypotheses:
+
+| Area | rotationRad | ≈deg | mirrorNorth | calibrationZoom | residualPx |
+|---|---|---|---|---|---|
+| AreaCave1 | 5.9e-06 | 0.0003° | false | 1.0 | 0.049 |
+| AreaCasino | −1.6e-06 | −0.0001° | false | 0.8 | 0.006 |
+| AreaSerbule | 3.3e-04 | 0.019° | false | 0.42 | 0.388 |
+| AreaMyconianCave | 5.6e-04 | 0.032° | false | 0.434 | 0.530 |
+| AreaEltibule | −3.14153 | −179.996° | false | 1.0 | 0.336 |
+| AreaKurMountains | 3.14158 | +179.999° | false | 1.0 | 0.335 |
+
+- **H1 (orientation):** the rotations are sharply **bimodal — {0, π}**, never an in-between angle. This both falsifies the naive "rotation≈0" and confirms the discrete-orientation model (§2 H1).
+- **H2 (isotropy):** sub-pixel similarity residual across 6 varied maps is strong support that one uniform scale suffices.
+
+**Frame caveat — this is why source 0 is not sufficient on its own.** These were solved against the **live Legolas overlay at varying `CalibrationZoom`** (0.42 / 0.8 / 1.0 / 0.434…), i.e. world→overlay-pixel, *not* world→texture-pixel. Rotation and handedness are invariant to scale and translation, so they transfer directly. But `scale`, `origin`, and therefore the **inset (H3)** are in overlay-pixel space and are **not** comparable to `texture_dim / world_span` — note the wild `scale` spread (0.24–2.26) is mostly baked-in zoom, not a renderer property. **H3 and H4 still require the texture-frame screenshots below.**
+
+The study's `measure` mode reads source 0 directly to tabulate the rotation/handedness column across all 6 areas for free, then augments with the captured set for the scale/inset/cold-correspondence columns.
+
+### Data source 1 — captured screenshots (for H3 + H4)
 
 **Input:** one full-map screenshot per sampled area.
 
@@ -59,8 +81,8 @@ For each area:
 
 | Metric | Definition | Hypothesis |
 |---|---|---|
-| `rotationDeg` | `AreaCalibration.RotationRadians` in degrees | H1: `\|rotationDeg\| < 0.25°` |
-| `mirrorNorth` | `AreaCalibration.MirrorNorth` | recorded; may vary |
+| `rotationDeg` | `AreaCalibration.RotationRadians` in degrees | H1: snaps to `{0°, 180°}`, no in-between |
+| `mirrorNorth` | `AreaCalibration.MirrorNorth` | recorded; part of the discrete orientation state |
 | `scale` | `AreaCalibration.Scale` (px/world-unit) | — |
 | `predictedScale` | `texture_dim / world_span` over the landmark bbox (report X and Z separately) | — |
 | `scaleRatio` | `scale / predictedScale` | constant across areas ⇒ inset is constant |
@@ -84,14 +106,16 @@ The prototype is **informational** — it informs the real engine's algorithm bu
 
 ## 6 — The verdict (pass thresholds)
 
+**Status going in:** source 0 (existing n=6) already lends strong support to **H1** and **H2** before any capture. The gate's real remaining risk is **H3 + H4**, which need the texture-frame screenshots.
+
 The hypothesis **holds** (engine spec proceeds with the data-only-bootstrap shape) if, across the sample:
 
-- **H1** — `|rotationDeg| < 0.25°` for every area.
+- **H1** — every area's `θ` snaps to a discrete axis-aligned value (`{0, π}`); each is within `~0.1°` of a set member, with no area landing on an in-between angle. (Source 0 already shows clean bimodality; the capture set should not introduce a third cluster.)
 - **H2** — affine residual improves on similarity residual by `< ~0.5 px` RMS (no meaningful anisotropy).
-- **H3** — `insetFrac` spread across areas `< ~3%` of texture dim; equivalently `scaleRatio` clusters tightly.
+- **H3** — `insetFrac` spread across areas `< ~3%` of texture dim; equivalently `scaleRatio` clusters tightly. *(Texture-frame only — source 0 cannot answer this.)*
 - **H4** — Half-B blind correspondence matches ground-truth pairing, with refined residual `< 2 px` (well under the 12 px `CalibrationGoodResidualPx` gate) on areas with ≥3 clean detected icons.
 
-Handedness varying across areas is **expected and passing**.
+The discrete orientation state varying across areas is **expected and passing** — what must hold is that it stays in the small enumerable set.
 
 The hypothesis **fails / needs investigation** if any area rotates materially, the affine clearly beats the similarity, the inset wanders, or blind correspondence mis-pairs. The verdict records the **offending area and which sub-hypothesis broke**, so the engine spec can scope around it (e.g. "dungeons rotate — bootstrap must search rotation, not assume 0").
 
