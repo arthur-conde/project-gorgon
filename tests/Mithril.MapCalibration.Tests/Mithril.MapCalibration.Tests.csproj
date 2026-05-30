@@ -3,6 +3,10 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
     <RootNamespace>Mithril.MapCalibration.Tests</RootNamespace>
+    <!-- WIC PNG decode (System.Windows.Media.Imaging) for the skippable
+         real-screenshot replay fixtures. The production engine never decodes;
+         this is test-only. -->
+    <UseWPF>true</UseWPF>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
