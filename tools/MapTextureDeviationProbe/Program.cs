@@ -177,6 +177,48 @@ Console.WriteLine($"low-NCC pixels (ncc <= {lowNcc}): {lowCount}  ({lowFrac:P1} 
 Console.WriteLine($"border-band mean deviation: {BorderBandMeanDeviation(dev, shot.Width, shot.Height, 0.06):F3} (want LOW — border should match)");
 Console.WriteLine($"interior   mean deviation: {InteriorMeanDeviation(dev, shot.Width, shot.Height, 0.06):F3}");
 
+// --- deviation-flood rim mask: flood from the image edge through HIGH-deviation
+//     pixels. The rim is a connected, edge-touching deviation band; interior icons
+//     are isolated high-deviation islands in low-deviation matched terrain, and the
+//     interior brown dirt the COLOUR flood wrongly ate is LOW-deviation (it matches
+//     the base texture). So this masks the rim WITHOUT eating the interior — the fix
+//     for the colour BorderMask's over-masking. Compare fractions vs the colour mask. ---
+if (Cli.Has(args, "--rim-debug"))
+{
+    int W = shot.Width, H = shot.Height;
+    double thr = 1.0 - lowNcc;
+    var hi = new bool[W * H];
+    for (int p = 0; p < W * H; p++) hi[p] = dev[p] >= thr;
+    var rim = new bool[W * H];
+    var q = new Queue<int>();
+    void Enq(int x, int y)
+    {
+        if (x < 0 || x >= W || y < 0 || y >= H) return;
+        int k = y * W + x;
+        if (hi[k] && !rim[k]) { rim[k] = true; q.Enqueue(k); }
+    }
+    for (int x = 0; x < W; x++) { Enq(x, 0); Enq(x, H - 1); }
+    for (int y = 0; y < H; y++) { Enq(0, y); Enq(W - 1, y); }
+    while (q.Count > 0)
+    {
+        int k = q.Dequeue(); int x = k % W, y = k / W;
+        Enq(x - 1, y); Enq(x + 1, y); Enq(x, y - 1); Enq(x, y + 1);
+    }
+    int masked = 0;
+    var viz = (byte[])shot.Pixels.Clone();
+    for (int p = 0; p < W * H; p++)
+    {
+        if (!rim[p]) continue;
+        masked++;
+        int o = p * 4;
+        viz[o] = (byte)(viz[o] / 2); viz[o + 1] = (byte)(viz[o + 1] / 2);
+        viz[o + 2] = (byte)(128 + viz[o + 2] / 2); viz[o + 3] = 255;
+    }
+    var devRimPath = Path.Combine(outDir, $"{stem}_rim_devflood.png");
+    ImageIo.SaveBgraPng(viz, W, H, devRimPath);
+    Console.WriteLine($"[rim-debug] deviation-flood (edge-connected dev>={thr:0.00}): masked {masked}/{W * H} ({(double)masked / (W * H):P1}) -> {devRimPath}");
+}
+
 // --- Outputs ---
 string heatPath = Path.Combine(outDir, $"{stem}_deviation.png");
 string overlayPath = Path.Combine(outDir, $"{stem}_overlay.png");
