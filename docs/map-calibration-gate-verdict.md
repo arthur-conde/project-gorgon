@@ -99,7 +99,7 @@ Terrain and (on Serbule) the border largely cancel; deviation is **localized**, 
 - **Detection (the bottleneck on sparse areas):** texture-deviation local-NCC front-end → shape/size filter → type-aware template NCC within candidates. Plain whole-image template NCC is too weak on sparse interiors; terrain subtraction makes the icons pop.
 - **Correspondence:** RANSAC + type-aware assignment (per-type, trimmed to landmark count) + a scale plausibility guard, not greedy nearest-neighbour. **Include NPCs**, with per-type sizing (`landmark_npc` is 17×16) — they are the anchors that make landmark-dense fits robust.
 - **Border-mask irregular zones** (PR #908) as a complement; on Serbule the deviation front-end already cancels the border, on Eltibule the rocky rim partly survives and the mask helps.
-- **Honesty ceiling:** the ±10% non-affine map warp ([PR #449](https://github.com/moumantai-gg/mithril/pull/449)) still applies — "approximate location" UX, not pixel-perfect rendezvous.
+- **Accuracy ceiling is detection + zoom, not the renderer.** The renderer is a clean per-area isotropic similarity with **no** intra-area warp; it fits to sub-pixel once zoom is normalised. ([PR #449](https://github.com/moumantai-gg/mithril/pull/449) is **resolved** — the old "±10% non-affine warp" band was *operational* (live Survey pipeline: player-relative pins, un-readable in-game zoom, hand-correction), not a renderer non-linearity. Affine/homography/poly and piecewise/TPS/RBF were all eliminated; do not reintroduce warp language.) So engine accuracy is bounded by auto-detection precision and zoom handling, not by any map warp.
 
 ## Remaining work
 
