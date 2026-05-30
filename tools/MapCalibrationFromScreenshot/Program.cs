@@ -25,6 +25,15 @@ internal static class Program
     {
         try
         {
+            // emit-templates is a standalone regen mode with its own minimal args
+            // (--synthetic, --icons-dir, --emit-out); handled before the full
+            // CliArgs parser so its flags don't need threading through CliArgs.
+            if (Array.IndexOf(args, "emit-templates") >= 0 &&
+                Array.IndexOf(args, "--phase") is var pi && pi >= 0 && pi + 1 < args.Length && args[pi + 1] == "emit-templates")
+            {
+                return RunEmitTemplates(args);
+            }
+
             var parsed = CliArgs.Parse(args);
             if (parsed is null)
             {
@@ -47,5 +56,49 @@ internal static class Program
             Console.Error.WriteLine(ex.StackTrace);
             return 1;
         }
+    }
+
+    // emit-templates: regenerate the bundled pre-decoded icon templates
+    // (icon-templates.json + .bin) consumed by the runtime
+    // BundledIconTemplateLoader. --synthetic uses deterministic teardrop
+    // templates (no PG install); otherwise reads extracted icon PNGs from
+    // --icons-dir. --emit-out defaults to src/Mithril.MapCalibration/BundledData.
+    private static int RunEmitTemplates(string[] args)
+    {
+        string GetArg(string key, string def)
+        {
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == key) return args[i + 1];
+            return def;
+        }
+        bool synthetic = Array.IndexOf(args, "--synthetic") >= 0;
+        var outDir = GetArg("--emit-out", DefaultBundledDataDir());
+
+        if (synthetic)
+        {
+            IconTemplateEmitter.EmitSynthetic(outDir);
+        }
+        else
+        {
+            var iconsDir = GetArg("--icons-dir", "");
+            if (iconsDir.Length == 0)
+                throw new UserFacingException("emit-templates needs --icons-dir <dir> (extracted icon PNGs) or --synthetic");
+            IconTemplateEmitter.EmitFromIcons(iconsDir, outDir);
+        }
+        return 0;
+    }
+
+    private static string DefaultBundledDataDir()
+    {
+        var dir = AppContext.BaseDirectory;
+        for (int i = 0; i < 10; i++)
+        {
+            if (File.Exists(Path.Combine(dir, "Mithril.slnx")))
+                return Path.Combine(dir, "src", "Mithril.MapCalibration", "BundledData");
+            var parent = Directory.GetParent(dir);
+            if (parent is null) break;
+            dir = parent.FullName;
+        }
+        throw new UserFacingException($"could not locate Mithril.slnx walking up from {AppContext.BaseDirectory}");
     }
 }
