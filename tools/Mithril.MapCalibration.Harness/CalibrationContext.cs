@@ -79,7 +79,18 @@ public sealed class CalibrationContext
         return new PixelPoint(sx, sy);
     }
 
-    private MapRect RequireRect() =>
-        MapRect ?? throw new InvalidOperationException(
+    private MapRect RequireRect()
+    {
+        var rect = MapRect ?? throw new InvalidOperationException(
             "ScreenshotToTexture / TextureToScreenshot require a MapRect; none was set on the context.");
+        // A zero/negative dimension would divide to Infinity/NaN silently; fail
+        // loudly with a message distinct from the missing-rect case.
+        if (rect.Width <= 0 || rect.Height <= 0)
+        {
+            throw new InvalidOperationException(
+                $"MapRect has a non-positive dimension (Width={rect.Width}, Height={rect.Height}); " +
+                "the texture extent must be a positive rectangle.");
+        }
+        return rect;
+    }
 }

@@ -51,6 +51,18 @@ public class CalibrationSessionTests
         Enabled = enabled,
     };
 
+    // Accept a ref through the candidate path so it's subscribed for
+    // auto-re-solve (mutating Enabled/World/TexturePixel re-solves without an
+    // explicit ReSolve() call). Returns the materialised ref.
+    private static CalibrationRef AcceptRef(CalibrationSession session, double x, double z, PixelPoint texture)
+    {
+        session.Accept(new CandidateRef(
+            texture, new WorldCoord(x, 0, z),
+            LandmarkId: null, SuggestedName: "L", Kind: "Npc",
+            Source: CalibrationRefSource.Manual, Confidence: 1.0));
+        return session.Refs[^1];
+    }
+
     [Fact]
     public void Known_correspondences_recover_a_known_calibration()
     {
@@ -117,40 +129,38 @@ public class CalibrationSessionTests
     }
 
     [Fact]
-    public void Disabling_a_ref_below_the_threshold_nulls_the_calibration()
+    public void Disabling_a_ref_directly_auto_re_solves_and_nulls_below_threshold()
     {
         var session = new CalibrationSession(ContextWithLandmarks(World[0], World[1]));
-        session.Refs.Add(RefFor(World[0].X, World[0].Z, Project(World[0].X, World[0].Z)));
-        session.Refs.Add(RefFor(World[1].X, World[1].Z, Project(World[1].X, World[1].Z)));
-        session.ReSolve();
+        AcceptRef(session, World[0].X, World[0].Z, Project(World[0].X, World[0].Z));
+        AcceptRef(session, World[1].X, World[1].Z, Project(World[1].X, World[1].Z));
         session.Calibration.Should().NotBeNull();
 
+        // No manual ReSolve(): flipping Enabled directly must update Calibration.
         session.Refs[0].Enabled = false;
-        session.ReSolve();
 
         session.Calibration.Should().BeNull();
     }
 
     [Fact]
-    public void Disabling_a_ref_changes_the_fit()
+    public void Flipping_enabled_directly_changes_the_calibration()
     {
-        // Two consistent refs + a third that is consistent too → exact fit.
-        // Then move the third onto a slightly different transform so it pulls
-        // the least-squares solution; disabling it must change the result.
+        // Two consistent refs + a third placed off-true so it perturbs the fit.
         var session = new CalibrationSession(ContextWithLandmarks(World));
-        session.Refs.Add(RefFor(World[0].X, World[0].Z, Project(World[0].X, World[0].Z)));
-        session.Refs.Add(RefFor(World[1].X, World[1].Z, Project(World[1].X, World[1].Z)));
-        // A third ref placed off-true so it perturbs the fit.
+        AcceptRef(session, World[0].X, World[0].Z, Project(World[0].X, World[0].Z));
+        AcceptRef(session, World[1].X, World[1].Z, Project(World[1].X, World[1].Z));
         var off = Project(World[2].X, World[2].Z);
-        session.Refs.Add(RefFor(World[2].X, World[2].Z, new PixelPoint(off.X + 40, off.Y - 30)));
-        session.ReSolve();
-        var withPerturbed = session.Calibration!;
-        withPerturbed.Scale.Should().NotBeApproximately(Scale, 1e-6); // perturbed
+        AcceptRef(session, World[2].X, World[2].Z, new PixelPoint(off.X + 40, off.Y - 30));
+        session.Calibration!.Scale.Should().NotBeApproximately(Scale, 1e-6); // perturbed
 
+        // Disable the bad ref directly — auto-re-solve returns to the clean fit.
         session.Refs[2].Enabled = false;
-        session.ReSolve();
 
-        session.Calibration!.Scale.Should().BeApproximately(Scale, 1e-6); // back to clean
+        session.Calibration!.Scale.Should().BeApproximately(Scale, 1e-6);
+
+        // Re-enable it — auto-re-solve perturbs again (proves the round-trip).
+        session.Refs[2].Enabled = true;
+        session.Calibration!.Scale.Should().NotBeApproximately(Scale, 1e-6);
     }
 
     [Fact]
@@ -158,16 +168,15 @@ public class CalibrationSessionTests
     {
         var session = new CalibrationSession(ContextWithLandmarks(World));
         foreach (var (x, z) in World)
-            session.Refs.Add(RefFor(x, z, Project(x, z)));
-        // Deliberately misplace the last ref well off true.
+            AcceptRef(session, x, z, Project(x, z));
+        // Deliberately misplace the last ref well off true (direct mutation
+        // auto-re-solves — no explicit ReSolve()).
         var bad = Project(World[3].X, World[3].Z);
         session.Refs[3].TexturePixel = new PixelPoint(bad.X + 80, bad.Y + 80);
-        session.ReSolve();
 
         session.Calibration!.ResidualPixels.Should().BeGreaterThan(5);
 
         session.Refs[3].Enabled = false;
-        session.ReSolve();
 
         session.Calibration!.ResidualPixels.Should().BeApproximately(0, 1e-6);
         // Remaining enabled refs now fit exactly.
@@ -175,15 +184,28 @@ public class CalibrationSessionTests
     }
 
     [Fact]
-    public void Nudge_re_solves()
+    public void Re_assigning_world_directly_auto_re_solves()
     {
         var session = new CalibrationSession(ContextWithLandmarks(World));
         foreach (var (x, z) in World)
-            session.Refs.Add(RefFor(x, z, Project(x, z)));
-        session.ReSolve();
+            AcceptRef(session, x, z, Project(x, z));
         session.Calibration!.ResidualPixels.Should().BeApproximately(0, 1e-6);
 
-        // Nudge one ref off true; the re-solve must surface a non-zero residual.
+        // Re-assign one ref's World to a wrong coord — auto-re-solve surfaces error.
+        session.Refs[0].World = new WorldCoord(World[0].X + 500, 0, World[0].Z - 500);
+
+        session.Calibration!.ResidualPixels.Should().BeGreaterThan(5);
+    }
+
+    [Fact]
+    public void Nudge_auto_re_solves()
+    {
+        var session = new CalibrationSession(ContextWithLandmarks(World));
+        foreach (var (x, z) in World)
+            AcceptRef(session, x, z, Project(x, z));
+        session.Calibration!.ResidualPixels.Should().BeApproximately(0, 1e-6);
+
+        // Nudge one ref off true; the auto-re-solve must surface a non-zero residual.
         session.NudgeSelected(session.Refs[0], dx: 50, dy: -50);
 
         session.Refs[0].TexturePixel.X.Should().BeApproximately(Project(World[0].X, World[0].Z).X + 50, 1e-9);
@@ -242,5 +264,49 @@ public class CalibrationSessionTests
 
         session.Refs.Should().HaveCount(1);
         session.Calibration.Should().BeNull();
+    }
+
+    [Fact]
+    public void EmitBatch_produces_the_same_calibration_as_sequential_Accepts()
+    {
+        CandidateRef Candidate((double X, double Z) p) => new(
+            Project(p.X, p.Z), new WorldCoord(p.X, 0, p.Z),
+            LandmarkId: null, SuggestedName: "L", Kind: "Npc",
+            Source: CalibrationRefSource.Manual, Confidence: 1.0);
+
+        // Path A: one Accept per candidate.
+        var viaAccept = new CalibrationSession(ContextWithLandmarks(World));
+        foreach (var p in World) viaAccept.Accept(Candidate(p));
+
+        // Path B: a single EmitBatch.
+        var viaBatch = new CalibrationSession(ContextWithLandmarks(World));
+        ((ICandidateSink)viaBatch).EmitBatch(World.Select(Candidate).ToList());
+
+        viaBatch.Refs.Should().HaveCount(viaAccept.Refs.Count);
+        viaBatch.Calibration.Should().NotBeNull();
+        // Identical final calibration (same solver inputs, just solved once).
+        viaBatch.Calibration!.Scale.Should().BeApproximately(viaAccept.Calibration!.Scale, 1e-12);
+        viaBatch.Calibration.RotationRadians.Should().BeApproximately(viaAccept.Calibration!.RotationRadians, 1e-12);
+        viaBatch.Calibration.OriginX.Should().BeApproximately(viaAccept.Calibration!.OriginX, 1e-9);
+        viaBatch.Calibration.OriginY.Should().BeApproximately(viaAccept.Calibration!.OriginY, 1e-9);
+        viaBatch.Calibration.ResidualPixels.Should().BeApproximately(viaAccept.Calibration!.ResidualPixels, 1e-12);
+    }
+
+    [Fact]
+    public void Removed_ref_no_longer_triggers_re_solve()
+    {
+        // After Remove unsubscribes, mutating the detached ref must not re-solve.
+        var session = new CalibrationSession(ContextWithLandmarks(World));
+        foreach (var (x, z) in World)
+            AcceptRef(session, x, z, Project(x, z));
+        var detached = session.Refs[0];
+        session.Remove(detached);
+        var afterRemove = session.Calibration;
+
+        // Mutating the now-detached ref's solve inputs must be inert.
+        detached.Enabled = false;
+        detached.TexturePixel = new PixelPoint(9999, 9999);
+
+        session.Calibration.Should().BeSameAs(afterRemove);
     }
 }

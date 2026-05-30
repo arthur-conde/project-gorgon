@@ -59,7 +59,26 @@ public class CoordinateTransformTests
     {
         var ctx = new CalibrationContext("A", new List<LandmarkRef>(), null, mapRect: null, (100, 100), null);
 
-        ctx.Invoking(c => c.ScreenshotToTexture(1, 2)).Should().Throw<InvalidOperationException>();
-        ctx.Invoking(c => c.TextureToScreenshot(new PixelPoint(1, 2))).Should().Throw<InvalidOperationException>();
+        ctx.Invoking(c => c.ScreenshotToTexture(1, 2))
+            .Should().Throw<InvalidOperationException>().WithMessage("*none was set*");
+        ctx.Invoking(c => c.TextureToScreenshot(new PixelPoint(1, 2)))
+            .Should().Throw<InvalidOperationException>().WithMessage("*none was set*");
+    }
+
+    [Theory]
+    [InlineData(0, 100)]
+    [InlineData(100, 0)]
+    [InlineData(-50, 100)]
+    [InlineData(100, -50)]
+    public void Transforms_throw_on_a_degenerate_map_rect(double width, double height)
+    {
+        // A zero/negative dimension would silently divide to Infinity/NaN; the
+        // context must throw with a message distinct from the missing-rect case.
+        var ctx = Context(new MapRect(0, 0, width, height), 100, 100);
+
+        ctx.Invoking(c => c.ScreenshotToTexture(1, 2))
+            .Should().Throw<InvalidOperationException>().WithMessage("*non-positive dimension*");
+        ctx.Invoking(c => c.TextureToScreenshot(new PixelPoint(1, 2)))
+            .Should().Throw<InvalidOperationException>().WithMessage("*non-positive dimension*");
     }
 }
