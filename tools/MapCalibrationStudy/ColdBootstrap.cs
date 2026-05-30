@@ -108,6 +108,19 @@ public static class ColdBootstrap
             var cal = LandmarkCalibrationSolver.Solve(kept);
             if (cal is null) continue;
 
+            // Scale-sanity guard: a correspondence dominated by false-positive
+            // detections can collapse to a degenerate near-zero scale that fits a
+            // tiny spurious subset (observed on real PG screenshots: a flood of
+            // mid-score noise matches → solved scale ~0.03 vs a true ~scale0). The
+            // true scale is ~scale0 (texture span / world span, modulo the border
+            // inset and the min-axis choice); reject fits far outside a generous
+            // band so a degenerate collapse can't out-score a real orientation —
+            // and if EVERY orientation is degenerate, Run returns null (an honest
+            // "could not recover" skip) rather than a garbage row. The band is
+            // wide on the low side because scale0 over-estimates when the icon
+            // cloud doesn't fill the texture.
+            if (cal.Scale < 0.1 * scale0 || cal.Scale > 3.0 * scale0) continue;
+
             // Score by GLOBAL reprojection consistency over the FULL detected
             // set, NOT just the kept-subset solver residual. The subset residual
             // is blind to the failure mode the reviewer found: because the
