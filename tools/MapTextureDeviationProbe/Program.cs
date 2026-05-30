@@ -50,6 +50,21 @@ var blobOpts = new BlobOptions(
     MinSolidity: ParseInv(Cli.Get(args, "--min-solidity", "0.35")),
     MaxAspect: ParseInv(Cli.Get(args, "--max-aspect", "2.5")),
     MinPeak: ParseInv(Cli.Get(args, "--min-peak", "0.7")));
+// --- blob typing: type-aware template NCC within icon blobs, emit detections CSV ---
+string typeIconsDir = Cli.Get(args, "--icons-dir", "");
+int typeRenderSize = int.Parse(Cli.Get(args, "--icon-render-size", "16"));
+double typeFloor = ParseInv(Cli.Get(args, "--type-floor", "0.55"));
+var iconSizeOverrides = new Dictionary<string, (int W, int H)>(StringComparer.Ordinal);
+for (int ai = 0; ai < args.Length - 1; ai++)
+{
+    if (args[ai] != "--icon-size") continue;
+    var spec = args[ai + 1];
+    int eq = spec.IndexOf('='), xx = spec.IndexOf('x');
+    if (eq > 0 && xx > eq)
+        iconSizeOverrides[spec[..eq]] = (
+            int.Parse(spec[(eq + 1)..xx], CultureInfo.InvariantCulture),
+            int.Parse(spec[(xx + 1)..], CultureInfo.InvariantCulture));
+}
 // --- ground-truth overlap (Serbule only — the one area with a committed baseline) ---
 bool groundTruth = Cli.Has(args, "--ground-truth");
 string gtArea = Cli.Get(args, "--area", "");
@@ -150,7 +165,12 @@ if (doBlobs)
     var gt = groundTruth
         ? new GroundTruthInputs(gtArea, landmarksPath, npcsPath, baselinePath, gtTol, texW, texH)
         : null;
-    BlobStage.Run(shot, dev, lowNcc, useBorderMask, closeRadius, blobOpts, gt, outDir, stem);
+    BlobTypingInputs? typing = typeIconsDir.Length > 0
+        ? new BlobTypingInputs(typeIconsDir, typeRenderSize, iconSizeOverrides, typeFloor,
+            Path.Combine(outDir, $"{stem}_typed_detections.csv"))
+        : null;
+    GrayImage? shotGray = typing is not null ? ImageIo.LoadGray(screenshotPath) : null;
+    BlobStage.Run(shot, dev, lowNcc, useBorderMask, closeRadius, blobOpts, gt, outDir, stem, typing, shotGray);
 }
 return 0;
 

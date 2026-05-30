@@ -33,6 +33,7 @@ internal sealed record CliArgs(
     Phase Phase,
     bool DryRun,
     bool UseBorderMask,
+    string? DetectionsCsvPath,
     (double Rot, double Scale, double Ox, double Oy, bool Mirror)? Seed)
 {
     public static CliArgs? Parse(string[] argv)
@@ -63,6 +64,7 @@ internal sealed record CliArgs(
         bool useBorderMask = false;
         bool debug = false;
         string? outDir = null;
+        string? detectionsCsv = null;
         (double, double, double, double, bool)? seed = null;
 
         for (int i = 0; i < argv.Length; i++)
@@ -123,6 +125,9 @@ internal sealed record CliArgs(
                     break;
                 case "--outdir":
                     outDir = Next(argv, ref i);
+                    break;
+                case "--detections-csv":
+                    detectionsCsv = Next(argv, ref i);
                     break;
                 case "--seed":
                     seed = ParseSeed(Next(argv, ref i));
@@ -197,6 +202,7 @@ internal sealed record CliArgs(
             Phase: phase,
             DryRun: dryRun,
             UseBorderMask: useBorderMask,
+            DetectionsCsvPath: detectionsCsv,
             Seed: seed);
     }
 
@@ -330,6 +336,12 @@ internal sealed record CliArgs(
                                             KurMountains). Masks the edge-connected
                                             non-vegetation/water region. Opt-in: flat tan/desert
                                             areas have no such border.
+              --detections-csv <path>       load the detection pool from a CSV
+                                            (screenshotX,screenshotY,type,iconName,score) instead of
+                                            running whole-image template NCC. Pairs with the deviation
+                                            probe's blob-typed detections (type-aware template NCC within
+                                            icon blobs) — well-spread, low-false-positive points that fix
+                                            sparse-area correspondence. Combine with --seed for the solve
               --seed <rot,scale,ox,oy,mirror>  bypass RANSAC; seed a guided-ICP assignment with a
                                             known-orientation calibration (texture-frame: rotation
                                             in rad, scale px/unit, origin px, mirror true|false).

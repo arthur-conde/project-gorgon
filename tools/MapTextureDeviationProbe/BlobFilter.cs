@@ -26,6 +26,20 @@ internal sealed record GroundTruthInputs(
     string Area, string LandmarksPath, string NpcsPath, string BaselinePath,
     double Tol, int TexW, int TexH);
 
+/// <summary>
+/// Type-aware template NCC <em>within</em> the icon-candidate blobs (the verdict's
+/// recommended sparse-area detector: deviation → shape-filter → template NCC in
+/// candidates). Each icon blob is matched against the four pin templates inside
+/// its (padded) bbox; the best-scoring template above <see cref="Floor"/> assigns
+/// the blob's landmark Type + pivot-corrected anchor. Restricting template NCC to
+/// the ~dozen blob regions (instead of the whole noisy screenshot) kills the rim /
+/// terrain false-positive flood that starves whole-image RANSAC correspondence.
+/// </summary>
+internal sealed record BlobTypingInputs(
+    string IconsDir, int RenderSize,
+    IReadOnlyDictionary<string, (int W, int H)> SizeOverrides,
+    double Floor, string CsvPath);
+
 /// <summary>Per-blob geometry + deviation stats. Pixel list retained for rendering the fill.</summary>
 internal sealed class BlobFeat
 {
@@ -45,7 +59,8 @@ internal sealed class BlobFeat
 internal static class BlobStage
 {
     public static void Run(BgraImage shot, float[] dev, double lowNcc, bool useBorderMask,
-        int closeRadius, BlobOptions opts, GroundTruthInputs? gt, string outDir, string stem)
+        int closeRadius, BlobOptions opts, GroundTruthInputs? gt, string outDir, string stem,
+        BlobTypingInputs? typing = null, GrayImage? shotGray = null)
     {
         int w = shot.Width, h = shot.Height, n = w * h;
         double devThr = 1.0 - lowNcc;  // dev >= devThr  <=>  ncc <= lowNcc
@@ -93,6 +108,74 @@ internal static class BlobStage
         Console.WriteLine($"[blobs] wrote {path}  (green=icon, blue=fog, red=structure" + (gt != null ? ", yellow x=ground-truth ref)" : ")"));
 
         if (gt != null) EvaluateGroundTruth(classified, icons, gtPx, gt.Tol, w, h);
+
+        if (typing is not null && shotGray is not null)
+            TypeBlobs(shotGray, icons, typing, w, h);
+    }
+
+    /// <summary>
+    /// Type each icon-candidate blob with the pin templates and write a typed-
+    /// detections CSV (screenshotX,screenshotY,type,iconName,score) — the bridge
+    /// the screenshot calibrator consumes via --detections-csv to solve from
+    /// well-spread, low-false-positive blob detections.
+    /// </summary>
+    private static void TypeBlobs(GrayImage shotGray, List<BlobFeat> icons, BlobTypingInputs t, int w, int h)
+    {
+        var index = IconTemplateExtractor.Load(t.IconsDir);
+        // Resize every template once per the calibrator's max-dim render rule
+        // (with per-icon aspect overrides, e.g. landmark_npc=17x16).
+        var templates = new List<(IconMeta Icon, GrayImage Gray, GrayImage Alpha, int RW, int RH)>();
+        foreach (var icon in index.Icons)
+        {
+            var p = Path.Combine(t.IconsDir, icon.File);
+            if (!File.Exists(p)) continue;
+            var (g, a) = ImageIo.LoadGrayAndAlpha(p);
+            int rw, rh;
+            if (t.SizeOverrides.TryGetValue(icon.Name, out var f)) { rw = f.W; rh = f.H; }
+            else
+            {
+                int maxDim = Math.Max(g.Width, g.Height);
+                rw = Math.Max(1, g.Width * t.RenderSize / maxDim);
+                rh = Math.Max(1, g.Height * t.RenderSize / maxDim);
+            }
+            var gd = (rw == g.Width && rh == g.Height) ? g : ImageIo.Resize(g, rw, rh);
+            var ad = (rw == a.Width && rh == a.Height) ? a : ImageIo.Resize(a, rw, rh);
+            templates.Add((icon, gd, ad, rw, rh));
+        }
+
+        var rows = new List<string> { "screenshotX,screenshotY,type,iconName,score" };
+        int typed = 0, untyped = 0;
+        foreach (var blob in icons)
+        {
+            // Search region: blob bbox padded by the render size so a template
+            // centred near a blob edge still fits inside the crop.
+            int pad = t.RenderSize;
+            int x0 = Math.Max(0, blob.MinX - pad), y0 = Math.Max(0, blob.MinY - pad);
+            int x1 = Math.Min(w - 1, blob.MaxX + pad), y1 = Math.Min(h - 1, blob.MaxY + pad);
+            int cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+            var crop = ImageIo.Crop(shotGray, x0, y0, cw, ch);
+
+            (IconMeta Icon, Detection Det, int RW, int RH)? best = null;
+            foreach (var (icon, g, a, rw, rh) in templates)
+            {
+                if (rw > cw || rh > ch) continue;
+                var hit = NccTemplateMatch.FindBest(crop, g, a, t.Floor);
+                if (hit is null) continue;
+                if (best is null || hit.Value.Score > best.Value.Det.Score)
+                    best = (icon, hit.Value, rw, rh);
+            }
+            if (best is null) { untyped++; continue; }
+
+            var (bIcon, bDet, bRW, bRH) = best.Value;
+            var (cx, cy) = bDet.Centre(bRW, bRH);
+            double anchorX = x0 + cx + bRW * (bIcon.PivotX - 0.5);
+            double anchorY = y0 + cy + bRH * (0.5 - bIcon.PivotY);
+            rows.Add($"{anchorX:0.###},{anchorY:0.###},{bIcon.LandmarkType},{bIcon.Name},{bDet.Score:0.####}");
+            typed++;
+        }
+
+        File.WriteAllLines(t.CsvPath, rows);
+        Console.WriteLine($"[blob-type] typed {typed}/{icons.Count} icon blobs (>= floor {t.Floor:0.00}), {untyped} unmatched -> {t.CsvPath}");
     }
 
     private static BlobClass Classify(BlobFeat f, BlobOptions o)

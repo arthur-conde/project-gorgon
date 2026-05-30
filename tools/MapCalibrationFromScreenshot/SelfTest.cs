@@ -162,6 +162,7 @@ internal static class SelfTest
             ProjectionOverlayPath: null,
             MaskDebugPath: null,
             UseBorderMask: false,
+            DetectionsCsvPath: null,
             Seed: null);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 

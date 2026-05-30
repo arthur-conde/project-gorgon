@@ -69,6 +69,7 @@ internal static class Pipeline
             ProjectionOverlayPath: args.ProjectionOverlayPath,
             MaskDebugPath: args.MaskDebugPath,
             UseBorderMask: args.UseBorderMask,
+            DetectionsCsvPath: args.DetectionsCsvPath,
             Seed: args.Seed);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
@@ -201,6 +202,7 @@ internal sealed record CalibrationInputs(
     string? ProjectionOverlayPath,
     string? MaskDebugPath,
     bool UseBorderMask,
+    string? DetectionsCsvPath,
     (double Rot, double Scale, double Ox, double Oy, bool Mirror)? Seed);
 
 internal sealed record AssignedReference(

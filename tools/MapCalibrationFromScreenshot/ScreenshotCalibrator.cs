@@ -96,27 +96,40 @@ internal static class ScreenshotCalibrator
         var mapCrop = ImageIo.Crop(screenshotGray, mapRect.OriginX, mapRect.OriginY, mapRect.Width, mapRect.Height);
         Console.WriteLine($"[detect] cropped screenshot to map area {mapCrop.Width}x{mapCrop.Height} for NCC");
 
-        // Phase: detect every landmark icon variant and pair with landmarks.json.
-        var (detectionsByType, rawDetections) = DetectIconsByType(mapCrop, inputs.IconsDir, iconIndex, inputs.DetectionThreshold, inputs.IconRenderSizeOverride, inputs.IconSizeOverrides);
-
-        // Translate every detection from crop-space to screenshot-space so
-        // downstream (ScreenshotToTexture, debug image, projection overlay)
-        // sees consistent coordinates.
-        foreach (var typeDets in detectionsByType.Values)
+        // Phase: build the detection pool — either from an external typed-
+        // detections CSV (the deviation-probe blob-typed front-end, already in
+        // full-screenshot coords) or by running whole-image template NCC here.
+        Dictionary<string, List<TypedDetection>> detectionsByType;
+        List<(IconMeta Icon, Detection Det, int RenderW, int RenderH)> rawDetections;
+        if (inputs.DetectionsCsvPath is not null)
         {
-            for (int i = 0; i < typeDets.Count; i++)
-            {
-                var d = typeDets[i];
-                typeDets[i] = d with
-                {
-                    AnchorScreenshotX = d.AnchorScreenshotX + mapRect.OriginX,
-                    AnchorScreenshotY = d.AnchorScreenshotY + mapRect.OriginY,
-                };
-            }
+            detectionsByType = LoadDetectionsCsv(inputs.DetectionsCsvPath);
+            rawDetections = [];
+            Console.WriteLine($"[detections-csv] loaded {detectionsByType.Sum(kv => kv.Value.Count)} typed detections from {Path.GetFileName(inputs.DetectionsCsvPath)} (already in screenshot space)");
         }
-        rawDetections = rawDetections
-            .Select(t => (t.Icon, t.Det with { X = t.Det.X + mapRect.OriginX, Y = t.Det.Y + mapRect.OriginY, SubX = t.Det.SubX + mapRect.OriginX, SubY = t.Det.SubY + mapRect.OriginY }, t.RenderW, t.RenderH))
-            .ToList();
+        else
+        {
+            (detectionsByType, rawDetections) = DetectIconsByType(mapCrop, inputs.IconsDir, iconIndex, inputs.DetectionThreshold, inputs.IconRenderSizeOverride, inputs.IconSizeOverrides);
+
+            // Translate every detection from crop-space to screenshot-space so
+            // downstream (ScreenshotToTexture, debug image, projection overlay)
+            // sees consistent coordinates.
+            foreach (var typeDets in detectionsByType.Values)
+            {
+                for (int i = 0; i < typeDets.Count; i++)
+                {
+                    var d = typeDets[i];
+                    typeDets[i] = d with
+                    {
+                        AnchorScreenshotX = d.AnchorScreenshotX + mapRect.OriginX,
+                        AnchorScreenshotY = d.AnchorScreenshotY + mapRect.OriginY,
+                    };
+                }
+            }
+            rawDetections = rawDetections
+                .Select(t => (t.Icon, t.Det with { X = t.Det.X + mapRect.OriginX, Y = t.Det.Y + mapRect.OriginY, SubX = t.Det.SubX + mapRect.OriginX, SubY = t.Det.SubY + mapRect.OriginY }, t.RenderW, t.RenderH))
+                .ToList();
+        }
 
         // Drop detections sitting in the rocky border of an irregular-bordered
         // map. The stone rim matches pin templates at noise level and, with a
@@ -523,6 +536,36 @@ internal static class ScreenshotCalibrator
             }
         }
         return bestAssigned;
+    }
+
+    /// <summary>
+    /// Loads a typed-detections CSV (header
+    /// <c>screenshotX,screenshotY,type,iconName,score</c>) into the per-type pool.
+    /// Coordinates are full-screenshot pixels (the deviation probe emits anchors in
+    /// screenshot space), so no crop-space translation is applied.
+    /// </summary>
+    private static Dictionary<string, List<TypedDetection>> LoadDetectionsCsv(string path)
+    {
+        var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        foreach (var line in File.ReadLines(path))
+        {
+            if (line.Length == 0) continue;
+            var c = line.Split(',');
+            if (c.Length < 5 || !double.TryParse(c[0], System.Globalization.NumberStyles.Float, inv, out var sx))
+                continue; // header or malformed
+            var sy = double.Parse(c[1], inv);
+            var type = c[2];
+            var iconName = c[3];
+            var score = double.Parse(c[4], inv);
+            if (!byType.TryGetValue(type, out var list))
+            {
+                list = [];
+                byType[type] = list;
+            }
+            list.Add(new TypedDetection(iconName, sx, sy, score));
+        }
+        return byType;
     }
 
     /// <summary>
