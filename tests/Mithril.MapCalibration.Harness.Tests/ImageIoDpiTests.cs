@@ -4,7 +4,7 @@ using FluentAssertions;
 using Mithril.Tools.MapCalibration.Common;
 using Xunit;
 
-namespace Mithril.Tools.MapCalibrationStudy.Tests;
+namespace Mithril.Tools.MapCalibration.Harness.Tests;
 
 public class ImageIoDpiTests
 {
