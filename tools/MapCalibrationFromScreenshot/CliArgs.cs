@@ -30,7 +30,8 @@ internal sealed record CliArgs(
     string? ProjectionOverlayPath,
     double Zoom,
     Phase Phase,
-    bool DryRun)
+    bool DryRun,
+    bool UseBorderMask)
 {
     public static CliArgs? Parse(string[] argv)
     {
@@ -56,6 +57,7 @@ internal sealed record CliArgs(
         double zoom = 1.0;
         Phase phase = Phase.Full;
         bool dryRun = false;
+        bool useBorderMask = false;
 
         for (int i = 0; i < argv.Length; i++)
         {
@@ -104,6 +106,9 @@ internal sealed record CliArgs(
                 case "--dry-run":
                     dryRun = true;
                     break;
+                case "--border-mask":
+                    useBorderMask = true;
+                    break;
                 case "-h" or "--help":
                     return null;
                 default:
@@ -150,7 +155,8 @@ internal sealed record CliArgs(
             ProjectionOverlayPath: projectionOverlayPath,
             Zoom: zoom,
             Phase: phase,
-            DryRun: dryRun);
+            DryRun: dryRun,
+            UseBorderMask: useBorderMask);
     }
 
     private static (string Name, (int W, int H) Wh) ParseIconSize(string s)
@@ -256,6 +262,14 @@ internal sealed record CliArgs(
                                             landmark_npc source asset is not what PG renders for
                                             NPC pins, and including noisy NPC matches in the pool
                                             misleads RANSAC into wrong-but-self-consistent fits)
+              --border-mask                 drop detections sitting in the map's rocky border.
+                                            Irregular-bordered outdoor zones have a stone rim
+                                            that matches pin templates as noise; a rectangular
+                                            map-rect can't exclude it, so the rim floods RANSAC
+                                            and out-votes sparse interior landmarks (Eltibule,
+                                            KurMountains). Masks the edge-connected
+                                            non-vegetation/water region. Opt-in: flat tan/desert
+                                            areas have no such border.
               --debug-image <path>          write an annotated PNG: cyan rects mark every detection
                                             that cleared threshold, red crosses mark the pivot-
                                             corrected anchor, green rect outlines the map rect

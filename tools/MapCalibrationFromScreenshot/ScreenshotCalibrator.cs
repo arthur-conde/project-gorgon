@@ -118,6 +118,38 @@ internal static class ScreenshotCalibrator
             .Select(t => (t.Icon, t.Det with { X = t.Det.X + mapRect.OriginX, Y = t.Det.Y + mapRect.OriginY, SubX = t.Det.SubX + mapRect.OriginX, SubY = t.Det.SubY + mapRect.OriginY }, t.RenderW, t.RenderH))
             .ToList();
 
+        // Drop detections sitting in the rocky border of an irregular-bordered
+        // map. The stone rim matches pin templates at noise level and, with a
+        // rectangular map-rect that can't exclude it, floods RANSAC with false
+        // positives that out-vote the sparse interior landmarks (observed:
+        // Eltibule / KurMountains collapse to a tiny-scale wrong fit). The mask
+        // is the edge-connected non-vegetation/water region; interior anchors
+        // survive. Opt-in (--border-mask) since flat tan/desert areas have no
+        // such border and shouldn't pay for the classification.
+        if (inputs.UseBorderMask)
+        {
+            var (maskBgra, maskW, maskH) = ImageIo.LoadBgra(inputs.ScreenshotPath);
+            var border = BorderMask.Compute(maskBgra, maskW, maskH);
+            bool InBorder(double ax, double ay)
+            {
+                var x = (int)Math.Round(ax);
+                var y = (int)Math.Round(ay);
+                return x < 0 || x >= maskW || y < 0 || y >= maskH || border[y * maskW + x];
+            }
+
+            var dropped = 0;
+            foreach (var typeDets in detectionsByType.Values)
+            {
+                dropped += typeDets.RemoveAll(d => InBorder(d.AnchorScreenshotX, d.AnchorScreenshotY));
+            }
+            rawDetections.RemoveAll(t =>
+            {
+                var (cx, cy) = t.Det.Centre(t.RenderW, t.RenderH);
+                return InBorder(cx + t.RenderW * (t.Icon.PivotX - 0.5), cy + t.RenderH * (0.5 - t.Icon.PivotY));
+            });
+            Console.WriteLine($"[border-mask] dropped {dropped} detections sitting in the rocky border");
+        }
+
         // Drop excluded landmark types from the pool BEFORE RANSAC sees them.
         // Used when a template doesn't match PG's actual sprite — keeping its
         // noisy matches in the pool misleads RANSAC into wrong-but-self-
