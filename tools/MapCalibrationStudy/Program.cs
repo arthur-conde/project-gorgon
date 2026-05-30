@@ -36,6 +36,14 @@ internal static class Program
                                             --landmarks <landmarks.json> --npcs <npcs.json>
                                             --areas <A,B,C> --out <dir>
                                             [--map-rect full | "left,top,width,height"]
+                                            [--icon-render-size <px>] [--icon-size <name>=<W>x<H>]
+
+            --icon-render-size (bootstrap): force the on-screen icon size (px) instead
+              of the auto render-size sweep. Use if the sweep picks wrong (the run
+              logs the per-size evidence + the chosen size).
+            --icon-size (bootstrap): force ONE template to exact WxH, overriding the
+              global render size — e.g. landmark_npc=24x26 when a sprite renders at an
+              aspect the source art doesn't match (known: landmark_npc on Serbule).
 
             --map-rect (bootstrap only): skip NCC auto-locate of the map within the
               screenshot. The in-game map's restyling/fog/UI-frame can defeat the
@@ -103,6 +111,8 @@ internal static class Program
         var areas = o["--areas"].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var icons = IconTemplateExtractor.Load(o["--icons"]);
         o.TryGetValue("--map-rect", out var mapRectOpt);
+        var iconRenderSize = o.TryGetValue("--icon-render-size", out var irs) && int.TryParse(irs, out var irsv) ? irsv : 0;
+        var iconSizeOverride = ParseIconSizeOverride(o);
         var rows = new List<StudyRecord>();
 
         foreach (var area in areas)
@@ -118,7 +128,7 @@ internal static class Program
             if (!TryTextureSize(o["--textures"], area, out var tw, out var th)) { Console.WriteLine($"[skip] no texture for {area}"); continue; }
 
             var world = LoadWorldPoints(o["--landmarks"], o["--npcs"], area).Select(l => l.World).ToList();
-            var detected = DetectIcons(shotPath, o["--textures"], area, o["--icons"], icons, mapRectOpt);
+            var detected = DetectIcons(shotPath, o["--textures"], area, o["--icons"], icons, mapRectOpt, iconRenderSize, iconSizeOverride);
             if (detected.Count < 3) { Console.WriteLine($"[skip] <3 icons detected in {area}"); continue; }
 
             var result = ColdBootstrap.Run(world, detected, tw, th, axisThresholdPx: 8.0);
@@ -153,30 +163,117 @@ internal static class Program
 
     private static List<PixelPoint> DetectIcons(
         string screenshotPath, string texturesDir, string area, string iconsDir, IconIndex icons,
-        string? mapRectOpt)
+        string? mapRectOpt, int iconRenderSize, (string Name, int W, int H)? iconSizeOverride)
     {
+        const double iconMinScore = 0.5;
         var screen = ImageIo.LoadGray(screenshotPath);
         var texturePath = MapTextureExtractor.EnsureExtractedOrCached(texturesDir, area)
             ?? throw new UserFacingException($"no cached texture PNG for {area} in {texturesDir}");
         var texture = ImageIo.LoadGray(texturePath);
         var rect = ResolveMapRect(mapRectOpt, screen, texture, screenshotPath);
 
-        var pixels = new List<PixelPoint>();
+        // PG ships the map-icon art at ~256 px in sharedassets0 but RENDERS every
+        // icon at a single small on-screen size regardless of source dimensions
+        // (#852). Matching the raw 256 px template never hits the ~20-40 px
+        // rendered icons, so choose a render size first (override > sweep >
+        // native) and scale templates to it (max-dim-based). Ported from the
+        // proven tools/MapCalibrationFromScreenshot detector.
+        var templates = new List<(IconMeta Meta, GrayImage Gray, GrayImage Alpha)>();
         foreach (var meta in icons.Icons)
         {
-            var (gray, alpha) = ImageIo.LoadGrayAndAlpha(Path.Combine(iconsDir, meta.File));
-            var hits = NccTemplateMatch.FindAll(screen, gray, alpha, minScore: 0.5, maxResults: 64);
+            var path = Path.Combine(iconsDir, meta.File);
+            if (!File.Exists(path)) { Console.WriteLine($"  ! missing template {path}"); continue; }
+            var (gray, alpha) = ImageIo.LoadGrayAndAlpha(path);
+            templates.Add((meta, gray, alpha));
+        }
+
+        var maxDim = templates.Count == 0 ? 0 : templates.Max(t => Math.Max(t.Gray.Width, t.Gray.Height));
+        int chosen;
+        if (iconRenderSize > 0) { chosen = iconRenderSize; Console.WriteLine($"[scale] {area}: --icon-render-size {chosen}px"); }
+        else if (maxDim > 64) chosen = SelectGlobalRenderSize(screen, templates, [12, 16, 20, 24, 30, 40, 56], iconMinScore);
+        else chosen = 0; // templates already at render size
+
+        var pixels = new List<PixelPoint>();
+        foreach (var (meta, gray, alpha) in templates)
+        {
+            int rw, rh;
+            if (iconSizeOverride is { } f && string.Equals(f.Name, meta.Name, StringComparison.Ordinal))
+            {
+                rw = f.W; rh = f.H;
+            }
+            else if (chosen == 0)
+            {
+                rw = gray.Width; rh = gray.Height;
+            }
+            else
+            {
+                var md = Math.Max(gray.Width, gray.Height);
+                rw = Math.Max(1, gray.Width * chosen / md);
+                rh = Math.Max(1, gray.Height * chosen / md);
+            }
+
+            var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
+            var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
+            var hits = NccTemplateMatch.FindAll(screen, grayD, alphaD, iconMinScore, maxResults: 64);
+            Console.WriteLine($"  [icon] {area}/{meta.Name} @ {rw}x{rh}: {hits.Count} hit(s)"
+                              + (hits.Count > 0 ? $" (top {hits[0].Score:0.000})" : ""));
             foreach (var hit in hits)
             {
-                var (cx, cy) = hit.Centre(meta.Width, meta.Height);
+                var (cx, cy) = hit.Centre(rw, rh);
                 // pivot-correct: anchor pixel = centre + (w*(pivot.x-0.5), h*(0.5-pivot.y))
-                var ax = cx + meta.Width * (meta.PivotX - 0.5);
-                var ay = cy + meta.Height * (0.5 - meta.PivotY);
+                var ax = cx + rw * (meta.PivotX - 0.5);
+                var ay = cy + rh * (0.5 - meta.PivotY);
                 var (tx, ty) = rect.ScreenshotToTexture(ax, ay);
                 pixels.Add(new PixelPoint(tx, ty));
             }
         }
         return pixels;
+    }
+
+    /// <summary>
+    /// PG renders all map icons at one on-screen pixel size regardless of source
+    /// artwork dimensions. Sweep a ladder of target render sizes, scale each
+    /// template (max-dim) to the target, and pick the size maximising aggregate
+    /// evidence (sum of each template's top NCC score above threshold). Ported
+    /// from the proven screenshot calibrator's SelectGlobalRenderSize.
+    /// </summary>
+    private static int SelectGlobalRenderSize(
+        GrayImage screenshot, List<(IconMeta Meta, GrayImage Gray, GrayImage Alpha)> templates,
+        int[] candidates, double threshold)
+    {
+        var best = candidates[0];
+        var bestEvidence = double.NegativeInfinity;
+        foreach (var target in candidates)
+        {
+            double evidence = 0;
+            var withHits = 0;
+            foreach (var (_, gray, alpha) in templates)
+            {
+                var md = Math.Max(gray.Width, gray.Height);
+                var rw = Math.Max(1, gray.Width * target / md);
+                var rh = Math.Max(1, gray.Height * target / md);
+                var top = NccTemplateMatch.FindBest(screenshot, ImageIo.Resize(gray, rw, rh), ImageIo.Resize(alpha, rw, rh), threshold);
+                if (top is null) continue;
+                evidence += top.Value.Score;
+                withHits++;
+            }
+            Console.WriteLine($"[scale]   target={target}px  evidence={evidence:0.000}  hits={withHits}/{templates.Count}");
+            if (evidence > bestEvidence) { bestEvidence = evidence; best = target; }
+        }
+        Console.WriteLine($"[scale] chose {best}px (evidence {bestEvidence:0.000})");
+        return best;
+    }
+
+    private static (string Name, int W, int H)? ParseIconSizeOverride(Dictionary<string, string> o)
+    {
+        if (!o.TryGetValue("--icon-size", out var s)) return null;
+        var eq = s.IndexOf('=');
+        var dims = eq > 0 ? s[(eq + 1)..].Split('x', 'X') : [];
+        if (eq <= 0 || dims.Length != 2 || !int.TryParse(dims[0], out var w) || !int.TryParse(dims[1], out var h) || w <= 0 || h <= 0)
+        {
+            throw new UserFacingException($"--icon-size must be name=WxH (positive ints), e.g. landmark_npc=24x26; got \"{s}\"");
+        }
+        return (s[..eq], w, h);
     }
 
     /// <summary>
