@@ -49,7 +49,6 @@
     <Project Path="tests/Elrond.Tests/Elrond.Tests.csproj" />
     <Project Path="tests/Gandalf.Tests/Gandalf.Tests.csproj" />
     <Project Path="tests/Legolas.Tests/Legolas.Tests.csproj" />
-    <Project Path="tests/MapCalibrationStudy.Tests/MapCalibrationStudy.Tests.csproj" />
     <Project Path="tests/Mithril.GameReports.Tests/Mithril.GameReports.Tests.csproj" />
     <Project Path="tests/Mithril.Leveling.Tests/Mithril.Leveling.Tests.csproj" />
     <Project Path="tests/Mithril.LogSanitizer.Tests/Mithril.LogSanitizer.Tests.csproj" />

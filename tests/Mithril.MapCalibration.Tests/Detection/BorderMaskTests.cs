@@ -2,7 +2,7 @@ using FluentAssertions;
 using Mithril.MapCalibration.Detection;
 using Xunit;
 
-namespace Mithril.Tools.MapCalibrationStudy.Tests;
+namespace Mithril.MapCalibration.Tests.Detection;
 
 public class BorderMaskTests
 {
