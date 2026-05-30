@@ -67,7 +67,9 @@ internal static class Pipeline
             ExcludedLandmarkTypes: args.ExcludedLandmarkTypes,
             DebugImagePath: args.DebugImagePath,
             ProjectionOverlayPath: args.ProjectionOverlayPath,
-            UseBorderMask: args.UseBorderMask);
+            MaskDebugPath: args.MaskDebugPath,
+            UseBorderMask: args.UseBorderMask,
+            Seed: args.Seed);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
         if (result.Calibration is null)
@@ -197,7 +199,9 @@ internal sealed record CalibrationInputs(
     IReadOnlySet<string> ExcludedLandmarkTypes,
     string? DebugImagePath,
     string? ProjectionOverlayPath,
-    bool UseBorderMask);
+    string? MaskDebugPath,
+    bool UseBorderMask,
+    (double Rot, double Scale, double Ox, double Oy, bool Mirror)? Seed);
 
 internal sealed record AssignedReference(
     string Label,

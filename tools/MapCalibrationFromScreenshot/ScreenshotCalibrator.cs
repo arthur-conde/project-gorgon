@@ -126,7 +126,10 @@ internal static class ScreenshotCalibrator
         // is the edge-connected non-vegetation/water region; interior anchors
         // survive. Opt-in (--border-mask) since flat tan/desert areas have no
         // such border and shouldn't pay for the classification.
-        if (inputs.UseBorderMask)
+        // The mask is needed if we're masking OR just visualizing it (--debug /
+        // --mask-debug renders the rim even when masking is off, so you can see
+        // what masking WOULD drop before committing to --border-mask).
+        if (inputs.UseBorderMask || inputs.MaskDebugPath is not null)
         {
             var (maskBgra, maskW, maskH) = ImageIo.LoadBgra(inputs.ScreenshotPath);
             var border = BorderMask.Compute(maskBgra, maskW, maskH);
@@ -137,17 +140,27 @@ internal static class ScreenshotCalibrator
                 return x < 0 || x >= maskW || y < 0 || y >= maskH || border[y * maskW + x];
             }
 
-            var dropped = 0;
-            foreach (var typeDets in detectionsByType.Values)
+            // Visualize BEFORE dropping so the diagnostic shows kept-vs-dropped.
+            if (inputs.MaskDebugPath is not null)
             {
-                dropped += typeDets.RemoveAll(d => InBorder(d.AnchorScreenshotX, d.AnchorScreenshotY));
+                RenderMaskDebug(maskBgra, maskW, maskH, border, detectionsByType,
+                    inputs.UseBorderMask, inputs.MaskDebugPath);
             }
-            rawDetections.RemoveAll(t =>
+
+            if (inputs.UseBorderMask)
             {
-                var (cx, cy) = t.Det.Centre(t.RenderW, t.RenderH);
-                return InBorder(cx + t.RenderW * (t.Icon.PivotX - 0.5), cy + t.RenderH * (0.5 - t.Icon.PivotY));
-            });
-            Console.WriteLine($"[border-mask] dropped {dropped} detections sitting in the rocky border");
+                var dropped = 0;
+                foreach (var typeDets in detectionsByType.Values)
+                {
+                    dropped += typeDets.RemoveAll(d => InBorder(d.AnchorScreenshotX, d.AnchorScreenshotY));
+                }
+                rawDetections.RemoveAll(t =>
+                {
+                    var (cx, cy) = t.Det.Centre(t.RenderW, t.RenderH);
+                    return InBorder(cx + t.RenderW * (t.Icon.PivotX - 0.5), cy + t.RenderH * (0.5 - t.Icon.PivotY));
+                });
+                Console.WriteLine($"[border-mask] dropped {dropped} detections sitting in the rocky border");
+            }
         }
 
         // Drop excluded landmark types from the pool BEFORE RANSAC sees them.
@@ -191,8 +204,18 @@ internal static class ScreenshotCalibrator
         // RANSAC picks 2 random same-type pairs, solves a candidate calibration,
         // counts how many other detections project within threshold of a
         // same-type ref. Best inlier count wins.
-        var assigned = RansacAssign(detectionsByType, allRefs, mapRect);
-        Console.WriteLine($"[ransac] {assigned.Count} inlier references kept");
+        List<AssignedReference> assigned;
+        if (inputs.Seed is { } s)
+        {
+            var seedCal = new AreaCalibration(s.Scale, s.Rot, s.Ox, s.Oy, 0, 0.0) { MirrorNorth = s.Mirror };
+            assigned = SeedGuidedAssign(detectionsByType, allRefs, mapRect, seedCal).ToList();
+            Console.WriteLine($"[seed-icp] {assigned.Count} references assigned");
+        }
+        else
+        {
+            assigned = RansacAssign(detectionsByType, allRefs, mapRect).ToList();
+            Console.WriteLine($"[ransac] {assigned.Count} inlier references kept");
+        }
 
         if (assigned.Count < 2)
         {
@@ -500,6 +523,140 @@ internal static class ScreenshotCalibrator
             }
         }
         return bestAssigned;
+    }
+
+    /// <summary>
+    /// Border-mask diagnostic: tints the masked rocky-rim region red over the
+    /// screenshot and draws every detection's anchor as a cross — green if it
+    /// survives the mask (interior), red if it falls in the border. When
+    /// <paramref name="maskActive"/> is false the reds are "would be dropped"
+    /// rather than actually dropped (so you can preview the mask before opting
+    /// in with --border-mask).
+    /// </summary>
+    private static void RenderMaskDebug(
+        byte[] bgra, int w, int h, bool[] border,
+        Dictionary<string, List<TypedDetection>> detectionsByType,
+        bool maskActive, string outPath)
+    {
+        // Half-strength red wash over masked pixels (keep terrain readable).
+        for (int p = 0; p < w * h; p++)
+        {
+            if (!border[p]) continue;
+            int i = p * 4;
+            bgra[i] = (byte)(bgra[i] / 2);          // B
+            bgra[i + 1] = (byte)(bgra[i + 1] / 2);  // G
+            bgra[i + 2] = (byte)(128 + bgra[i + 2] / 2);  // R
+        }
+
+        int kept = 0, inBorder = 0;
+        foreach (var typeDets in detectionsByType.Values)
+        {
+            foreach (var d in typeDets)
+            {
+                int x = (int)Math.Round(d.AnchorScreenshotX);
+                int y = (int)Math.Round(d.AnchorScreenshotY);
+                bool isBorder = x < 0 || x >= w || y < 0 || y >= h || border[y * w + x];
+                if (isBorder) { inBorder++; ImageIo.DrawCross(bgra, w, h, x, y, 5, 255, 0, 0); }
+                else { kept++; ImageIo.DrawCross(bgra, w, h, x, y, 5, 0, 255, 0); }
+            }
+        }
+
+        ImageIo.SaveBgraPng(bgra, w, h, outPath);
+        var verb = maskActive ? "dropped" : "would drop";
+        Console.WriteLine($"[mask-debug] {outPath}");
+        Console.WriteLine($"[mask-debug]   red wash = masked rocky rim; green cross = kept ({kept}); red cross = {verb} ({inBorder})");
+    }
+
+    // Radius ladder (texture px) for the seed-guided ICP. Starts loose enough to
+    // absorb a fragile cold seed's drift far from its few anchors, tightens to
+    // ~icon size so only true matches survive once the fit has converged.
+    private static readonly double[] SeedIcpRadii = [60, 45, 30, 20, 15, 15, 15];
+
+    /// <summary>
+    /// Correspondence by guided ICP: project every ref through the current
+    /// calibration, snap it to its nearest same-type detection within a
+    /// shrinking radius, re-solve over those pairs, repeat. Seeded with a
+    /// known-orientation calibration (a fragile cold solve or a frame-invariant
+    /// rotation), it converges to a many-point, well-spread least-squares fit on
+    /// sparse areas where one-shot RANSAC correspondence is unstable. Each
+    /// detection is claimed by at most one ref (closest wins) so duplicate
+    /// false-positive detections can't all latch onto the same landmark.
+    /// </summary>
+    private static IReadOnlyList<AssignedReference> SeedGuidedAssign(
+        Dictionary<string, List<TypedDetection>> detectionsByType,
+        List<LandmarkRef> allRefs,
+        MapRect mapRect,
+        AreaCalibration seed)
+    {
+        // Texture-space detection pool per type (stable coord system, like RANSAC).
+        var poolByType = new Dictionary<string, List<(double Tx, double Ty, double Score, string IconName)>>(StringComparer.Ordinal);
+        foreach (var kv in detectionsByType)
+        {
+            var list = new List<(double, double, double, string)>(kv.Value.Count);
+            foreach (var det in kv.Value)
+            {
+                var (tx, ty) = mapRect.ScreenshotToTexture(det.AnchorScreenshotX, det.AnchorScreenshotY);
+                list.Add((tx, ty, det.MatchScore, det.IconName));
+            }
+            poolByType[kv.Key] = list;
+        }
+
+        var cal = seed;
+        List<AssignedReference> assigned = [];
+        foreach (var radius in SeedIcpRadii)
+        {
+            // Each ref proposes its nearest same-type detection; resolve
+            // detection contention by keeping the closest ref per detection.
+            var perDet = new Dictionary<(string Type, int DetIdx),
+                (LandmarkRef Ref, double Dist, double Tx, double Ty, double Score, string IconName)>();
+            foreach (var r in allRefs)
+            {
+                if (!poolByType.TryGetValue(r.Type, out var pool) || pool.Count == 0) continue;
+                var p = cal.WorldToWindow(new WorldCoord(r.World.X, 0, r.World.Z));
+                int bestIdx = -1;
+                double bestDist = double.PositiveInfinity;
+                for (int i = 0; i < pool.Count; i++)
+                {
+                    var dx = pool[i].Tx - p.X;
+                    var dy = pool[i].Ty - p.Y;
+                    var d = Math.Sqrt(dx * dx + dy * dy);
+                    if (d < bestDist) { bestDist = d; bestIdx = i; }
+                }
+                if (bestIdx < 0 || bestDist > radius) continue;
+                var key = (r.Type, bestIdx);
+                if (!perDet.TryGetValue(key, out var ex) || bestDist < ex.Dist)
+                {
+                    var hit = pool[bestIdx];
+                    perDet[key] = (r, bestDist, hit.Tx, hit.Ty, hit.Score, hit.IconName);
+                }
+            }
+
+            var next = perDet.Values
+                .Select(v => new AssignedReference(
+                    Label: $"{v.IconName}:{v.Ref.Name}",
+                    WorldX: v.Ref.World.X,
+                    WorldZ: v.Ref.World.Z,
+                    PixelX: v.Tx,
+                    PixelY: v.Ty,
+                    MatchScore: v.Score))
+                .ToList();
+            if (next.Count < 2) break;
+
+            var newCal = SolveOver(next);
+            if (newCal is null) break;
+            cal = newCal;
+            assigned = next;
+        }
+
+        if (assigned.Count > 0)
+        {
+            Console.WriteLine($"[seed-icp] converged to {assigned.Count} assignments (final radius {SeedIcpRadii[^1]} px)");
+            foreach (var a in assigned.OrderBy(a => a.Label, StringComparer.Ordinal))
+            {
+                Console.WriteLine($"  {a.Label,-50} world=({a.WorldX,7:0.0},{a.WorldZ,7:0.0}) tex=({a.PixelX,7:0.0},{a.PixelY,7:0.0}) score={a.MatchScore:0.000}");
+            }
+        }
+        return assigned;
     }
 
     private static (Dictionary<string, List<TypedDetection>> ByType, List<(IconMeta Icon, Detection Det, int RenderW, int RenderH)> Raw)

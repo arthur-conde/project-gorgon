@@ -28,10 +28,12 @@ internal sealed record CliArgs(
     IReadOnlySet<string> ExcludedLandmarkTypes,
     string? DebugImagePath,
     string? ProjectionOverlayPath,
+    string? MaskDebugPath,
     double Zoom,
     Phase Phase,
     bool DryRun,
-    bool UseBorderMask)
+    bool UseBorderMask,
+    (double Rot, double Scale, double Ox, double Oy, bool Mirror)? Seed)
 {
     public static CliArgs? Parse(string[] argv)
     {
@@ -54,10 +56,14 @@ internal sealed record CliArgs(
         var excludedTypes = new HashSet<string>(StringComparer.Ordinal);
         string? debugImagePath = null;
         string? projectionOverlayPath = null;
+        string? maskDebugPath = null;
         double zoom = 1.0;
         Phase phase = Phase.Full;
         bool dryRun = false;
         bool useBorderMask = false;
+        bool debug = false;
+        string? outDir = null;
+        (double, double, double, double, bool)? seed = null;
 
         for (int i = 0; i < argv.Length; i++)
         {
@@ -97,6 +103,9 @@ internal sealed record CliArgs(
                 case "--projection-overlay":
                     projectionOverlayPath = Next(argv, ref i);
                     break;
+                case "--mask-debug":
+                    maskDebugPath = Next(argv, ref i);
+                    break;
                 case "--zoom":
                     zoom = double.Parse(Next(argv, ref i), CultureInfo.InvariantCulture);
                     break;
@@ -108,6 +117,15 @@ internal sealed record CliArgs(
                     break;
                 case "--border-mask":
                     useBorderMask = true;
+                    break;
+                case "--debug":
+                    debug = true;
+                    break;
+                case "--outdir":
+                    outDir = Next(argv, ref i);
+                    break;
+                case "--seed":
+                    seed = ParseSeed(Next(argv, ref i));
                     break;
                 case "-h" or "--help":
                     return null;
@@ -135,6 +153,27 @@ internal sealed record CliArgs(
             return null;
         }
 
+        // --debug is a convenience switch: dump every intermediate-stage
+        // visualization with stable <area>_<stage>.png names instead of wiring
+        // each path by hand. --outdir picks the folder (default: beside the
+        // screenshot). Explicit per-file flags still win if also given.
+        if (debug)
+        {
+            var dir = outDir
+                ?? (screenshot is not null ? Path.GetDirectoryName(Path.GetFullPath(screenshot)) : null)
+                ?? Directory.GetCurrentDirectory();
+            Directory.CreateDirectory(dir);
+            var stem = string.IsNullOrEmpty(area) ? "calib" : area;
+            debugImagePath ??= Path.Combine(dir, $"{stem}_detections.png");
+            maskDebugPath ??= Path.Combine(dir, $"{stem}_mask.png");
+            projectionOverlayPath ??= Path.Combine(dir, $"{stem}_projection.png");
+            Console.WriteLine($"[debug] dumping stage visualizations to {dir}");
+        }
+        else if (outDir is not null)
+        {
+            Console.Error.WriteLine("--outdir has no effect without --debug");
+        }
+
         return new CliArgs(
             ScreenshotPath: screenshot ?? "",
             Area: area ?? "",
@@ -153,10 +192,31 @@ internal sealed record CliArgs(
             ExcludedLandmarkTypes: excludedTypes,
             DebugImagePath: debugImagePath,
             ProjectionOverlayPath: projectionOverlayPath,
+            MaskDebugPath: maskDebugPath,
             Zoom: zoom,
             Phase: phase,
             DryRun: dryRun,
-            UseBorderMask: useBorderMask);
+            UseBorderMask: useBorderMask,
+            Seed: seed);
+    }
+
+    private static (double, double, double, double, bool) ParseSeed(string s)
+    {
+        // "rot,scale,ox,oy,mirror" — seeds the seed-guided ICP assignment with a
+        // known-orientation calibration (e.g. a fragile cold solve or a rotation
+        // lifted from the frame-invariant user-refinement store) so sparse areas
+        // whose RANSAC correspondence is unstable can still converge.
+        var parts = s.Split(',', 5);
+        if (parts.Length != 5)
+        {
+            throw new UserFacingException($"--seed wants 'rot,scale,ox,oy,mirror' (got '{s}')");
+        }
+        return (
+            double.Parse(parts[0].Trim(), CultureInfo.InvariantCulture),
+            double.Parse(parts[1].Trim(), CultureInfo.InvariantCulture),
+            double.Parse(parts[2].Trim(), CultureInfo.InvariantCulture),
+            double.Parse(parts[3].Trim(), CultureInfo.InvariantCulture),
+            bool.Parse(parts[4].Trim()));
     }
 
     private static (string Name, (int W, int H) Wh) ParseIconSize(string s)
@@ -270,6 +330,24 @@ internal sealed record CliArgs(
                                             KurMountains). Masks the edge-connected
                                             non-vegetation/water region. Opt-in: flat tan/desert
                                             areas have no such border.
+              --seed <rot,scale,ox,oy,mirror>  bypass RANSAC; seed a guided-ICP assignment with a
+                                            known-orientation calibration (texture-frame: rotation
+                                            in rad, scale px/unit, origin px, mirror true|false).
+                                            Project refs through the seed, snap each to its nearest
+                                            same-type detection, re-solve, iterate (shrinking radius).
+                                            For sparse areas whose cold RANSAC is unstable but whose
+                                            orientation is known (the {0,π} class — refinements.json
+                                            rotation is frame-invariant). Verify with --projection-overlay
+              --debug                       dump every intermediate-stage visualization (detections,
+                                            border mask, projection overlay) as <area>_<stage>.png.
+                                            One switch instead of wiring each path below by hand.
+              --outdir <dir>                where --debug writes its PNGs (default: beside the screenshot)
+
+            individual stage outputs (or let --debug name them for you):
+              --mask-debug <path>           border-mask diagnostic PNG (needs --border-mask): masked
+                                            rocky-rim region tinted red over the screenshot, every
+                                            detection a cross — green = kept (interior), red = dropped
+                                            (in border). Shows unmasked-vs-masked at a glance
               --debug-image <path>          write an annotated PNG: cyan rects mark every detection
                                             that cleared threshold, red crosses mark the pivot-
                                             corrected anchor, green rect outlines the map rect

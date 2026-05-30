@@ -160,7 +160,9 @@ internal static class SelfTest
             ExcludedLandmarkTypes: new HashSet<string>(),
             DebugImagePath: null,
             ProjectionOverlayPath: null,
-            UseBorderMask: false);
+            MaskDebugPath: null,
+            UseBorderMask: false,
+            Seed: null);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 
         if (result.Calibration is null)
