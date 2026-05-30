@@ -25,15 +25,16 @@ public static class ColdBootstrap
         bool MirrorZ)
     {
         /// <summary>
-        /// Median over ALL world landmarks of the distance from the recovered
+        /// MEAN over ALL world landmarks of the distance from the recovered
         /// transform's reprojection to its nearest detected icon. Unlike
         /// <see cref="RefinedResidualPx"/> (which is the solver residual over the
         /// kept SUBSET, and is near-zero even for a mispaired orientation that
         /// fit a different self-consistent subset), this scores the whole set
         /// against the whole detection cloud — so a reflected orientation that
-        /// reprojects landmarks onto the WRONG icons is penalised. Selection
-        /// minimises this first; the recovered transform reproduces ground truth
-        /// only when it is small.
+        /// reprojects even a FEW landmarks onto the WRONG icons is penalised
+        /// (mean, not median, so a minority of mispairs still moves the score).
+        /// Selection minimises this first; the recovered transform reproduces
+        /// ground truth only when it is small.
         /// </summary>
         public double GlobalReprojectionPx { get; init; }
 
@@ -146,15 +147,22 @@ public static class ColdBootstrap
     }
 
     /// <summary>
-    /// Median over all world landmarks of the distance from
-    /// <c>cal.WorldToWindow(w)</c> to its nearest detected icon. Median (not
-    /// mean) so a single spurious detection or one outlier landmark can't
-    /// dominate the orientation score.
+    /// MEAN over all world landmarks of the distance from
+    /// <c>cal.WorldToWindow(w)</c> to its nearest detected icon. Mean — not
+    /// median — because the failure mode is a MINORITY of mispaired landmarks: a
+    /// reflected orientation can mispair just the interior points while the
+    /// corners still reproject at distance 0, so a median washes the mispairs out
+    /// (it reads 0 for every orientation and the metric becomes decorative). The
+    /// mean keeps the mispaired-landmark distances in the score, so the true
+    /// orientation (every landmark at ~0) separates from a reflected one (a few
+    /// landmarks far away) — making the selection genuinely load-bearing rather
+    /// than reliant on the secondary inlier-count tie-break.
     /// </summary>
     private static double GlobalReprojection(
         AreaCalibration cal, IReadOnlyList<WorldCoord> world, IReadOnlyList<PixelPoint> detected)
     {
-        var dists = new List<double>(world.Count);
+        if (world.Count == 0) return double.PositiveInfinity;
+        double sum = 0;
         foreach (var w in world)
         {
             var p = cal.WorldToWindow(w);
@@ -166,12 +174,8 @@ public static class ColdBootstrap
                 var dist = Math.Sqrt(dx * dx + dy * dy);
                 if (dist < nearest) nearest = dist;
             }
-            dists.Add(nearest);
+            sum += nearest;
         }
-        dists.Sort();
-        var n = dists.Count;
-        return n == 0 ? double.PositiveInfinity
-            : n % 2 == 1 ? dists[n / 2]
-            : (dists[n / 2 - 1] + dists[n / 2]) / 2.0;
+        return sum / world.Count;
     }
 }
