@@ -223,7 +223,15 @@ public sealed class OverlayController : IHostedService
         // owns the lift of all four (handlers + phase override) into
         // Mithril.Overlay.
         WireMapInputHandlers(window);
-        ApplySharedClickThrough(window, headerChrome);
+        // Only apply now if HeaderChrome is already resolvable (window
+        // Loaded). When the window hasn't loaded yet, headerChrome is still
+        // null here, and ClickThrough.Apply(window, true, null) would make
+        // the ENTIRE window click-through — including the header chip + drag
+        // handle — until the deferred Loaded handler re-applies with the real
+        // carve-out. Defer to that handler instead, so the header never goes
+        // dead on first show with ClickThroughMap=true (#872 review #2).
+        if (window.IsLoaded)
+            ApplySharedClickThrough(window, headerChrome);
 
         _settings.PropertyChanged += (_, e) =>
         {
