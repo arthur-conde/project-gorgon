@@ -26,6 +26,7 @@
     <Project Path="src/Smaug.Module/Smaug.Module.csproj" />
   </Folder>
   <Folder Name="/tools/">
+    <Project Path="tools/Mithril.MapCalibration.Harness/Mithril.MapCalibration.Harness.csproj" />
     <Project Path="tools/Mithril.LogSanitizer/Mithril.LogSanitizer.csproj" />
     <Project Path="tools/RefreshAndValidate/RefreshAndValidate.csproj" />
     <Project Path="tools/XamlResourceLint/XamlResourceLint.csproj" />
@@ -52,6 +53,7 @@
     <Project Path="tests/Mithril.Leveling.Tests/Mithril.Leveling.Tests.csproj" />
     <Project Path="tests/Mithril.LogSanitizer.Tests/Mithril.LogSanitizer.Tests.csproj" />
     <Project Path="tests/Mithril.MapCalibration.Tests/Mithril.MapCalibration.Tests.csproj" />
+    <Project Path="tests/Mithril.MapCalibration.Harness.Tests/Mithril.MapCalibration.Harness.Tests.csproj" />
     <Project Path="tests/Mithril.Overlay.Tests/Mithril.Overlay.Tests.csproj" />
     <Project Path="tests/Mithril.Planning.Tests/Mithril.Planning.Tests.csproj" />
     <Project Path="tests/Mithril.Reference.Tests/Mithril.Reference.Tests.csproj" />

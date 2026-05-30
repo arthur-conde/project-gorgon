@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Mithril.Tools.MapCalibration.Harness</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Headless harness core: NO WPF (no UseWPF / no PresentationCore). The
+         in-game-map image is consumed via the WPF-free ICalibrationImage
+         abstraction; the WPF shell (issue B) adapts a BitmapSource to it.
+         Same isolation pattern as Mithril.MapCalibration.Tools.Common: opt out
+         of central package management + the repo's Directory.Build.targets so
+         the explicit-versioned package refs below don't clash. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
+    <!-- System.Drawing-free, but the target is Windows-only via net10.0-windows. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Version mirrors Directory.Packages.props (central PM is off here). -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <ProjectReference Include="..\Mithril.MapCalibration.Tools.Common\Mithril.MapCalibration.Tools.Common.csproj" />
+  </ItemGroup>
+</Project>
