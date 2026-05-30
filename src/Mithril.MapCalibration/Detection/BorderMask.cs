@@ -1,4 +1,7 @@
-namespace Mithril.Tools.MapCalibration.Common;
+using System;
+using System.Collections.Generic;
+
+namespace Mithril.MapCalibration.Detection;
 
 /// <summary>
 /// Computes a "rocky border" mask for an irregular-bordered area screenshot by
