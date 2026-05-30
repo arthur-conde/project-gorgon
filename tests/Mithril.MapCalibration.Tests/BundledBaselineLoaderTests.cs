@@ -7,17 +7,27 @@ namespace Mithril.MapCalibration.Tests;
 public sealed class BundledBaselineLoaderTests
 {
     [Fact]
-    public void Loads_without_throwing_even_when_anchors_dictionary_is_empty()
+    public void Loads_without_throwing()
     {
-        // The shipped baseline (BundledData/map-calibration-baseline.json) starts
-        // empty per spec — anchor authoring is a parallel follow-up. This guards
-        // the loader against an empty-anchors regression turning into a runtime
-        // throw at app start.
         var baseline = BundledBaselineLoader.Load(logger: null);
         baseline.Should().NotBeNull();
-        // Empty in this PR; once anchors land this assertion changes to a
-        // coverage check (one entry per known area).
-        baseline.Count.Should().BeGreaterOrEqualTo(0);
+    }
+
+    [Fact]
+    public void Loads_the_committed_gate_study_anchors()
+    {
+        // The shipped baseline carries the #897/#913 gate-study anchors for the
+        // three replay areas. This is a HARD parse-path guard: AreaCalibration.Source
+        // is persisted as a string enum name ("BundledBaseline"), and a source-gen
+        // context without UseStringEnumConverter throws on that string and the
+        // loader fail-softs to an EMPTY catalogue — i.e. the engine silently can't
+        // read its own baseline. The earlier ">= 0" assertion treated that empty as
+        // valid and never caught it (#916). Pin the real anchors so the regression
+        // turns this red rather than degrading at runtime.
+        var baseline = BundledBaselineLoader.Load(logger: null);
+
+        baseline.Should().ContainKeys("AreaSerbule", "AreaEltibule", "AreaKurMountains");
+        baseline["AreaSerbule"].Source.Should().Be(CalibrationSource.BundledBaseline);
     }
 
     [Fact]
