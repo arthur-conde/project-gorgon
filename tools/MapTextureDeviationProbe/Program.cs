@@ -44,6 +44,7 @@ string orientationArg = Cli.Get(args, "--orientation", "auto"); // auto | 0 | 18
 bool doBlobs = Cli.Has(args, "--blobs");
 bool useBorderMask = Cli.Has(args, "--border-mask");
 bool deviationRim = Cli.Has(args, "--deviation-rim");
+bool addedOnly = Cli.Has(args, "--added-only");
 int closeRadius = int.Parse(Cli.Get(args, "--close", "1"));
 var blobOpts = new BlobOptions(
     MinArea: int.Parse(Cli.Get(args, "--min-area", "12")),
@@ -151,7 +152,7 @@ float[] BuildAlignedTexture(bool rotate180)
 (double meanNcc, float[] dev) Run(bool rot180)
 {
     float[] texG = BuildAlignedTexture(rot180);
-    float[] devMap = LocalNcc.DeviationMap(shotG, texG, shot.Width, shot.Height, window, out double mean);
+    float[] devMap = LocalNcc.DeviationMap(shotG, texG, shot.Width, shot.Height, window, out double mean, addedOnly);
     return (mean, devMap);
 }
 
@@ -386,7 +387,14 @@ static class Gray
 // Per-pixel local NCC via integral images (O(WH), independent of window size).
 static class LocalNcc
 {
-    public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc)
+    // a = screenshot, b = aligned texture. addedOnly: only flag deviation where the
+    // SCREENSHOT carries the structure (va high) — i.e. content ADDED on the
+    // screenshot side (icons, labels). Regions where the screenshot is smooth but
+    // the texture is detailed (fog, the Kur ice/bubble patch rendered as a flat
+    // grey blob) are "obscured", not added, and can hold no detectable icon, so
+    // they're treated as a match. Distinguishes added-content from obscured-content
+    // by which side the detail is on.
+    public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc, bool addedOnly = false)
     {
         int r = win / 2;
         double[] ia = Integral(a, w, h);
@@ -417,8 +425,17 @@ static class LocalNcc
 
                 double ncc;
                 if (va < flatVar && vb < flatVar) ncc = 1.0;               // both featureless -> terrain match
-                else if (va < flatVar || vb < flatVar) ncc = 0.0;          // structure on one side only -> added content
-                else ncc = cov / Math.Sqrt(va * vb + eps);
+                else if (va < flatVar) ncc = addedOnly ? 1.0 : 0.0;        // screenshot smooth, texture detailed -> OBSCURED (fog/grey blob): match if addedOnly
+                else if (vb < flatVar) ncc = 0.0;                          // screenshot detailed, texture smooth -> ADDED (icon-like)
+                else
+                {
+                    ncc = cov / Math.Sqrt(va * vb + eps);
+                    // both sides textured but uncorrelated: an added icon raises the
+                    // screenshot variance above the terrain it covers (va > vb); an
+                    // obscured patch does the opposite. In addedOnly, only count the
+                    // former as deviation.
+                    if (addedOnly && ncc < 0.5 && va <= vb) ncc = 1.0;
+                }
 
                 ncc = Math.Clamp(ncc, -1, 1);
                 nccSum += ncc;
