@@ -84,6 +84,9 @@ Add `--dry-run` to preview without writing to the baseline JSON. Open `verify.pn
 | `--icon-size <name>=<W>x<H>` | Force a specific template to exact pixel dimensions, bypassing the aspect-preserving resize. Use when a sprite renders at an aspect ratio the source asset doesn't match (verified for `landmark_npc` on Serbule — source 236×256, PG renders 17×16). |
 | `--exclude-type <Type>` | Drop a landmark Type from the RANSAC pool entirely. Useful when a template fundamentally doesn't match PG's actual sprite. |
 | `--map-rect <x,y,w,h>` | Bypass auto-detect with an exact bbox measured in Gimp. Recommended for all real runs. |
+| `--detections-csv <path>` | Load the detection pool from a CSV (`screenshotX,screenshotY,type,iconName,score`) instead of running whole-image template NCC. Pairs with the deviation probe's blob-typed detections (type-aware template NCC within icon blobs) — the lever that cold-solves sparse areas (Eltibule, Kur) where whole-image NCC starves correspondence. See `tools/MapTextureDeviationProbe`. |
+| `--seed <rot,scale,ox,oy,mirror>` | Bypass RANSAC; run a guided ICP from a known-orientation seed (the frame-invariant {0,π} rotation). For sparse areas with a transferable orientation prior. |
+| `--debug [--outdir <dir>]` | Dump every intermediate-stage visualization (`<area>_detections.png`, `<area>_mask.png`, `<area>_projection.png`) in one switch. `--mask-debug <path>` is the border-mask diagnostic alone (masked rim tinted red, detections green=kept / red=dropped). |
 | `--projection-overlay <path>` | Render the inlier set on top of the screenshot for visual verification. Yellow crosses for every projected ref, green outlines for the RANSAC inliers. |
 | `--debug-image <path>` | Render every NCC detection that cleared threshold (cyan rects + red crosses for pivot-corrected anchors). |
 

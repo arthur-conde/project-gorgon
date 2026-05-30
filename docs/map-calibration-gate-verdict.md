@@ -27,10 +27,10 @@ Six areas — the author's full reachable set — spanning outdoor (Serbule, Elt
 | AreaCasino | −0.0001° | 0° | false | — | — | — | — | 0.006 px |
 | AreaSerbule | 0.019° | 0° | false | 0.823 | 0.984 | 0.836 | **8.9%** | 0.303 px |
 | AreaMyconianCave | 0.032° | 0° | false | — | — | — | — | 0.530 px |
-| AreaEltibule | −179.996° | 180° | false | — | — | — | — | 0.336 px |
-| AreaKurMountains | 179.999° | 180° | false | — | — | — | — | 0.335 px |
+| AreaEltibule | −179.996° | 180° | false | 0.763 | 0.970 | 0.787 | **11.6%** | 0.650 px |
+| AreaKurMountains | 179.999° | 180° | false | 0.569 | 0.721 | 0.788 | **11.3%** | 0.732 px |
 
-(`scale`/`inset` need a texture-frame solve per area; only Serbule has one committed, hence `—` for the rest. Residuals are from each area's own solve.)
+(`scale`/`inset` need a texture-frame solve per area. Serbule, Eltibule and KurMountains now have committed texture-frame baselines; MyconianCave still `—`. Eltibule/Kur were solved **cold** via the deviation-blob → type → RANSAC pipeline — see H4. Residuals: Serbule/Eltibule/Kur are the texture-frame solve RMS; the others are from each area's overlay solve.)
 
 ## Hypotheses
 
@@ -44,9 +44,17 @@ All six areas snap to exactly {0°, 180°}: four within **0.04°** of 0, two wit
 
 A 4-parameter *similarity* fits all six areas to **sub-pixel** residual (0.006–0.53 px). If the renderer needed an anisotropic (affine) model, a similarity could not fit that tightly. A direct affine-vs-similarity contest is only meaningful at kept ≥ 4 detected points per area; that becomes available once detection is robust enough on the sparse areas (currently only Serbule clears it).
 
-### H3 — consistent border inset — **single data point; completion path identified**
+### H3 — consistent border inset — **supported (n=3); inset clusters in a ~9–12% band**
 
-Serbule's landmark bbox projects into the texture with an **8.9%** max-edge inset (scaleRatioX 0.836). Consistency across areas can't be assessed from n=1; the other five need a texture-frame solve, gated on the same detection robustness as H4.
+Three areas now have committed texture-frame solves, so the landmark-bbox-into-texture inset is measurable across them:
+
+| area | scaleRatioX | max-edge inset |
+|---|---|---|
+| AreaSerbule (0°, dense) | 0.836 | 8.9% |
+| AreaEltibule (180°, sparse) | 0.787 | 11.6% |
+| AreaKurMountains (180°, sparse) | 0.788 | 11.3% |
+
+The inset is **not a single constant but a tight band (8.9–11.6%)**, and the two independently-solved sparse 180° areas land **near-identical** (11.3 / 11.6%, scaleRatioX 0.787 / 0.788 — within 0.3 pp / 0.001). That consistency is the H3 signal: a cold scale estimate of `texture_dim / world_span × scaleRatioX` with `scaleRatioX ≈ 0.79–0.84` (≈ 9–12% inset prior) is viable as a bootstrap, to be refined by the correspondence solve. The inset is computed from **all** landmarks+NPCs' world coords projected through each committed baseline (`InsetMetrics.Compute`), so it reflects the true landmark extent, not the detected subset.
 
 ### H4 — cold zero-prior correspondence — **DEMONSTRATED on Serbule; open on sparse areas**
 
@@ -67,7 +75,86 @@ Two enablers were decisive, both non-obvious:
 1. **The DPI fix** — without it, nothing detects.
 2. **Include NPCs at the right per-type size.** It is tempting to drop the noisy NPC type (`--exclude-type Npc`), but at `--icon-size landmark_npc=17x16` (PG renders that sprite at a 17×16 aspect, not square) the NPCs become the *bulk of the real anchors*: inliers jump **8 → 23**, and that density is what makes RANSAC robust.
 
-**Eltibule + KurMountains (both 180°): not yet robust.** Both are sparser, with a rocky outer border whose texture matches the icon templates. The `--border-mask` (PR #908, edge flood-fill of non-vegetation/water) is necessary — on Eltibule it drops ~125 rim false positives and lets the solver reach the correct orientation — but not sufficient: too few interior landmark icons match strongly enough for stable RANSAC. This is the open detection-quality problem, and the texture-deviation front-end below is the most promising attack on it. (Pixel dims for `--map-rect "0,0,W,H"`: Eltibule 921×914, Kur 981×980.)
+**Eltibule + KurMountains (both 180°): cold solve DEMONSTRATED via the blob front-end (update 2026-05-30).** Whole-image template NCC + RANSAC stays stuck at 3 (often degenerate, near-coincident) inliers on both areas regardless of threshold or `--border-mask` — the named refs are either in an unseparable town cluster or lost under the rocky-rim / terrain false-positive flood (64 medipillar + 64 portal "detections" per template, mostly rim). A 0.7 threshold doesn't help: it lets noise form a wrong-but-self-consistent fit at the wrong orientation (−49.6° on Eltibule).
+
+What *did* work is the pipeline this verdict recommended but hadn't wired end-to-end: **texture-deviation local-NCC → shape/size blob filter → type-aware template NCC *within* each icon blob → RANSAC.** Typing only the ~14–24 blob candidates (instead of the whole noisy screenshot) collapses the false-positive pool, and RANSAC over those clean typed detections recovers both areas cold — **no prior calibration, no manual clicks**:
+
+| area | scale | rotation | origin | refs | residual | refs on-screen |
+|---|---|---|---|---|---|---|
+| AreaEltibule | 0.763 | 179.98° (π) | (2146.2, −202.5) | 5 | **0.65 px** | 38/38 |
+| AreaKurMountains | 0.569 | 180.00° (π) | (2188.8, −141.5) | 8 | **0.73 px** | 32/32 |
+
+Both land on the discrete {0, π} class (matching `refinements.json`), sub-pixel, every ref projecting on-screen. So **H4 is now demonstrated on sparse areas too** — the lever is the deviation-blob detector, precisely as predicted. Tooling: `MapTextureDeviationProbe --blobs … --icons-dir …` emits a typed-detections CSV; `MapCalibrationFromScreenshot --detections-csv` solves from it.
+
+**`--border-mask` (probe side) is load-bearing — measured, both areas:**
+
+| area | mask | icon blobs | RANSAC inliers | residual | rotation | outcome |
+|---|---|---|---|---|---|---|
+| Eltibule | on | 14 | 5 | 0.65 px | π | ✅ correct |
+| Eltibule | off | 21 | 3 | 1.77 px | −0.814 rad | ❌ wrong orientation |
+| Kur | on | 24 | 8 | 0.73 px | π | ✅ correct |
+| Kur | off | 29 | 3 | 1.23 px | 0.110 rad | ❌ wrong orientation |
+
+Without the mask the rocky rim contributes ~7 extra blobs that **type as icons** (rim rock matches the pin templates above the 0.55 floor); those rim false positives let RANSAC settle on a wrong-but-self-consistent **3-inlier** fit (3 points / 4 DOF fits almost any similarity at low residual) at the wrong orientation. The mask drops them and RANSAC locks onto the correct π fit at 5–8 inliers. The degeneracy guards (100 px span, refit-residual tiebreak) do **not** save the unmasked run on either area. So the mask is necessary for convergence here — *and yet* it simultaneously **over-masks Eltibule's interior**: its edge-connected non-veg/water flood bleeds through the brown interior (new `--mask-debug` viz: 171 dropped / 36 kept), eating legitimate interior icons. Net positive (removing rim FPs matters more than the interior icons lost), but blunt — the engine wants a tighter rim classifier (bounded flood depth or rock-colour) that drops the rim without eating the interior. (Pixel dims for `--map-rect "0,0,W,H"`: Eltibule 921×914, Kur 981×980. Textures 2048×2033 / 2048×2048.)
+
+**The blob TYPE label is load-bearing, not just the location** (`--ignore-types` experiment). The deviation heatmap + shape filter pinpoint icon *locations* well (86% precision on Eltibule), but a calibration solve needs world↔pixel *correspondence*, and anonymous centroids don't carry the identity to recover it. Re-running the exact same clean blob set with the per-type RANSAC constraint **off**:
+
+| area | type constraint | inliers | residual | rotation | outcome |
+|---|---|---|---|---|---|
+| Eltibule | on (typed) | 5 | 0.65 px | π | ✅ correct |
+| Eltibule | off (anonymous) | 4 | 3.57 px | 1.217 rad | ❌ wrong (also wrong scale 0.23) |
+| Kur | on (typed) | 8 | 0.73 px | π | ✅ correct |
+| Kur | off (anonymous) | 4 | 6.04 px | −2.344 rad | ❌ wrong (also wrong scale 0.89) |
+
+Both mis-register without types. The ref field is dense (38 / 32 refs, many clustered in the town square), so anonymous dots admit plenty of wrong-but-geometrically-consistent 4-inlier fits; the type constraint collapses the assignment space (an npc blob pairs only with the 17 npc refs, a medipillar only with 6), killing the coincidental cross-type matches. **Engine carry-over: the detection stage must *type* the blobs (template NCC within candidates), not merely locate them — typing is the bridge from "where the icons are" to "which icon each is."**
+
+**Can the rim be detected from the texture alone?** The CDN texture is the better *input* in principle — icon-free, fog-free, UI-free, and a static cacheable per-area asset. But the bottleneck isn't the source image, it's the *algorithm*: running the current `BorderMask` (edge-connected non-veg/water flood) on the texture instead of the screenshot (`--rim-debug`) fails on both areas, each differently:
+
+| area | screenshot masked | texture masked | texture failure mode |
+|---|---|---|---|
+| Eltibule | 67.6% | 67.6% (identical) | brown interior is edge-connected non-veg → floods the same; no improvement |
+| KurMountains | 54.5% | 28.6% (the *wrong* 28.6%) | navy out-of-bounds reads as "water" → left unmasked; flood enters the east edge and masks the **interior snow terrain** where the icons live |
+
+The flood-fill conflates "rim rock" with "any interior non-vegetated terrain" (brown dirt on Eltibule, snow on Kur), so it's the wrong tool regardless of source. **But the texture *enables* a better classifier the screenshot can't:** the real target is the *playable-area boundary*, and on the clean art that's explicit — Kur's texture has a crisp uniform **navy out-of-bounds** region (region-grow from it to get the exact boundary), and Eltibule's rim rock has a consistent canonical colour/texture signature (target it directly instead of "non-green-non-blue"). So: yes, detect it from the texture — once per area, cached — but with a boundary/rim-signature classifier, not the generic flood. The `--rim-debug` viz is kept for that work.
+
+**The cleanest rim mask falls out of the deviation map itself — and fixes the over-masking (demonstrated).** The rim is a *connected, edge-touching* high-deviation band (Eltibule border-band deviation 0.495 vs 0.128 interior — a ring); interior icons are *isolated* high-deviation islands in low-deviation matched terrain; and the interior brown/snow the colour flood wrongly ate is *low-deviation* (it matches the base texture). So **flood-filling the deviation map from the image edge through high-deviation pixels** (`--rim-debug` → `_rim_devflood.png`) masks the rim *only* — it can't cross the low-deviation interior, and it can't reach the non-edge-connected interior icons:
+
+| area | colour BorderMask (over-masks) | deviation-flood rim mask |
+|---|---|---|
+| Eltibule | 67.6% (drowns the brown interior) | **11.3%** (thin rim ring; interior + icons intact) |
+| KurMountains | 54.5% (floods interior snow) | **8.9%** (landmass-edge band; interior snow intact) |
+
+Visually confirmed: the deviation-flood red is a thin ring at the very edge on Eltibule and a coast-following band on Kur, with the whole interior clear. It's also screenshot-derived (no separate colour/texture classifier) and *self-consistent*: the rim forms a maskable ring exactly when it deviates (and so causes false positives); where it cancels (Serbule, border-band 0.178) there's no ring — but also no rim problem, so nothing to mask. **Engine carry-over: replace the colour non-veg/water flood with an edge-connected deviation flood (equivalently: connected-components on the deviation foreground, drop the edge-touching component).**
+
+**End-to-end re-solve — verified, with one qualifier (`--deviation-rim` wired into the blob path).** Swapping the colour BorderMask for the edge-connected deviation flood and re-solving both areas:
+
+| area | mask | typed detections | RANSAC inliers | residual | orientation | solve |
+|---|---|---|---|---|---|---|
+| Eltibule | colour border-mask | 14 | 5 | 0.65 px | π | ✅ |
+| Eltibule | deviation-rim **alone** | 19 | 3 | 0.23 px | π | ✅ (but only 3 inliers) |
+| Eltibule | deviation-rim **+ type-floor 0.65** | 17 | **10** | 0.83 px | π | ✅ |
+| Kur | colour border-mask | 24 | 8 | 0.73 px | π | ✅ |
+| Kur | deviation-rim **alone** | 29 | 3 | 1.23 px | **0.110 rad** | ❌ wrong |
+| Kur | deviation-rim **+ type-floor 0.65** | 25 | **12** | 0.77 px | π | ✅ |
+
+Two findings: (1) **deviation-rim alone is not a drop-in replacement** — it keeps the interior icons the colour mask over-dropped, but it also keeps *isolated* interior false positives the colour over-mask was incidentally hiding (Kur's snow terrain deviates into icon-sized non-edge-connected blobs), and those break Kur's solve. It removes the *connected* rim, not isolated terrain FPs. (2) **deviation-rim + a stronger per-blob acceptance gate (`--type-floor` 0.65) is the actual win**: the floor rejects the weak terrain FPs while the deviation flood preserves the interior icons, so the inlier count roughly **doubles** (Eltibule 5→10, Kur 8→12) at the same correct sub-pixel solve. The residual ticks up (0.83 / 0.77) because it now averages real fit error over 10–12 spread points instead of a lucky 5. The committed baselines stay as-is (colour-mask provenance), but this second independently-masked pipeline converged to the **same** scale/rotation/origin (within 0.05% scale, 0.3 px origin, both π) — a cross-validation of those baselines from a different detection path. **Engine carry-over refined: deviation-rim mask + a per-candidate template-score gate, not deviation-rim alone.**
+
+### Added-vs-obscured: the deviation asymmetry distinguishes icons from fog / "removed" terrain (`--added-only`)
+
+Local NCC deviation is *symmetric* — it fires equally whether the screenshot added content the texture lacks, or the texture has content the screenshot lost. Those are opposite cases. An **icon** is screenshot-side detail over smooth texture (`va` high, `vb` low). The reverse — coarse/flat screenshot over detailed texture (`va` low, `vb` high) — is **obscured** content: **fog-of-war**. KurMountains has two **fog-of-war patches** (a large left-centre one and a small top one — area not yet explored in the captured screenshot); the in-game fog renders as a mottled overlay that flattens the texture's fine terrain detail, so it deviates strongly but holds no icon. The per-window variances `va` (screenshot) / `vb` (texture) are already computed, so icon-vs-fog is separable for free.
+
+**This corrects an earlier mistake in this doc.** Kur is *not* fully explored and does *not* have "0 fog" — what I first read as an "ice/bubble terrain feature" is fog of war. The blob shape-filter reports `0 fog` because PG's fog is **mottled, not the large smooth low-gradient region the shape heuristic looks for** — so the shape classifier *misses real fog* and it leaks downstream as `structure` / icon-sized false positives (a direct source of Kur's FP problem). The variance asymmetry is the correct discriminator, not blob shape.
+
+`--added-only` gates deviation on screenshot-side structure (only `va`-high mismatches flag; `va`-low "obscured" windows are treated as a match). On Kur it **removes the fog patches at the source** — deviation foreground halves (low-NCC 10.8% → 4.8%), structure blobs 9 → 2, the left-centre fog deviation blob vanishes — while icons survive (Eltibule still 10 inliers, Kur still 12; both solves unchanged). It is *restyle-robust* (keys on the variance asymmetry, not a hardcoded fog colour). **So the fog case is demonstrated on real fog-of-war, not a proxy** — `--added-only` is the principled unified filter for fog / obscured content, and it works where the shape-based `fog` class fails.
+
+Caveat: it did **not** independently improve the solve on these two areas — the deviation-rim mask + type-floor already absorbed the fog blobs, so `--added-only` is a cleaner *front-end* (drops obscured content before it ever becomes a candidate) rather than an extra robustness win *here*. Its value is correctness-by-construction: fog never enters the candidate set, and it removes a FP source the shape filter silently misclassifies. **Engine carry-over: compute the deviation as added-only (gate on screenshot-side variance) so fog never enters the candidate set — and do not rely on the blob shape-filter's `fog` class for PG's mottled fog; it misses it.**
+
+**Proposed cold-bootstrap from boundary registration (untested — verification owed).** World→texture projection *is* the calibration (`WorldToWindow` = scale + rotation + origin + handedness), so you cannot project the landmark hull onto the texture without already having the answer — the obvious "outline the landmarks, lay it on the texture" move is circular. The non-circular flip: two boundaries are knowable **independently in their own frames** —
+
+- *world frame*: the landmark convex hull, a priori from `landmarks.json` / `npcs.json` (no calibration);
+- *texture frame*: the playable-area boundary, from the texture art per the classifier above (no calibration).
+
+They're related by the unknown similarity, so **registering the two shapes up to similarity yields a coarse calibration with zero icon correspondence**: scale ≈ (texture-boundary extent / world-hull extent), corrected by the H3 inset ratio (~0.79–0.84, since the hull insets from the boundary); origin ≈ boundary-centroid ↔ hull-centroid; and — the valuable part — the discrete {0, π} **orientation is resolved by the asymmetric area shape** (Kur's landmass is visibly chiral: the bottom notch + the detached top-left island pick 0 vs π directly). That is exactly the good seed the `--seed` ICP lacked (its cold seed was built on a false-positive medipillar), to be refined by the blob-typed icon correspondence. Not needed for Eltibule/Kur (blob-typed RANSAC already solved them sub-pixel), but a strong cold bootstrap / orientation-disambiguation lever for the engine on a sparse area. **Caveats to verify before relying on it:** the landmark hull ≠ the playable boundary (landmarks are interior; the inset relation is approximate and may not be constant enough), and shape registration needs the area to be sufficiently asymmetric for the {0, π} pick to be unambiguous (near-symmetric areas won't disambiguate). File the spot-check as its own task if the engine takes this path.
 
 ## Texture-deviation probe — **promising; likely the sparse-area detection front-end**
 
@@ -101,10 +188,21 @@ Terrain and (on Serbule) the border largely cancel; deviation is **localized**, 
 - **Border-mask irregular zones** (PR #908) as a complement; on Serbule the deviation front-end already cancels the border, on Eltibule the rocky rim partly survives and the mask helps.
 - **Accuracy ceiling is detection + zoom, not the renderer.** The renderer is a clean per-area isotropic similarity with **no** intra-area warp; it fits to sub-pixel once zoom is normalised. ([PR #449](https://github.com/moumantai-gg/mithril/pull/449) is **resolved** — the old "±10% non-affine warp" band was *operational* (live Survey pipeline: player-relative pins, un-readable in-game zoom, hand-correction), not a renderer non-linearity. Affine/homography/poly and piecewise/TPS/RBF were all eliminated; do not reintroduce warp language.) So engine accuracy is bounded by auto-detection precision and zoom handling, not by any map warp.
 
+## Detector re-scoring against the new baselines (2026-05-30)
+
+With Eltibule + Kur baselines committed, the #911 blob shape-filter detector (`--blobs --ground-truth`, gt-tol 20 px) yields real recall/precision instead of #911's eyeballed candidate counts:
+
+| area | icon candidates | recall (separable) | precision | notes |
+|---|---|---|---|---|
+| AreaEltibule | 14 | 11/38 = **29%** (0 under structure) | 12/14 = **86%** | low recall: many of the 38 GT refs aren't rendered as detectable icons (unshown NPCs) + the over-masked lower interior |
+| AreaKurMountains | 24 | 16/24 = **67%** (8 of 32 project onto a rejected structure/fog blob) | 13/24 = **54%** | snow terrain deviates more → noisier candidate set, lower precision |
+
+**Honest caveat:** each baseline was *derived* from this same blob detector (typed → RANSAC over a 5–8 inlier subset), so the inlier refs trivially hit — recall over the remaining ~30/24 refs and precision over the non-inlier candidates are the independent part. The baselines' validity is corroborated independently: sub-pixel residual, exact-π orientation matching `refinements.json`, scaleRatioX consistent with Serbule, and named inliers that are real area entities (Travel to Ilmari Desert, Creepy Door, Meditation Pillars). Precision (esp. Eltibule's 86%) is the more meaningful axis: when the detector flags a candidate it is usually a real ref. Both are lower bounds — GT = *all* landmarks+NPCs, not all of which render.
+
 ## Remaining work
 
-1. **Build the texture-deviation → shape-filter → template stage** and re-test on Eltibule/Kur. The probe shows the terrain-subtraction step works; the missing piece is the blob shape/size filter that separates icons from structures/fog, then template NCC within candidates.
-2. **Texture-frame solves for the other five areas** (completes H3 inset consistency + a real per-area H2 affine contest at kept ≥ 4). Run the proven `tools/MapCalibrationFromScreenshot` once sparse-area detection is robust, commit those `AreaCalibration`s to the baseline, re-run `measure`, and append the inset values here and on the wiki.
+1. ~~**Build the texture-deviation → shape-filter → template stage** and re-test on Eltibule/Kur.~~ **Done.** Blob shape/size filter + type-aware template NCC within candidates is wired (`MapTextureDeviationProbe --blobs --icons-dir`) and cold-solves both sparse areas (see H4). The `--border-mask` over-masking on Eltibule (interior bleed-through) is a known refinement for the engine — flood depth or rock-colour classification rather than "edge-connected non-veg/water".
+2. **Texture-frame solves for the remaining areas** (MyconianCave, Cave1, Casino — completes H3 across the full reachable set + a real per-area H2 affine contest at kept ≥ 4). Same `--detections-csv` pipeline; commit to the baseline, re-run `measure`, append insets here and on the wiki.
 
 ## Teardown
 

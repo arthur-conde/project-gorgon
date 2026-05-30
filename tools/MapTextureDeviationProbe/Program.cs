@@ -43,6 +43,8 @@ string orientationArg = Cli.Get(args, "--orientation", "auto"); // auto | 0 | 18
 // --- blob shape/size filter options ---
 bool doBlobs = Cli.Has(args, "--blobs");
 bool useBorderMask = Cli.Has(args, "--border-mask");
+bool deviationRim = Cli.Has(args, "--deviation-rim");
+bool addedOnly = Cli.Has(args, "--added-only");
 int closeRadius = int.Parse(Cli.Get(args, "--close", "1"));
 var blobOpts = new BlobOptions(
     MinArea: int.Parse(Cli.Get(args, "--min-area", "12")),
@@ -50,6 +52,21 @@ var blobOpts = new BlobOptions(
     MinSolidity: ParseInv(Cli.Get(args, "--min-solidity", "0.35")),
     MaxAspect: ParseInv(Cli.Get(args, "--max-aspect", "2.5")),
     MinPeak: ParseInv(Cli.Get(args, "--min-peak", "0.7")));
+// --- blob typing: type-aware template NCC within icon blobs, emit detections CSV ---
+string typeIconsDir = Cli.Get(args, "--icons-dir", "");
+int typeRenderSize = int.Parse(Cli.Get(args, "--icon-render-size", "16"));
+double typeFloor = ParseInv(Cli.Get(args, "--type-floor", "0.55"));
+var iconSizeOverrides = new Dictionary<string, (int W, int H)>(StringComparer.Ordinal);
+for (int ai = 0; ai < args.Length - 1; ai++)
+{
+    if (args[ai] != "--icon-size") continue;
+    var spec = args[ai + 1];
+    int eq = spec.IndexOf('='), xx = spec.IndexOf('x');
+    if (eq > 0 && xx > eq)
+        iconSizeOverrides[spec[..eq]] = (
+            int.Parse(spec[(eq + 1)..xx], CultureInfo.InvariantCulture),
+            int.Parse(spec[(xx + 1)..], CultureInfo.InvariantCulture));
+}
 // --- ground-truth overlap (Serbule only — the one area with a committed baseline) ---
 bool groundTruth = Cli.Has(args, "--ground-truth");
 string gtArea = Cli.Get(args, "--area", "");
@@ -77,6 +94,32 @@ var (texBgra, texW, texH) = ImageIo.LoadBgra(texturePath);
 BgraImage shot = new BgraImage(shotW, shotH, shotBgra);
 BgraImage tex = new BgraImage(texW, texH, texBgra);
 Console.WriteLine($"screenshot {shot.Width}x{shot.Height}  texture {tex.Width}x{tex.Height}");
+
+// --- rim-from-texture experiment: run BorderMask on screenshot vs texture and
+//     compare interior bleed / masked fraction. Answers "can the rim be detected
+//     from the icon-free texture alone, and is it cleaner than the screenshot?" ---
+if (Cli.Has(args, "--rim-debug"))
+{
+    void DumpRim(byte[] bgra, int rw, int rh, string label, string file)
+    {
+        var mask = BorderMask.Compute(bgra, rw, rh, 4);
+        int masked = 0;
+        var viz = (byte[])bgra.Clone();
+        for (int p = 0; p < rw * rh; p++)
+        {
+            if (!mask[p]) continue;
+            masked++;
+            int o = p * 4;
+            viz[o] = (byte)(viz[o] / 2); viz[o + 1] = (byte)(viz[o + 1] / 2);
+            viz[o + 2] = (byte)(128 + viz[o + 2] / 2); viz[o + 3] = 255;
+        }
+        var path = Path.Combine(outDir, file);
+        ImageIo.SaveBgraPng(viz, rw, rh, path);
+        Console.WriteLine($"[rim-debug] {label}: masked {masked}/{rw * rh} ({(double)masked / (rw * rh):P1}) -> {path}");
+    }
+    DumpRim(shot.Pixels, shot.Width, shot.Height, "screenshot", $"{stem}_rim_screenshot.png");
+    DumpRim(tex.Pixels, tex.Width, tex.Height, "texture", $"{stem}_rim_texture.png");
+}
 
 // --- INPUT SANITY (the lesson from the DPI bug: verify pixels before trusting metrics) ---
 double shotMean = Gray.MeanLuma(shot);
@@ -109,7 +152,7 @@ float[] BuildAlignedTexture(bool rotate180)
 (double meanNcc, float[] dev) Run(bool rot180)
 {
     float[] texG = BuildAlignedTexture(rot180);
-    float[] devMap = LocalNcc.DeviationMap(shotG, texG, shot.Width, shot.Height, window, out double mean);
+    float[] devMap = LocalNcc.DeviationMap(shotG, texG, shot.Width, shot.Height, window, out double mean, addedOnly);
     return (mean, devMap);
 }
 
@@ -136,6 +179,48 @@ Console.WriteLine($"low-NCC pixels (ncc <= {lowNcc}): {lowCount}  ({lowFrac:P1} 
 Console.WriteLine($"border-band mean deviation: {BorderBandMeanDeviation(dev, shot.Width, shot.Height, 0.06):F3} (want LOW — border should match)");
 Console.WriteLine($"interior   mean deviation: {InteriorMeanDeviation(dev, shot.Width, shot.Height, 0.06):F3}");
 
+// --- deviation-flood rim mask: flood from the image edge through HIGH-deviation
+//     pixels. The rim is a connected, edge-touching deviation band; interior icons
+//     are isolated high-deviation islands in low-deviation matched terrain, and the
+//     interior brown dirt the COLOUR flood wrongly ate is LOW-deviation (it matches
+//     the base texture). So this masks the rim WITHOUT eating the interior — the fix
+//     for the colour BorderMask's over-masking. Compare fractions vs the colour mask. ---
+if (Cli.Has(args, "--rim-debug"))
+{
+    int W = shot.Width, H = shot.Height;
+    double thr = 1.0 - lowNcc;
+    var hi = new bool[W * H];
+    for (int p = 0; p < W * H; p++) hi[p] = dev[p] >= thr;
+    var rim = new bool[W * H];
+    var q = new Queue<int>();
+    void Enq(int x, int y)
+    {
+        if (x < 0 || x >= W || y < 0 || y >= H) return;
+        int k = y * W + x;
+        if (hi[k] && !rim[k]) { rim[k] = true; q.Enqueue(k); }
+    }
+    for (int x = 0; x < W; x++) { Enq(x, 0); Enq(x, H - 1); }
+    for (int y = 0; y < H; y++) { Enq(0, y); Enq(W - 1, y); }
+    while (q.Count > 0)
+    {
+        int k = q.Dequeue(); int x = k % W, y = k / W;
+        Enq(x - 1, y); Enq(x + 1, y); Enq(x, y - 1); Enq(x, y + 1);
+    }
+    int masked = 0;
+    var viz = (byte[])shot.Pixels.Clone();
+    for (int p = 0; p < W * H; p++)
+    {
+        if (!rim[p]) continue;
+        masked++;
+        int o = p * 4;
+        viz[o] = (byte)(viz[o] / 2); viz[o + 1] = (byte)(viz[o + 1] / 2);
+        viz[o + 2] = (byte)(128 + viz[o + 2] / 2); viz[o + 3] = 255;
+    }
+    var devRimPath = Path.Combine(outDir, $"{stem}_rim_devflood.png");
+    ImageIo.SaveBgraPng(viz, W, H, devRimPath);
+    Console.WriteLine($"[rim-debug] deviation-flood (edge-connected dev>={thr:0.00}): masked {masked}/{W * H} ({(double)masked / (W * H):P1}) -> {devRimPath}");
+}
+
 // --- Outputs ---
 string heatPath = Path.Combine(outDir, $"{stem}_deviation.png");
 string overlayPath = Path.Combine(outDir, $"{stem}_overlay.png");
@@ -150,7 +235,12 @@ if (doBlobs)
     var gt = groundTruth
         ? new GroundTruthInputs(gtArea, landmarksPath, npcsPath, baselinePath, gtTol, texW, texH)
         : null;
-    BlobStage.Run(shot, dev, lowNcc, useBorderMask, closeRadius, blobOpts, gt, outDir, stem);
+    BlobTypingInputs? typing = typeIconsDir.Length > 0
+        ? new BlobTypingInputs(typeIconsDir, typeRenderSize, iconSizeOverrides, typeFloor,
+            Path.Combine(outDir, $"{stem}_typed_detections.csv"))
+        : null;
+    GrayImage? shotGray = typing is not null ? ImageIo.LoadGray(screenshotPath) : null;
+    BlobStage.Run(shot, dev, lowNcc, useBorderMask, closeRadius, blobOpts, gt, outDir, stem, typing, shotGray, deviationRim);
 }
 return 0;
 
@@ -297,7 +387,15 @@ static class Gray
 // Per-pixel local NCC via integral images (O(WH), independent of window size).
 static class LocalNcc
 {
-    public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc)
+    // a = screenshot, b = aligned texture. addedOnly: only flag deviation where the
+    // SCREENSHOT carries the structure (va high) — i.e. content ADDED on the
+    // screenshot side (icons, labels). Regions where the texture is detailed but the
+    // screenshot has flattened it (fog-of-war — e.g. Kur's two unexplored patches,
+    // a mottled overlay that the blob shape-filter's "fog" class misses) are
+    // "obscured", not added, and hold no detectable icon, so they're treated as a
+    // match. Distinguishes added-content from obscured-content by which side the
+    // detail is on — the correct fog discriminator (shape isn't).
+    public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc, bool addedOnly = false)
     {
         int r = win / 2;
         double[] ia = Integral(a, w, h);
@@ -328,8 +426,17 @@ static class LocalNcc
 
                 double ncc;
                 if (va < flatVar && vb < flatVar) ncc = 1.0;               // both featureless -> terrain match
-                else if (va < flatVar || vb < flatVar) ncc = 0.0;          // structure on one side only -> added content
-                else ncc = cov / Math.Sqrt(va * vb + eps);
+                else if (va < flatVar) ncc = addedOnly ? 1.0 : 0.0;        // screenshot smooth, texture detailed -> OBSCURED (fog/grey blob): match if addedOnly
+                else if (vb < flatVar) ncc = 0.0;                          // screenshot detailed, texture smooth -> ADDED (icon-like)
+                else
+                {
+                    ncc = cov / Math.Sqrt(va * vb + eps);
+                    // both sides textured but uncorrelated: an added icon raises the
+                    // screenshot variance above the terrain it covers (va > vb); an
+                    // obscured patch does the opposite. In addedOnly, only count the
+                    // former as deviation.
+                    if (addedOnly && ncc < 0.5 && va <= vb) ncc = 1.0;
+                }
 
                 ncc = Math.Clamp(ncc, -1, 1);
                 nccSum += ncc;

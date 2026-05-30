@@ -10,6 +10,24 @@
       "referenceCount": 8,
       "residualPixels": 0.3030622255943075,
       "source": "BundledBaseline"
+    },
+    "AreaEltibule": {
+      "scale": 0.7632337115580504,
+      "rotationRadians": 3.141276165642632,
+      "originX": 2146.21356708398,
+      "originY": -202.47314358570964,
+      "referenceCount": 5,
+      "residualPixels": 0.650247611982931,
+      "source": "BundledBaseline"
+    },
+    "AreaKurMountains": {
+      "scale": 0.5686213259799479,
+      "rotationRadians": -3.141467542457235,
+      "originX": 2188.818672930765,
+      "originY": -141.52793011390565,
+      "referenceCount": 8,
+      "residualPixels": 0.7317759321517253,
+      "source": "BundledBaseline"
     }
   }
 }
