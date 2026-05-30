@@ -36,14 +36,18 @@ public class InsetMetricsTests
     [Fact]
     public void Detects_a_uniform_border_inset()
     {
-        // Same world span, but the texture is 10% larger on each side than the
-        // projected bbox → the solved scale is smaller than texture/span, and
-        // the inset fraction is ~0.1 per edge in the larger dimension.
+        // Same world span (projected bbox 1000x800), but the texture is larger
+        // than the bbox by a uniform border → the solved scale is smaller than
+        // texture/span, and the inset fraction is the same on every edge: a
+        // 100px margin on X (texW 1200 = 1000 + 100 each side) and an 80px
+        // margin on Y (texH 960 = 800 + 80 each side).
         const double s = 2.0;
         const int texW = 1200, texH = 960;     // 1000x800 content + 100px X / 80px Y margin each side
-        // Y-flip again: a uniform Y margin of (960−800)/2 = 80px means world Z=0
-        // projects to pY = 880 (bottom inset 80) and Z=400 to pY = 80 (top inset 80).
-        var cal = new AreaCalibration(s, 0.0, 100.0, 880.0, 4, 0.0); // origin offset = the inset
+        // WorldToWindow flips Y (pY = oy − s·Z): the 80px Y margin means world
+        // Z=0 projects to pY = 880 (bottom inset 80) and Z=400 to pY = 80 (top
+        // inset 80). originX 100 is the left inset; originY 880 is the Y-flip
+        // anchor that places the bbox at the uniform 80px Y margin.
+        var cal = new AreaCalibration(s, 0.0, 100.0, 880.0, 4, 0.0);
         var world = new[]
         {
             new WorldCoord(0,   0, 0),
