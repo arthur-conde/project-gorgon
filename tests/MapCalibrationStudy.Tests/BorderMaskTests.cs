@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Mithril.Tools.MapCalibration.Common;
+using Mithril.MapCalibration.Detection;
 using Xunit;
 
 namespace Mithril.Tools.MapCalibrationStudy.Tests;
