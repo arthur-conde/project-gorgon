@@ -93,6 +93,32 @@ BgraImage shot = new BgraImage(shotW, shotH, shotBgra);
 BgraImage tex = new BgraImage(texW, texH, texBgra);
 Console.WriteLine($"screenshot {shot.Width}x{shot.Height}  texture {tex.Width}x{tex.Height}");
 
+// --- rim-from-texture experiment: run BorderMask on screenshot vs texture and
+//     compare interior bleed / masked fraction. Answers "can the rim be detected
+//     from the icon-free texture alone, and is it cleaner than the screenshot?" ---
+if (Cli.Has(args, "--rim-debug"))
+{
+    void DumpRim(byte[] bgra, int rw, int rh, string label, string file)
+    {
+        var mask = BorderMask.Compute(bgra, rw, rh, 4);
+        int masked = 0;
+        var viz = (byte[])bgra.Clone();
+        for (int p = 0; p < rw * rh; p++)
+        {
+            if (!mask[p]) continue;
+            masked++;
+            int o = p * 4;
+            viz[o] = (byte)(viz[o] / 2); viz[o + 1] = (byte)(viz[o + 1] / 2);
+            viz[o + 2] = (byte)(128 + viz[o + 2] / 2); viz[o + 3] = 255;
+        }
+        var path = Path.Combine(outDir, file);
+        ImageIo.SaveBgraPng(viz, rw, rh, path);
+        Console.WriteLine($"[rim-debug] {label}: masked {masked}/{rw * rh} ({(double)masked / (rw * rh):P1}) -> {path}");
+    }
+    DumpRim(shot.Pixels, shot.Width, shot.Height, "screenshot", $"{stem}_rim_screenshot.png");
+    DumpRim(tex.Pixels, tex.Width, tex.Height, "texture", $"{stem}_rim_texture.png");
+}
+
 // --- INPUT SANITY (the lesson from the DPI bug: verify pixels before trusting metrics) ---
 double shotMean = Gray.MeanLuma(shot);
 Console.WriteLine($"screenshot mean luma = {shotMean:F1} (near-0 => likely a load/DPI problem)");

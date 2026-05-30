@@ -108,6 +108,15 @@ Without the mask the rocky rim contributes ~7 extra blobs that **type as icons**
 
 Both mis-register without types. The ref field is dense (38 / 32 refs, many clustered in the town square), so anonymous dots admit plenty of wrong-but-geometrically-consistent 4-inlier fits; the type constraint collapses the assignment space (an npc blob pairs only with the 17 npc refs, a medipillar only with 6), killing the coincidental cross-type matches. **Engine carry-over: the detection stage must *type* the blobs (template NCC within candidates), not merely locate them — typing is the bridge from "where the icons are" to "which icon each is."**
 
+**Can the rim be detected from the texture alone?** The CDN texture is the better *input* in principle — icon-free, fog-free, UI-free, and a static cacheable per-area asset. But the bottleneck isn't the source image, it's the *algorithm*: running the current `BorderMask` (edge-connected non-veg/water flood) on the texture instead of the screenshot (`--rim-debug`) fails on both areas, each differently:
+
+| area | screenshot masked | texture masked | texture failure mode |
+|---|---|---|---|
+| Eltibule | 67.6% | 67.6% (identical) | brown interior is edge-connected non-veg → floods the same; no improvement |
+| KurMountains | 54.5% | 28.6% (the *wrong* 28.6%) | navy out-of-bounds reads as "water" → left unmasked; flood enters the east edge and masks the **interior snow terrain** where the icons live |
+
+The flood-fill conflates "rim rock" with "any interior non-vegetated terrain" (brown dirt on Eltibule, snow on Kur), so it's the wrong tool regardless of source. **But the texture *enables* a better classifier the screenshot can't:** the real target is the *playable-area boundary*, and on the clean art that's explicit — Kur's texture has a crisp uniform **navy out-of-bounds** region (region-grow from it to get the exact boundary), and Eltibule's rim rock has a consistent canonical colour/texture signature (target it directly instead of "non-green-non-blue"). So: yes, detect it from the texture — once per area, cached — but with a boundary/rim-signature classifier, not the generic flood. The `--rim-debug` viz is kept for that work.
+
 ## Texture-deviation probe — **promising; likely the sparse-area detection front-end**
 
 Idea: the icon-free CDN base texture (`Map_Area<X>.v4.png`) and the in-game map screenshot are the same artwork; align them by extent (via the map-rect) and compute a **sliding-window local NCC**. Local NCC is invariant to per-window linear brightness/contrast, so terrain matches through PG's restyle/tint and the rocky border largely cancels; an icon disrupts the local match → low NCC → "added content" candidate. Prototyped as a visualization in [`tools/MapTextureDeviationProbe`](../tools/MapTextureDeviationProbe) (throwaway).
