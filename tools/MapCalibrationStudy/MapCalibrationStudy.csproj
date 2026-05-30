@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Mithril.Tools.MapCalibrationStudy</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Throwaway gate-study tool (mithril#897), deleted once the verdict lands.
+         Same isolation pattern as tools/MapCalibrationFromScreenshot: out of
+         central PM + Directory.Build.targets to avoid the versionless analyzer /
+         GitVersioning clash. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
+    <!-- System.Drawing image IO + registry reads — Windows-only. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AssetsTools.NET" Version="3.0.4" />
+    <PackageReference Include="AssetsTools.NET.Texture" Version="3.0.2" />
+    <PackageReference Include="System.Drawing.Common" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <ProjectReference Include="..\Mithril.MapCalibration.Tools.Common\Mithril.MapCalibration.Tools.Common.csproj" />
+  </ItemGroup>
+</Project>

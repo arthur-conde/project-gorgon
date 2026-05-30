@@ -98,6 +98,18 @@ public static class MapTextureExtractor
         return outPng;
     }
 
+    /// <summary>
+    /// Returns the cached <c>Map_&lt;Area&gt;.v{N}.png</c> in <paramref name="mapDir"/>
+    /// if it exists, without requiring a PG install / bundle decode. Used by the
+    /// gate-study tool, which runs against pre-extracted textures. Returns null if
+    /// no cached PNG is present.
+    /// </summary>
+    public static string? EnsureExtractedOrCached(string mapDir, string area)
+    {
+        var outPng = Path.Combine(mapDir, $"Map_{area}.v{CacheFormatVersion}.png");
+        return File.Exists(outPng) ? outPng : null;
+    }
+
     private static string FindBundleForArea(string bundleDir, string area)
     {
         // Bundle name convention (lowercase): maps_assets_assets_art_maps_map_<area>.png_<hash>.bundle
