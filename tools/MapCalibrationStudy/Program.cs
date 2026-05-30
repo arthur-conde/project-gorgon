@@ -35,6 +35,16 @@ internal static class Program
               MapCalibrationStudy bootstrap --screenshots <dir> --textures <dir> --icons <dir>
                                             --landmarks <landmarks.json> --npcs <npcs.json>
                                             --areas <A,B,C> --out <dir>
+                                            [--map-rect full | "left,top,width,height"]
+
+            --map-rect (bootstrap only): skip NCC auto-locate of the map within the
+              screenshot. The in-game map's restyling/fog/UI-frame can defeat the
+              whole-texture NCC; this override is the documented fallback.
+                full                 the screenshot IS the full-extent map texture
+                                     (crop the gray UI frame off first).
+                "left,top,width,height"  the map's pixel box within the screenshot.
+              Applies to every area in the run, so use one area at a time when the
+              box differs, or crop all screenshots and use `full`.
             """);
         return 1;
     }
@@ -92,16 +102,23 @@ internal static class Program
     {
         var areas = o["--areas"].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         var icons = IconTemplateExtractor.Load(o["--icons"]);
+        o.TryGetValue("--map-rect", out var mapRectOpt);
         var rows = new List<StudyRecord>();
 
         foreach (var area in areas)
         {
+            // One area's failure (missing input, map-rect miss, etc.) skips that
+            // area and continues the run — a single bad screenshot must not abort
+            // the whole study. Only UserFacingException is treated as a skip;
+            // genuine bugs still propagate.
+            try
+            {
             var shotPath = Path.Combine(o["--screenshots"], area + ".png");
             if (!File.Exists(shotPath)) { Console.WriteLine($"[skip] no screenshot for {area}"); continue; }
             if (!TryTextureSize(o["--textures"], area, out var tw, out var th)) { Console.WriteLine($"[skip] no texture for {area}"); continue; }
 
             var world = LoadWorldPoints(o["--landmarks"], o["--npcs"], area).Select(l => l.World).ToList();
-            var detected = DetectIcons(shotPath, o["--textures"], area, o["--icons"], icons);
+            var detected = DetectIcons(shotPath, o["--textures"], area, o["--icons"], icons, mapRectOpt);
             if (detected.Count < 3) { Console.WriteLine($"[skip] <3 icons detected in {area}"); continue; }
 
             var result = ColdBootstrap.Run(world, detected, tw, th, axisThresholdPx: 8.0);
@@ -121,6 +138,11 @@ internal static class Program
                 // H2 is real here: affine fit over the same kept-inlier detected
                 // pixels vs. that orientation's similarity residual (apples-to-apples).
                 result.RefinedResidualPx, result.AffineResidualPx, result.CorrespondedCount, paired));
+            }
+            catch (UserFacingException ex)
+            {
+                Console.WriteLine($"[skip] {area}: {ex.Message}");
+            }
         }
 
         Emit(o["--out"], "bootstrap", rows);
@@ -130,14 +152,14 @@ internal static class Program
     // ---- detection (texture-frame icon pixels) -----------------------------
 
     private static List<PixelPoint> DetectIcons(
-        string screenshotPath, string texturesDir, string area, string iconsDir, IconIndex icons)
+        string screenshotPath, string texturesDir, string area, string iconsDir, IconIndex icons,
+        string? mapRectOpt)
     {
         var screen = ImageIo.LoadGray(screenshotPath);
         var texturePath = MapTextureExtractor.EnsureExtractedOrCached(texturesDir, area)
             ?? throw new UserFacingException($"no cached texture PNG for {area} in {texturesDir}");
         var texture = ImageIo.LoadGray(texturePath);
-        var rect = MapRectLocator.AutoDetect(screen, texture, minScore: 0.30)
-            ?? throw new UserFacingException($"could not locate the map rect in {Path.GetFileName(screenshotPath)} — is it zoomed fully out?");
+        var rect = ResolveMapRect(mapRectOpt, screen, texture, screenshotPath);
 
         var pixels = new List<PixelPoint>();
         foreach (var meta in icons.Icons)
@@ -155,6 +177,44 @@ internal static class Program
             }
         }
         return pixels;
+    }
+
+    /// <summary>
+    /// Resolves the screenshot→texture map rect. Default: NCC auto-locate of the
+    /// full texture within the screenshot. The in-game map's restyling / fog /
+    /// UI-frame can defeat that whole-texture correlation, so two overrides exist
+    /// (the documented MapRectLocator fallback): <c>--map-rect full</c> treats the
+    /// (frame-cropped) screenshot AS the full-extent texture; <c>--map-rect
+    /// "l,t,w,h"</c> gives the map's pixel box within the screenshot explicitly.
+    /// </summary>
+    private static MapRect ResolveMapRect(string? opt, GrayImage screen, GrayImage texture, string screenshotPath)
+    {
+        if (opt is null)
+        {
+            return MapRectLocator.AutoDetect(screen, texture, minScore: 0.30)
+                ?? throw new UserFacingException(
+                    $"could not locate the map rect in {Path.GetFileName(screenshotPath)} — the in-game map's "
+                    + "restyling/fog can defeat whole-texture NCC even on a fully-zoomed-out shot. "
+                    + "Crop the gray UI frame off and pass --map-rect full, or pass --map-rect \"left,top,width,height\".");
+        }
+
+        if (string.Equals(opt, "full", StringComparison.OrdinalIgnoreCase))
+        {
+            return new MapRect(0, 0, screen.Width, screen.Height, texture.Width, texture.Height);
+        }
+
+        var parts = opt.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length != 4
+            || !int.TryParse(parts[0], out var l) || !int.TryParse(parts[1], out var t)
+            || !int.TryParse(parts[2], out var w) || !int.TryParse(parts[3], out var h)
+            || w <= 0 || h <= 0
+            || l < 0 || t < 0 || l + w > screen.Width || t + h > screen.Height)
+        {
+            throw new UserFacingException(
+                $"--map-rect must be \"left,top,width,height\" (non-negative ints, positive w/h, inside the "
+                + $"{screen.Width}x{screen.Height} screenshot) or \"full\"; got \"{opt}\"");
+        }
+        return new MapRect(l, t, w, h, texture.Width, texture.Height);
     }
 
     // ---- helpers -----------------------------------------------------------
