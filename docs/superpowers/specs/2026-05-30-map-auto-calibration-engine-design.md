@@ -1,7 +1,7 @@
 # Map Auto-Calibration Engine — Hands-Free Live Self-Calibration — Design
 
 **Date:** 2026-05-30
-**Status:** Draft (architecture converged; feasibility of the detection stage pending — see Open Risks)
+**Status:** Draft (architecture converged; detection-stage feasibility **demonstrated** through the shape-filter stage — [PR #911](https://github.com/moumantai-gg/mithril/pull/911), merged; remaining work is engine integration, see §8)
 **Tracked in:** to be filed as a GitHub issue once the gate verdict (PR #909) merges; this spec is the brainstorming artifact the issue body will fold in.
 **Gated by:** [mithril#897](https://github.com/moumantai-gg/mithril/issues/897) gate study — verdict **PROCEED** ([docs/map-calibration-gate-verdict.md](../../map-calibration-gate-verdict.md), PR #909). This engine is the "live self-cal" consumer that the gate study anticipated.
 
@@ -27,7 +27,7 @@ The gate study established the load-bearing facts:
 - **H4:** cold, zero-prior calibration is demonstrated on a landmark-dense area (Serbule: 0.93 px, 23 RANSAC inliers) with the proven `tools/MapCalibrationFromScreenshot` (RANSAC + type-aware assignment).
 - The base CDN texture and the in-game map are the **same artwork** (local-NCC 0.86), which both powers the texture-deviation detector and means the map is **findable inside a looser capture** by texture registration.
 
-The remaining gap is detection robustness on **sparse** zones, which is the one open risk below.
+The remaining gap was detection robustness on **sparse** zones — now closed: the texture-deviation → shape-filter front-end produces 14 clean icon candidates on Eltibule (vs ~3 stable RANSAC inliers from raw template NCC), demonstrated and merged ([PR #911](https://github.com/moumantai-gg/mithril/pull/911), §8). What remains is engineering integration, not a feasibility question.
 
 ## 4. Pipeline (end to end)
 
@@ -49,7 +49,7 @@ Each is independently testable; the only one whose internals are unsettled is th
 | `IMapCaptureRegionProvider` | Produce the desktop pixel rect to capture from the persisted overlay framing. | Framing persisted directly (PG restores its map window to the same place each session — see §7); validated at capture time. |
 | `IScreenCapture` | Capture a desktop rect to a bitmap. | `BitBlt`/`Graphics.CopyFromScreen` for windowed PG (see §6 for the under-overlay handling). `Windows.Graphics.Capture` is the per-window upgrade path. |
 | `IMapRegionRefiner` | Locate the map's true sub-rect inside the captured frame. | Texture-registration (multi-scale NCC vs the base texture). |
-| `ICalibrationDetector` | Captured map → icon candidates (typed where possible). | **Open** (§8): texture-deviation → shape-filter. Fallback: template NCC. |
+| `ICalibrationDetector` | Captured map → icon candidates (typed where possible). | **Demonstrated** (§8, PR #911): texture-deviation → shape-filter → template NCC within candidates. Fallback: whole-image template NCC. |
 | (existing) RANSAC + `LandmarkCalibrationSolver` | Candidates + references → `AreaCalibration`. | Reuse `tools/MapCalibrationFromScreenshot`'s correspondence machinery, lifted into a shared service. |
 | `ICalibrationConfidenceGate` | Accept/reject a solve. | Residual ≤ existing good-residual threshold (≈12 px) AND inlier floor. |
 | (existing) `IMapCalibrationService` / user-refinement store | Persist `AreaCalibration`. | Reuse; add `CalibrationSource.AutoCapture`. |
@@ -72,17 +72,31 @@ The overlay framing is the capture region, and it is **durable for free**: PG's 
 - **Storage:** persist the overlay framing rect (desktop coords are fine, since PG restores the map window to the same place). Re-derive/validate at capture time.
 - **The only thing that invalidates a stored framing is the user moving or resizing PG's map window** (or, equivalently, an in-game resolution / UI-scale change). When that happens the captured rect no longer lands on the map, §4's registration fails to lock, and the §9 confidence gate rejects the solve — so it degrades to "couldn't auto-calibrate, re-frame the overlay," never a silent bad calibration. Re-framing is a rare, user-initiated event, so this is a non-issue in practice.
 
-## 8. Detection stage (the open risk, isolated behind an interface)
+## 8. Detection stage (sparse-zone risk retired; isolated behind an interface)
 
-`ICalibrationDetector` is the one component whose internals are unproven on **sparse** zones. The v1 target, from the gate study's remaining-work item 1:
+`ICalibrationDetector` is the one component whose internals were unproven on **sparse** zones at draft time. That risk is now **retired** — the front-end is demonstrated end-to-end through the shape-filter stage (gate-study remaining-work item 1, shipped on the throwaway probe via [PR #911](https://github.com/moumantai-gg/mithril/pull/911)):
 
 1. **Texture-deviation local-NCC** (`tools/MapTextureDeviationProbe`): align base texture to the captured map, sliding-window local NCC; terrain + border cancel (Serbule low-NCC 2.8%, Eltibule 13%), added content (icons + structures + fog) survives as low-NCC blobs.
-2. **Shape/size filter** (in progress, the spawned task — `--blobs`): connected-components the deviation map; classify each blob icon / fog / structure by area + solidity + aspect + peak-deviation; keep icon-sized compact high-deviation blobs.
-3. **Template NCC within candidates only** — type-aware, slashing the search space and false positives on sparse interiors.
+2. **Shape/size filter** (`--blobs`, PR #911): threshold → optional `--border-mask` (PR #908) → morphological close → 8-connected components → classify each blob **icon / fog / structure** by area + solidity + aspect + peak-deviation. **Size is the primary separator**: icons are compact and icon-sized; fog is large + smooth (low peak deviation); structures are large + high-deviation.
+3. **Template NCC within candidates only** — type-aware, slashing the search space and false positives on sparse interiors. *(This last step is the one piece **not** yet wired — it belongs in the engine, not the throwaway probe; see Open work below.)*
 
-**Fallback** if the deviation front-end underperforms on a zone: direct template NCC over the whole map-rect (the proven path; robust on dense areas, weak on sparse), plus `--border-mask` (PR #908). The interface lets the engine ship on dense areas while the sparse-area detector matures.
+**Demonstrated results (PR #911):**
 
-**Load-bearing dependency:** whether step 2/3 yields enough clean inliers for stable RANSAC on Eltibule/Kur (today ~3) is what the spawned shape-filter task is measuring. The spec's feasibility claim for sparse zones is pending that result.
+| area | icon candidates | recall (separable refs) | notes |
+|---|---|---|---|
+| Serbule (dense) | 21 | 94% (17/18) | 28/46 refs project onto the central keep → one unseparable structure blob |
+| **Eltibule (sparse)** | **14** | eyeballed | **vs ~3 stable RANSAC inliers from raw template NCC today**; `--border-mask` clears 96% of the rocky rim |
+| Kur (snow) | 24 | eyeballed | snow deviates more; border-mask only 71% effective, but candidate count is ample |
+
+**Eltibule is the headline:** the sparse zone that yielded ~3 inliers from raw template NCC produces **14 clean icon candidates** through deviation + shape-filter — enough for a stable solve. This validates *texture-deviation → shape-filter → template-NCC-within-candidates* as the engine's detection front-end and is why the sparse-zone feasibility claim now holds rather than being pending.
+
+**Known limits (carried into the engine):**
+- **Recall is scored only on Serbule** (the one area with a committed baseline to project refs from); Eltibule/Kur candidate counts are eyeballed against the overlay, not ground-truth-scored. The engine should add per-area scoring as more texture-frame baselines land.
+- **Co-located icons that render as one visual mass are a fundamental limit** (Serbule's central keep: 28/46 refs inside one building footprint = one blob). No detector separates them; the RANSAC solve must (and does) succeed on the separable minority.
+
+**Fallback** for any zone where the deviation front-end underperforms: direct template NCC over the whole map-rect (the proven path; robust on dense areas, weak on sparse), plus `--border-mask`. The interface keeps both paths available.
+
+**Open work (engine, not the probe):** wire the surviving candidate regions into `NccTemplateMatch` so template matching runs *only inside* candidates, then into the type-aware RANSAC solve — the one integration the throwaway probe deliberately left out.
 
 ## 9. Self-validation gate
 
@@ -123,13 +137,13 @@ Screen capture reads the **OS framebuffer** (`BitBlt` / `Windows.Graphics.Captur
 
 ## 14. Dependencies & sequencing
 
-1. **PR #909** (gate verdict) merges — this spec cites it.
-2. **Spawned shape-filter task** reports — settles §8 detection feasibility on sparse zones. If it succeeds, the deviation front-end is the v1 detector; if not, v1 ships dense-area-only behind the interface with sparse-area detection as fast-follow.
-3. File the **engine GitHub issue** (folding in this spec) and write the implementation plan.
+1. ✅ **PR #909** (gate verdict) — merged; this spec cites it.
+2. ✅ **Shape-filter stage** ([PR #911](https://github.com/moumantai-gg/mithril/pull/911)) — merged; §8 detection feasibility on sparse zones settled (Eltibule 14 candidates). The texture-deviation front-end is the v1 detector.
+3. File the **engine GitHub issue** (folding in this spec) and write the implementation plan. The first implementation step is the §8 "open work" — wire candidate regions into `NccTemplateMatch` + the RANSAC solve.
 
 ## 15. Open risks
 
-- **Sparse-area detection** (§8) — the one unproven link; isolated behind `ICalibrationDetector` so the rest can proceed.
+- ~~**Sparse-area detection**~~ — **retired** (PR #911): the shape-filter front-end gives 14 icon candidates on Eltibule. Residual: candidate recall is ground-truth-scored only on Serbule; other areas are eyeballed until more texture-frame baselines land (§8).
 - **Capture-under-overlay flicker** (§6) — hide-for-one-frame may be visible; WGC is the mitigation.
 - **User moves/resizes PG's map window** (or changes in-game resolution / UI-scale) invalidates the stored framing — caught by the confidence gate (low-confidence → no persist → prompt to re-frame). Rare, user-initiated; see §7.
 - **Detection + zoom accuracy** — the real accuracy ceiling; "approximate location" UX, not pixel-perfect. (The renderer itself is exact; the disproven ±10% "non-affine warp" is **not** a factor — see §2.)
