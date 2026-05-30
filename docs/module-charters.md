@@ -725,11 +725,13 @@ channel rule, and this strategic principle):
   (shared infra, currently unbuilt; Radagast is its first publishing consumer)
   must also land before community-pin publishing works — Gwaihir adds a second
   publishing consumer. The community payload must be **PG-server/shard-keyed**.
-  The ±10% non-affine ceiling (`legolas_calibration_findings`,
-  [PR #449](https://github.com/moumantai-gg/mithril/pull/449)) propagates to
-  every map-rendered pin: "approximate location" UX is fine; pixel-perfect
-  rendezvous is not, and `Mithril.MapCalibration` should expose the residual
-  estimate so Gwaihir's UX degrades honestly.
+  The per-pin accuracy ceiling (`legolas_calibration_findings`,
+  [PR #449](https://github.com/moumantai-gg/mithril/pull/449)) is **detection
+  precision + zoom handling**, not any renderer warp (the old "±10% non-affine"
+  band was disproven — it was an operational Survey-pipeline artifact, and the
+  renderer is a clean isotropic similarity). "approximate location" UX is still
+  the honest default for community/derived pins, and `Mithril.MapCalibration`
+  should expose the residual estimate so Gwaihir's UX degrades honestly.
 
 ---
 
@@ -783,7 +785,8 @@ libraries; the charter follows the code:
   (Legolas's existing anchor catalogue moves here) → potentially community-sync
   down the road (parallel to existing calibration keys). Surfaces the residual
   estimate so consumers can degrade UX honestly ("approximate location" chip)
-  per the ±10% non-affine ceiling
+  per the real accuracy ceiling — detection precision + zoom handling, not a
+  renderer warp (the "±10% non-affine" band was disproven)
   (`legolas_calibration_findings`,
   [PR #449](https://github.com/moumantai-gg/mithril/pull/449)). Owned by
   *no module* — Legolas, Silmarillion (#830 §3c), Gwaihir (#830 §3a/§3b), and
