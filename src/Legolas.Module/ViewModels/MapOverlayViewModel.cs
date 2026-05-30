@@ -8,6 +8,7 @@ using Arda.World.Player;
 using Arda.World.Player.Events;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.Logging;
 using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Rendering;
@@ -38,6 +39,16 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     // MapOverlayView. Optional — null in tests using the simpler ctor.
     private readonly IWorldOverlayMarkers? _markers;
     private readonly IAreaState? _areaState;
+    private readonly Microsoft.Extensions.Logging.ILogger? _logger;
+
+    // #835 step 6 review iteration-1 B2: per-area first-time-trace dedup
+    // for the silent early-returns in RefreshCalibrationMarker. Mirrors
+    // OverlayWindowService._projectionMissAreasLogged pattern. TryAdd is
+    // lock-free, so the per-marker cost stays a hashed lookup. The trace
+    // surfaces the reason (no area / not pairing / no service / no cal /
+    // pixel-not-projectable) so silent fallbacks are observable.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte>
+        _calibrationFallbackAreasLogged = new(StringComparer.Ordinal);
 
     // Survey → marker handle map. Keyed on the VM (stable per pin) so a
     // Survey.Model 'with' replace doesn't churn the dictionary. Reads + writes
@@ -51,7 +62,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes)
         : this(session, projector, optimizer, surveyFlow, brushes, settings: null) { }
 
-    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null)
+    public MapOverlayViewModel(SessionState session, ICoordinateProjector projector, IRouteOptimizer optimizer, SurveyFlowController surveyFlow, LegolasBrushes brushes, LegolasSettings? settings, PinCalibrationCoordinator? pinCalibration = null, IPositionState? positionState = null, IDomainEventSubscriber? bus = null, IAreaCalibrationService? areaCalibration = null, MotherlodeMeasurementCoordinator? motherlode = null, ICharacterPinAnchor? characterPin = null, IWorldOverlayMarkers? markers = null, IAreaState? areaState = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
     {
         _session = session;
         _projector = projector;
@@ -66,6 +77,7 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
         _characterPin = characterPin;
         _markers = markers;
         _areaState = areaState;
+        _logger = loggerFactory?.CreateLogger("Legolas.MapOverlay");
         if (_motherlode is not null)
             _motherlode.Changed += () => PostToUi(NotifyMotherlodeGuidanceChanged);
         if (_areaCalibration is not null)
@@ -868,19 +880,15 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// has no absolute world coord / area key (legacy relative pins).</summary>
     private void RegisterSurveyMarker(SurveyItemViewModel s)
     {
-        if (_markers is null) return;
+        // #835 step 6: Survey pins are drawn by LegolasOverlaySceneDrawer
+        // (the freeform scene-hook callback) reading SessionState.Surveys +
+        // SelectedSurvey directly off the VM, not via the marker registry.
+        // The remove-then-no-op shape preserves the surrounding callback
+        // wiring (OnSurveysCollectionChanged, RefreshSurveyMarker, etc.)
+        // for step 7's deletion pass; today no registry side-effects fire
+        // for survey markers. The `_surveyMarkers` dictionary stays empty,
+        // and UnregisterSurveyMarker is a no-op against an empty map.
         UnregisterSurveyMarker(s);
-
-        // Skip pins that should not render: collected/skipped, no world coord,
-        // no current area. The legacy PinSceneRenderer path applies the same
-        // visibility filter via SurveyItemViewModel.IsVisible.
-        if (!s.IsVisible) return;
-        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey) return;
-        if (s.Model.World is not { } world) return;
-
-        var style = BuildSurveyMarkerStyle(s);
-        var handle = _markers.AddMarker(areaKey, world.X, world.Z, style);
-        _surveyMarkers[s] = handle;
     }
 
     /// <summary>Drop the marker for a single Survey if registered.</summary>
@@ -1031,58 +1039,14 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
     /// getter.</summary>
     private void RefreshMotherlodeMarkers()
     {
-        if (_markers is null) return;
+        // #835 step 6: Motherlode pins + guidance ring are drawn by
+        // LegolasOverlaySceneDrawer (the freeform scene-hook callback)
+        // reading MotherlodeMarkerPixels + MotherlodeGuidanceOverlay
+        // directly off the VM, not via the marker registry. The remove
+        // call below drains any handles a previous build may have leaked
+        // (defensive for hot-reload scenarios); the rest of this method's
+        // build path no longer fires.
         UnregisterAllMotherlodeMarkers();
-
-        if (_session.Mode != SessionMode.Motherlode) return;
-        if (_motherlode is null) return;
-        if (_areaCalibration?.CurrentCalibration is not { } cal) return;
-        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey) return;
-
-        var snap = _motherlode.Snapshot();
-
-        // Motherlode style mirrors the Survey style triple (PinSceneRenderer
-        // re-uses the Survey theme for Motherlode per the #113 Layer 5
-        // commentary in PinSceneRenderer). PinDiameter doubles as the
-        // Motherlode pin diameter today.
-        var pinStyle = PinStyle;
-        var outerStyle = new PinLayerStyle(
-            Shape: pinStyle.Outer.Shape,
-            FillColor: ParseColor(pinStyle.Outer.FillColor),
-            StrokeColor: ParseColor(pinStyle.Outer.StrokeColor),
-            StrokeStyle: pinStyle.Outer.StrokeStyle,
-            StrokeThickness: pinStyle.Outer.StrokeThickness,
-            Size: 0);
-        var centerStyle = new PinLayerStyle(
-            Shape: pinStyle.Center.Shape,
-            FillColor: ParseColor(pinStyle.Center.FillColor),
-            StrokeColor: ParseColor(pinStyle.Center.StrokeColor),
-            StrokeStyle: pinStyle.Center.StrokeStyle,
-            StrokeThickness: pinStyle.Center.StrokeThickness,
-            Size: pinStyle.Center.Size);
-        var motherlodeStyle = new LegolasMotherlodeMarkerStyle(outerStyle, centerStyle, PinDiameter);
-
-        foreach (var s in snap.Surveys)
-        {
-            if (s.Collected || s.SolvedWorld is not { } w) continue;
-            _motherlodeMarkers.Add(_markers.AddMarker(areaKey, w.X, w.Z, motherlodeStyle));
-        }
-
-        // Guidance ring (#506). Pixel radius depends on calibration scale +
-        // zoom, so re-register on calibration/zoom Changed (already wired
-        // to call this method). Color matches the legacy
-        // MotherlodeGuidanceOverlay branch.
-        if (snap.NextSpot is { } next)
-        {
-            var zoom = _session.CurrentMapZoom;
-            var zoomFactor = zoom > 1e-6 && cal.CalibrationZoom > 1e-6
-                ? zoom / cal.CalibrationZoom
-                : 1.0;
-            var radiusPx = next.ToleranceRadiusMetres * cal.Scale * zoomFactor;
-            var guidanceStyle = new LegolasMotherlodeGuidanceMarkerStyle(radiusPx, _brushes.RouteLine.Color);
-            _motherlodeMarkers.Add(_markers.AddMarker(
-                areaKey, next.SuggestedWorld.X, next.SuggestedWorld.Z, guidanceStyle));
-        }
     }
 
     private void UnregisterAllMotherlodeMarkers()
@@ -1117,33 +1081,63 @@ public sealed partial class MapOverlayViewModel : ObservableObject, IDisposable
             _markers.RemoveMarker(prev);
         }
 
-        // TODO(#835 step 6 follow-up — review observations O1+O2): when this
-        // path goes live (the new OverlayWindow is shown), emit Trace logs
-        // at each silent early-return below and bump a
-        // MithrilMeters.Overlay.CalibrationFallback counter so the user can
-        // see when the legacy WPF ItemsControl path is carrying calibration
-        // rendering. Adding ILogger to MapOverlayViewModel is a real lift
-        // (it doesn't have one today) so the instrumentation is deferred
-        // until the pipeline is no longer dormant.
-        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey) return;
-        // Only register while the Pair phase is live — Drop captures right-
-        // clicks to the game, the marker rendering is meaningless then. The
-        // legacy ItemsControl mirrors this with its IsCalibrationCapturing
-        // Visibility binding.
-        if (_pinCal?.IsPairing != true) return;
-
-        // Convert click pixel -> world via the calibration service. Uses the
-        // baseline / community / pre-confirm refinement to anchor the world
-        // coord; subsequent calibration changes re-project the marker (this
-        // is more correct than today's pixel-frozen rendering).
-        if (_areaCalibration is null) return;
-        var cal = _areaCalibration.CurrentCalibration;
-        if (cal is null) return;
-        if (cal.WindowToWorld(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal)) is not { } world)
+        // Per-area first-time Trace log on each silent early-return, so
+        // a stuck "no calibration markers visible" symptom is observable
+        // (review iteration-1 B2). Uses the same per-area dedup pattern
+        // as OverlayWindowService._projectionMissAreasLogged so a busy
+        // area doesn't flood the trace.
+        if (_areaState?.CurrentArea is not { Length: > 0 } areaKey)
+        {
+            LogCalibrationFallback("(no-area)", "Area state has no current area key.");
             return;
+        }
+        // Only register while the Pair phase is live — Drop captures right-
+        // clicks to the game, the marker rendering is meaningless then.
+        if (_pinCal?.IsPairing != true)
+        {
+            // Phase flips are user-driven (Drop ⇄ Pair); chatty if logged
+            // per marker. Skip the trace for this branch — it's the
+            // expected steady state outside the wizard, not a fallback.
+            return;
+        }
+
+        // Convert click pixel -> world via the calibration service.
+        if (_areaCalibration is null)
+        {
+            LogCalibrationFallback(areaKey, "No IAreaCalibrationService injected — marker cannot anchor.");
+            return;
+        }
+        var cal = _areaCalibration.CurrentCalibration;
+        if (cal is null)
+        {
+            LogCalibrationFallback(areaKey,
+                "No baseline calibration for area — calibration walkthrough requires a seed (review iter-1 B2).");
+            return;
+        }
+        if (cal.WindowToWorld(marker.Pixel, EffectiveZoom(_session.CurrentMapZoom, cal)) is not { } world)
+        {
+            LogCalibrationFallback(areaKey,
+                "WindowToWorld returned null for marker pixel — calibration shape rejected the point.");
+            return;
+        }
 
         var style = BuildCalibrationMarkerStyle(marker.IsSelected);
         _calibrationMarkers[marker] = _markers.AddMarker(areaKey, world.X, world.Z, style);
+    }
+
+    /// <summary>Trace one calibration-marker early-return per
+    /// (area, reason) so silent fallbacks are observable in production
+    /// without flooding the trace on a busy area. Mirrors
+    /// <c>OverlayWindowService._projectionMissAreasLogged</c>.</summary>
+    private void LogCalibrationFallback(string areaKey, string reason)
+    {
+        var dedupKey = areaKey + "|" + reason;
+        if (_calibrationFallbackAreasLogged.TryAdd(dedupKey, 0))
+        {
+            _logger?.LogTrace(
+                "MapOverlayViewModel.RefreshCalibrationMarker fallback for area {AreaKey}: {Reason}",
+                areaKey, reason);
+        }
     }
 
     private LegolasCalibrationMarkerStyle BuildCalibrationMarkerStyle(bool isSelected)

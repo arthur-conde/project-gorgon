@@ -88,6 +88,10 @@ public static class MithrilMeters
         /// <summary>Per-marker drawer-dispatch miss (no drawer registered for the marker's style type). Tag: <c>style_type</c>. Pairs with the first-time-per-type Trace log in <c>MarkerSceneRenderer</c>.</summary>
         public static readonly Counter<long> DispatchMisses =
             Meter.CreateCounter<long>("mithril.overlay.dispatch.misses");
+
+        /// <summary>Per-tick scene-drawer callback threw and was isolated from sibling drawers + the per-tick render loop (#835 step 6, review B1). Tag: <c>drawer_type</c> (the throwing callback's target type name, or <c>"unknown"</c>). Pairs with a <c>LogError</c> per occurrence so the exception is also captured in the diagnostics log.</summary>
+        public static readonly Counter<long> SceneDrawerExceptions =
+            Meter.CreateCounter<long>("mithril.overlay.scene.exceptions");
     }
 
     // GameState per-service counters and subscriber-count gauges are deferred from PR B

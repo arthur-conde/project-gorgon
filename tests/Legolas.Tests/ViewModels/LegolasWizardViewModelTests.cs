@@ -359,8 +359,17 @@ public class LegolasWizardViewModelTests
 
         wizard.PickSurveyModeCommand.Execute(null);
 
-        wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
-        wizard.PinCalibration.IsArmed.Should().BeTrue("entering Calibrating arms map-overlay capture");
+        wizard.CurrentStep.Should().Be(WizardStep.Calibrating,
+            "the step machine routes to Calibrating on an uncalibrated area " +
+            "so the user can drop placement pins to bootstrap a baseline.");
+        // #835 step 6 iter-1 touch-up: the gate that previously refused Arm
+        // on uncalibrated areas was reverted (it contradicted dissolved-#868,
+        // which mandates pixel-native placement-pin rendering — no seed
+        // calibration required). The walkthrough now Arms successfully in
+        // both calibrated and uncalibrated areas.
+        wizard.PinCalibration.IsArmed.Should().BeTrue(
+            "Arm has no seed-calibration gate (dissolved-#868); placement " +
+            "pins draw pixel-native via LegolasOverlaySceneDrawer.");
     }
 
     [Fact]
@@ -403,7 +412,13 @@ public class LegolasWizardViewModelTests
 
         wizard.CalibrateForMotherlodeCommand.Execute(null);
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
-        wizard.PinCalibration.IsArmed.Should().BeTrue();
+        // #835 step 6 iter-1 touch-up: gate reverted per dissolved-#868
+        // (no seed-calibration requirement); Arm() unconditionally
+        // succeeds on the Calibrating step entry. The test's intent is
+        // the detour-then-return state machine; Arm succeeding is the
+        // current (and intended) behavior.
+        wizard.PinCalibration.IsArmed.Should().BeTrue(
+            "Arm has no seed-calibration gate (dissolved-#868).");
 
         calib.Calibrated = true;
         calib.RaiseChanged(); // IAreaCalibrationService.Changed → RecomputeStep
@@ -489,7 +504,12 @@ public class LegolasWizardViewModelTests
 
         wizard.CurrentStep.Should().Be(WizardStep.Calibrating);
         wizard.HasPickedMode.Should().BeFalse("calibration is mode-independent");
-        wizard.PinCalibration.IsArmed.Should().BeTrue();
+        // #835 step 6 iter-1 touch-up: gate reverted per dissolved-#868
+        // (no seed-calibration requirement). The chip-to-Calibrating wizard
+        // transition Arms the coordinator unconditionally; placement pins
+        // draw pixel-native via LegolasOverlaySceneDrawer.
+        wizard.PinCalibration.IsArmed.Should().BeTrue(
+            "Arm has no seed-calibration gate (dissolved-#868).");
     }
 
     [Fact]
@@ -512,6 +532,14 @@ public class LegolasWizardViewModelTests
     [Fact]
     public void Confirming_a_pre_pick_calibration_lands_on_PickMode_calibrated()
     {
+        // #835 step 6 iter-1 touch-up: the gate that required a baseline
+        // calibration before Arm() was reverted per dissolved-#868
+        // ("no seed-calibration requirement"). Placement pins draw
+        // pixel-native via LegolasOverlaySceneDrawer, so the walkthrough
+        // works in both calibrated and uncalibrated areas. Setup pre-seeds
+        // Calibrated=false so the wizard routes to Calibrating on
+        // CalibrateThisAreaCommand (PickMode skips Calibrating when an
+        // area is already calibrated).
         var calib = new FakeAreaCalib { Calibrated = false };
         var pins = new FakeMapPinState();
         var (wizard, _, _, _, _) = BuildSut(calib, pins);
@@ -536,6 +564,12 @@ public class LegolasWizardViewModelTests
     [Fact]
     public void ConfirmCalibration_persists_and_leaves_the_gate()
     {
+        // #835 step 6 iter-1 touch-up: gate reverted per dissolved-#868
+        // ("no seed-calibration requirement"). The walkthrough works in
+        // both calibrated and uncalibrated areas; placement pins draw
+        // pixel-native via LegolasOverlaySceneDrawer. Setup pre-seeds
+        // Calibrated=false so PickSurveyMode routes to Calibrating
+        // (PickMode skips Calibrating when already calibrated).
         var calib = new FakeAreaCalib { Calibrated = false };
         var pins = new FakeMapPinState();
         var (wizard, _, _, _, _) = BuildSut(calib, pins);

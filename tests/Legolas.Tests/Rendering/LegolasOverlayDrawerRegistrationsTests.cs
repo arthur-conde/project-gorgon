@@ -21,9 +21,13 @@ public sealed class LegolasOverlayDrawerRegistrationsTests
 
         LegolasOverlayDrawerRegistrations_InvokeViaInternals(renderer);
 
-        // Survey + Motherlode + MotherlodeGuidance + Player + Calibration = 5.
-        // (#835 step 5 added the calibration drawer per the brief.)
-        renderer.DrawerCount.Should().Be(5);
+        // Survey + Motherlode + MotherlodeGuidance + Player = 4.
+        // (#835 step 6 iter-1 touch-up: the calibration drawer was
+        // unregistered from RegisterAll per dissolved-#868 — placement
+        // pins now draw pixel-native via LegolasOverlaySceneDrawer, not
+        // through the registry. Producer plumbing + drawer/style file
+        // deletion are step-7 work; the unregister here is the cut.)
+        renderer.DrawerCount.Should().Be(4);
         renderer.HasAnyDrawer.Should().BeTrue();
 
         // Per-type registration assertions guard against the typo-where-one-
@@ -40,8 +44,10 @@ public sealed class LegolasOverlayDrawerRegistrationsTests
             "Motherlode-guidance drawer must be wired by RegisterAll");
         renderer.IsRegistered<LegolasPlayerMarkerStyle>().Should().BeTrue(
             "Player-anchor drawer must be wired by RegisterAll");
-        renderer.IsRegistered<LegolasCalibrationMarkerStyle>().Should().BeTrue(
-            "Calibration-marker drawer must be wired by RegisterAll (#835 step 5)");
+        renderer.IsRegistered<LegolasCalibrationMarkerStyle>().Should().BeFalse(
+            "Calibration-marker drawer is no longer wired by RegisterAll " +
+            "(#835 step 6 iter-1 touch-up per dissolved-#868) — placement " +
+            "pins draw pixel-native via LegolasOverlaySceneDrawer.");
     }
 
     /// <summary>RegisterAll is internal-to-Legolas.Module (the public surface

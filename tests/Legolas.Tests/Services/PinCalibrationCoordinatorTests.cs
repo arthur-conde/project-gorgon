@@ -399,7 +399,11 @@ public class PinCalibrationCoordinatorTests
 
         public string? CurrentAreaKey => "AreaTest";
         public string? CurrentAreaFriendlyName => "Test";
-        public bool IsCurrentAreaCalibrated => false;
+        // Default true so existing PinCalibrationCoordinatorTests (which
+        // pre-date the #835 step 6 review-iter-1 B2 Arm gate) stay green:
+        // their setups assume Arm always succeeds. The new gate-rejection
+        // tests opt-in by flipping this to false.
+        public bool IsCurrentAreaCalibrated { get; set; } = true;
         public AreaCalibration? CurrentCalibration => null;
         public IReadOnlyList<CalibrationReference> CurrentAreaReferences => Array.Empty<CalibrationReference>();
         public IReadOnlyList<AreaEntry> AllAreas => Array.Empty<AreaEntry>();
@@ -432,6 +436,46 @@ public class PinCalibrationCoordinatorTests
         coord.IsArmed.Should().BeTrue("coordinator stays armed so placed pairs aren't lost on retry");
         coord.PairedCount.Should().Be(3, "pairs are preserved across a failed Confirm");
     }
+
+    // #835 step 6 iter-1 touch-up: the bootstrap-gate Arm() tests that
+    // lived here were retired alongside the gate itself. The dissolved-#868
+    // framing in the #835 issue body is explicit ("no seed-calibration
+    // requirement"); calibration placement pins now draw pixel-native via
+    // LegolasOverlaySceneDrawer.DrawCalibrationPlacementPins, so the
+    // walkthrough works in both calibrated and uncalibrated areas. The
+    // tests that asserted the gate refused on uncalibrated areas + that a
+    // stale BootstrapBlockedMessage cleared on success contradicted the
+    // dissolution and were removed when the gate was reverted.
+
+    private sealed class TestLoggerFactory : Microsoft.Extensions.Logging.ILoggerFactory
+    {
+        public System.Collections.Concurrent.ConcurrentQueue<TestLogEntry> Entries { get; } = new();
+        public void AddProvider(Microsoft.Extensions.Logging.ILoggerProvider provider) { }
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) =>
+            new TestLogger(categoryName, Entries);
+        public void Dispose() { }
+
+        private sealed class TestLogger : Microsoft.Extensions.Logging.ILogger
+        {
+            private readonly string _category;
+            private readonly System.Collections.Concurrent.ConcurrentQueue<TestLogEntry> _sink;
+            public TestLogger(string c, System.Collections.Concurrent.ConcurrentQueue<TestLogEntry> s) { _category = c; _sink = s; }
+            public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+            public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+            public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel,
+                Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception,
+                Func<TState, Exception?, string> formatter)
+                => _sink.Enqueue(new TestLogEntry(_category, logLevel, formatter(state, exception), exception));
+
+            private sealed class NullScope : IDisposable
+            {
+                public static readonly NullScope Instance = new();
+                public void Dispose() { }
+            }
+        }
+    }
+
+    private sealed record TestLogEntry(string Category, Microsoft.Extensions.Logging.LogLevel Level, string Message, Exception? Exception);
 
     [Fact]
     public void Disarm_clears_PersistError()

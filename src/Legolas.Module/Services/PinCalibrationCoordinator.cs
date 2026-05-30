@@ -268,7 +268,16 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     /// <summary>Arm capture and clear stale state. Seeds
     /// <see cref="ExistingPins"/> and picks the entry phase: straight to
     /// <see cref="CalibrationPhase.Pair"/> when ≥3 usable pins already exist
-    /// (the common case), else <see cref="CalibrationPhase.Drop"/>.</summary>
+    /// (the common case), else <see cref="CalibrationPhase.Drop"/>.
+    ///
+    /// <para>No seed-calibration gate. The #835 issue body's dissolved-#868
+    /// decision is explicit: <em>"calibration placement pins are drawn by
+    /// the scene hook ... no seed-calibration requirement."</em> Placement
+    /// pins render pixel-native via
+    /// <c>LegolasOverlaySceneDrawer.DrawCalibrationPlacementPins</c>, so
+    /// the walkthrough works in both calibrated and uncalibrated areas.
+    /// Earlier iter-1 work added a gate here that contradicted the
+    /// dissolution; reverted in the iter-1 touch-up.</para></summary>
     public void Arm()
     {
         _pairs.Clear();

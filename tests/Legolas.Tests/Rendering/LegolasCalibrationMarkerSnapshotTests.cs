@@ -101,6 +101,13 @@ public sealed class LegolasCalibrationMarkerSnapshotTests
 
         var renderer = new MarkerSceneRenderer();
         LegolasOverlayDrawerRegistrations.RegisterAll(renderer);
+        // #835 step 6 iter-1 touch-up: production RegisterAll no longer
+        // wires the calibration drawer (placement pins now draw pixel-
+        // native via LegolasOverlaySceneDrawer per dissolved-#868). The
+        // snapshot test still locally registers the dead-but-not-yet-
+        // deleted drawer so its byte-parity baseline keeps regression
+        // coverage on the file until step 7 retires it.
+        renderer.RegisterDrawer<LegolasCalibrationMarkerStyle>(LegolasCalibrationMarkerDrawer.Draw);
 
         using var brushes = new D2DBrushCache();
         brushes.Bind(rt!.RenderTarget);

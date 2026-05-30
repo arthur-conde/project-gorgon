@@ -72,4 +72,23 @@ public interface IOverlayWindow : INotifyPropertyChanged
     /// changes so the chip can update without polling.
     /// </summary>
     string? StatusMessage { get; }
+
+    /// <summary>
+    /// Register a scene drawer that receives an
+    /// <see cref="IOverlaySceneContext"/> per tick. Drawers fire on the
+    /// dispatcher inside the surface's <c>BeginDraw</c>/<c>EndDraw</c> pair,
+    /// BEFORE the marker renderer; multiple drawers are invoked in
+    /// registration order. Dispose the returned <see cref="IDisposable"/> to
+    /// deregister; thread-safe under concurrent registration + render. Scene
+    /// drawers are skipped this frame when the current area has no
+    /// calibration (same gate as the marker renderer's per-tick uncalibrated
+    /// chip) &#8212; the chip surfaces via <see cref="StatusMessage"/>.
+    ///
+    /// <para><b>This is the primary draw API per #835's platform reframe.</b>
+    /// World-coord geometry goes through <see cref="IOverlaySceneContext.Project"/>;
+    /// pixel-native bits (polylines, calibration placement) use pixels
+    /// directly. <see cref="IWorldOverlayMarkers"/> remains a thin
+    /// convenience for the "just plot world points" case.</para>
+    /// </summary>
+    IDisposable RegisterScene(Action<IOverlaySceneContext> draw);
 }

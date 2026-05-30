@@ -10,6 +10,7 @@ using Legolas.Rendering;
 // #835: D2DOverlaySurface / D2DBrushCache / D2DRenderEventArgs lifted to
 // Mithril.Overlay.Internal. Legolas keeps consuming them via the
 // InternalsVisibleTo("Legolas.Module") seam until Migration step 6.
+using Mithril.Overlay;
 using Mithril.Overlay.Internal;
 using Legolas.ViewModels;
 
@@ -70,11 +71,11 @@ public partial class MapOverlayView : Window
     public MapOverlayView()
     {
         InitializeComponent();
-        // Wire the D2D pin renderer. Stays attached for the life of the
-        // window; the surface itself manages CompositionTarget.Rendering
-        // subscription based on visibility, so this handler only fires when
-        // there's actually a frame to draw.
-        MapSurface.Render += OnMapSurfaceRender;
+        // #835 step 6: MapSurface (D2DOverlaySurface) was removed from the
+        // XAML. The view is no longer Show()n in production (OverlayController
+        // routes to IOverlayWindow.Window instead); this constructor stays
+        // because the transient DI factory still resolves it for tests +
+        // for step 7's deletion-pass call-site survey.
     }
 
     public MapOverlayView(LegolasSettings settings, SettingsAutoSaver<LegolasSettings> saver, NudgePadViewModel nudgePad) : this()
@@ -112,9 +113,11 @@ public partial class MapOverlayView : Window
         };
         Closed += (_, _) =>
         {
-            MapSurface.Render -= OnMapSurfaceRender;
-            _brushCache.Dispose();
-            MapSurface.Dispose();
+            // #835 step 6: MapSurface no longer exists; only the brush cache
+            // needs disposing (never bound now that OnMapSurfaceRender doesn't
+            // fire). IDisposable.Dispose was made explicit in review-iter-1 S1,
+            // so use the internal alias visible via InternalsVisibleTo.
+            _brushCache.DisposeInternal();
         };
     }
 
