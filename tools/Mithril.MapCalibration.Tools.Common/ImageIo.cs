@@ -228,7 +228,15 @@ public static class ImageIo
         using var canonical = new Bitmap(bmp.Width, bmp.Height, PixelFormat.Format32bppArgb);
         using (var g = Graphics.FromImage(canonical))
         {
-            g.DrawImageUnscaled(bmp, 0, 0);
+            // Draw into an explicit pixel-sized rectangle, NOT DrawImageUnscaled.
+            // DrawImageUnscaled honors the source bitmap's DPI metadata and draws
+            // at its *physical* size (pixels * 96/DPI). A screenshot a crop/editor
+            // tool saved at e.g. 300 DPI would then be drawn at ~1/3 size into the
+            // top-left corner with the rest left black — silently corrupting both
+            // the NCC grayscale and the debug image (detections cluster in the
+            // corner, the solved scale collapses). Drawing into a Width x Height
+            // dest rect maps source pixels 1:1 regardless of DPI.
+            g.DrawImage(bmp, new Rectangle(0, 0, canonical.Width, canonical.Height));
         }
         var rect = new Rectangle(0, 0, canonical.Width, canonical.Height);
         var data = canonical.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
