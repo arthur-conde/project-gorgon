@@ -389,11 +389,12 @@ static class LocalNcc
 {
     // a = screenshot, b = aligned texture. addedOnly: only flag deviation where the
     // SCREENSHOT carries the structure (va high) — i.e. content ADDED on the
-    // screenshot side (icons, labels). Regions where the screenshot is smooth but
-    // the texture is detailed (fog, the Kur ice/bubble patch rendered as a flat
-    // grey blob) are "obscured", not added, and can hold no detectable icon, so
-    // they're treated as a match. Distinguishes added-content from obscured-content
-    // by which side the detail is on.
+    // screenshot side (icons, labels). Regions where the texture is detailed but the
+    // screenshot has flattened it (fog-of-war — e.g. Kur's two unexplored patches,
+    // a mottled overlay that the blob shape-filter's "fog" class misses) are
+    // "obscured", not added, and hold no detectable icon, so they're treated as a
+    // match. Distinguishes added-content from obscured-content by which side the
+    // detail is on — the correct fog discriminator (shape isn't).
     public static float[] DeviationMap(float[] a, float[] b, int w, int h, int win, out double meanNcc, bool addedOnly = false)
     {
         int r = win / 2;
