@@ -1,6 +1,6 @@
 # Auto-Calibration Gate Study — Design
 
-**Tracked in:** _issue filed alongside this spec (see [Deliverables & issues](#7--deliverables-where-it-lives--issues))_
+**Tracked in:** [mithril#897](https://github.com/moumantai-gg/mithril/issues/897)
 **Date:** 2026-05-30
 **Status:** Approved, building
 **Relationship:** Prerequisite gate for a later **auto-calibration "detect + correspond + solve" engine** spec. The engine spec is intentionally **not yet written** — its feasibility (data-only bootstrap, near-zero-ref calibration) rests on a hypothesis validated on only two areas. This study tests that hypothesis on a small, deliberately-varied sample and records a go/no-go verdict that the engine spec will cite.
