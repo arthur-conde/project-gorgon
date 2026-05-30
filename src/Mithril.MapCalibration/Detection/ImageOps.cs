@@ -84,6 +84,21 @@ public static class ImageOps
     }
 
     /// <summary>
+    /// Rotates a gray image 180° (point reflection through the centre). The
+    /// solve engine enumerates the discrete {0, π} map orientation — PG draws the
+    /// texture artwork un-rotated and only the world→pixel mapping flips for
+    /// 180°-areas, so a π candidate aligns the texture against the screenshot the
+    /// other way up.
+    /// </summary>
+    public static GrayImage Rotate180(GrayImage src)
+    {
+        int n = src.Width * src.Height;
+        var dst = new byte[n];
+        for (int i = 0; i < n; i++) dst[i] = src.Pixels[n - 1 - i];
+        return new GrayImage(src.Width, src.Height, dst);
+    }
+
+    /// <summary>
     /// Crops a rectangular region out of a gray image. Used to restrict NCC
     /// to the visible map area when a map-rect is supplied, avoiding spurious
     /// detections in the UI chrome around the map (every detection outside
