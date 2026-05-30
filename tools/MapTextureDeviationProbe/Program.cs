@@ -1,4 +1,6 @@
 using System.Drawing;
+using System.Globalization;
+using Mithril.MapCalibration;
 using Mithril.Tools.MapCalibration.Common;
 
 // MapTextureDeviationProbe — R&D prototype for mithril#897 (gate study, task 2).
@@ -20,13 +22,41 @@ using Mithril.Tools.MapCalibration.Common;
 //   dotnet run --project tools/MapTextureDeviationProbe -- \
 //     --screenshot <png> --texture <png> --out-dir <dir> \
 //     [--window 11] [--low-ncc 0.5] [--orientation auto|0|180]
+//
+// --blobs adds the SHAPE/SIZE FILTER stage (mithril#897 remaining-work item 1):
+// threshold the deviation map, connected-components label it, and classify each
+// blob icon / fog / structure by area + solidity + aspect + peak-deviation. This
+// turns the "all added content" deviation map into a clean icon-candidate set.
+//   ... --blobs [--border-mask] [--close 1]
+//       [--min-area 12] [--max-icon-area 900] [--min-solidity 0.35]
+//       [--max-aspect 2.5] [--min-peak 0.7]
+//       [--ground-truth --area AreaSerbule --landmarks <json> --npcs <json>
+//        --baseline <json> [--gt-tol 20]]
 
 string screenshotPath = Cli.Get(args, "--screenshot", "");
 string texturePath = Cli.Get(args, "--texture", "");
 string outDir = Cli.Get(args, "--out-dir", ".");
 int window = int.Parse(Cli.Get(args, "--window", "11"));
-double lowNcc = double.Parse(Cli.Get(args, "--low-ncc", "0.5"));
+double lowNcc = ParseInv(Cli.Get(args, "--low-ncc", "0.5"));
 string orientationArg = Cli.Get(args, "--orientation", "auto"); // auto | 0 | 180
+
+// --- blob shape/size filter options ---
+bool doBlobs = Cli.Has(args, "--blobs");
+bool useBorderMask = Cli.Has(args, "--border-mask");
+int closeRadius = int.Parse(Cli.Get(args, "--close", "1"));
+var blobOpts = new BlobOptions(
+    MinArea: int.Parse(Cli.Get(args, "--min-area", "12")),
+    MaxIconArea: int.Parse(Cli.Get(args, "--max-icon-area", "900")),
+    MinSolidity: ParseInv(Cli.Get(args, "--min-solidity", "0.35")),
+    MaxAspect: ParseInv(Cli.Get(args, "--max-aspect", "2.5")),
+    MinPeak: ParseInv(Cli.Get(args, "--min-peak", "0.7")));
+// --- ground-truth overlap (Serbule only — the one area with a committed baseline) ---
+bool groundTruth = Cli.Has(args, "--ground-truth");
+string gtArea = Cli.Get(args, "--area", "");
+string landmarksPath = Cli.Get(args, "--landmarks", "");
+string npcsPath = Cli.Get(args, "--npcs", "");
+string baselinePath = Cli.Get(args, "--baseline", "");
+double gtTol = ParseInv(Cli.Get(args, "--gt-tol", "20"));
 
 if (screenshotPath.Length == 0 || texturePath.Length == 0)
 {
@@ -113,7 +143,18 @@ string overlayPath = Path.Combine(outDir, $"{stem}_overlay.png");
 { var ov = Overlay(shot, dev, lowNcc); ImageIo.SaveBgraPng(ov.Pixels, ov.Width, ov.Height, overlayPath); }
 Console.WriteLine($"wrote {heatPath}");
 Console.WriteLine($"wrote {overlayPath}");
+
+// --- SHAPE/SIZE FILTER stage (--blobs) ---
+if (doBlobs)
+{
+    var gt = groundTruth
+        ? new GroundTruthInputs(gtArea, landmarksPath, npcsPath, baselinePath, gtTol, texW, texH)
+        : null;
+    BlobStage.Run(shot, dev, lowNcc, useBorderMask, closeRadius, blobOpts, gt, outDir, stem);
+}
 return 0;
+
+static double ParseInv(string s) => double.Parse(s, CultureInfo.InvariantCulture);
 
 // ---- local helpers ----
 
@@ -202,6 +243,8 @@ static class Cli
             if (a[i] == key) return a[i + 1];
         return def;
     }
+
+    public static bool Has(string[] a, string key) => Array.IndexOf(a, key) >= 0;
 }
 
 static class Gray
