@@ -84,7 +84,18 @@ What *did* work is the pipeline this verdict recommended but hadn't wired end-to
 | AreaEltibule | 0.763 | 179.98° (π) | (2146.2, −202.5) | 5 | **0.65 px** | 38/38 |
 | AreaKurMountains | 0.569 | 180.00° (π) | (2188.8, −141.5) | 8 | **0.73 px** | 32/32 |
 
-Both land on the discrete {0, π} class (matching `refinements.json`), sub-pixel, every ref projecting on-screen. So **H4 is now demonstrated on sparse areas too** — the lever is the deviation-blob detector, precisely as predicted. Tooling: `MapTextureDeviationProbe --blobs … --icons-dir …` emits a typed-detections CSV; `MapCalibrationFromScreenshot --detections-csv` solves from it. The `--border-mask` is still useful on the probe side but **over-masks on Eltibule** — its edge-connected non-veg/water flood bleeds through the brown interior (the new `--mask-debug` viz shows 171 dropped / 36 kept), clipping legitimate interior icons; the typed-detection RANSAC tolerates rim false positives without it, but the masked set gave the cleaner Eltibule fit here. (Pixel dims for `--map-rect "0,0,W,H"`: Eltibule 921×914, Kur 981×980. Textures 2048×2033 / 2048×2048.)
+Both land on the discrete {0, π} class (matching `refinements.json`), sub-pixel, every ref projecting on-screen. So **H4 is now demonstrated on sparse areas too** — the lever is the deviation-blob detector, precisely as predicted. Tooling: `MapTextureDeviationProbe --blobs … --icons-dir …` emits a typed-detections CSV; `MapCalibrationFromScreenshot --detections-csv` solves from it.
+
+**`--border-mask` (probe side) is load-bearing — measured, both areas:**
+
+| area | mask | icon blobs | RANSAC inliers | residual | rotation | outcome |
+|---|---|---|---|---|---|---|
+| Eltibule | on | 14 | 5 | 0.65 px | π | ✅ correct |
+| Eltibule | off | 21 | 3 | 1.77 px | −0.814 rad | ❌ wrong orientation |
+| Kur | on | 24 | 8 | 0.73 px | π | ✅ correct |
+| Kur | off | 29 | 3 | 1.23 px | 0.110 rad | ❌ wrong orientation |
+
+Without the mask the rocky rim contributes ~7 extra blobs that **type as icons** (rim rock matches the pin templates above the 0.55 floor); those rim false positives let RANSAC settle on a wrong-but-self-consistent **3-inlier** fit (3 points / 4 DOF fits almost any similarity at low residual) at the wrong orientation. The mask drops them and RANSAC locks onto the correct π fit at 5–8 inliers. The degeneracy guards (100 px span, refit-residual tiebreak) do **not** save the unmasked run on either area. So the mask is necessary for convergence here — *and yet* it simultaneously **over-masks Eltibule's interior**: its edge-connected non-veg/water flood bleeds through the brown interior (new `--mask-debug` viz: 171 dropped / 36 kept), eating legitimate interior icons. Net positive (removing rim FPs matters more than the interior icons lost), but blunt — the engine wants a tighter rim classifier (bounded flood depth or rock-colour) that drops the rim without eating the interior. (Pixel dims for `--map-rect "0,0,W,H"`: Eltibule 921×914, Kur 981×980. Textures 2048×2033 / 2048×2048.)
 
 ## Texture-deviation probe — **promising; likely the sparse-area detection front-end**
 
