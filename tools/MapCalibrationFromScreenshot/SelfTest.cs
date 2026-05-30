@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration;
 using Mithril.Tools.MapCalibration.Common;
 

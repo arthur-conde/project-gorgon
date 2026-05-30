@@ -1,3 +1,5 @@
+using Mithril.MapCalibration.Detection;
+
 namespace Mithril.Tools.MapCalibration.Common;
 
 /// <summary>
@@ -93,7 +95,7 @@ public static class MapRectLocator
             int dsmaller = Math.Min(dw, dh);
             int smaller = Math.Min(sw, sh);
             if (dsmaller < smaller * 0.25) continue;
-            result.Add((f, ImageIo.Resize(texture, dw, dh)));
+            result.Add((f, ImageOps.Resize(texture, dw, dh)));
         }
         return result;
     }

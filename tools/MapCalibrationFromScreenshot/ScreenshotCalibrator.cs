@@ -1,3 +1,4 @@
+using Mithril.MapCalibration.Detection;
 using Mithril.MapCalibration;
 using Mithril.Tools.MapCalibration.Common;
 
@@ -64,8 +65,8 @@ internal static class ScreenshotCalibrator
             // scale the result back. Fractional downsample factors on the texture
             // side cover the "map fills the whole screenshot" case that integer
             // factors miss badly.
-            var screenshotDown = ImageIo.Downsample(screenshotGray, 2);
-            var textureDown = ImageIo.Downsample(textureGray, 2);
+            var screenshotDown = ImageOps.Downsample(screenshotGray, 2);
+            var textureDown = ImageOps.Downsample(textureGray, 2);
             Console.WriteLine($"[locate] coarse NCC scale-ladder (screenshot {screenshotDown.Width}x{screenshotDown.Height}, texture {textureDown.Width}x{textureDown.Height})");
             var rectDown = MapRectLocator.AutoDetect(screenshotDown, textureDown, minScore: 0.4);
             if (rectDown is null)
@@ -93,7 +94,7 @@ internal static class ScreenshotCalibrator
         // out real matches. Detection coords come out in cropped-image space;
         // translate back to screenshot space by adding mapRect.Origin* before
         // anything else looks at them.
-        var mapCrop = ImageIo.Crop(screenshotGray, mapRect.OriginX, mapRect.OriginY, mapRect.Width, mapRect.Height);
+        var mapCrop = ImageOps.Crop(screenshotGray, mapRect.OriginX, mapRect.OriginY, mapRect.Width, mapRect.Height);
         Console.WriteLine($"[detect] cropped screenshot to map area {mapCrop.Width}x{mapCrop.Height} for NCC");
 
         // Phase: build the detection pool — either from an external typed-
@@ -788,8 +789,8 @@ internal static class ScreenshotCalibrator
                 rw = Math.Max(1, gray.Width * chosenSize / maxDim);
                 rh = Math.Max(1, gray.Height * chosenSize / maxDim);
             }
-            var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageIo.Resize(gray, rw, rh);
-            var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageIo.Resize(alpha, rw, rh);
+            var grayD = (rw == gray.Width && rh == gray.Height) ? gray : ImageOps.Resize(gray, rw, rh);
+            var alphaD = (rw == alpha.Width && rh == alpha.Height) ? alpha : ImageOps.Resize(alpha, rw, rh);
             // 64-cap per template by score. Tried unlimited briefly and it
             // made things worse: hundreds of mid-score (~0.65) false-positive
             // teardrop patches entered the pool, and RANSAC found
@@ -857,8 +858,8 @@ internal static class ScreenshotCalibrator
                 int maxDim = Math.Max(gray.Width, gray.Height);
                 int rw = Math.Max(1, gray.Width * target / maxDim);
                 int rh = Math.Max(1, gray.Height * target / maxDim);
-                var grayD = ImageIo.Resize(gray, rw, rh);
-                var alphaD = ImageIo.Resize(alpha, rw, rh);
+                var grayD = ImageOps.Resize(gray, rw, rh);
+                var alphaD = ImageOps.Resize(alpha, rw, rh);
                 var top = NccTemplateMatch.FindBest(screenshot, grayD, alphaD, threshold);
                 if (top is null) continue;
                 evidence += top.Value.Score;
