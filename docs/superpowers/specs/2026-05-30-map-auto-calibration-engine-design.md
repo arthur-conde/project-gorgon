@@ -155,7 +155,7 @@ Screen capture reads the **OS framebuffer** (`BitBlt` / `Windows.Graphics.Captur
 
 - ~~**Sparse-area detection**~~ — **retired end-to-end** (PR #913): the full pipeline cold-solves Eltibule (0.65 px) and Kur (0.73 px) sub-pixel. Residual: detector scoring is baseline-circular (§8), and the rim mask needs the deviation-flood refinement; neither blocks the engine.
 - **Capture-under-overlay flicker** (§6) — hide-for-one-frame may be visible; WGC is the mitigation.
-- **User moves/resizes PG's map window** (or changes in-game resolution / UI-scale) invalidates the stored framing — caught by the confidence gate (low-confidence → no persist → prompt to re-frame). Rare, user-initiated; see §7.
+- **User moves/resizes PG's map window** (or changes in-game resolution / UI-scale) invalidates the stored bbox — caught by the confidence gate (low-confidence → no persist → prompt to redraw the map bbox). Rare, user-initiated; see §7.
 - **Detection + zoom accuracy** — the real accuracy ceiling; "approximate location" UX, not pixel-perfect. (The renderer itself is exact; the disproven ±10% "non-affine warp" is **not** a factor — see §2.)
 
 ## 16. Out of scope / future
