@@ -33,7 +33,7 @@ The remaining gap is detection robustness on **sparse** zones, which is the one 
 
 1. **Frame once.** The user positions the Legolas overlay over the in-game map panel (already a hard requirement — there is no live player position, so the overlay must sit on the map to guide). Its position + size persist.
 2. **Trigger.** Player enters a zone, opens the map, and fires calibration (v1: hotkey/button gated to game focus; endgame: passive auto-attempt). The current area is known **from the log** (Arda/GameState), which selects the base texture + landmark/NPC reference set.
-3. **Capture.** Blank the overlay for one frame, capture the (window-anchored) overlay rect from the OS framebuffer, restore the overlay.
+3. **Capture.** Blank the overlay for one frame, capture the persisted overlay rect from the OS framebuffer, restore the overlay.
 4. **Locate.** Texture-registration (multi-scale NCC of the base texture against the captured frame) finds the map's true sub-rect inside the framed region — absorbing eyeball slop and per-zone letterboxing.
 5. **Detect.** `ICalibrationDetector` produces icon candidates (v1 target: texture-deviation local-NCC → shape/size filter; fallback: direct template NCC).
 6. **Solve.** Type-aware RANSAC over (candidate, reference) pairs, enumerate the discrete {0, π} orientation, feed to `LandmarkCalibrationSolver.Solve` → `AreaCalibration`.
@@ -46,7 +46,7 @@ Each is independently testable; the only one whose internals are unsettled is th
 | Seam | Responsibility | v1 implementation |
 |---|---|---|
 | `IGameWindowLocator` | Resolve the PG window handle + client rect (and focus state). | Reuse the existing game-process detection behind `ForegroundFocusGate` / `ControlPanel.GameProcessName` (the same setting that gates OS hotkeys). |
-| `IMapCaptureRegionProvider` | Given the persisted overlay framing + live game-window rect, produce the desktop pixel rect to capture. | Overlay framing stored **relative to the game-window client rect** (fractions), re-derived to desktop coords at capture time. |
+| `IMapCaptureRegionProvider` | Produce the desktop pixel rect to capture from the persisted overlay framing. | Framing persisted directly (PG restores its map window to the same place each session — see §7); validated at capture time. |
 | `IScreenCapture` | Capture a desktop rect to a bitmap. | `BitBlt`/`Graphics.CopyFromScreen` for windowed PG (see §6 for the under-overlay handling). `Windows.Graphics.Capture` is the per-window upgrade path. |
 | `IMapRegionRefiner` | Locate the map's true sub-rect inside the captured frame. | Texture-registration (multi-scale NCC vs the base texture). |
 | `ICalibrationDetector` | Captured map → icon candidates (typed where possible). | **Open** (§8): texture-deviation → shape-filter. Fallback: template NCC. |
@@ -67,11 +67,10 @@ Either way the input is validated before use (non-black, expected size, a self-N
 
 ## 7. Region source & window anchoring
 
-The overlay framing is the capture region. Store it **relative to the game-window client rect** (fractional offset + size), not raw desktop coords, and re-derive the desktop rect from the live window rect at capture time. Consequences:
+The overlay framing is the capture region, and it is **durable for free**: PG's world-map window is a user-movable, user-resizable sub-window whose size and position **PG itself persists across sessions**. The user frames the overlay over the map window once; PG re-opens the map in the same place every session; the stored framing keeps working. One framing covers every area — only the rendered map *within* the window letterboxes per zone (a tall vs wide zone fills the window differently), which §4 step 4 (texture-registration refine) absorbs.
 
-- Move or resize PG → the capture region follows (the map panel is fixed *relative to the game window*). The drift problem of raw desktop coords mostly dissolves.
-- **One framing covers every area** — PG's map is a fixed UI panel; only the rendered map *within* it letterboxes per zone, which §4 step 4 (refine) absorbs.
-- The only residual re-frame trigger is an in-game resolution / UI-scale change, which the confidence gate catches anyway.
+- **Storage:** persist the overlay framing rect (desktop coords are fine, since PG restores the map window to the same place). Re-derive/validate at capture time.
+- **The only thing that invalidates a stored framing is the user moving or resizing PG's map window** (or, equivalently, an in-game resolution / UI-scale change). When that happens the captured rect no longer lands on the map, §4's registration fails to lock, and the §9 confidence gate rejects the solve — so it degrades to "couldn't auto-calibrate, re-frame the overlay," never a silent bad calibration. Re-framing is a rare, user-initiated event, so this is a non-issue in practice.
 
 ## 8. Detection stage (the open risk, isolated behind an interface)
 
@@ -112,7 +111,7 @@ On failure: keep the area uncalibrated, emit diagnostics, and surface a non-bloc
 
 ## 12. Testing
 
-- **Per-seam units:** window-anchor coordinate math (window move/resize → correct desktop rect), region refiner on the study screenshots, confidence gate thresholds.
+- **Per-seam units:** region refiner on the study screenshots (locates the map sub-rect within a framed capture), confidence gate thresholds, capture-region round-trip (persist → reload → same rect).
 - **Replay fixtures:** the gate-study screenshots (`study/screenshots/*` — local, gitignored) run end-to-end detect→solve and assert the recovered `AreaCalibration` matches the committed Serbule baseline within tolerance.
 - **Positive control:** self-NCC ≈ 1.0 (screenshot vs itself) in the detector tests — the guard that caught the wrong-filename false negative.
 - **Negative controls:** black frame, wrong-area texture, overlay-not-hidden frame → all must be rejected by the gate, none persisted.
@@ -132,7 +131,7 @@ Screen capture reads the **OS framebuffer** (`BitBlt` / `Windows.Graphics.Captur
 
 - **Sparse-area detection** (§8) — the one unproven link; isolated behind `ICalibrationDetector` so the rest can proceed.
 - **Capture-under-overlay flicker** (§6) — hide-for-one-frame may be visible; WGC is the mitigation.
-- **In-game resolution/UI-scale change** invalidates the window-anchored framing — caught by the confidence gate, requires a re-frame.
+- **User moves/resizes PG's map window** (or changes in-game resolution / UI-scale) invalidates the stored framing — caught by the confidence gate (low-confidence → no persist → prompt to re-frame). Rare, user-initiated; see §7.
 - **Detection + zoom accuracy** — the real accuracy ceiling; "approximate location" UX, not pixel-perfect. (The renderer itself is exact; the disproven ±10% "non-affine warp" is **not** a factor — see §2.)
 
 ## 16. Out of scope / future
