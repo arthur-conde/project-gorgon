@@ -38,6 +38,10 @@ internal static class Program
                                             [--map-rect full | "left,top,width,height"]
                                             [--icon-render-size <px>] [--icon-size <name>=<W>x<H>]
 
+            --icon-min-score (bootstrap): NCC threshold for accepting an icon match
+              (default 0.5). Raise toward 0.8 to cut false-positive detections that
+              flood the cold correspondence on noisy terrain (the run logs each
+              template's top score, so set this just under the real icons' scores).
             --icon-render-size (bootstrap): force the on-screen icon size (px) instead
               of the auto render-size sweep. Use if the sweep picks wrong (the run
               logs the per-size evidence + the chosen size).
@@ -113,6 +117,8 @@ internal static class Program
         o.TryGetValue("--map-rect", out var mapRectOpt);
         var iconRenderSize = o.TryGetValue("--icon-render-size", out var irs) && int.TryParse(irs, out var irsv) ? irsv : 0;
         var iconSizeOverride = ParseIconSizeOverride(o);
+        var iconMinScore = o.TryGetValue("--icon-min-score", out var ims)
+            && double.TryParse(ims, System.Globalization.CultureInfo.InvariantCulture, out var imsv) ? imsv : 0.5;
         var rows = new List<StudyRecord>();
 
         foreach (var area in areas)
@@ -128,7 +134,7 @@ internal static class Program
             if (!TryTextureSize(o["--textures"], area, out var tw, out var th)) { Console.WriteLine($"[skip] no texture for {area}"); continue; }
 
             var world = LoadWorldPoints(o["--landmarks"], o["--npcs"], area).Select(l => l.World).ToList();
-            var detected = DetectIcons(shotPath, o["--textures"], area, o["--icons"], icons, mapRectOpt, iconRenderSize, iconSizeOverride);
+            var detected = DetectIcons(shotPath, o["--textures"], area, o["--icons"], icons, mapRectOpt, iconRenderSize, iconSizeOverride, iconMinScore);
             if (detected.Count < 3) { Console.WriteLine($"[skip] <3 icons detected in {area}"); continue; }
 
             var result = ColdBootstrap.Run(world, detected, tw, th, axisThresholdPx: 8.0);
@@ -163,9 +169,8 @@ internal static class Program
 
     private static List<PixelPoint> DetectIcons(
         string screenshotPath, string texturesDir, string area, string iconsDir, IconIndex icons,
-        string? mapRectOpt, int iconRenderSize, (string Name, int W, int H)? iconSizeOverride)
+        string? mapRectOpt, int iconRenderSize, (string Name, int W, int H)? iconSizeOverride, double iconMinScore)
     {
-        const double iconMinScore = 0.5;
         var screen = ImageIo.LoadGray(screenshotPath);
         var texturePath = MapTextureExtractor.EnsureExtractedOrCached(texturesDir, area)
             ?? throw new UserFacingException($"no cached texture PNG for {area} in {texturesDir}");
