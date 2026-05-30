@@ -34,15 +34,18 @@ namespace Mithril.Overlay.Internal;
 /// <para><b>Per-tick draw order (#835 step 6).</b>
 /// <list type="number">
 /// <item>read <c>IAreaState.CurrentArea</c> &#8211; the area key</item>
-/// <item>uncalibrated area: surface the chip, skip both scene drawers
-/// <em>and</em> the marker renderer (the scene drawers depend on
+/// <item>set <see cref="WorldOverlayMarkers.CurrentArea"/></item>
+/// <item>uncalibrated area: surface the chip (but still run the scene
+/// drawers below — they self-gate and the pixel-native passes, e.g.
+/// calibration placement pins, must draw during an uncalibrated Drop/Pair
+/// walkthrough per dissolved-#868); the <em>marker renderer</em> is the only
+/// thing skipped when uncalibrated (it depends on
 /// <see cref="IOverlaySceneContext.Project"/> which would always return
 /// null)</item>
-/// <item>set <see cref="WorldOverlayMarkers.CurrentArea"/></item>
 /// <item>invoke each registered scene drawer in registration order with an
 /// <see cref="IOverlaySceneContext"/> bound to this frame's target / factory
 /// / brushes / area key / live zoom</item>
-/// <item>project the registry markers and dispatch through
+/// <item>calibrated only: project the registry markers and dispatch through
 /// <see cref="MarkerSceneRenderer"/></item>
 /// </list>
 /// Scene drawers run BEFORE the marker renderer so any layer-3 markers
@@ -279,27 +282,36 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
             return;
         }
 
-        // Uncalibrated-area guard. Surface the chip and skip BOTH scene
-        // drawers AND projection — the surface still clears + composites a
-        // transparent frame, so the window's chrome (header + status) stays
-        // interactive. Scene drawers depend on Project() which would always
-        // return null in this state, so there is nothing meaningful for them
-        // to draw.
-        if (!_calibration.IsCalibrated(areaKey))
+        // Uncalibrated-area handling. The marker-projection block (further
+        // down) depends on WorldToWindow/Project, which always returns null
+        // without a calibration — so when uncalibrated we skip ONLY that
+        // block, surface the "not calibrated" chip, and log once per area.
+        // The scene-drawer loop still runs: scene drawers self-gate
+        // (DrawCalibrationGhosts on ShowCalibrationGhosts; the placement-pin
+        // pass on IsCalibrationCapturing) and draw pixel-native, so the
+        // calibration placement pins MUST render during a Drop/Pair
+        // walkthrough in an uncalibrated area (dissolved-#868) — calibration
+        // only persists at Confirm, so IsCalibrated is false throughout the
+        // walkthrough. This previously returned early BEFORE the scene-drawer
+        // loop, which suppressed every scene drawer in uncalibrated areas and
+        // broke the headline placement-pin cutover behavior (#872 / #887).
+        var isCalibrated = _calibration.IsCalibrated(areaKey);
+        if (!isCalibrated)
         {
             if (!string.Equals(_lastSeenUncalibratedArea, areaKey, StringComparison.Ordinal))
             {
                 _lastSeenUncalibratedArea = areaKey;
                 _logger?.LogInformation(
-                    "OverlayWindowService: area {AreaKey} is uncalibrated; surfacing 'not calibrated' chip and skipping projection + scene drawers.",
+                    "OverlayWindowService: area {AreaKey} is uncalibrated; surfacing 'not calibrated' chip and skipping marker projection. Scene drawers still run for pixel-native passes (e.g. calibration placement pins).",
                     areaKey);
             }
             SetStatusMessage(UncalibratedMessage);
-            return;
         }
-
-        _lastSeenUncalibratedArea = null;
-        SetStatusMessage(null);
+        else
+        {
+            _lastSeenUncalibratedArea = null;
+            SetStatusMessage(null);
+        }
 
         // Snapshot the live zoom once per frame so scene drawers and the
         // registry projection see the same value (no per-Project read
@@ -327,6 +339,12 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
                 }
             }
         }
+
+        // Marker projection + render — calibrated areas only. WorldToWindow
+        // returns null without a calibration, so there is nothing meaningful
+        // to project here when uncalibrated (the scene drawers above already
+        // ran, including the pixel-native calibration placement pins).
+        if (!isCalibrated) return;
 
         var snapshot = _markers.CurrentAreaMarkers;
         var projected = ProjectMarkers(snapshot, areaKey, _calibration, currentZoom,
@@ -429,12 +447,13 @@ internal sealed class OverlayWindowService : IHostedService, IOverlayWindow, IDi
         double currentZoom)
     {
         _brushCache.Bind(renderTarget);
-        if (!_calibration.IsCalibrated(areaKey))
-        {
-            SetStatusMessage(UncalibratedMessage);
-            return;
-        }
-        SetStatusMessage(null);
+        // Mirror OnSurfaceRender: the scene-drawer loop runs regardless of
+        // calibration (drawers self-gate and draw pixel-native passes such as
+        // the calibration placement pins). Only the chip differs by state;
+        // the marker-projection block is absent from this seam, so there is
+        // no calibration-gated early-return here (#872 / #887).
+        var isCalibrated = _calibration.IsCalibrated(areaKey);
+        SetStatusMessage(isCalibrated ? null : UncalibratedMessage);
 
         var drawers = _sceneDrawers;
         if (drawers.Length == 0) return;

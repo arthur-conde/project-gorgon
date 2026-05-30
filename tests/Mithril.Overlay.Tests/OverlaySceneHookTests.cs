@@ -19,13 +19,15 @@ namespace Mithril.Overlay.Tests;
 /// <item>Dispose returns from <see cref="IOverlayWindow.RegisterScene"/>
 /// removes the drawer</item>
 /// <item>Multiple registrations are invoked in registration order</item>
-/// <item>Uncalibrated area: scene drawers are skipped (same gate as the
-/// marker renderer's per-tick chip)</item>
+/// <item>Uncalibrated area: scene drawers STILL fire (only the marker
+/// projection is calibration-gated) so pixel-native passes — e.g. the
+/// calibration placement pins — render during an uncalibrated Drop/Pair
+/// walkthrough (dissolved-#868); the chip still surfaces (#872 / #887)</item>
 /// <item>Zoom plumbing: <see cref="IOverlaySceneContext.Project"/> reads
 /// the live <see cref="IOverlayZoomSource"/> per call</item>
 /// <item><see cref="IOverlaySceneContext.Project"/> returns null in
-/// uncalibrated-area paths (defensive cover; the per-tick gate already
-/// skips drawers there)</item>
+/// uncalibrated-area paths (defensive cover; the projection block — not the
+/// scene drawers — is what skips uncalibrated)</item>
 /// </list>
 /// </summary>
 public sealed class OverlaySceneHookTests
@@ -114,8 +116,19 @@ public sealed class OverlaySceneHookTests
             "platform contract is multi-consumer (Gwaihir + future modules).");
     }
 
+    /// <summary>#872 BLOCKER / #887: scene drawers MUST fire in uncalibrated
+    /// areas. Only the marker-projection block is calibration-gated; the
+    /// scene-drawer loop runs regardless because scene drawers self-gate and
+    /// draw pixel-native passes — most importantly the calibration placement
+    /// pins, which are drawn at the raw click pixel (no <c>Project()</c>) and
+    /// MUST render during a Drop/Pair walkthrough in an uncalibrated area
+    /// (calibration only persists at Confirm, so <c>IsCalibrated</c> is false
+    /// throughout). The pre-fix code returned early before the loop, which
+    /// suppressed every drawer uncalibrated and broke the headline cutover
+    /// behavior; the identical gate in this test seam is why no test caught
+    /// it.</summary>
     [Fact]
-    public void Scene_drawers_do_not_fire_on_uncalibrated_area()
+    public void Scene_drawers_fire_on_uncalibrated_area_so_pixel_native_passes_render()
     {
         var calibration = new FakeMapCalibrationService(); // nothing calibrated
         var areaState = new StubAreaState { CurrentArea = "AreaUncalibrated" };
@@ -126,12 +139,15 @@ public sealed class OverlaySceneHookTests
 
         service.DriveSceneForTest(null!, null!, "AreaUncalibrated", 1.0);
 
-        calls.Should().Be(0,
-            "scene drawers must be skipped on uncalibrated areas — the Project helper " +
-            "would always return null, so there's nothing meaningful for the drawer to " +
-            "render and the per-tick chip already tells the user to calibrate.");
+        calls.Should().Be(1,
+            "scene drawers MUST still fire on uncalibrated areas — pixel-native passes " +
+            "like the calibration placement pins (drawn at the raw click pixel, no Project() " +
+            "call) have to render during the Drop/Pair walkthrough, which runs entirely " +
+            "uncalibrated (calibration only persists at Confirm). Gating the whole loop on " +
+            "IsCalibrated is the #872 blocker that broke the headline cutover behavior.");
         service.StatusMessage.Should().Contain("not calibrated",
-            "the uncalibrated chip must surface so the user knows to run the calibration wizard.");
+            "the uncalibrated chip must still surface so the user knows the marker projection " +
+            "is suppressed for this area (only the projection — not the scene drawers).");
     }
 
     [Fact]
@@ -178,11 +194,11 @@ public sealed class OverlaySceneHookTests
     [Fact]
     public void Project_returns_null_for_uncalibrated_areas()
     {
-        // This is a defensive-cover test. The per-tick gate already prevents
-        // scene drawers from firing on uncalibrated areas; if a future refactor
-        // bypasses that gate (e.g. lifts the gate decision elsewhere), the
-        // per-call Project must still return null instead of fabricating a
-        // pixel.
+        // This is a defensive-cover test. Scene drawers now run even in
+        // uncalibrated areas (only the marker projection is gated), so a
+        // world-projecting drawer can call Project() with no calibration —
+        // it must return null instead of fabricating a pixel rather than
+        // relying on a loop-level gate to keep it from ever being reached.
         var calibration = new FakeMapCalibrationService(); // nothing calibrated
         var areaState = new StubAreaState { CurrentArea = "AreaUncalibrated" };
         var service = BuildService(calibration, areaState, new FixedOverlayZoomSource(1.0));
