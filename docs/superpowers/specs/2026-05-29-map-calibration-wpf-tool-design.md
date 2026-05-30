@@ -397,6 +397,7 @@ place; they are pure surface extensions over the same data model.
   k≈1, ~±10% non-affine ceiling, no zoom auto-detection. Phase 1 surfaces the
   residual to the user and lets them decide; the tool does not pretend the
   ceiling away.
+  *(Correction 2026-05-30: the "±10% non-affine ceiling" was later **disproven** — it was an operational artifact of the live Survey pipeline, not a renderer warp. The renderer is exact; accuracy is bounded by detection precision + zoom handling. See `docs/map-calibration-gate-verdict.md`.)*
 - Bundled JSON consumer chain is `BundledBaselineLoader` →
   `MapCalibrationService` → `Mithril.Reference.Models.*` consumers (Legolas
   primarily). No consumer changes needed.

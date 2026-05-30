@@ -149,7 +149,7 @@ It is committed for reproducibility and **deleted once the verdict is recorded**
 - **Gates** the future auto-calibration engine (detect→correspond→solve→outlier-guard, two consumers: offline baseline builder + live overlay self-cal retiring `CalibrationZoom`, plus an opt-in passive/crowdsourced capture path). None of those are specced until this verdict lands.
 - **Builds on** the harness ([2026-05-30-map-calibration-harness-design.md](2026-05-30-map-calibration-harness-design.md), #884/#890) and the common-lib detectors; the cold-bootstrap prototype is effectively a future `ICalibrationMethod` rehearsed in throwaway form.
 - **Shared infra, not a module** — lives in `tools/`, references `Mithril.MapCalibration`; per the charters, calibration production is shared infra owned by no module (lifted out of Legolas).
-- **Inherits the ±10% non-affine ceiling** (`legolas_calibration_findings`, [PR #449](https://github.com/moumantai-gg/mithril/pull/449)): even if H1–H4 pass, the residual map warp means "approximate location" UX is the honest ceiling. The study's per-area residuals quantify it for the sample.
+- **Inherits the ±10% non-affine ceiling** (`legolas_calibration_findings`, [PR #449](https://github.com/moumantai-gg/mithril/pull/449)): even if H1–H4 pass, the residual map warp means "approximate location" UX is the honest ceiling. The study's per-area residuals quantify it for the sample. *(Correction 2026-05-30: this premise was **disproven** by the study itself — the ±10% band was operational (live Survey pipeline), not a renderer warp; H2 confirmed sub-pixel similarity fits with no anisotropy. The honest ceiling is detection precision + zoom handling. See `docs/map-calibration-gate-verdict.md`.)*
 
 ---
 
