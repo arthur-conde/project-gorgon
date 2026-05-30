@@ -43,6 +43,29 @@ The deviation map flags **all** added content. `--blobs` adds the downstream sta
 
 **Headline:** Eltibule yields **14 icon candidates** where the proven calibrator's whole-image template NCC gets only ~3 stable RANSAC inliers today. The shape filter cleanly separates icons (green) from the keep/structures (red) and rejects the rocky rim + fog/water.
 
+## Blob typing → typed-detections CSV → cold solve (mithril#897)
+
+Pass `--icons-dir <dir>` (plus `--icon-render-size`, repeatable `--icon-size name=WxH`, `--type-floor`) alongside `--blobs` and the probe runs **type-aware template NCC within each icon blob** — the verdict's final detection stage. Each icon candidate is matched against the four pin templates inside its (padded) bbox; the best-scoring template above `--type-floor` assigns the blob's landmark Type + pivot-corrected anchor. Restricting template NCC to the ~dozen blob regions (not the whole noisy screenshot) kills the rim/terrain false-positive flood that starves whole-image RANSAC. Output: `<stem>_typed_detections.csv` (`screenshotX,screenshotY,type,iconName,score`).
+
+Feed that CSV to the calibrator's new `--detections-csv` flag and it solves from those well-spread, low-false-positive points instead of running its own whole-image NCC:
+
+```
+dotnet run --project tools/MapTextureDeviationProbe -c Release -- \
+  --screenshot study/screenshots/AreaEltibule.png \
+  --texture   study/textures/Map_AreaEltibule.v4.png \
+  --out-dir <dir> --blobs --border-mask \
+  --icons-dir study/icons --icon-render-size 16 --icon-size landmark_npc=17x16 --type-floor 0.55
+
+dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- \
+  --screenshot study/screenshots/AreaEltibule.png --area AreaEltibule \
+  --icons-dir study/icons --map-dir study/textures --map-rect "0,0,921,914" \
+  --detections-csv <dir>/AreaEltibule_typed_detections.csv
+```
+
+**Result — cold (no prior calibration, no manual clicks):** Eltibule → scale 0.763, rot 179.98°, **0.65 px** residual, 5 refs, 38/38 on-screen. KurMountains → scale 0.569, rot 180.00°, **0.73 px**, 8 refs, 32/32 on-screen. Both on the {0, π} class. This is the sparse-area cold solve the gate verdict left open; see `docs/map-calibration-gate-verdict.md` § H4.
+
+**Detector scoring against the resulting committed baselines** (`--ground-truth`, gt-tol 20): Eltibule recall 11/38 (29%) / precision 12/14 (86%); Kur recall 16/24 (67%) separable / precision 13/24 (54%). The baseline is derived from these same blobs, so the ~5–8 inlier refs trivially hit — recall over the rest and precision over the non-inlier candidates are the independent part (caveat carried in the verdict doc).
+
 ## Usage
 
 ```

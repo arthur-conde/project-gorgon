@@ -27,10 +27,10 @@ Six areas — the author's full reachable set — spanning outdoor (Serbule, Elt
 | AreaCasino | −0.0001° | 0° | false | — | — | — | — | 0.006 px |
 | AreaSerbule | 0.019° | 0° | false | 0.823 | 0.984 | 0.836 | **8.9%** | 0.303 px |
 | AreaMyconianCave | 0.032° | 0° | false | — | — | — | — | 0.530 px |
-| AreaEltibule | −179.996° | 180° | false | — | — | — | — | 0.336 px |
-| AreaKurMountains | 179.999° | 180° | false | — | — | — | — | 0.335 px |
+| AreaEltibule | −179.996° | 180° | false | 0.763 | 0.970 | 0.787 | **11.6%** | 0.650 px |
+| AreaKurMountains | 179.999° | 180° | false | 0.569 | 0.721 | 0.788 | **11.3%** | 0.732 px |
 
-(`scale`/`inset` need a texture-frame solve per area; only Serbule has one committed, hence `—` for the rest. Residuals are from each area's own solve.)
+(`scale`/`inset` need a texture-frame solve per area. Serbule, Eltibule and KurMountains now have committed texture-frame baselines; MyconianCave still `—`. Eltibule/Kur were solved **cold** via the deviation-blob → type → RANSAC pipeline — see H4. Residuals: Serbule/Eltibule/Kur are the texture-frame solve RMS; the others are from each area's overlay solve.)
 
 ## Hypotheses
 
@@ -44,9 +44,17 @@ All six areas snap to exactly {0°, 180°}: four within **0.04°** of 0, two wit
 
 A 4-parameter *similarity* fits all six areas to **sub-pixel** residual (0.006–0.53 px). If the renderer needed an anisotropic (affine) model, a similarity could not fit that tightly. A direct affine-vs-similarity contest is only meaningful at kept ≥ 4 detected points per area; that becomes available once detection is robust enough on the sparse areas (currently only Serbule clears it).
 
-### H3 — consistent border inset — **single data point; completion path identified**
+### H3 — consistent border inset — **supported (n=3); inset clusters in a ~9–12% band**
 
-Serbule's landmark bbox projects into the texture with an **8.9%** max-edge inset (scaleRatioX 0.836). Consistency across areas can't be assessed from n=1; the other five need a texture-frame solve, gated on the same detection robustness as H4.
+Three areas now have committed texture-frame solves, so the landmark-bbox-into-texture inset is measurable across them:
+
+| area | scaleRatioX | max-edge inset |
+|---|---|---|
+| AreaSerbule (0°, dense) | 0.836 | 8.9% |
+| AreaEltibule (180°, sparse) | 0.787 | 11.6% |
+| AreaKurMountains (180°, sparse) | 0.788 | 11.3% |
+
+The inset is **not a single constant but a tight band (8.9–11.6%)**, and the two independently-solved sparse 180° areas land **near-identical** (11.3 / 11.6%, scaleRatioX 0.787 / 0.788 — within 0.3 pp / 0.001). That consistency is the H3 signal: a cold scale estimate of `texture_dim / world_span × scaleRatioX` with `scaleRatioX ≈ 0.79–0.84` (≈ 9–12% inset prior) is viable as a bootstrap, to be refined by the correspondence solve. The inset is computed from **all** landmarks+NPCs' world coords projected through each committed baseline (`InsetMetrics.Compute`), so it reflects the true landmark extent, not the detected subset.
 
 ### H4 — cold zero-prior correspondence — **DEMONSTRATED on Serbule; open on sparse areas**
 
@@ -67,7 +75,16 @@ Two enablers were decisive, both non-obvious:
 1. **The DPI fix** — without it, nothing detects.
 2. **Include NPCs at the right per-type size.** It is tempting to drop the noisy NPC type (`--exclude-type Npc`), but at `--icon-size landmark_npc=17x16` (PG renders that sprite at a 17×16 aspect, not square) the NPCs become the *bulk of the real anchors*: inliers jump **8 → 23**, and that density is what makes RANSAC robust.
 
-**Eltibule + KurMountains (both 180°): not yet robust.** Both are sparser, with a rocky outer border whose texture matches the icon templates. The `--border-mask` (PR #908, edge flood-fill of non-vegetation/water) is necessary — on Eltibule it drops ~125 rim false positives and lets the solver reach the correct orientation — but not sufficient: too few interior landmark icons match strongly enough for stable RANSAC. This is the open detection-quality problem, and the texture-deviation front-end below is the most promising attack on it. (Pixel dims for `--map-rect "0,0,W,H"`: Eltibule 921×914, Kur 981×980.)
+**Eltibule + KurMountains (both 180°): cold solve DEMONSTRATED via the blob front-end (update 2026-05-30).** Whole-image template NCC + RANSAC stays stuck at 3 (often degenerate, near-coincident) inliers on both areas regardless of threshold or `--border-mask` — the named refs are either in an unseparable town cluster or lost under the rocky-rim / terrain false-positive flood (64 medipillar + 64 portal "detections" per template, mostly rim). A 0.7 threshold doesn't help: it lets noise form a wrong-but-self-consistent fit at the wrong orientation (−49.6° on Eltibule).
+
+What *did* work is the pipeline this verdict recommended but hadn't wired end-to-end: **texture-deviation local-NCC → shape/size blob filter → type-aware template NCC *within* each icon blob → RANSAC.** Typing only the ~14–24 blob candidates (instead of the whole noisy screenshot) collapses the false-positive pool, and RANSAC over those clean typed detections recovers both areas cold — **no prior calibration, no manual clicks**:
+
+| area | scale | rotation | origin | refs | residual | refs on-screen |
+|---|---|---|---|---|---|---|
+| AreaEltibule | 0.763 | 179.98° (π) | (2146.2, −202.5) | 5 | **0.65 px** | 38/38 |
+| AreaKurMountains | 0.569 | 180.00° (π) | (2188.8, −141.5) | 8 | **0.73 px** | 32/32 |
+
+Both land on the discrete {0, π} class (matching `refinements.json`), sub-pixel, every ref projecting on-screen. So **H4 is now demonstrated on sparse areas too** — the lever is the deviation-blob detector, precisely as predicted. Tooling: `MapTextureDeviationProbe --blobs … --icons-dir …` emits a typed-detections CSV; `MapCalibrationFromScreenshot --detections-csv` solves from it. The `--border-mask` is still useful on the probe side but **over-masks on Eltibule** — its edge-connected non-veg/water flood bleeds through the brown interior (the new `--mask-debug` viz shows 171 dropped / 36 kept), clipping legitimate interior icons; the typed-detection RANSAC tolerates rim false positives without it, but the masked set gave the cleaner Eltibule fit here. (Pixel dims for `--map-rect "0,0,W,H"`: Eltibule 921×914, Kur 981×980. Textures 2048×2033 / 2048×2048.)
 
 ## Texture-deviation probe — **promising; likely the sparse-area detection front-end**
 
@@ -101,10 +118,21 @@ Terrain and (on Serbule) the border largely cancel; deviation is **localized**, 
 - **Border-mask irregular zones** (PR #908) as a complement; on Serbule the deviation front-end already cancels the border, on Eltibule the rocky rim partly survives and the mask helps.
 - **Accuracy ceiling is detection + zoom, not the renderer.** The renderer is a clean per-area isotropic similarity with **no** intra-area warp; it fits to sub-pixel once zoom is normalised. ([PR #449](https://github.com/moumantai-gg/mithril/pull/449) is **resolved** — the old "±10% non-affine warp" band was *operational* (live Survey pipeline: player-relative pins, un-readable in-game zoom, hand-correction), not a renderer non-linearity. Affine/homography/poly and piecewise/TPS/RBF were all eliminated; do not reintroduce warp language.) So engine accuracy is bounded by auto-detection precision and zoom handling, not by any map warp.
 
+## Detector re-scoring against the new baselines (2026-05-30)
+
+With Eltibule + Kur baselines committed, the #911 blob shape-filter detector (`--blobs --ground-truth`, gt-tol 20 px) yields real recall/precision instead of #911's eyeballed candidate counts:
+
+| area | icon candidates | recall (separable) | precision | notes |
+|---|---|---|---|---|
+| AreaEltibule | 14 | 11/38 = **29%** (0 under structure) | 12/14 = **86%** | low recall: many of the 38 GT refs aren't rendered as detectable icons (unshown NPCs) + the over-masked lower interior |
+| AreaKurMountains | 24 | 16/24 = **67%** (8 of 32 project onto a rejected structure/fog blob) | 13/24 = **54%** | snow terrain deviates more → noisier candidate set, lower precision |
+
+**Honest caveat:** each baseline was *derived* from this same blob detector (typed → RANSAC over a 5–8 inlier subset), so the inlier refs trivially hit — recall over the remaining ~30/24 refs and precision over the non-inlier candidates are the independent part. The baselines' validity is corroborated independently: sub-pixel residual, exact-π orientation matching `refinements.json`, scaleRatioX consistent with Serbule, and named inliers that are real area entities (Travel to Ilmari Desert, Creepy Door, Meditation Pillars). Precision (esp. Eltibule's 86%) is the more meaningful axis: when the detector flags a candidate it is usually a real ref. Both are lower bounds — GT = *all* landmarks+NPCs, not all of which render.
+
 ## Remaining work
 
-1. **Build the texture-deviation → shape-filter → template stage** and re-test on Eltibule/Kur. The probe shows the terrain-subtraction step works; the missing piece is the blob shape/size filter that separates icons from structures/fog, then template NCC within candidates.
-2. **Texture-frame solves for the other five areas** (completes H3 inset consistency + a real per-area H2 affine contest at kept ≥ 4). Run the proven `tools/MapCalibrationFromScreenshot` once sparse-area detection is robust, commit those `AreaCalibration`s to the baseline, re-run `measure`, and append the inset values here and on the wiki.
+1. ~~**Build the texture-deviation → shape-filter → template stage** and re-test on Eltibule/Kur.~~ **Done.** Blob shape/size filter + type-aware template NCC within candidates is wired (`MapTextureDeviationProbe --blobs --icons-dir`) and cold-solves both sparse areas (see H4). The `--border-mask` over-masking on Eltibule (interior bleed-through) is a known refinement for the engine — flood depth or rock-colour classification rather than "edge-connected non-veg/water".
+2. **Texture-frame solves for the remaining areas** (MyconianCave, Cave1, Casino — completes H3 across the full reachable set + a real per-area H2 affine contest at kept ≥ 4). Same `--detections-csv` pipeline; commit to the baseline, re-run `measure`, append insets here and on the wiki.
 
 ## Teardown
 
