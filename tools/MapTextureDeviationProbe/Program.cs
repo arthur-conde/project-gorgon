@@ -43,6 +43,7 @@ string orientationArg = Cli.Get(args, "--orientation", "auto"); // auto | 0 | 18
 // --- blob shape/size filter options ---
 bool doBlobs = Cli.Has(args, "--blobs");
 bool useBorderMask = Cli.Has(args, "--border-mask");
+bool deviationRim = Cli.Has(args, "--deviation-rim");
 int closeRadius = int.Parse(Cli.Get(args, "--close", "1"));
 var blobOpts = new BlobOptions(
     MinArea: int.Parse(Cli.Get(args, "--min-area", "12")),
@@ -238,7 +239,7 @@ if (doBlobs)
             Path.Combine(outDir, $"{stem}_typed_detections.csv"))
         : null;
     GrayImage? shotGray = typing is not null ? ImageIo.LoadGray(screenshotPath) : null;
-    BlobStage.Run(shot, dev, lowNcc, useBorderMask, closeRadius, blobOpts, gt, outDir, stem, typing, shotGray);
+    BlobStage.Run(shot, dev, lowNcc, useBorderMask, closeRadius, blobOpts, gt, outDir, stem, typing, shotGray, deviationRim);
 }
 return 0;
 

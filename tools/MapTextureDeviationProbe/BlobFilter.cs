@@ -60,7 +60,7 @@ internal static class BlobStage
 {
     public static void Run(BgraImage shot, float[] dev, double lowNcc, bool useBorderMask,
         int closeRadius, BlobOptions opts, GroundTruthInputs? gt, string outDir, string stem,
-        BlobTypingInputs? typing = null, GrayImage? shotGray = null)
+        BlobTypingInputs? typing = null, GrayImage? shotGray = null, bool deviationRim = false)
     {
         int w = shot.Width, h = shot.Height, n = w * h;
         double devThr = 1.0 - lowNcc;  // dev >= devThr  <=>  ncc <= lowNcc
@@ -71,7 +71,33 @@ internal static class BlobStage
         Console.WriteLine();
         Console.WriteLine($"[blobs] threshold ncc<={lowNcc:0.00} (dev>={devThr:0.00}) -> {fgCount} fg px ({(double)fgCount / n:P1})");
 
-        if (useBorderMask)
+        if (deviationRim)
+        {
+            // Edge-connected deviation flood: the rim is the foreground component
+            // that touches the image edge; interior icons are isolated foreground
+            // islands, and the matching interior terrain isn't foreground at all.
+            // So this drops the rim without eating the interior the colour
+            // BorderMask over-masks (mithril#897 — Eltibule 11.3% vs colour 67.6%).
+            var rim = new bool[n];
+            var q = new Queue<int>();
+            void Enq(int x, int y)
+            {
+                if (x < 0 || x >= w || y < 0 || y >= h) return;
+                int k = y * w + x;
+                if (fg[k] && !rim[k]) { rim[k] = true; q.Enqueue(k); }
+            }
+            for (int x = 0; x < w; x++) { Enq(x, 0); Enq(x, h - 1); }
+            for (int y = 0; y < h; y++) { Enq(0, y); Enq(w - 1, y); }
+            int dropped = 0;
+            while (q.Count > 0)
+            {
+                int k = q.Dequeue(); int x = k % w, y = k / w;
+                Enq(x - 1, y); Enq(x + 1, y); Enq(x, y - 1); Enq(x, y + 1);
+            }
+            for (int i = 0; i < n; i++) if (rim[i]) { fg[i] = false; dropped++; }
+            Console.WriteLine($"[blobs] deviation-rim flood cleared {dropped} edge-connected fg px ({(double)dropped / Math.Max(1, fgCount):P0} of fg)");
+        }
+        else if (useBorderMask)
         {
             var border = BorderMask.Compute(shot.Pixels, w, h, 4);
             int dropped = 0;

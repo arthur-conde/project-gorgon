@@ -124,7 +124,20 @@ The flood-fill conflates "rim rock" with "any interior non-vegetated terrain" (b
 | Eltibule | 67.6% (drowns the brown interior) | **11.3%** (thin rim ring; interior + icons intact) |
 | KurMountains | 54.5% (floods interior snow) | **8.9%** (landmass-edge band; interior snow intact) |
 
-Visually confirmed: the deviation-flood red is a thin ring at the very edge on Eltibule and a coast-following band on Kur, with the whole interior clear. It's also screenshot-derived (no separate colour/texture classifier) and *self-consistent*: the rim forms a maskable ring exactly when it deviates (and so causes false positives); where it cancels (Serbule, border-band 0.178) there's no ring — but also no rim problem, so nothing to mask. **Engine carry-over: replace the colour non-veg/water flood with an edge-connected deviation flood (equivalently: connected-components on the deviation foreground, drop the edge-touching component).** Not yet wired into the blob `--border-mask` path — verification owed is the end-to-end re-solve showing it keeps the interior icons the colour mask dropped (more spread → more inliers) while still killing the rim false positives.
+Visually confirmed: the deviation-flood red is a thin ring at the very edge on Eltibule and a coast-following band on Kur, with the whole interior clear. It's also screenshot-derived (no separate colour/texture classifier) and *self-consistent*: the rim forms a maskable ring exactly when it deviates (and so causes false positives); where it cancels (Serbule, border-band 0.178) there's no ring — but also no rim problem, so nothing to mask. **Engine carry-over: replace the colour non-veg/water flood with an edge-connected deviation flood (equivalently: connected-components on the deviation foreground, drop the edge-touching component).**
+
+**End-to-end re-solve — verified, with one qualifier (`--deviation-rim` wired into the blob path).** Swapping the colour BorderMask for the edge-connected deviation flood and re-solving both areas:
+
+| area | mask | typed detections | RANSAC inliers | residual | orientation | solve |
+|---|---|---|---|---|---|---|
+| Eltibule | colour border-mask | 14 | 5 | 0.65 px | π | ✅ |
+| Eltibule | deviation-rim **alone** | 19 | 3 | 0.23 px | π | ✅ (but only 3 inliers) |
+| Eltibule | deviation-rim **+ type-floor 0.65** | 17 | **10** | 0.83 px | π | ✅ |
+| Kur | colour border-mask | 24 | 8 | 0.73 px | π | ✅ |
+| Kur | deviation-rim **alone** | 29 | 3 | 1.23 px | **0.110 rad** | ❌ wrong |
+| Kur | deviation-rim **+ type-floor 0.65** | 25 | **12** | 0.77 px | π | ✅ |
+
+Two findings: (1) **deviation-rim alone is not a drop-in replacement** — it keeps the interior icons the colour mask over-dropped, but it also keeps *isolated* interior false positives the colour over-mask was incidentally hiding (Kur's snow terrain deviates into icon-sized non-edge-connected blobs), and those break Kur's solve. It removes the *connected* rim, not isolated terrain FPs. (2) **deviation-rim + a stronger per-blob acceptance gate (`--type-floor` 0.65) is the actual win**: the floor rejects the weak terrain FPs while the deviation flood preserves the interior icons, so the inlier count roughly **doubles** (Eltibule 5→10, Kur 8→12) at the same correct sub-pixel solve. The residual ticks up (0.83 / 0.77) because it now averages real fit error over 10–12 spread points instead of a lucky 5. The committed baselines stay as-is (colour-mask provenance), but this second independently-masked pipeline converged to the **same** scale/rotation/origin (within 0.05% scale, 0.3 px origin, both π) — a cross-validation of those baselines from a different detection path. **Engine carry-over refined: deviation-rim mask + a per-candidate template-score gate, not deviation-rim alone.**
 
 **Proposed cold-bootstrap from boundary registration (untested — verification owed).** World→texture projection *is* the calibration (`WorldToWindow` = scale + rotation + origin + handedness), so you cannot project the landmark hull onto the texture without already having the answer — the obvious "outline the landmarks, lay it on the texture" move is circular. The non-circular flip: two boundaries are knowable **independently in their own frames** —
 
