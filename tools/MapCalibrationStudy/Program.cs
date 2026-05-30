@@ -118,7 +118,9 @@ internal static class Program
             rows.Add(new StudyRecord(area,
                 result.Calibration.RotationRadians * 180.0 / Math.PI, orient,
                 result.Calibration.MirrorNorth, result.Calibration.Scale, 0, 0, 0,
-                result.RefinedResidualPx, double.NaN, result.CorrespondedCount, paired));
+                // H2 is real here: affine fit over the same kept-inlier detected
+                // pixels vs. that orientation's similarity residual (apples-to-apples).
+                result.RefinedResidualPx, result.AffineResidualPx, result.CorrespondedCount, paired));
         }
 
         Emit(o["--out"], "bootstrap", rows);

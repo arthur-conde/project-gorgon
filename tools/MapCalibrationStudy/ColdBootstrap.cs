@@ -36,6 +36,18 @@ public static class ColdBootstrap
         /// only when it is small.
         /// </summary>
         public double GlobalReprojectionPx { get; init; }
+
+        /// <summary>
+        /// (H2) RMS pixel residual of a full 6-parameter affine fit over the
+        /// SAME kept-inlier (world ↔ detected-pixel) pairs the 4-param similarity
+        /// (<see cref="RefinedResidualPx"/>) was solved on — an apples-to-apples
+        /// affine-vs-similarity contest on identical points. This is the ONLY
+        /// place H2 is honestly measurable: bootstrap has independent detected
+        /// pixels, whereas measure mode would have to reproject through the
+        /// solved similarity (degenerate). If the affine barely beats the
+        /// similarity here, the renderer is isotropic.
+        /// </summary>
+        public double AffineResidualPx { get; init; }
     }
 
     public static Result? Run(
@@ -110,9 +122,18 @@ public static class ColdBootstrap
             // 0°/180° ambiguous — both orientations score equally and the first
             // enumerated wins; real PG areas aren't point-symmetric.)
             var globalPx = GlobalReprojection(cal, world, detected);
+            // H2: fit a 6-param affine over the SAME kept-inlier pairs the
+            // similarity was solved on, so the affine-vs-similarity comparison is
+            // on identical points. Needs >= 3 pairs (affine has 6 DOF / 3 points
+            // per axis); the kept set is already guaranteed >= 3 above.
+            var affinePts = kept
+                .Select(r => (r.WorldX, r.WorldZ, r.Pixel.X, r.Pixel.Y))
+                .ToList();
+            var affineRms = affinePts.Count >= 3 ? AffineFit.Rms(affinePts) : double.NaN;
             var candidate = new Result(cal, cal.ResidualPixels, kept.Count, mirrorX, mirrorZ)
             {
                 GlobalReprojectionPx = globalPx,
+                AffineResidualPx = affineRms,
             };
             if (best is null
                 || candidate.GlobalReprojectionPx < best.GlobalReprojectionPx - 1e-6

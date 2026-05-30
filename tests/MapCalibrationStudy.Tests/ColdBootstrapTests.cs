@@ -55,6 +55,11 @@ public class ColdBootstrapTests
         // (global score near zero) — this is the metric that separates the true
         // orientation from a reflected one that merely fit a subset.
         result.GlobalReprojectionPx.Should().BeLessThan(1.0);
+        // H2 column is a REAL number in bootstrap mode (affine fit over the kept
+        // inliers), not NaN — on a clean similarity cloud it ties the similarity
+        // at ~0, which is the apples-to-apples isotropy answer.
+        double.IsNaN(result.AffineResidualPx).Should().BeFalse();
+        result.AffineResidualPx.Should().BeLessThan(1.0);
 
         // The decisive H4 assertion: pin the RECOVERED TRANSFORM, not just the
         // count + a subset residual. A wrong-orientation run can also hit
