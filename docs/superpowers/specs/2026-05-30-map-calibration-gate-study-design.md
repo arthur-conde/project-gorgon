@@ -68,9 +68,9 @@ The study's `measure` mode reads source 0 directly to tabulate the rotation/hand
 2. **Zoom all the way out** so the entire texture is visible and pan = 0. (This is the `MapRectLocator` / `CalibrationZoom = 1.0` assumption; a panned/zoomed sub-window defeats the v1 map-rect math.)
 3. Screenshot at native resolution; name `study/<AreaKey>.png`.
 
-**Sample:** capture what's easy (~3–5 areas), chosen for **variety on the axes most likely to break the hypothesis** — include at minimum one dungeon/indoor map and one large outdoor map (rotation/handedness are the most plausible per-author differences). `AreaSerbule` is already calibrated at 0.30 px (`map-calibration-baseline.json`) and serves as a free fifth data point.
+**Sample = the 6 source-0 areas.** These are the maps the author can actually reach, so they are the **whole reachable population**, not a subset of a larger possible sample — and they already span the variety that matters (outdoor: Serbule, Eltibule, KurMountains; cave: Cave1, MyconianCave; indoor: Casino; and crucially both orientation classes, 0° and 180°). Capture a zoomed-out texture-frame screenshot for **as many of the 6 as practical**; H3/H4 need only enough to confirm the inset clusters and that blind correspondence works on at least one area of *each* orientation class (so include at least one of Eltibule/KurMountains, since the π-orientation is the one that most stresses the bootstrap's handedness enumeration). `AreaSerbule` additionally has a committed 0.30 px texture-frame baseline in `map-calibration-baseline.json` as a free anchor.
 
-**Honesty clause (carried into the verdict):** n≈4 is **directional evidence, not proof**. The verdict is "proceed / stop / investigate," not a statistical guarantee. The protocol's repeatability is the mitigation: the table is append-only as more screenshots arrive.
+**Honesty clause (carried into the verdict):** n=6 is **directional evidence, not proof** — but it is the practical ceiling of reachable maps, not a convenience cut, so widening the sample isn't an available lever. The verdict is "proceed / stop / investigate," not a statistical guarantee; the protocol stays repeatable so the table can be appended if more areas become reachable later (e.g. via the future opt-in passive-capture path).
 
 ## 4 — Half A: geometric-consistency measurement
 
