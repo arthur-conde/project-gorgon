@@ -70,6 +70,7 @@ internal static class Pipeline
             MaskDebugPath: args.MaskDebugPath,
             UseBorderMask: args.UseBorderMask,
             DetectionsCsvPath: args.DetectionsCsvPath,
+            IgnoreTypes: args.IgnoreTypes,
             Seed: args.Seed);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
@@ -203,6 +204,7 @@ internal sealed record CalibrationInputs(
     string? MaskDebugPath,
     bool UseBorderMask,
     string? DetectionsCsvPath,
+    bool IgnoreTypes,
     (double Rot, double Scale, double Ox, double Oy, bool Mirror)? Seed);
 
 internal sealed record AssignedReference(

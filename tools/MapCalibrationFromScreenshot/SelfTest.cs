@@ -163,6 +163,7 @@ internal static class SelfTest
             MaskDebugPath: null,
             UseBorderMask: false,
             DetectionsCsvPath: null,
+            IgnoreTypes: false,
             Seed: null);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 

@@ -226,8 +226,8 @@ internal static class ScreenshotCalibrator
         }
         else
         {
-            assigned = RansacAssign(detectionsByType, allRefs, mapRect).ToList();
-            Console.WriteLine($"[ransac] {assigned.Count} inlier references kept");
+            assigned = RansacAssign(detectionsByType, allRefs, mapRect, inputs.IgnoreTypes).ToList();
+            Console.WriteLine($"[ransac] {assigned.Count} inlier references kept{(inputs.IgnoreTypes ? " (type constraint OFF)" : "")}");
         }
 
         if (assigned.Count < 2)
@@ -398,15 +398,22 @@ internal static class ScreenshotCalibrator
     private static IReadOnlyList<AssignedReference> RansacAssign(
         Dictionary<string, List<TypedDetection>> detectionsByType,
         List<LandmarkRef> allRefs,
-        MapRect mapRect)
+        MapRect mapRect,
+        bool ignoreTypes = false)
     {
         // Build pool: (texture-pixel detection, candidate refs of same type).
         // Work in texture-pixel space so the inlier predicate is in a stable
         // coord system independent of the screenshot's pan/zoom.
+        // --ignore-types widens every detection's candidates to ALL refs — the
+        // diagnostic for "do anonymous blob centroids register without the type
+        // label?". Inlier predicate stays per-detection-best, so a detection can
+        // now (wrongly) latch onto a cross-type ref if it's geometrically closer.
         var pool = new List<(TypedDetection Det, double Tx, double Ty, IReadOnlyList<LandmarkRef> Candidates)>();
         foreach (var kv in detectionsByType)
         {
-            var typeRefs = allRefs.Where(r => string.Equals(r.Type, kv.Key, StringComparison.Ordinal)).ToList();
+            var typeRefs = ignoreTypes
+                ? allRefs
+                : allRefs.Where(r => string.Equals(r.Type, kv.Key, StringComparison.Ordinal)).ToList();
             if (typeRefs.Count == 0) continue;
             foreach (var det in kv.Value)
             {

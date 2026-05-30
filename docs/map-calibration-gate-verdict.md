@@ -97,6 +97,17 @@ Both land on the discrete {0, π} class (matching `refinements.json`), sub-pixel
 
 Without the mask the rocky rim contributes ~7 extra blobs that **type as icons** (rim rock matches the pin templates above the 0.55 floor); those rim false positives let RANSAC settle on a wrong-but-self-consistent **3-inlier** fit (3 points / 4 DOF fits almost any similarity at low residual) at the wrong orientation. The mask drops them and RANSAC locks onto the correct π fit at 5–8 inliers. The degeneracy guards (100 px span, refit-residual tiebreak) do **not** save the unmasked run on either area. So the mask is necessary for convergence here — *and yet* it simultaneously **over-masks Eltibule's interior**: its edge-connected non-veg/water flood bleeds through the brown interior (new `--mask-debug` viz: 171 dropped / 36 kept), eating legitimate interior icons. Net positive (removing rim FPs matters more than the interior icons lost), but blunt — the engine wants a tighter rim classifier (bounded flood depth or rock-colour) that drops the rim without eating the interior. (Pixel dims for `--map-rect "0,0,W,H"`: Eltibule 921×914, Kur 981×980. Textures 2048×2033 / 2048×2048.)
 
+**The blob TYPE label is load-bearing, not just the location** (`--ignore-types` experiment). The deviation heatmap + shape filter pinpoint icon *locations* well (86% precision on Eltibule), but a calibration solve needs world↔pixel *correspondence*, and anonymous centroids don't carry the identity to recover it. Re-running the exact same clean blob set with the per-type RANSAC constraint **off**:
+
+| area | type constraint | inliers | residual | rotation | outcome |
+|---|---|---|---|---|---|
+| Eltibule | on (typed) | 5 | 0.65 px | π | ✅ correct |
+| Eltibule | off (anonymous) | 4 | 3.57 px | 1.217 rad | ❌ wrong (also wrong scale 0.23) |
+| Kur | on (typed) | 8 | 0.73 px | π | ✅ correct |
+| Kur | off (anonymous) | 4 | 6.04 px | −2.344 rad | ❌ wrong (also wrong scale 0.89) |
+
+Both mis-register without types. The ref field is dense (38 / 32 refs, many clustered in the town square), so anonymous dots admit plenty of wrong-but-geometrically-consistent 4-inlier fits; the type constraint collapses the assignment space (an npc blob pairs only with the 17 npc refs, a medipillar only with 6), killing the coincidental cross-type matches. **Engine carry-over: the detection stage must *type* the blobs (template NCC within candidates), not merely locate them — typing is the bridge from "where the icons are" to "which icon each is."**
+
 ## Texture-deviation probe — **promising; likely the sparse-area detection front-end**
 
 Idea: the icon-free CDN base texture (`Map_Area<X>.v4.png`) and the in-game map screenshot are the same artwork; align them by extent (via the map-rect) and compute a **sliding-window local NCC**. Local NCC is invariant to per-window linear brightness/contrast, so terrain matches through PG's restyle/tint and the rocky border largely cancels; an icon disrupts the local match → low NCC → "added content" candidate. Prototyped as a visualization in [`tools/MapTextureDeviationProbe`](../tools/MapTextureDeviationProbe) (throwaway).
