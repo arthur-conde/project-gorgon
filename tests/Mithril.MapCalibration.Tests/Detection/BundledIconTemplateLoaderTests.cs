@@ -36,15 +36,26 @@ public sealed class BundledIconTemplateLoaderTests
     }
 
     [Fact]
-    public void Pin_icons_pivot_at_bottom_tip()
+    public void All_landmark_icons_pivot_at_center()
     {
         var set = BundledIconTemplateLoader.Load(logger: null);
 
-        // Teardrop pins (telepad/portal) are authored anchored at the bottom tip,
-        // pivotY ≈ 0 in Unity Y-up convention.
-        foreach (var t in set.Templates.Where(t => t.Name is "landmark_telepad" or "landmark_portal"))
+        // The real PG Sprite.m_Pivot for ALL FOUR landmark icons is (0.5, 0.5) —
+        // centered — confirmed by re-extracting fresh from the live
+        // WindowsPlayer_Data/sharedassets0.assets with classdata.tpk (#916: all
+        // four icons pivot=(0.50,0.50)). The #913 gate study's sub-pixel cold
+        // solves used these same centered-pivot icons.
+        //
+        // The earlier spec text (and the synthetic placeholder emitter) asserted
+        // telepad/portal anchored at the bottom tip (pivotY ≈ 0). That was wrong
+        // about the real authored data — the synthetic teardrops merely *chose*
+        // a bottom-tip pivot; the real sprites are centered. The templates carry
+        // their own pivots through the manifest, so the engine consumes whatever
+        // the real data says rather than assuming a teardrop anchor.
+        foreach (var t in set.Templates)
         {
-            t.PivotY.Should().BeApproximately(0.0, 0.05);
+            t.PivotX.Should().BeApproximately(0.5, 0.05, $"{t.Name} pivotX");
+            t.PivotY.Should().BeApproximately(0.5, 0.05, $"{t.Name} pivotY");
         }
     }
 
