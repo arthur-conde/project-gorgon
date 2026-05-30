@@ -25,13 +25,16 @@ internal static class Program
     {
         try
         {
-            // emit-templates is a standalone regen mode with its own minimal args
-            // (--synthetic, --icons-dir, --emit-out); handled before the full
-            // CliArgs parser so its flags don't need threading through CliArgs.
-            if (Array.IndexOf(args, "emit-templates") >= 0 &&
-                Array.IndexOf(args, "--phase") is var pi && pi >= 0 && pi + 1 < args.Length && args[pi + 1] == "emit-templates")
+            // emit-templates / emit-refs are standalone regen modes with their own
+            // minimal args; handled before the full CliArgs parser so their flags
+            // don't need threading through CliArgs.
+            if (PhaseIs(args, "emit-templates"))
             {
                 return RunEmitTemplates(args);
+            }
+            if (PhaseIs(args, "emit-refs"))
+            {
+                return RunEmitRefs(args);
             }
 
             var parsed = CliArgs.Parse(args);
@@ -56,6 +59,52 @@ internal static class Program
             Console.Error.WriteLine(ex.StackTrace);
             return 1;
         }
+    }
+
+    private static bool PhaseIs(string[] args, string phase)
+    {
+        int pi = Array.IndexOf(args, "--phase");
+        return pi >= 0 && pi + 1 < args.Length && args[pi + 1] == phase;
+    }
+
+    // emit-refs: regenerate the local-only replay reference fixtures
+    // (study/refs/<area>.json) from the bundled landmarks.json + npcs.json. These
+    // files are gitignored (they live under study/) — this is just the
+    // reproducible regen path so the ReplayFixtureTests refs can be rebuilt
+    // deterministically. --area <name> required (repeatable not supported; run
+    // once per area). --refs-out defaults to study/refs beside Mithril.slnx.
+    private static int RunEmitRefs(string[] args)
+    {
+        string GetArg(string key, string def)
+        {
+            for (int i = 0; i < args.Length - 1; i++)
+                if (args[i] == key) return args[i + 1];
+            return def;
+        }
+        var area = GetArg("--area", "");
+        if (area.Length == 0)
+            throw new UserFacingException("emit-refs needs --area <AreaName> (e.g. --area AreaSerbule)");
+
+        var outDir = GetArg("--refs-out", DefaultRefsDir());
+        var landmarks = GetArg("--landmarks", RepoPaths.LandmarksJsonPath());
+        var npcs = GetArg("--npcs", RepoPaths.NpcsJsonPath());
+
+        RefsEmitter.Emit(area, landmarks, npcs, outDir);
+        return 0;
+    }
+
+    private static string DefaultRefsDir()
+    {
+        var dir = AppContext.BaseDirectory;
+        for (int i = 0; i < 10; i++)
+        {
+            if (File.Exists(Path.Combine(dir, "Mithril.slnx")))
+                return Path.Combine(dir, "study", "refs");
+            var parent = Directory.GetParent(dir);
+            if (parent is null) break;
+            dir = parent.FullName;
+        }
+        throw new UserFacingException($"could not locate Mithril.slnx walking up from {AppContext.BaseDirectory}");
     }
 
     // emit-templates: regenerate the bundled pre-decoded icon templates

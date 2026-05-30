@@ -41,7 +41,15 @@ public sealed class DeviationBlobCalibrationDetector : ICalibrationDetector
         var blobs = DeviationBlobDetector.DetectIconBlobs(dev, w, h, request.LowNcc, rim, request.BlobOptions, closeRadius: 1);
 
         var byType = new Dictionary<string, List<TypedDetection>>(StringComparer.Ordinal);
-        var templates = request.Templates.Templates;
+
+        // PG ships icon sprites at native resolution (~256 px) but renders map
+        // icons at a single small on-screen size (~16 px). Single-scale NCC only
+        // correlates at matching size, so the templates MUST be downscaled to the
+        // render size before the per-blob match — otherwise every native-res
+        // template is larger than the blob crop and skipped, yielding zero
+        // detections (mithril#916). Returns the templates unchanged when they're
+        // already small (the synthetic-fixture path).
+        var templates = IconRenderScaler.RenderSized(request.Screenshot, request.Templates.Templates, request.TypeFloor, request.RenderSizePx);
 
         foreach (var blob in blobs)
         {

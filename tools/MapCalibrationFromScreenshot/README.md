@@ -77,9 +77,40 @@ After regen, run `dotnet test tests/Mithril.MapCalibration.Tests` — the
 `BundledIconTemplateLoaderTests` `pixelSha256` assertion fails loudly if the
 manifest and blob drift.
 
-> **Note:** the templates currently committed are the **synthetic** placeholders
-> (no PG install was available at authoring time). Re-run the real-PG path above
-> to ship the production sprites before the detector is wired live (Phase 2/3).
+> **Note:** the committed templates are the **real PG sprites**, regenerated
+> from a live install via the real-PG path above (#916). All four landmark
+> sprites have `Sprite.m_Pivot` = (0.5, 0.5) — centered — confirmed by
+> re-extracting from `WindowsPlayer_Data/sharedassets0.assets` with
+> `classdata.tpk`. (The earlier "telepad/portal pivotY ≈ 0, bottom-tip" reading
+> was wrong about the authored data; only the `--synthetic` teardrops use a
+> bottom-tip pivot, as a deliberate test fixture.) Current
+> `pixelSha256 = e6a83ddbcb269e5fdb0544e60c9875bd1a412fe921cb8954aedd3f0a017e988f`,
+> `icon-templates.bin` ≈ 53 845 bytes.
+
+## Regenerating the replay reference fixtures (`--phase emit-refs`)
+
+The skippable real-screenshot replay (`tests/Mithril.MapCalibration.Tests/Detection/ReplayFixtureTests.cs`)
+reads per-area landmark/NPC world references from `study/refs/<area>.json`
+(`[{type,name,x,z}, …]`). The `study/` tree is **gitignored** — these refs are
+**local-only reproducible fixtures**, never committed. `emit-refs` regenerates
+them deterministically from the same bundled reference data the calibration
+solver uses (`src/Mithril.Shared/Reference/BundledData/{landmarks,npcs}.json`):
+
+```bash
+# one per area (AreaSerbule / AreaEltibule / AreaKurMountains)
+dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- \
+  --phase emit-refs --area AreaSerbule
+```
+
+`--refs-out <dir>` overrides the default `study/refs`; `--landmarks` / `--npcs`
+override the bundled-data source paths. The `Type` string written
+("TeleportationPlatform" / "MeditationPillar" / "Portal" / "Npc") matches each
+icon template's `LandmarkType` for the solver's type-constrained correspondence.
+
+To exercise the replay locally you also need the screenshots
+(`study/screenshots/Area*.png`) and the bundled map textures
+(`study/textures/Map_<area>.v4.png`) present beside `Mithril.slnx`. The replay
+theory skips loudly when any are absent.
 
 ## Real usage
 

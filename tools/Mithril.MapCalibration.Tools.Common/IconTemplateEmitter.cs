@@ -60,9 +60,13 @@ public static class IconTemplateEmitter
     }
 
     /// <summary>
-    /// PG-free path: deterministic teardrop templates. The pin icons (telepad,
-    /// portal) carry pivot (0.5, 0) — bottom-tip anchored — matching PG's real
-    /// authored pivots; medipillar/npc use (0.5, 0.5).
+    /// PG-free path: deterministic teardrop templates for the synthetic
+    /// end-to-end test (no PG install). The synthetic pin icons (telepad, portal)
+    /// carry pivot (0.5, 0) — bottom-tip anchored — to exercise the pivot
+    /// correction with a non-trivial offset; medipillar/npc use (0.5, 0.5).
+    /// NOTE: this is a deliberate test fixture, NOT PG's real pivots. The real
+    /// shipped sprites are centered (0.5, 0.5) for all four — see the real-PG
+    /// path in <see cref="EmitFromIcons"/> and #916.
     /// </summary>
     public static void EmitSynthetic(string outDir)
     {

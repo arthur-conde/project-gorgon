@@ -81,18 +81,22 @@ public class AreaCalibrationServiceTests
     [Fact]
     public void Entering_an_uncalibrated_area_builds_references_and_does_not_touch_projector()
     {
+        // Use an area with NO bundled baseline (Serbule/Eltibule/KurMountains now
+        // ship gate-study baselines, #916) so "uncalibrated" is genuinely true:
+        // otherwise SelectArea applies the baseline fallback and LastApplied is set.
+        const string area = "AreaTestVille";
         var refData = new FakeRefData
         {
-            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+            AreasByKey = { [area] = new AreaEntry(area, "Testville", "") },
             NpcsByKey =
             {
-                ["NPC_Marn"] = new Npc { Name = "Marn", AreaName = "AreaEltibule", Pos = "x:10 y:0 z:20" },
-                ["NPC_NoPos"] = new Npc { Name = "Ghost", AreaName = "AreaEltibule", Pos = null },
+                ["NPC_Marn"] = new Npc { Name = "Marn", AreaName = area, Pos = "x:10 y:0 z:20" },
+                ["NPC_NoPos"] = new Npc { Name = "Ghost", AreaName = area, Pos = null },
                 ["NPC_Other"] = new Npc { Name = "Far", AreaName = "AreaSerbule", Pos = "x:1 y:0 z:1" },
             },
             LandmarksByArea =
             {
-                ["AreaEltibule"] = new List<Landmark>
+                [area] = new List<Landmark>
                 {
                     new() { Name = "Teleport Circle", Type = "TeleportationPlatform", Loc = "x:5 y:1 z:6" },
                     new() { Name = "Broken", Type = "Portal", Loc = "not-a-loc" },
@@ -101,7 +105,7 @@ public class AreaCalibrationServiceTests
         };
         var (svc, proj, _, _) = Build(refData);
 
-        svc.SelectArea("AreaEltibule");
+        svc.SelectArea(area);
 
         proj.LastApplied.Should().BeNull(); // no persisted calibration → projector untouched
         svc.CurrentAreaReferences.Select(r => r.Name)
@@ -222,13 +226,18 @@ public class AreaCalibrationServiceTests
     [Fact]
     public void ClearCurrentAreaCalibration_removes_and_raises_changed()
     {
+        // Use a baseline-free area (#916: Eltibule now ships a bundled baseline,
+        // so after clearing the user refinement the service would fall back to
+        // the baseline and IsCurrentAreaCalibrated would stay true — correct
+        // production behavior, but it masks the clear semantics this test pins).
+        const string area = "AreaTestVille";
         var refData = new FakeRefData
         {
-            AreasByKey = { ["AreaEltibule"] = new AreaEntry("AreaEltibule", "Eltibule", "") },
+            AreasByKey = { [area] = new AreaEntry(area, "Testville", "") },
         };
         var (svc, _, settings, mapCal) = Build(refData);
-        Seed(mapCal, settings, "AreaEltibule", new AreaCalibration(1, 0, 0, 0, 2, 0));
-        svc.SelectArea("AreaEltibule");
+        Seed(mapCal, settings, area, new AreaCalibration(1, 0, 0, 0, 2, 0));
+        svc.SelectArea(area);
         svc.IsCurrentAreaCalibrated.Should().BeTrue();
 
         var changed = 0;
@@ -236,7 +245,7 @@ public class AreaCalibrationServiceTests
 
         svc.ClearCurrentAreaCalibration();
 
-        settings.AreaCalibrations.Should().NotContainKey("AreaEltibule");
+        settings.AreaCalibrations.Should().NotContainKey(area);
         svc.IsCurrentAreaCalibrated.Should().BeFalse();
         changed.Should().Be(1);
     }

@@ -14,12 +14,14 @@ namespace Mithril.Tools.MapCalibration.Common;
 /// recording each icon's <see cref="IconMeta.PivotX"/> / <see cref="IconMeta.PivotY"/>
 /// from the matching <c>Sprite</c> asset.
 ///
-/// <para>The pivot is load-bearing: PG's landmark icons are teardrop-shaped and
-/// anchored at the bottom tip (pivot ≈ (0.5, 0)), not the centre. Template-match
-/// returns the icon centre; the consumer recovers the world-anchor pixel as
-/// centre + (w*(pivot.x-0.5), h*(0.5-pivot.y)). Without this correction every
-/// landmark drifts by ~icon-height/2, blowing the 12 px residual threshold
-/// systematically (issue #852 comment).</para>
+/// <para>The pivot is recorded per-sprite so the consumer can recover the
+/// world-anchor pixel as centre + (w*(pivot.x-0.5), h*(0.5-pivot.y)). PG's real
+/// landmark sprites turn out to be pivot ≈ (0.5, 0.5) — centered — re-confirmed
+/// fresh from the live sharedassets0.assets with classdata.tpk (#916: all four
+/// icons pivot=(0.50,0.50)); the earlier "teardrop bottom-tip, pivot ≈ (0.5, 0)"
+/// reading was wrong about the authored data. The correction stays general (it
+/// reads whatever m_Pivot the sprite carries) so an off-centre future sprite is
+/// handled without a code change.</para>
 ///
 /// <para>sharedassets0.assets is type-tree-stripped, so AssetsTools.NET can't
 /// decode <c>m_Pivot</c> without a Unity 6000.3 <c>classdata.tpk</c> loaded via
