@@ -8,9 +8,12 @@ namespace Mithril.Tools.MapCalibrationStudy;
 /// recover the renderer transform. Enumerates the 4 axis-aligned orientation
 /// states (±X × ±Z), estimates a rough scale-from-bbox per state, corresponds
 /// each predicted landmark to its nearest detected icon, solves via the shipped
-/// similarity solver (which re-confirms handedness), and keeps the best-fitting
-/// orientation after an outlier-guard pass. Informational prototype of the
-/// engine's correspondence step — not the engine itself.
+/// similarity solver (which re-confirms handedness) after an outlier-guard pass,
+/// and selects the orientation by GLOBAL reprojection consistency over the full
+/// detection cloud (see <see cref="Result.GlobalReprojectionPx"/>) — not the
+/// kept-subset solver residual, which a reflected orientation can also drive to
+/// zero on a different subset. Informational prototype of the engine's
+/// correspondence step — not the engine itself.
 /// </summary>
 public static class ColdBootstrap
 {
@@ -19,7 +22,21 @@ public static class ColdBootstrap
         double RefinedResidualPx,
         int CorrespondedCount,
         bool MirrorX,
-        bool MirrorZ);
+        bool MirrorZ)
+    {
+        /// <summary>
+        /// Median over ALL world landmarks of the distance from the recovered
+        /// transform's reprojection to its nearest detected icon. Unlike
+        /// <see cref="RefinedResidualPx"/> (which is the solver residual over the
+        /// kept SUBSET, and is near-zero even for a mispaired orientation that
+        /// fit a different self-consistent subset), this scores the whole set
+        /// against the whole detection cloud — so a reflected orientation that
+        /// reprojects landmarks onto the WRONG icons is penalised. Selection
+        /// minimises this first; the recovered transform reproduces ground truth
+        /// only when it is small.
+        /// </summary>
+        public double GlobalReprojectionPx { get; init; }
+    }
 
     public static Result? Run(
         IReadOnlyList<WorldCoord> world,
@@ -56,7 +73,6 @@ public static class ColdBootstrap
 
             var refs = new List<LandmarkCalibrationSolver.Reference>();
             var used = new bool[detected.Count];
-            var corresponded = 0;
             foreach (var w in world)
             {
                 var pred = Predict(w);
@@ -71,7 +87,6 @@ public static class ColdBootstrap
                 }
                 if (bestIdx < 0) continue;
                 used[bestIdx] = true;
-                corresponded++;
                 refs.Add(new LandmarkCalibrationSolver.Reference(w.X, w.Z, detected[bestIdx]));
             }
 
@@ -80,21 +95,62 @@ public static class ColdBootstrap
             var cal = LandmarkCalibrationSolver.Solve(kept);
             if (cal is null) continue;
 
-            // Several enumerated orientations can tie at (near-)zero residual:
-            // the shipped solver internally re-confirms handedness, so even a
-            // "wrong" enumerated mirror fits a self-consistent subset perfectly.
-            // Break residual ties by preferring the orientation that retained
-            // MORE references through the outlier guard — a perfect fit on 6
-            // inliers beats a perfect fit on 4 (the latter mispaired two icons
-            // and the guard discarded them). Use a small epsilon so a marginally
-            // larger residual with more inliers still wins.
+            // Score by GLOBAL reprojection consistency over the FULL detected
+            // set, NOT just the kept-subset solver residual. The subset residual
+            // is blind to the failure mode the reviewer found: because the
+            // shipped solver internally re-confirms handedness, a "wrong"
+            // enumerated mirror can mispair landmarks onto reflection-partner
+            // icons and still fit that DIFFERENT subset at ~0 residual. The
+            // global score re-corresponds every world landmark to its nearest
+            // detected icon under THIS orientation's solved transform; a
+            // reflected orientation reprojects onto the wrong icons (or far from
+            // any), inflating the score, while the true orientation reprojects
+            // the whole set consistently. Minimise the global score; break exact
+            // ties by inlier count. (A genuinely point-symmetric area is truly
+            // 0°/180° ambiguous — both orientations score equally and the first
+            // enumerated wins; real PG areas aren't point-symmetric.)
+            var globalPx = GlobalReprojection(cal, world, detected);
+            var candidate = new Result(cal, cal.ResidualPixels, kept.Count, mirrorX, mirrorZ)
+            {
+                GlobalReprojectionPx = globalPx,
+            };
             if (best is null
-                || cal.ResidualPixels < best.RefinedResidualPx - 1e-6
-                || (cal.ResidualPixels <= best.RefinedResidualPx + 1e-6
-                    && kept.Count > best.CorrespondedCount))
-                best = new Result(cal, cal.ResidualPixels, kept.Count, mirrorX, mirrorZ);
+                || candidate.GlobalReprojectionPx < best.GlobalReprojectionPx - 1e-6
+                || (candidate.GlobalReprojectionPx <= best.GlobalReprojectionPx + 1e-6
+                    && candidate.CorrespondedCount > best.CorrespondedCount))
+                best = candidate;
         }
 
         return best;
+    }
+
+    /// <summary>
+    /// Median over all world landmarks of the distance from
+    /// <c>cal.WorldToWindow(w)</c> to its nearest detected icon. Median (not
+    /// mean) so a single spurious detection or one outlier landmark can't
+    /// dominate the orientation score.
+    /// </summary>
+    private static double GlobalReprojection(
+        AreaCalibration cal, IReadOnlyList<WorldCoord> world, IReadOnlyList<PixelPoint> detected)
+    {
+        var dists = new List<double>(world.Count);
+        foreach (var w in world)
+        {
+            var p = cal.WorldToWindow(w);
+            var nearest = double.MaxValue;
+            foreach (var d in detected)
+            {
+                var dx = d.X - p.X;
+                var dy = d.Y - p.Y;
+                var dist = Math.Sqrt(dx * dx + dy * dy);
+                if (dist < nearest) nearest = dist;
+            }
+            dists.Add(nearest);
+        }
+        dists.Sort();
+        var n = dists.Count;
+        return n == 0 ? double.PositiveInfinity
+            : n % 2 == 1 ? dists[n / 2]
+            : (dists[n / 2 - 1] + dists[n / 2]) / 2.0;
     }
 }
