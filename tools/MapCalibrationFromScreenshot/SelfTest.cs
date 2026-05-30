@@ -159,7 +159,8 @@ internal static class SelfTest
             IconSizeOverrides: new Dictionary<string, (int, int)>(),
             ExcludedLandmarkTypes: new HashSet<string>(),
             DebugImagePath: null,
-            ProjectionOverlayPath: null);
+            ProjectionOverlayPath: null,
+            UseBorderMask: false);
         var result = ScreenshotCalibrator.Calibrate(inputs);
 
         if (result.Calibration is null)

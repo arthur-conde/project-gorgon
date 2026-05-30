@@ -66,7 +66,8 @@ internal static class Pipeline
             IconSizeOverrides: args.IconSizeOverrides,
             ExcludedLandmarkTypes: args.ExcludedLandmarkTypes,
             DebugImagePath: args.DebugImagePath,
-            ProjectionOverlayPath: args.ProjectionOverlayPath);
+            ProjectionOverlayPath: args.ProjectionOverlayPath,
+            UseBorderMask: args.UseBorderMask);
 
         var result = ScreenshotCalibrator.Calibrate(inputs);
         if (result.Calibration is null)
@@ -195,7 +196,8 @@ internal sealed record CalibrationInputs(
     IReadOnlyDictionary<string, (int W, int H)> IconSizeOverrides,
     IReadOnlySet<string> ExcludedLandmarkTypes,
     string? DebugImagePath,
-    string? ProjectionOverlayPath);
+    string? ProjectionOverlayPath,
+    bool UseBorderMask);
 
 internal sealed record AssignedReference(
     string Label,
