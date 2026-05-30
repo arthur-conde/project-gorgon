@@ -59,7 +59,16 @@ internal static class Program
             // Scale/inset/affine need a TEXTURE-frame solve (the committed
             // baseline) + the texture dims + the world points.
             var textureCal = BaselineFile.TryReadAnchor(o["--baseline"], area);
-            double solvedScale = 0, predX = 0, ratioX = 0, insetMax = 0, simRms = 0, affRms = 0;
+            double solvedScale = 0, predX = 0, ratioX = 0, insetMax = 0, simRms = 0;
+            // H2 (affine-vs-similarity isotropy) has NO honest signal in measure
+            // mode. The baseline doesn't persist the original click pixels the
+            // similarity was fit on, so the only pixel side available is the
+            // world points reprojected through that same solved similarity — an
+            // affine fit to a pure-similarity cloud is ~0 by construction and
+            // would read as a (false) "renderer is isotropic" result. Emit N/A
+            // (NaN) here; the real affine-vs-similarity contest only exists in
+            // `bootstrap` mode, where the pixel side is independently detected.
+            var affRms = double.NaN;
             if (textureCal is not null && TryTextureSize(o["--textures"], area, out var tw, out var th))
             {
                 var world = LoadWorldPoints(o["--landmarks"], o["--npcs"], area).Select(l => l.World).ToList();
@@ -67,12 +76,6 @@ internal static class Program
                 solvedScale = textureCal.Scale; predX = m.PredictedScaleX;
                 ratioX = m.ScaleRatioX; insetMax = m.InsetFracMax;
                 simRms = textureCal.ResidualPixels;
-                // affine RMS needs the (world↔pixel) pairs the baseline was fit
-                // on; we don't persist those, so re-project the world points
-                // through the solved transform as the pixel side (affine then
-                // measures self-consistency of the model, the H2 question).
-                var pts = world.Select(w => { var p = textureCal.WorldToWindow(w); return (w.X, w.Z, p.X, p.Y); }).ToList();
-                affRms = pts.Count >= 3 ? AffineFit.Rms(pts) : 0;
             }
 
             rows.Add(new StudyRecord(area, rotationDeg, orient, mirror,
@@ -105,10 +108,17 @@ internal static class Program
             if (result is null) { Console.WriteLine($"[skip] bootstrap returned null for {area}"); continue; }
 
             var orient = OrientationClass.Classify(result.Calibration.RotationRadians).NearestDeg;
+            // `paired` must mean the recovered transform actually reproduces the
+            // detection cloud — i.e. blind correspondence found GROUND TRUTH —
+            // not merely that ≥3 icons were paired (a presence check that's true
+            // even for a wrong-orientation run that fit a reflected subset). Tie
+            // it to the global reprojection score: every world landmark must
+            // reproject within detection-noise tolerance of a detected icon.
+            var paired = result.CorrespondedCount >= 3 && result.GlobalReprojectionPx <= 8.0;
             rows.Add(new StudyRecord(area,
                 result.Calibration.RotationRadians * 180.0 / Math.PI, orient,
                 result.Calibration.MirrorNorth, result.Calibration.Scale, 0, 0, 0,
-                result.RefinedResidualPx, 0, result.CorrespondedCount, result.CorrespondedCount >= 3));
+                result.RefinedResidualPx, double.NaN, result.CorrespondedCount, paired));
         }
 
         Emit(o["--out"], "bootstrap", rows);

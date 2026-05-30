@@ -28,4 +28,19 @@ public class StudyRecordTests
         var md = StudyRecord.ToMarkdown(rows);
         md.Should().Contain("| area |").And.Contain("| AreaCave1 |");
     }
+
+    [Fact]
+    public void NaN_affine_renders_as_na_not_a_number()
+    {
+        // measure mode emits NaN for the affine column (no independent pixels);
+        // it must read as a clearly non-numeric token, never "0" or blank.
+        var rows = new[] { new StudyRecord("AreaSerbule", 0.019, 0, false, 0.385, 0.40, 0.96, 0.012, 0.30, double.NaN, 0, false) };
+
+        var csv = StudyRecord.ToCsv(rows);
+        var md = StudyRecord.ToMarkdown(rows);
+
+        // affineResidualPx is the 10th CSV column.
+        csv.Trim().Split('\n')[1].Split(',')[9].Should().Be("n/a");
+        md.Should().Contain("n/a").And.NotContain("NaN");
+    }
 }

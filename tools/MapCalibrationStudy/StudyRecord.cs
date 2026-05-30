@@ -56,5 +56,9 @@ public sealed record StudyRecord(
         return sb.ToString();
     }
 
-    private static string F(double d) => d.ToString("0.#####", CultureInfo.InvariantCulture);
+    // NaN is the in-band "no honest value" marker (e.g. the affine column in
+    // measure mode, where there are no independent pixels to fit) — render it
+    // as a clearly non-numeric token so a reader never mistakes it for evidence.
+    private static string F(double d) =>
+        double.IsNaN(d) ? "n/a" : d.ToString("0.#####", CultureInfo.InvariantCulture);
 }
