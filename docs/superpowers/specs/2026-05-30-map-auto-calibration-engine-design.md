@@ -17,7 +17,7 @@ The output is the **same artifact** the manual path produces today (`AreaCalibra
 - **Live in-game-zoom tracking.** v1 captures at whatever zoom the user is at and records it (`AreaCalibration.CalibrationZoom`); zoom drift is handled by *re-capture* (cheap), not by tracking the live zoom continuously. Retiring `CalibrationZoom` entirely is future work.
 - **Zoomed-in / panned map captures.** v1 assumes the in-game map is zoomed all the way out (visible map ≈ full texture extent), matching today's manual workflow.
 - **Fullscreen-exclusive capture.** v1 targets windowed / borderless-windowed PG.
-- **Sub-±10% accuracy.** PG's non-affine map warp ([PR #449](https://github.com/moumantai-gg/mithril/pull/449)) caps this at "approximate location" UX regardless.
+- **Pixel-exact rendezvous as a *guarantee*.** The renderer itself is exact (clean per-area isotropic similarity, **no** intra-area warp — the old ±10% "non-affine" band was *operational*, from the live Survey pipeline, and was disproven; see [PR #449](https://github.com/moumantai-gg/mithril/pull/449), resolved). Real-world accuracy is instead bounded by **auto-detection precision + zoom handling**, which this engine optimises but does not promise to pixel-perfect — "approximate location" UX remains the honest framing for that reason, not because of any renderer warp.
 
 ## 3. Why this is now possible
 
@@ -133,7 +133,7 @@ Screen capture reads the **OS framebuffer** (`BitBlt` / `Windows.Graphics.Captur
 - **Sparse-area detection** (§8) — the one unproven link; isolated behind `ICalibrationDetector` so the rest can proceed.
 - **Capture-under-overlay flicker** (§6) — hide-for-one-frame may be visible; WGC is the mitigation.
 - **In-game resolution/UI-scale change** invalidates the window-anchored framing — caught by the confidence gate, requires a re-frame.
-- **±10% non-affine warp** — accuracy ceiling; "approximate location" UX, not pixel-perfect.
+- **Detection + zoom accuracy** — the real accuracy ceiling; "approximate location" UX, not pixel-perfect. (The renderer itself is exact; the disproven ±10% "non-affine warp" is **not** a factor — see §2.)
 
 ## 16. Out of scope / future
 
