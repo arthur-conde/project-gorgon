@@ -122,12 +122,38 @@ public static class Program
             if (string.IsNullOrEmpty(shellSettings.GameRoot))
                 shellSettings.GameRoot = GameLocator.AutoDetectGameRoot() ?? "";
 
+            // #919 one-time cross-file carry-over: GameProcessName +
+            // CalibrationGoodResidualPx moved from LegolasSettings (legolas.json)
+            // to the shared shell store. Per-file Migrate can't cross files, so
+            // read the legacy values straight from legolas.json and copy them in
+            // when the shell value is still its factory default. Idempotent —
+            // once carried/edited, the shell value is non-default and the gate
+            // closes. Runs before the module loads, so the shared store wins.
+            var legolasSettingsPath = Path.Combine(localApp, "Mithril", "Legolas", "settings.json");
+            if (GameConfigCarryOver.Apply(legolasSettingsPath, shellSettings))
+                shellStore.SaveAsync(shellSettings).GetAwaiter().GetResult();
+
             // Game config (live, observable)
-            var gameConfig = new GameConfig { GameRoot = shellSettings.GameRoot };
+            var gameConfig = new GameConfig
+            {
+                GameRoot = shellSettings.GameRoot,
+                GameProcessName = shellSettings.GameProcessName,
+                CalibrationGoodResidualPx = shellSettings.CalibrationGoodResidualPx,
+            };
             gameConfig.PropertyChanged += (_, ev) =>
             {
-                if (ev.PropertyName == nameof(GameConfig.GameRoot))
-                    shellSettings.GameRoot = gameConfig.GameRoot;
+                switch (ev.PropertyName)
+                {
+                    case nameof(GameConfig.GameRoot):
+                        shellSettings.GameRoot = gameConfig.GameRoot;
+                        break;
+                    case nameof(GameConfig.GameProcessName):
+                        shellSettings.GameProcessName = gameConfig.GameProcessName;
+                        break;
+                    case nameof(GameConfig.CalibrationGoodResidualPx):
+                        shellSettings.CalibrationGoodResidualPx = gameConfig.CalibrationGoodResidualPx;
+                        break;
+                }
             };
 
             // Build host
