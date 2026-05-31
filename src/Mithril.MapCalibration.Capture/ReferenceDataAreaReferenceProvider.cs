@@ -56,6 +56,11 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
         if (string.IsNullOrWhiteSpace(areaKey)) return Array.Empty<LandmarkReference>();
 
         var result = new List<LandmarkReference>();
+        // Count references dropped for unparseable coords (NOT the unmapped-type
+        // case, which is warned per-entry above). Aggregated into ONE warning per
+        // area so a future landmarks.json / npcs.json coord-shape change is visible
+        // rather than silently shrinking the reference set (Fix E).
+        var unparseableCoords = 0;
 
         if (_refData.Landmarks.TryGetValue(areaKey, out var landmarks))
         {
@@ -76,6 +81,10 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
                 {
                     result.Add(new LandmarkReference(token, lm.Name ?? lm.Type, world));
                 }
+                else
+                {
+                    unparseableCoords++;
+                }
             }
         }
 
@@ -87,6 +96,18 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
             {
                 result.Add(new LandmarkReference(NpcToken, npc.Name ?? "NPC", world));
             }
+            else
+            {
+                unparseableCoords++;
+            }
+        }
+
+        if (unparseableCoords > 0)
+        {
+            _logger?.LogWarning(
+                "Dropped {Count} reference(s) in area {Area} with unparseable coords — possible landmarks.json / npcs.json "
+                + "coord-shape change. Verification owed (#914): confirm the \"x:N y:N z:N\" position shape vs live data.",
+                unparseableCoords, areaKey);
         }
 
         return result;

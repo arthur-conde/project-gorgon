@@ -210,7 +210,22 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return null;
         }
 
-        return _baseTextures.TryGetBaseTexture(area); // retry after populate
+        var retried = _baseTextures.TryGetBaseTexture(area); // retry after populate
+        if (retried is null)
+        {
+            // The extractor reported success but the provider still has no usable
+            // texture for this area. Distinguish this from a plain transient
+            // cache-miss: it usually means an asset-shape change or a
+            // canonical-hash-gate mismatch (the extracted bytes don't match the
+            // gated hash), which a future PG patch can introduce silently.
+            // Behaviour is unchanged (still fail-soft); this just makes the
+            // gate/shape mismatch visible instead of looking like a cache hiccup.
+            _logger?.LogWarning(
+                "Asset-extractor reported success for {Area} but no usable base texture is available after retry "
+                + "(possible asset-shape change or canonical-hash-gate mismatch, not a transient cache-miss). Safe-degrade.",
+                area);
+        }
+        return retried;
     }
 
     private AutoCalibrationOutcome Fail(string area, string reason)
