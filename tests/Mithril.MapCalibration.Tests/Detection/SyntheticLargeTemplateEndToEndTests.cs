@@ -33,11 +33,14 @@ namespace Mithril.MapCalibration.Tests.Detection;
 /// <para><see cref="DetectionRequest.RenderSizePx"/> is pinned to 32 to exercise
 /// bug-fix 1 (<see cref="DeviationBlobCalibrationDetector"/> wiring the scaler)
 /// and bug-fix 2 (the pinned-size branch in <see cref="IconRenderScaler.RenderSized"/>
-/// rather than the aggregate-NCC sweep).  Reverting fix 1 must make this test
-/// go RED (every large template is wider/taller than the blob crop, so no blob
-/// is typed); reverting fix 2 may or may not, depending on whether the
-/// aggregate-NCC sweep accidentally selects the correct size (documented in the
-/// reproduction matrix in the PR description).</para>
+/// rather than the aggregate-NCC sweep).  This fixture is deterministic (fixed
+/// RNG seed 4321, pinned RenderSizePx = 32), so both reverts turn it RED
+/// reproducibly: reverting fix 1 leaves every large template wider/taller than
+/// the blob crop, so no blob is typed; reverting fix 2 makes the aggregate-NCC
+/// sweep select a render size other than 32 px on this fixture, so the templates
+/// are downscaled to the wrong size and no blob is typed.  Either way the engine
+/// returns a null calibration (documented in the reproduction matrix in the PR
+/// description).</para>
 /// </summary>
 public sealed class SyntheticLargeTemplateEndToEndTests
 {

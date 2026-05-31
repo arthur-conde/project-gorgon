@@ -40,6 +40,12 @@ public sealed class CalibrationSourceJsonRoundTripTests
         json.Should().NotMatchRegex("\"source\"\\s*:\\s*2", "a numeric enum value must NOT appear");
 
         // (b) Round-trip: deserialize restores the exact Source value.
+        // NOTE: This half is a convenience check, NOT the deserialize-throws guard.
+        // Reverting UseStringEnumConverter changes serialize AND deserialize
+        // symmetrically (both speak numbers), so (b) still round-trips even with the
+        // fix reverted. The load-bearing fix-3 catches are assertion (a) above
+        // (Contain("UserRefinement")) plus BundledBaselineLoaderTests, which reads
+        // the committed *string* baseline JSON and so throws/empties on revert.
         var back = JsonSerializer.Deserialize(json, MapCalibrationJsonContext.Default.AreaCalibration);
         back.Should().NotBeNull();
         back!.Source.Should().Be(CalibrationSource.UserRefinement);
