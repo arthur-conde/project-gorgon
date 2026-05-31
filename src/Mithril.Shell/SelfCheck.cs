@@ -96,6 +96,7 @@ internal static class SelfCheck
                 IconCacheDir: Path.Combine(localApp, "Mithril", "Icons"),
                 ShellSettingsDir: shellDir,
                 MapCalibrationDir: Path.Combine(localApp, "Mithril", "MapCalibration"),
+                AssetCacheDir: Path.Combine(localApp, "Mithril", "assets"),
                 ModuleLog: m => Console.Out.WriteLine($"selfcheck: {m}"));
 
             var builder = Host.CreateApplicationBuilder(

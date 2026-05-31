@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
 using Arda.Contracts;
@@ -7,8 +8,23 @@ using Arda.World.Player;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Detection;
+using Mithril.Overlay;
 
 namespace Mithril.MapCalibration.Capture.Tests.Fixtures;
+
+/// <summary>Headless IOverlayWindow for the DI-resolution test. Never touched
+/// during resolution; Window throws if a test accidentally dereferences it (no
+/// WPF Window is created off the STA thread).</summary>
+internal sealed class FakeOverlayWindow : IOverlayWindow
+{
+    public System.Windows.Window Window => throw new InvalidOperationException("FakeOverlayWindow.Window must not be touched in a headless test.");
+    public bool IsReady => false;
+    public string? StatusMessage { get; private set; }
+    public void SetStatusMessage(string? message) { StatusMessage = message; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StatusMessage))); }
+    public IDisposable RegisterScene(Action<IOverlaySceneContext> draw) => new Noop();
+    public event PropertyChangedEventHandler? PropertyChanged;
+    private sealed class Noop : IDisposable { public void Dispose() { } }
+}
 
 /// <summary>No-op event bus: the trigger's hosted-service Subscribe wiring is
 /// exercised by the DI-resolution test; the gating logic is tested directly via

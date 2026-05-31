@@ -164,6 +164,10 @@ public static class Program
             var iconCacheDir = Path.Combine(localApp, "Mithril", "Icons");
             var charactersRootDir = Path.Combine(localApp, "Mithril", "characters");
             var mapCalibrationDir = Path.Combine(localApp, "Mithril", "MapCalibration");
+            // #914 PR-2: the out-of-process asset-extractor sidecar cache the
+            // #931 base-texture + icon-template loaders read (BCL-only). Lives
+            // alongside the other Mithril caches.
+            var assetCacheDir = Path.Combine(localApp, "Mithril", "assets");
 
             var builder = Host.CreateApplicationBuilder(args);
 
@@ -196,7 +200,7 @@ public static class Program
                 preferencesPath, shellStore, shellSettings, gameConfig,
                 logDir, perfDir, charactersRootDir, referenceCacheDir,
                 communityCalibrationCacheDir, iconCacheDir, shellDir,
-                mapCalibrationDir, Boot));
+                mapCalibrationDir, assetCacheDir, Boot));
 
             Boot($"modules discovered: {builder.Services.Count(d => d.ServiceType == typeof(IMithrilModule))}");
             host = builder.Build();
