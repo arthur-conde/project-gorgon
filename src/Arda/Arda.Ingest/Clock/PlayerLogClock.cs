@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Arda.Ingest.Clock;
 
 /// <summary>
@@ -27,6 +29,13 @@ internal sealed class PlayerLogClock : ILogSourceClock
     private TimeSpan? _prevTimeOfDay;
 
     internal const int PrefixLength = 11; // "[HH:MM:SS] "
+
+    // Slack allowed between the last line's time-of-day and the file mtime before
+    // the mtime-fallback decides the line belongs to the previous day. Live-log
+    // buffering can leave the newest line a few seconds ahead of a lagging mtime;
+    // a genuine prior-day last line sits many hours ahead, so an hour cleanly
+    // separates the two cases (#942).
+    private static readonly TimeSpan MtimeRollbackTolerance = TimeSpan.FromHours(1);
 
     public PlayerLogClock(TimeProvider time)
     {
@@ -127,9 +136,15 @@ internal sealed class PlayerLogClock : ILogSourceClock
         var mtime = mtimeUtcAccessor();
         var mtimeDate = DateOnly.FromDateTime(mtime);
 
-        // If the last line's time-of-day is past the mtime's time-of-day,
-        // the file was last written on the prior day relative to the last line.
-        if (lastTimeOfDay.Value > mtime.TimeOfDay)
+        // Place the last line's time-of-day on the mtime's date. The last line
+        // cannot have been written meaningfully *after* the file's last-write-
+        // time, so if that candidate lands beyond mtime by more than a small
+        // tolerance the file rolled past midnight before its final flush and the
+        // line belongs to the previous day. A bare time-of-day ">" comparison
+        // misfires on a live log whose newest buffered line is a few seconds
+        // ahead of a lagging mtime, rolling the whole anchor back a day (#942).
+        var candidate = mtimeDate.ToDateTime(TimeOnly.FromTimeSpan(lastTimeOfDay.Value));
+        if (candidate - mtime > MtimeRollbackTolerance)
             mtimeDate = mtimeDate.AddDays(-1);
 
         _currentUtcDate = mtimeDate.AddDays(-midnightRollovers);
@@ -149,6 +164,11 @@ internal sealed class PlayerLogClock : ILogSourceClock
     private const string BannerMarker = "Logged in as character ";
     private const string TimeMarker = "Time UTC=";
 
+    // The game emits the login instant via invariant-culture DateTime.ToString():
+    // "MM/dd/yyyy HH:mm:ss" (slashes, month-first), e.g.
+    //   Time UTC=05/31/2026 12:55:00. Timezone Offset 01:00:00
+    private const string BannerDateTimeFormat = "MM/dd/yyyy HH:mm:ss";
+
     /// <inheritdoc/>
     public void TryConsumeBanner(ReadOnlySpan<char> line)
     {
@@ -163,27 +183,21 @@ internal sealed class PlayerLogClock : ILogSourceClock
         if (timeIdx < 0) return;
 
         var stamp = body[(timeIdx + TimeMarker.Length)..];
-        // Expecting "YYYY-MM-DD HH:MM:SS" — strip a trailing period/dot.
-        if (stamp.Length >= 1 && stamp[^1] == '.') stamp = stamp[..^1];
-        if (stamp.Length < 19) return;
-        if (stamp[4] != '-' || stamp[7] != '-' || stamp[10] != ' ' ||
-            stamp[13] != ':' || stamp[16] != ':') return;
+        // Take the fixed-width "MM/dd/yyyy HH:mm:ss" datetime prefix; the banner
+        // continues with ". Timezone Offset ..." which we ignore here (Time UTC=
+        // is already UTC, so Player.log anchors with a zero offset).
+        if (stamp.Length < BannerDateTimeFormat.Length) return;
+        var dateTime = stamp[..BannerDateTimeFormat.Length];
 
-        if (!int.TryParse(stamp[..4], out var year) ||
-            !int.TryParse(stamp[5..7], out var month) ||
-            !int.TryParse(stamp[8..10], out var day) ||
-            !int.TryParse(stamp[11..13], out var hour) ||
-            !int.TryParse(stamp[14..16], out var minute) ||
-            !int.TryParse(stamp[17..19], out var second)) return;
-
-        if (month is < 1 or > 12 || day is < 1 or > 31 ||
-            hour > 23 || minute > 59 || second > 59) return;
+        if (!DateTime.TryParseExact(dateTime, BannerDateTimeFormat,
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var utc))
+            return;
 
         // A new banner crosses a session boundary — reset rollover tracking
         // before re-anchoring so the next line doesn't trigger a false
         // midnight advance against the prior session's last time-of-day.
         Reset();
-        AnchorToDate(new DateOnly(year, month, day), new TimeSpan(hour, minute, second));
+        AnchorToDate(DateOnly.FromDateTime(utc), utc.TimeOfDay);
     }
 
     /// <summary>
