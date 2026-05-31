@@ -6,33 +6,20 @@ using Mithril.Shared.Game;
 namespace Mithril.MapCalibration.Capture;
 
 /// <summary>
-/// #945 Gap 3 — one-time icon-template cache bootstrap. The engine's
+/// #945 Gap 3 — non-blocking icon-template cache warm-up. The engine's
 /// base-texture cache-miss path only ever requests <see cref="ExtractKind.Texture"/>
-/// (per-area); nothing requests <see cref="ExtractKind.Icons"/>, so the icon cache
-/// stays empty and <see cref="IconTemplateSet"/> loads as
-/// <see cref="IconTemplateSet.Empty"/> forever — icon detections never happen. This
-/// hosted service runs the sidecar's <c>--icons</c> mode once, on startup, when the
-/// icon cache is not yet populated, so the manifest+blob land on disk.
+/// (per-area); on a fresh install the icon cache starts empty. This hosted service
+/// runs the sidecar's <c>--icons</c> mode once, on startup, when the icon cache is
+/// not yet populated, so the manifest+blob land on disk before the first
+/// calibration attempt.
 ///
-/// <para><b>Trigger semantics — NEXT-LAUNCH (option b, by design).</b>
-/// <see cref="IconTemplateSet"/> is resolved <i>once, eagerly</i> by the
-/// <c>AddSingleton&lt;IconTemplateSet&gt;</c> lambda in
-/// <c>AddMithrilMapCalibrationEngine</c> (via
-/// <c>BundledIconTemplateLoader.LoadFromDirectory</c>). All hosted services —
-/// including this one and <see cref="AutoCalibrationTrigger"/> — are <i>constructed</i>
-/// when the host materialises the <c>IEnumerable&lt;IHostedService&gt;</c> at
-/// startup, and constructing <see cref="AutoCalibrationTrigger"/> resolves
-/// <c>IAutoCalibrationRunner</c> → <see cref="AutoCalibrationEngine"/> →
-/// <see cref="IconTemplateSet"/>. So by the time this service's
-/// <see cref="StartAsync"/> can finish populating the cache, the
-/// <see cref="IconTemplateSet"/> singleton may already have been resolved as
-/// <see cref="IconTemplateSet.Empty"/>. We therefore deliberately do NOT try to
-/// guarantee same-session in-memory effect (that would require a fragile
-/// construction-ordering assumption or a reload-aware template holder). Instead:
-/// <b>this run populates the cache; the next app launch loads the populated cache
-/// into <see cref="IconTemplateSet"/>.</b> Acceptance "icon templates populate via
-/// the --icons trigger" is satisfied at the <i>cache</i> level on this run, with the
-/// in-memory icon-detection effect taking hold on the subsequent launch.</para>
+/// <para><b>Same-session effect (#949).</b> Icon templates resolve via the
+/// per-attempt <see cref="IIconTemplateProvider"/> (it re-reads the cache on every
+/// attempt), so a populate from this warm-up takes effect on the very next attempt
+/// — no app restart. This warm-up is therefore a <i>latency optimisation</i> (have
+/// icons ready before the first attempt), and the engine's own <c>--icons</c>
+/// demand-trigger (<c>AutoCalibrationEngine.EnsureIconTemplatesAsync</c>) is the
+/// correctness backstop if the warm-up hasn't finished by the first attempt.</para>
 ///
 /// <para><b>Fire-and-forget StartAsync.</b> The extraction runs on a background task
 /// so it never blocks host startup (the sidecar can take seconds on a cold disk).
@@ -116,8 +103,8 @@ public sealed class IconTemplateBootstrap : IHostedService, IDisposable
         }
 
         _logger.LogInformation(
-            "Icon-template cache empty at {CacheDir}; invoking asset-extractor sidecar (--icons). "
-            + "Icons take effect on the next app launch (the IconTemplateSet singleton is loaded once at startup).",
+            "Icon-template cache empty at {CacheDir}; invoking asset-extractor sidecar (--icons) warm-up. "
+            + "Icons engage on the next calibration attempt (IIconTemplateProvider re-reads the cache per attempt).",
             _assetCacheDir);
 
         try
@@ -132,7 +119,7 @@ public sealed class IconTemplateBootstrap : IHostedService, IDisposable
             if (result.Ok)
             {
                 _logger.LogInformation(
-                    "Icon-template bootstrap populated the cache ({Count} artifact(s)); icons engage on next launch.",
+                    "Icon-template bootstrap populated the cache ({Count} artifact(s)); icons engage on the next calibration attempt.",
                     result.Artifacts.Count);
             }
             else

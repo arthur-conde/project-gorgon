@@ -76,6 +76,24 @@ internal sealed class FakeBaseTextureProvider : IBaseTextureProvider
     public GrayImage? TryGetBaseTexture(string areaKey) => _tex;
 }
 
+/// <summary>
+/// Per-attempt icon-template provider fake (#949). Returns whatever set
+/// <see cref="Set"/> currently holds (default: <see cref="IconTemplateSet.Empty"/>),
+/// counts calls, and can flip its set to a populated one to model a same-session
+/// populate (e.g. after the engine's <c>--icons</c> demand-trigger).
+/// </summary>
+internal sealed class FakeIconTemplateProvider : IIconTemplateProvider
+{
+    public FakeIconTemplateProvider(IconTemplateSet? set = null) => Set = set ?? IconTemplateSet.Empty;
+    public IconTemplateSet Set { get; set; }
+    public int Calls { get; private set; }
+    public IconTemplateSet GetTemplates()
+    {
+        Calls++;
+        return Set;
+    }
+}
+
 internal sealed class FakeAreaRefs : IAreaReferenceProvider
 {
     private readonly IReadOnlyList<LandmarkReference> _refs;

@@ -91,6 +91,27 @@ public sealed class CaptureDependencyInjectionTests
     }
 
     /// <summary>
+    /// #949: the per-attempt icon-template provider is registered (not the old eager
+    /// <c>IconTemplateSet</c> singleton) and the engine consumes it. Resolving an
+    /// empty cache yields an empty set (the intended fail-soft).
+    /// </summary>
+    [Fact]
+    public void Icon_template_provider_is_registered_and_resolves_empty_over_an_empty_cache()
+    {
+        using var provider = BuildProvider(out _);
+
+        var iconProvider = provider.GetRequiredService<IIconTemplateProvider>();
+        iconProvider.Should().NotBeNull();
+        iconProvider.GetTemplates().Templates.Should().BeEmpty("the temp asset cache is empty in this test");
+
+        var engine = provider.GetRequiredService<AutoCalibrationEngine>();
+        var field = typeof(AutoCalibrationEngine)
+            .GetField("_iconTemplates", BindingFlags.Instance | BindingFlags.NonPublic);
+        field.Should().NotBeNull("the engine holds the icon-template provider in a private field");
+        field!.GetValue(engine).Should().BeSameAs(iconProvider, "the engine consumes the registered provider");
+    }
+
+    /// <summary>
     /// Builds the full capture graph with faked cross-cutting collaborators, the
     /// same shape the shell composes (<see cref="ShellComposition"/> calls
     /// <c>AddMithrilMapCalibrationCapture(assetCacheDir)</c> with the real

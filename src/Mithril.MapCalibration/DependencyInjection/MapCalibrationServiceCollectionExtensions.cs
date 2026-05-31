@@ -65,20 +65,26 @@ public static class MapCalibrationServiceCollectionExtensions
     /// <see cref="ICalibrationDetector"/>, the
     /// <see cref="ICalibrationConfidenceGate"/>, the
     /// <see cref="MapCalibrationSolveEngine"/>, the
-    /// <see cref="IconTemplateSet"/> (loaded once from the asset cache dir via
-    /// <c>BundledIconTemplateLoader.LoadFromDirectory</c>), and an
-    /// <see cref="IBaseTextureProvider"/> over the same cache. Independent of
+    /// <see cref="IIconTemplateProvider"/> (a per-attempt
+    /// <see cref="Internal.CachedIconTemplateProvider"/> over the asset cache dir),
+    /// and an <see cref="IBaseTextureProvider"/> over the same cache. Independent of
     /// <see cref="AddMithrilMapCalibration"/> (the persistence registration) —
     /// register either or both.
     ///
     /// <para><b>#931:</b> the icon templates + base textures are no longer shipped
     /// as embedded PG art; the out-of-process asset-extractor sidecar populates
     /// <paramref name="assetCacheDir"/> at runtime and these loaders read it
-    /// BCL-only. When the dir is absent/empty the registrations yield
-    /// <see cref="IconTemplateSet.Empty"/> / a null-returning base-texture
-    /// provider — the intended fail-soft (no detections → gate rejects →
+    /// BCL-only. When the dir is absent/empty the provider yields
+    /// <see cref="IconTemplateSet.Empty"/> / the base-texture provider returns
+    /// null — the intended fail-soft (no detections → gate rejects →
     /// safe-degrade). The optional <paramref name="pgVersion"/> keys the
     /// canonical-hash gate that guards base textures.</para>
+    ///
+    /// <para><b>#949:</b> the icon templates resolve via a <i>per-attempt</i>
+    /// provider (re-reads the cache each call), not an eager singleton, so a
+    /// same-session populate (the engine's <c>--icons</c> demand-trigger or the
+    /// startup warm-up) engages on the next attempt — first-session calibration no
+    /// longer needs a restart.</para>
     /// </summary>
     public static IServiceCollection AddMithrilMapCalibrationEngine(
         this IServiceCollection services,
@@ -88,8 +94,8 @@ public static class MapCalibrationServiceCollectionExtensions
         if (string.IsNullOrWhiteSpace(assetCacheDir))
             throw new ArgumentException("assetCacheDir required", nameof(assetCacheDir));
 
-        services.AddSingleton<IconTemplateSet>(sp =>
-            BundledIconTemplateLoader.LoadFromDirectory(
+        services.AddSingleton<IIconTemplateProvider>(sp =>
+            new CachedIconTemplateProvider(
                 assetCacheDir,
                 sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Templates")));
         services.AddSingleton<IBaseTextureProvider>(sp =>

@@ -26,30 +26,33 @@ public sealed class EngineRegistrationTests
         provider.GetService<MapCalibrationSolveEngine>().Should().NotBeNull();
         provider.GetService<ICalibrationDetector>().Should().BeOfType<DeviationBlobCalibrationDetector>();
         provider.GetService<ICalibrationConfidenceGate>().Should().BeOfType<CalibrationConfidenceGate>();
-        provider.GetService<IconTemplateSet>().Should().NotBeNull();
+        provider.GetService<IIconTemplateProvider>().Should().NotBeNull();
         provider.GetService<IBaseTextureProvider>().Should().NotBeNull();
     }
 
     [Fact]
-    public void Template_set_is_singleton()
+    public void Icon_template_provider_is_singleton()
     {
+        // #949: the icon templates resolve via a per-attempt provider, not an eager
+        // IconTemplateSet singleton. The provider itself is a singleton (it memoises
+        // the loaded set across attempts).
         var provider = new ServiceCollection()
             .AddMithrilMapCalibrationEngine(TempCacheDir())
             .BuildServiceProvider();
 
-        var a = provider.GetRequiredService<IconTemplateSet>();
-        var b = provider.GetRequiredService<IconTemplateSet>();
+        var a = provider.GetRequiredService<IIconTemplateProvider>();
+        var b = provider.GetRequiredService<IIconTemplateProvider>();
         a.Should().BeSameAs(b);
     }
 
     [Fact]
-    public void Absent_cache_dir_yields_empty_template_set_and_null_base_texture()
+    public void Absent_cache_dir_yields_empty_templates_and_null_base_texture()
     {
         var provider = new ServiceCollection()
             .AddMithrilMapCalibrationEngine(TempCacheDir())
             .BuildServiceProvider();
 
-        provider.GetRequiredService<IconTemplateSet>().Templates.Should().BeEmpty();
+        provider.GetRequiredService<IIconTemplateProvider>().GetTemplates().Templates.Should().BeEmpty();
         provider.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture("AreaSerbule").Should().BeNull();
     }
 
