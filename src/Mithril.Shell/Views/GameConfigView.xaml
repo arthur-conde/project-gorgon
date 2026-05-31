@@ -22,6 +22,17 @@
         <TextBlock Text="Resolved Player.log" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
         <TextBlock Text="{Binding PlayerLogPath}" FontFamily="{DynamicResource AppMonoFontFamily}" Foreground="#FFE8E8E8"/>
 
+        <!-- #959: the map-calibration asset-extractor sidecar reads the Steam INSTALL
+             dir (contains WindowsPlayer_Data), which is distinct from the LocalLow data
+             dir above. Auto-detected from Steam; override only if detection misses. -->
+        <TextBlock Text="Project Gorgon install folder (Steam — contains WindowsPlayer_Data; auto-detected, override only if needed)"
+                   Foreground="#88FFFFFF" TextWrapping="Wrap" Margin="0,16,0,4"/>
+        <DockPanel LastChildFill="True">
+            <Button DockPanel.Dock="Right" Content="Browse…" Padding="10,4" Margin="6,0,0,0" Command="{Binding BrowseInstallCommand}"/>
+            <Button DockPanel.Dock="Right" Content="Auto-detect" Padding="10,4" Margin="6,0,0,0" Command="{Binding AutoDetectInstallCommand}"/>
+            <TextBox Text="{Binding InstallRoot, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"/>
+        </DockPanel>
+
         <TextBlock Text="Poll interval (seconds)" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
         <TextBox Text="{Binding PollSeconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" Width="100" HorizontalAlignment="Left"/>
 

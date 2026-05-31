@@ -26,7 +26,7 @@ namespace Mithril.MapCalibration.Capture;
 /// Failure is irrelevant to startup — it's a cache warm-up.</para>
 ///
 /// <para><b>Fail-soft (preserved end-to-end).</b> No exe / empty
-/// <see cref="GameConfig.GameRoot"/> / non-zero exit / timeout / crash → no icons,
+/// <see cref="GameConfig.InstallRoot"/> / non-zero exit / timeout / crash → no icons,
 /// no throw, no crash. The bootstrap is skipped entirely when the cache is already
 /// populated (manifest present) so it runs at most once per fresh cache.</para>
 /// </summary>
@@ -85,10 +85,10 @@ public sealed class IconTemplateBootstrap : IHostedService, IDisposable
     /// </summary>
     internal async Task<bool> RunOnceAsync(CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(_gameConfig.GameRoot))
+        if (string.IsNullOrWhiteSpace(_gameConfig.InstallRoot))
         {
             _logger.LogInformation(
-                "Icon-template bootstrap skipped: PG install root not configured (GameConfig.GameRoot empty). Safe-degrade.");
+                "Icon-template bootstrap skipped: PG install root not configured (GameConfig.InstallRoot empty). Safe-degrade.");
             return false;
         }
 
@@ -110,7 +110,7 @@ public sealed class IconTemplateBootstrap : IHostedService, IDisposable
         try
         {
             var request = new ExtractRequest(
-                InstallRoot: _gameConfig.GameRoot,
+                InstallRoot: _gameConfig.InstallRoot,
                 OutDir: _assetCacheDir,
                 Kind: ExtractKind.Icons,
                 AreaKey: null,

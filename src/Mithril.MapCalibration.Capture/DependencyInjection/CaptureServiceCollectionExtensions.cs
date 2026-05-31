@@ -183,7 +183,7 @@ public static partial class CaptureServiceCollectionExtensions
         // cache per attempt, a same-session populate takes effect immediately — the
         // engine's own --icons demand-trigger (EnsureIconTemplatesAsync) is the
         // correctness backstop, and this warm-up is the latency optimisation.
-        // Fail-soft: no exe / GameRoot empty / non-zero exit → no icons, no throw.
+        // Fail-soft: no exe / InstallRoot empty / non-zero exit → no icons, no throw.
         services.AddSingleton<IconTemplateBootstrap>(sp => new IconTemplateBootstrap(
             sp.GetRequiredService<IAssetExtractor>(),
             sp.GetRequiredService<GameConfig>(),

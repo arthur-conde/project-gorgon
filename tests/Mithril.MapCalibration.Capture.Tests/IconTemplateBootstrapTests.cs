@@ -12,8 +12,9 @@ namespace Mithril.MapCalibration.Capture.Tests;
 /// <summary>
 /// #945 Gap 3: the icon-template bootstrap's decision logic, tested headless over a
 /// fake <see cref="IAssetExtractor"/> + a temp cache dir (no real exe). Covers the
-/// four gates: empty cache + GameRoot set → invokes <c>--icons</c>; cache already
-/// populated → skips; GameRoot empty → skips; extractor failure/throw → no throw.
+/// four gates: empty cache + InstallRoot set → invokes <c>--icons</c>; cache already
+/// populated → skips; InstallRoot empty → skips; extractor failure/throw → no throw.
+/// (#959: the gate keys off the Steam <c>InstallRoot</c>, not the data-dir GameRoot.)
 /// </summary>
 public sealed class IconTemplateBootstrapTests : IDisposable
 {
@@ -30,9 +31,9 @@ public sealed class IconTemplateBootstrapTests : IDisposable
         try { Directory.Delete(_cacheDir, recursive: true); } catch { /* best effort */ }
     }
 
-    private IconTemplateBootstrap Build(IAssetExtractor extractor, string gameRoot, string? cacheDir = null) =>
+    private IconTemplateBootstrap Build(IAssetExtractor extractor, string installRoot, string? cacheDir = null) =>
         new(extractor,
-            new GameConfig { GameRoot = gameRoot },
+            new GameConfig { InstallRoot = installRoot },
             cacheDir ?? _cacheDir,
             pgVersion: null,
             NullLogger.Instance);
@@ -48,10 +49,10 @@ public sealed class IconTemplateBootstrapTests : IDisposable
     }
 
     [Fact]
-    public async Task Empty_cache_with_game_root_invokes_icons_extraction()
+    public async Task Empty_cache_with_install_root_invokes_icons_extraction()
     {
         var extractor = new RecordingAssetExtractor();
-        var sut = Build(extractor, gameRoot: @"C:\Games\PG");
+        var sut = Build(extractor, installRoot: @"C:\Games\PG");
 
         var invoked = await sut.RunOnceAsync(CancellationToken.None);
 
@@ -69,7 +70,7 @@ public sealed class IconTemplateBootstrapTests : IDisposable
     {
         WritePopulatedManifest();
         var extractor = new RecordingAssetExtractor();
-        var sut = Build(extractor, gameRoot: @"C:\Games\PG");
+        var sut = Build(extractor, installRoot: @"C:\Games\PG");
 
         var invoked = await sut.RunOnceAsync(CancellationToken.None);
 
@@ -78,10 +79,10 @@ public sealed class IconTemplateBootstrapTests : IDisposable
     }
 
     [Fact]
-    public async Task Empty_game_root_does_not_invoke()
+    public async Task Empty_install_root_does_not_invoke()
     {
         var extractor = new RecordingAssetExtractor();
-        var sut = Build(extractor, gameRoot: "");
+        var sut = Build(extractor, installRoot: "");
 
         var invoked = await sut.RunOnceAsync(CancellationToken.None);
 
@@ -94,7 +95,7 @@ public sealed class IconTemplateBootstrapTests : IDisposable
     {
         var failing = new RecordingAssetExtractor(
             new ExtractResult(false, ProcessAssetExtractor.ExitMissingExe, Array.Empty<ExtractedArtifact>(), "no exe"));
-        var sut = Build(failing, gameRoot: @"C:\Games\PG");
+        var sut = Build(failing, installRoot: @"C:\Games\PG");
 
         var invoked = await sut.RunOnceAsync(CancellationToken.None);
 
@@ -107,7 +108,7 @@ public sealed class IconTemplateBootstrapTests : IDisposable
     [Fact]
     public async Task Extractor_throwing_is_swallowed_fail_soft()
     {
-        var sut = Build(new ThrowingAssetExtractor(), gameRoot: @"C:\Games\PG");
+        var sut = Build(new ThrowingAssetExtractor(), installRoot: @"C:\Games\PG");
 
         var act = async () => await sut.RunOnceAsync(CancellationToken.None);
 

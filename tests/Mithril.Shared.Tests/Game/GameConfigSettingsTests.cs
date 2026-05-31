@@ -94,4 +94,52 @@ public sealed class GameConfigSettingsTests
 
         changed.Should().Contain(nameof(GameConfig.CalibrationGoodResidualPx));
     }
+
+    // #959: InstallRoot = the Steam install dir consumed by the asset-extractor
+    // sidecar, distinct from GameRoot (the LocalLow data dir).
+    [Fact]
+    public void InstallRoot_default_is_empty()
+        => new GameConfig().InstallRoot.Should().BeEmpty();
+
+    [Fact]
+    public void InstallRoot_does_not_affect_data_dir_paths()
+    {
+        // InstallRoot must NOT participate in the Player.log/ChatLogs/Reports
+        // recomputation — those stay GameRoot-only.
+        var c = new GameConfig
+        {
+            GameRoot = @"C:\Data\PG",
+            InstallRoot = @"D:\Steam\common\Project Gorgon",
+        };
+
+        c.PlayerLogPath.Should().Be(@"C:\Data\PG\Player.log");
+        c.ChatLogDirectory.Should().Be(@"C:\Data\PG\ChatLogs");
+        c.ReportsDirectory.Should().Be(@"C:\Data\PG\Reports");
+    }
+
+    [Fact]
+    public void InstallRoot_raises_PropertyChanged_on_change()
+    {
+        var c = new GameConfig();
+        var changed = new List<string?>();
+        c.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        c.InstallRoot = @"D:\Steam\common\Project Gorgon";
+
+        changed.Should().Contain(nameof(GameConfig.InstallRoot));
+    }
+
+    [Fact]
+    public void InstallRoot_change_does_not_raise_data_dir_path_changes()
+    {
+        var c = new GameConfig { GameRoot = @"C:\Data\PG" };
+        var changed = new List<string?>();
+        c.PropertyChanged += (_, e) => changed.Add(e.PropertyName);
+
+        c.InstallRoot = @"D:\Steam\common\Project Gorgon";
+
+        changed.Should().NotContain(nameof(GameConfig.PlayerLogPath));
+        changed.Should().NotContain(nameof(GameConfig.ChatLogDirectory));
+        changed.Should().NotContain(nameof(GameConfig.ReportsDirectory));
+    }
 }

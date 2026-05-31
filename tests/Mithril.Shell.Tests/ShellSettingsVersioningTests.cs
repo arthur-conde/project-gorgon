@@ -53,4 +53,31 @@ public sealed class ShellSettingsVersioningTests
 
         written.Should().Contain($"\"schemaVersion\": {ShellSettings.CurrentVersion}");
     }
+
+    [Fact]
+    public void Install_root_round_trips_through_json()
+    {
+        // #959: InstallRoot is an additive field (no schema bump). It must persist
+        // and reload distinctly from GameRoot (data dir vs install dir).
+        var written = JsonSerializer.Serialize(
+            new ShellSettings { GameRoot = @"C:\Data\PG", InstallRoot = @"D:\Steam\common\Project Gorgon" },
+            ShellSettingsJsonContext.Default.ShellSettings);
+
+        var loaded = JsonSerializer.Deserialize(
+            written, ShellSettingsJsonContext.Default.ShellSettings)!;
+
+        loaded.InstallRoot.Should().Be(@"D:\Steam\common\Project Gorgon");
+        loaded.GameRoot.Should().Be(@"C:\Data\PG");
+    }
+
+    [Fact]
+    public void Install_root_defaults_to_empty_when_absent_from_legacy_json()
+    {
+        // A pre-#959 shell.json has no installRoot key → "" on load (additive field).
+        var loaded = JsonSerializer.Deserialize(
+            """{ "gameRoot": "C:/PG" }""",
+            ShellSettingsJsonContext.Default.ShellSettings)!;
+
+        loaded.InstallRoot.Should().BeEmpty();
+    }
 }

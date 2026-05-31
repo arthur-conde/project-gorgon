@@ -97,7 +97,7 @@ public sealed class AutoCalibrationEngineTests
     [Fact]
     public async Task Empty_icons_with_sidecar_wired_demand_triggers_icons_once_then_re_resolves()
     {
-        // Empty icon cache + a wired extractor + GameRoot/cacheDir set → the engine
+        // Empty icon cache + a wired extractor + InstallRoot/cacheDir set → the engine
         // invokes --icons once and re-resolves the provider in the SAME attempt.
         var icons = new FakeIconTemplateProvider(IconTemplateSet.Empty);
         var extractor = new RecordingAssetExtractor(); // success, no artifacts
@@ -105,7 +105,7 @@ public sealed class AutoCalibrationEngineTests
         {
             IconProvider = icons,
             Extractor = extractor,
-            GameConfig = new GameConfig { GameRoot = @"C:\PG" },
+            GameConfig = new GameConfig { InstallRoot = @"C:\PG" },
             AssetCacheDir = @"C:\cache",
         };
 
@@ -126,7 +126,7 @@ public sealed class AutoCalibrationEngineTests
         {
             IconProvider = icons,
             Extractor = extractor,
-            GameConfig = new GameConfig { GameRoot = @"C:\PG" },
+            GameConfig = new GameConfig { InstallRoot = @"C:\PG" },
             AssetCacheDir = @"C:\cache",
         };
 
@@ -139,7 +139,7 @@ public sealed class AutoCalibrationEngineTests
     [Fact]
     public async Task Empty_icons_without_a_wired_extractor_fails_soft_no_trigger()
     {
-        // No extractor / no GameRoot → safe-degrade: still solves (base texture fine),
+        // No extractor / no InstallRoot → safe-degrade: still solves (base texture fine),
         // just with an empty template set; never throws.
         var icons = new FakeIconTemplateProvider(IconTemplateSet.Empty);
         var h = new EngineHarness { IconProvider = icons }; // Extractor null by default
@@ -171,7 +171,7 @@ public sealed class AutoCalibrationEngineTests
             new FakeCalibrationService(),
             logger: null,
             assetExtractor: new ThrowingAssetExtractor(),
-            gameConfig: new GameConfig { GameRoot = @"C:\PG" },
+            gameConfig: new GameConfig { InstallRoot = @"C:\PG" },
             assetCacheDir: @"C:\cache");
 
         var act = async () => await engine.TryCalibrateCurrentAreaAsync(default);
