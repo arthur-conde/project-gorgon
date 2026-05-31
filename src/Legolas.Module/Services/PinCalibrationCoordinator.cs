@@ -106,6 +106,12 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     private readonly IAreaCalibrationService _service;
     private readonly IMapPinState _pinState;
     private readonly LegolasSettings _settings;
+    // #919: the "good residual" threshold moved from LegolasSettings to the
+    // shared GameConfig so the map-calibration capture engine reads the same
+    // value the manual walkthrough uses. Optional in the ctor (defaults to a
+    // fresh GameConfig with the 12 px default) so existing test ctors compile
+    // unchanged.
+    private readonly Mithril.Shared.Game.GameConfig _gameConfig;
     private readonly SessionState? _session;
     private readonly Microsoft.Extensions.Logging.ILogger? _logger;
     private readonly IDisposable _addedSub;
@@ -128,11 +134,13 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     public PinCalibrationCoordinator(
         IAreaCalibrationService service, IMapPinState pinState, IDomainEventSubscriber bus,
         LegolasSettings settings, SessionState? session = null,
-        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null)
+        Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null,
+        Mithril.Shared.Game.GameConfig? gameConfig = null)
     {
         _service = service;
         _pinState = pinState;
         _settings = settings;
+        _gameConfig = gameConfig ?? new Mithril.Shared.Game.GameConfig();
         _session = session;
         _logger = loggerFactory?.CreateLogger("Legolas.PinCalibrationCoordinator");
         // Seed ExistingPins from the current pin state; live add/remove
@@ -140,10 +148,14 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
         SyncExistingPins(_pinState.Pins);
         _addedSub = bus.Subscribe<MapPinAdded>(OnPinAdded);
         _removedSub = bus.Subscribe<MapPinRemoved>(OnPinRemoved);
-        _settings.PropertyChanged += (_, e) =>
+        // #919: react to live edits of the shared threshold (now on GameConfig).
+        _gameConfig.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(LegolasSettings.CalibrationGoodResidualPx))
+            if (e.PropertyName == nameof(Mithril.Shared.Game.GameConfig.CalibrationGoodResidualPx))
+            {
                 OnPropertyChanged(nameof(IsResidualGood));
+                OnPropertyChanged(nameof(ResidualText));
+            }
         };
     }
 
@@ -214,10 +226,10 @@ public sealed partial class PinCalibrationCoordinator : ObservableObject, IDispo
     /// <summary>Confirm is ungated once the preview residual is at or below the
     /// configured "good" threshold; otherwise the user must "finish anyway".</summary>
     public bool IsResidualGood =>
-        PreviewResidual is { } r && r <= _settings.CalibrationGoodResidualPx;
+        PreviewResidual is { } r && r <= _gameConfig.CalibrationGoodResidualPx;
 
     public string ResidualText => PreviewResidual is { } r
-        ? $"Fit residual: {r:0.0} px (target ≤ {_settings.CalibrationGoodResidualPx:0} px)."
+        ? $"Fit residual: {r:0.0} px (target ≤ {_gameConfig.CalibrationGoodResidualPx:0} px)."
         : "Pair ≥3 pins to see the fit quality.";
 
     /// <summary>The next pin the user should pair: the explicit override if

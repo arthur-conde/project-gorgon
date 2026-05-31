@@ -5,7 +5,7 @@ namespace Legolas.Domain;
 
 public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<LegolasSettings>
 {
-    public const int Version = 4;
+    public const int Version = 5;
     public static int CurrentVersion => Version;
 
     /// <summary>
@@ -32,6 +32,15 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     /// unchanged. <see cref="Migrate"/> needs no v3 → v4 branch — the v1 → v2
     /// colour-promotion block it always runs is itself a no-op on a v3 blob
     /// (the legacy colour fields are already absent / null).
+    ///
+    /// v4 → v5 (#919) removes <c>GameProcessName</c> + <c>CalibrationGoodResidualPx</c>,
+    /// relocated to the shared <c>GameConfig</c> / <c>ShellSettings</c> store.
+    /// The migration is a no-op in code: the dropped fields are simply no longer
+    /// declared, so STJ ignores those keys on load and the loader's re-save
+    /// strips them from disk. The one-time value carry-over (so a user's
+    /// customised value isn't lost) lives in <c>GameConfigCarryOver</c> at the
+    /// shell composition root, because a per-file <see cref="Migrate"/> cannot
+    /// reach across into <c>shell.json</c>.
     /// </summary>
     public int SchemaVersion { get; set; } = 1;
 
@@ -332,44 +341,12 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
         }
     }
 
-    private string _gameProcessName = "ProjectGorgon";
-    public string GameProcessName
-    {
-        get => _gameProcessName;
-        set
-        {
-            // Trim only — the predicate is a case-insensitive substring match,
-            // so internal whitespace (e.g. "Project Gorgon") is allowed for
-            // launchers that name the executable with a space.
-            var v = value?.Trim() ?? string.Empty;
-            if (string.Equals(_gameProcessName, v, StringComparison.Ordinal)) return;
-            _gameProcessName = v;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GameProcessName)));
-        }
-    }
-
-    private double _calibrationGoodResidualPx = 12.0;
-    /// <summary>
-    /// RMS pixel-residual at or below which an in-flow (#460) pin calibration
-    /// is considered "good" and the guided walkthrough's terminal Confirm is
-    /// ungated. Above it the user must explicitly "finish anyway" (the
-    /// non-affine ±10% map ceiling means a high residual is sometimes
-    /// unavoidable — the user is never trapped). 12 px mirrors the long-standing
-    /// "good" notion the standalone calibration window's Solve already uses;
-    /// exposed here so it is one configurable value, not a hardcoded constant.
-    /// Additive — old settings JSON without it loads the 12 px default.
-    /// </summary>
-    public double CalibrationGoodResidualPx
-    {
-        get => _calibrationGoodResidualPx;
-        set
-        {
-            var clamped = value > 0 ? value : 12.0;
-            if (Math.Abs(_calibrationGoodResidualPx - clamped) < 1e-6) return;
-            _calibrationGoodResidualPx = clamped;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CalibrationGoodResidualPx)));
-        }
-    }
+    // #919: GameProcessName + CalibrationGoodResidualPx relocated to the shared
+    // Mithril.Shared GameConfig / ShellSettings store so the map-calibration
+    // capture engine (shared infra) can consume them without depending on this
+    // module. The v4 → v5 migration drops the now-unused JSON keys; a one-time
+    // composition-root carry-over (GameConfigCarryOver in Mithril.Shell) copies
+    // any non-default legolas.json value into the shared store before this loads.
 
     private double _nudgeStepDefault = 1.0;
     public double NudgeStepDefault

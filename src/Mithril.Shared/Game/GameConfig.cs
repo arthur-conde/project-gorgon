@@ -20,6 +20,40 @@ public sealed class GameConfig : INotifyPropertyChanged
         set => Set(ref _pollIntervalSeconds, Math.Max(0.1, value));
     }
 
+    /// <summary>
+    /// Case-insensitive substring matched against the foreground window's
+    /// process name to decide whether the game is in focus. Covers common
+    /// launcher name variations (ProjectGorgon, ProjectGorgon64, Project Gorgon,
+    /// etc.) without a code change. Internal whitespace is preserved; only
+    /// leading/trailing whitespace is trimmed on set.
+    /// </summary>
+    private string _gameProcessName = "ProjectGorgon";
+    public string GameProcessName
+    {
+        get => _gameProcessName;
+        set
+        {
+            // Trim only — the predicate is a case-insensitive substring match,
+            // so internal whitespace (e.g. "Project Gorgon") is allowed for
+            // launchers that name the executable with a space.
+            var v = value?.Trim() ?? string.Empty;
+            Set(ref _gameProcessName, v);
+        }
+    }
+
+    /// <summary>
+    /// RMS pixel-residual at or below which a calibration is considered "good"
+    /// and the guided walkthrough's Confirm is ungated. Clamped to a positive
+    /// value (bad input resets to 12.0). Mirrors the long-standing default in
+    /// Mithril.MapCalibration (DefaultGoodResidualThresholdPx = 12.0).
+    /// </summary>
+    private double _calibrationGoodResidualPx = 12.0;
+    public double CalibrationGoodResidualPx
+    {
+        get => _calibrationGoodResidualPx;
+        set => Set(ref _calibrationGoodResidualPx, value > 0 ? value : 12.0);
+    }
+
     public string PlayerLogPath => string.IsNullOrEmpty(GameRoot) ? "" : Path.Combine(GameRoot, "Player.log");
     public string ChatLogDirectory => string.IsNullOrEmpty(GameRoot) ? "" : Path.Combine(GameRoot, "ChatLogs");
     public string ReportsDirectory => string.IsNullOrEmpty(GameRoot) ? "" : Path.Combine(GameRoot, "Reports");

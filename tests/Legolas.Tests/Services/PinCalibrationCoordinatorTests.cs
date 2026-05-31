@@ -17,13 +17,14 @@ namespace Legolas.Tests.Services;
 /// </summary>
 public class PinCalibrationCoordinatorTests
 {
-    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakeMapPinState pins, LegolasSettings settings) Build()
+    private static (PinCalibrationCoordinator coord, FakeCalib calib, FakeMapPinState pins, Mithril.Shared.Game.GameConfig gameConfig) Build()
     {
         var calib = new FakeCalib();
         var pins = new FakeMapPinState();
         var bus = new TestDomainEventBus();
         var settings = new LegolasSettings();
-        return (new PinCalibrationCoordinator(calib, pins, bus, settings), calib, pins, settings);
+        var gameConfig = new Mithril.Shared.Game.GameConfig();
+        return (new PinCalibrationCoordinator(calib, pins, bus, settings, gameConfig: gameConfig), calib, pins, gameConfig);
     }
 
     private static (PinCalibrationCoordinator coord, FakeCalib calib, FakeMapPinState pins, SessionState session) BuildWithSession()
@@ -271,7 +272,7 @@ public class PinCalibrationCoordinatorTests
     [Fact]
     public void Confirm_gate_flips_at_the_configured_threshold_and_finish_anyway_persists()
     {
-        var (coord, calib, pins, settings) = Build();
+        var (coord, calib, pins, gameConfig) = Build();
         pins.SeedExisting(
             FakeMapPinState.Pin(10, 10),
             FakeMapPinState.Pin(50, 60),
@@ -287,8 +288,9 @@ public class PinCalibrationCoordinatorTests
         coord.Confirm().Should().BeNull("gated on a good residual");
         calib.LastPairs.Should().BeNull();
 
-        // Raise the threshold above the residual → the gate opens.
-        settings.CalibrationGoodResidualPx = coord.PreviewResidual!.Value + 10;
+        // Raise the threshold above the residual → the gate opens. #919: the
+        // threshold now lives on the shared GameConfig, not LegolasSettings.
+        gameConfig.CalibrationGoodResidualPx = coord.PreviewResidual!.Value + 10;
         coord.IsResidualGood.Should().BeTrue();
         coord.Confirm().Should().NotBeNull();
         coord.IsArmed.Should().BeFalse("a successful confirm disarms");
