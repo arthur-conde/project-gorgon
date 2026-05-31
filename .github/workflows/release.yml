@@ -108,16 +108,33 @@ jobs:
         shell: pwsh
         run: |
           $failed = @()
-          Get-ChildItem -Path tests -Filter "*.csproj" -Recurse | ForEach-Object {
-            Write-Host "::group::$($_.BaseName) (FileIO category)"
-            dotnet test $_.FullName -c Release --no-build --no-restore --filter "Category=FileIO"
-            if ($LASTEXITCODE -ne 0) { $failed += $_.BaseName }
-            Write-Host "::endgroup::"
-          }
+          # Mithril.MapCalibration.Harness.Tests is excluded from Mithril.slnx (issue #921,
+          # to keep AssetsTools.NET / System.Drawing out of the main build) but still lives
+          # under tests/ on disk. The main solution build above doesn't build it, so a
+          # --no-build invocation here would fail on the missing assembly. It's covered by
+          # its own isolated step below.
+          Get-ChildItem -Path tests -Filter "*.csproj" -Recurse |
+            Where-Object { $_.BaseName -ne 'Mithril.MapCalibration.Harness.Tests' } |
+            ForEach-Object {
+              Write-Host "::group::$($_.BaseName) (FileIO category)"
+              dotnet test $_.FullName -c Release --no-build --no-restore --filter "Category=FileIO"
+              if ($LASTEXITCODE -ne 0) { $failed += $_.BaseName }
+              Write-Host "::endgroup::"
+            }
           if ($failed.Count -gt 0) {
             Write-Error "FileIO tests failed in: $($failed -join ', ')"
             exit 1
           }
+
+      # Map-calibration harness tests live in tools/Mithril.MapCalibration.Tools.slnx, not
+      # Mithril.slnx — the harness's Tools.Common dep carries AssetsTools.NET + System.Drawing,
+      # which we deliberately keep out of the main solution restore/build (issue #921). Run the
+      # harness test project on its own so its build pulls those decoders in isolation while still
+      # covering the engine unit tests + the ImageIo high-DPI regression guard ("bit us twice").
+      # Targeted at the test csproj (not the whole tools solution) so the unused
+      # MapCalibrationFromScreenshot / MapCalibrationWpf tools aren't compiled for nothing.
+      - name: Run map-calibration harness tests (isolated, decoder deps)
+        run: dotnet test tests/Mithril.MapCalibration.Harness.Tests/Mithril.MapCalibration.Harness.Tests.csproj -c Release
 
       # ─────────────────────────────────────────────────────────────────
       # Self-contained SKU: bundles .NET 10 desktop runtime (~150 MB).
