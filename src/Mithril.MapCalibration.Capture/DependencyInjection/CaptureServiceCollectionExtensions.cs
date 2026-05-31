@@ -115,18 +115,23 @@ public static partial class CaptureServiceCollectionExtensions
 
         // Hotkeys.
         services.AddSingleton<IHotkeyCommand>(sp =>
-            new Hotkeys.CaptureCalibrateCommand(sp.GetRequiredService<IAutoCalibrationRunner>()));
+            new Hotkeys.CaptureCalibrateCommand(
+                sp.GetRequiredService<IAutoCalibrationRunner>(),
+                sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>()));
         services.AddSingleton<IHotkeyCommand>(sp =>
             new Hotkeys.DrawMapBboxCommand(sp.GetRequiredService<IMapBboxDrawController>()));
 
-        // Background auto-attempt trigger.
+        // Background auto-attempt trigger. A hosted service → ILogger is required
+        // (CLAUDE.md): resolve ILoggerFactory as required and create the category
+        // logger rather than threading an optional logger.
         services.AddSingleton<AutoCalibrationTrigger>(sp => new AutoCalibrationTrigger(
             sp.GetRequiredService<Arda.Contracts.IDomainEventSubscriber>(),
             sp.GetRequiredService<IAutoCalibrationRunner>(),
             sp.GetRequiredService<IMapCaptureRegionProvider>(),
             sp.GetRequiredService<IGameWindowLocator>(),
             sp.GetRequiredService<IMapCalibrationService>(),
-            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Trigger")));
+            sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Mithril.MapCalibration.Capture.Trigger")));
         services.AddHostedService(sp => sp.GetRequiredService<AutoCalibrationTrigger>());
 
         return services;

@@ -30,4 +30,17 @@ public sealed class CalibrationStatusFormatterTests
         => CalibrationStatusFormatter.ForOutcome(
                 new AutoCalibrationOutcome(false, "AreaSerbule", "residual 25.00 px exceeds threshold 12.00 px"))
             .Should().NotBeNullOrEmpty();
+
+    [Fact]
+    public void A_rejected_outcome_routes_its_reason_through_ForReject()
+    {
+        const string reason = "no map bbox set — use the draw-map-bbox hotkey first";
+        CalibrationStatusFormatter.ForOutcome(new AutoCalibrationOutcome(false, "AreaSerbule", reason))
+            .Should().Be(CalibrationStatusFormatter.ForReject(reason));
+    }
+
+    [Fact]
+    public void A_rejected_outcome_with_no_reason_falls_back_to_a_generic_string()
+        => CalibrationStatusFormatter.ForOutcome(new AutoCalibrationOutcome(false, "AreaSerbule", null))
+            .Should().NotBeNullOrWhiteSpace();
 }

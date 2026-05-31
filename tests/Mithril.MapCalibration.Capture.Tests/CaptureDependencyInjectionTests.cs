@@ -34,6 +34,11 @@ public sealed class CaptureDependencyInjectionTests
 
         var services = new ServiceCollection();
 
+        // The trigger is a hosted service → requires a non-optional ILogger
+        // (CLAUDE.md), resolved via ILoggerFactory in the DI lambda. The shell
+        // always registers logging; mirror that here so the graph resolves.
+        services.AddLogging();
+
         // Cross-cutting collaborators the shell normally provides — faked here.
         services.AddSingleton(new GameConfig { CalibrationGoodResidualPx = 9.0, GameRoot = "" });
         services.AddSingleton<IOverlayWindow>(new FakeOverlayWindow());

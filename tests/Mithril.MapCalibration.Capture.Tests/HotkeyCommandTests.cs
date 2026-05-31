@@ -20,7 +20,8 @@ public sealed class HotkeyCommandTests
     public async Task Capture_command_respects_focus_gate_and_invokes_the_engine()
     {
         var engine = new SpyAutoCalibrationEngine();
-        var cmd = new CaptureCalibrateCommand(engine);
+        var overlay = new FakeOverlayWindow();
+        var cmd = new CaptureCalibrateCommand(engine, overlay);
 
         cmd.RespectsFocusGate.Should().BeTrue();
         cmd.Id.Should().Be("mapcalibration.capture");
@@ -29,6 +30,31 @@ public sealed class HotkeyCommandTests
 
         await cmd.ExecuteAsync(default);
         engine.Calls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task Capture_command_clears_the_status_chip_on_a_persisted_success()
+    {
+        var engine = new SpyAutoCalibrationEngine(persisted: true);
+        var overlay = new FakeOverlayWindow();
+        overlay.SetStatusMessage("a stale prior message");
+
+        await new CaptureCalibrateCommand(engine, overlay).ExecuteAsync(default);
+
+        overlay.StatusMessage.Should().BeNull("a persisted success clears the chip");
+    }
+
+    [Fact]
+    public async Task Capture_command_surfaces_the_reject_reason_on_a_fail_soft_outcome()
+    {
+        var engine = new SpyAutoCalibrationEngine(persisted: false, rejectReason: "no map bbox set — use the draw-map-bbox hotkey first");
+        var overlay = new FakeOverlayWindow();
+
+        await new CaptureCalibrateCommand(engine, overlay).ExecuteAsync(default);
+
+        overlay.StatusMessage.Should().NotBeNullOrWhiteSpace("a reject must surface an actionable chip");
+        overlay.StatusMessage.Should().Be(CalibrationStatusFormatter.ForOutcome(
+            new AutoCalibrationOutcome(false, "AreaSerbule", "no map bbox set — use the draw-map-bbox hotkey first")));
     }
 
     [Fact]
@@ -51,11 +77,22 @@ public sealed class HotkeyCommandTests
 
 internal sealed class SpyAutoCalibrationEngine : IAutoCalibrationRunner
 {
+    private readonly bool _persisted;
+    private readonly string? _rejectReason;
+
+    /// <summary>Default: a persisted success (matches the prior fixed behaviour).
+    /// Pass <paramref name="persisted"/> false to simulate a fail-soft reject.</summary>
+    public SpyAutoCalibrationEngine(bool persisted = true, string? rejectReason = null)
+    {
+        _persisted = persisted;
+        _rejectReason = rejectReason ?? (persisted ? null : "no geometrically-consistent fit");
+    }
+
     public int Calls { get; private set; }
     public Task<AutoCalibrationOutcome> TryCalibrateCurrentAreaAsync(CancellationToken ct)
     {
         Calls++;
-        return Task.FromResult(new AutoCalibrationOutcome(true, "AreaSerbule", null));
+        return Task.FromResult(new AutoCalibrationOutcome(_persisted, "AreaSerbule", _persisted ? null : _rejectReason));
     }
 }
 
