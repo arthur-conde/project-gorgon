@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging;
-using Mithril.MapCalibration.Capture;
+using Mithril.MapCalibration;
 using Mithril.Shared.Settings;
 
 namespace Mithril.Shell;

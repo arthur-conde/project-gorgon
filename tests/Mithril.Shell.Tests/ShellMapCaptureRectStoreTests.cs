@@ -3,7 +3,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
-using Mithril.MapCalibration.Capture;
+using Mithril.MapCalibration;
 using Mithril.Shared.Settings;
 using Mithril.Shell;
 using Xunit;

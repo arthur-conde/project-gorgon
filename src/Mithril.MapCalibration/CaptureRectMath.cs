@@ -1,10 +1,10 @@
 using System;
 
-namespace Mithril.MapCalibration.Capture;
+namespace Mithril.MapCalibration;
 
 /// <summary>
-/// Pure, WPF-free conversion from device-independent (DIU/WPF) coordinates to the
-/// physical-pixel <see cref="CaptureRect"/> that <c>BitBltScreenCapture</c> reads.
+/// Pure, WPF-free conversions between device-independent (DIU/WPF) coordinates and
+/// the physical-pixel <see cref="CaptureRect"/> that <c>BitBltScreenCapture</c> reads.
 ///
 /// <para><b>Why this exists.</b> <c>BitBltScreenCapture.Capture</c> blits from
 /// <c>GetDC(NULL)</c> (the whole virtual desktop) using <c>rect.X/Y/Width/Height</c>
@@ -71,6 +71,38 @@ public static class CaptureRectMath
         if (w <= 0 || h <= 0) return default; // IsEmpty
 
         return new CaptureRect(x, y, w, h);
+    }
+
+    /// <summary>
+    /// Inverse of <see cref="DiuToPhysical"/>: convert a physical-pixel
+    /// <see cref="CaptureRect"/> back to a device-independent (DIU/WPF) rect suitable
+    /// for positioning a window via <c>Window.Left/Top/Width/Height</c> (#957 — the
+    /// overlay reads its frame from the physical-px capture store).
+    ///
+    /// <para>Unlike <see cref="DiuToPhysical"/> this does <b>not</b> round: DIU is a
+    /// fractional unit, so dividing the physical edges by the scale yields the exact
+    /// logical rect WPF expects. Round-tripping <c>physical → DIU → physical</c> at the
+    /// same scale reproduces the original integer rect (the edge-rounding in
+    /// <see cref="DiuToPhysical"/> is a no-op on already-integer device edges).</para>
+    /// </summary>
+    /// <returns>The DIU rect, or all-zero when the inputs are degenerate
+    /// (empty rect, non-finite or non-positive scale) — callers treat a zero-size
+    /// result as "nothing to apply".</returns>
+    public static (double Left, double Top, double Width, double Height) PhysicalToDiu(
+        CaptureRect rect, double dpiScaleX, double dpiScaleY)
+    {
+        if (rect.IsEmpty
+            || !IsFinite(dpiScaleX) || !IsFinite(dpiScaleY)
+            || dpiScaleX <= 0 || dpiScaleY <= 0)
+        {
+            return (0, 0, 0, 0);
+        }
+
+        double left = rect.X / dpiScaleX;
+        double top = rect.Y / dpiScaleY;
+        double width = rect.Width / dpiScaleX;
+        double height = rect.Height / dpiScaleY;
+        return (left, top, width, height);
     }
 
     private static bool IsFinite(double v) => !double.IsNaN(v) && !double.IsInfinity(v);

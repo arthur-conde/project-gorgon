@@ -1,10 +1,16 @@
-namespace Mithril.MapCalibration.Capture;
+namespace Mithril.MapCalibration;
 
 /// <summary>
 /// A desktop-pixel rectangle: the persisted map bbox and the resolved game
 /// client rect both use it. Deliberately a plain BCL struct (no
 /// <see cref="System.Windows.Rect"/>) so it can cross into the BCL-only
 /// detection core without dragging a WPF dependency through the boundary.
+///
+/// <para>Lives in the core <c>Mithril.MapCalibration</c> assembly (moved out of
+/// <c>Mithril.MapCalibration.Capture</c> in #957) so both the windows-only Capture
+/// project and <c>Legolas.Module</c> — which references the core but not Capture —
+/// can consume the one-rect seam (<see cref="IMapCaptureRectStore"/>) without
+/// taking a dependency on the BitBlt/CsWin32 capture infra.</para>
 /// </summary>
 public readonly record struct CaptureRect(int X, int Y, int Width, int Height)
 {

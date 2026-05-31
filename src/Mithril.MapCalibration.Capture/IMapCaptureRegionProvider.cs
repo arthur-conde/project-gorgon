@@ -1,8 +1,8 @@
 namespace Mithril.MapCalibration.Capture;
 
 /// <summary>
-/// Reads the single map-capture bbox (spec §7) from the SHELL-persisted capture
-/// rect (#947), converted to physical desktop pixels. The capture region is a
+/// Reads the single map-capture bbox (spec §7) from the shell-persisted capture
+/// rect (#947), already in physical desktop pixels. The capture region is a
 /// persisted desktop rectangle sourced independently of any window — see
 /// <see cref="IMapCaptureRectStore"/> for why it no longer rides the live
 /// overlay-window geometry. The auto-attempt reads <see cref="Current"/> to know

@@ -5,7 +5,7 @@ namespace Legolas.Domain;
 
 public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<LegolasSettings>
 {
-    public const int Version = 5;
+    public const int Version = 6;
     public static int CurrentVersion => Version;
 
     /// <summary>
@@ -41,6 +41,17 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     /// customised value isn't lost) lives in <c>GameConfigCarryOver</c> at the
     /// shell composition root, because a per-file <see cref="Migrate"/> cannot
     /// reach across into <c>shell.json</c>.
+    ///
+    /// v5 → v6 (#957) retires <c>MapOverlay</c>: the survey overlay window's frame
+    /// is now the one shell-persisted map-capture rect
+    /// (<c>ShellSettings.MapCaptureBbox</c>), so the overlay reads/writes its
+    /// position through that store instead of a Legolas-owned <see cref="WindowLayout"/>.
+    /// The migration is a no-op in code (the dropped field is no longer declared, so
+    /// STJ ignores the orphaned <c>mapOverlay</c> key on load and the loader's re-save
+    /// strips it). The one-time value carry-over into <c>shell.json</c> (DIU → physical)
+    /// lives in <c>MapCaptureRectCarryOver</c> at the shell composition root, for the
+    /// same cross-file reason as the #919 carry-over above. <c>InventoryOverlay</c> /
+    /// <c>CalibrationOverlay</c> keep their <see cref="WindowLayout"/> bindings.
     /// </summary>
     public int SchemaVersion { get; set; } = 1;
 
@@ -158,7 +169,10 @@ public sealed class LegolasSettings : INotifyPropertyChanged, IVersionedState<Le
     /// no area calibrated yet (the v2 default; see <see cref="SchemaVersion"/>).
     /// </summary>
     public Dictionary<string, AreaCalibration> AreaCalibrations { get; set; } = new(StringComparer.Ordinal);
-    public WindowLayout MapOverlay { get; set; } = new() { Width = 800, Height = 600 };
+    // #957: MapOverlay retired — the survey overlay window now reads/writes its
+    // frame through the one shell-persisted capture rect (ShellSettings.MapCaptureBbox,
+    // via CaptureRectWindowBinder), so capture-frame and overlay-frame are a single
+    // source of truth. Its last value migrates into shell.json (MapCaptureRectCarryOver).
     public WindowLayout InventoryOverlay { get; set; } = new() { Width = 540, Height = 440 };
     public WindowLayout CalibrationOverlay { get; set; } = new() { Width = 940, Height = 660 };
 

@@ -6,8 +6,26 @@ using Mithril.Shared.Hotkeys;
 
 namespace Mithril.Shell;
 
-public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPersistence
+public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPersistence, IVersionedState<ShellSettings>
 {
+    /// <summary>Current persisted schema version. ShellSettings became versioned in
+    /// #957 (#208 hygiene — every persisted JSON root should carry a version). Bump
+    /// this and add upgrade logic in <see cref="Migrate"/> when a field is
+    /// renamed/retyped/removed; a purely additive field needs no bump.</summary>
+    public const int Version = 1;
+
+    /// <inheritdoc cref="IVersionedState{T}.CurrentVersion"/>
+    public static int CurrentVersion => Version;
+
+    /// <summary>Identity migrate — no breaking shape change yet. The one-time
+    /// cross-file carry-over of the retired <c>LegolasSettings.MapOverlay</c> →
+    /// <see cref="MapCaptureBbox"/> lives in <see cref="MapCaptureRectCarryOver"/>
+    /// (it needs a DPI scale a per-file migrate can't supply), not here.</summary>
+    public static ShellSettings Migrate(ShellSettings loaded) => loaded;
+
+    /// <summary>Persisted schema version of this instance (see <see cref="Version"/>).</summary>
+    public int SchemaVersion { get; set; } = Version;
+
     private string _gameRoot = "";
     public string GameRoot { get => _gameRoot; set => Set(ref _gameRoot, value); }
 

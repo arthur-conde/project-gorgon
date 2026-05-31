@@ -216,6 +216,36 @@ public class LegolasSettingsMigrationTests
     }
 
     [Fact]
+    public void V5_blob_with_mapOverlay_loads_and_drops_the_retired_key_on_save()
+    {
+        // #957: MapOverlay was retired (the survey overlay reads its frame from the
+        // shell capture rect now). A v5 blob still has the orphaned mapOverlay key;
+        // it must load without error, Migrate is a no-op for v5+, and the re-saved
+        // v6 JSON no longer carries the key (STJ ignores it on load + drops on save).
+        var v5 = """
+            {
+              "schemaVersion": 5,
+              "mapOverlay": { "left": 220, "top": 140, "width": 960, "height": 540 },
+              "pinStyle": { "outer": { "strokeColor": "#FFAA0000" } }
+            }
+            """;
+        var loaded = JsonSerializer.Deserialize(v5, LegolasSettingsJsonContext.Default.LegolasSettings)!;
+        loaded.SchemaVersion.Should().Be(5);
+
+        var migrated = LegolasSettings.Migrate(loaded);
+        migrated.SchemaVersion = LegolasSettings.CurrentVersion;
+
+        // v5 → v6 leaves everything else untouched.
+        migrated.PinStyle.Outer.StrokeColor.Should().Be("#FFAA0000");
+
+        var written = JsonSerializer.Serialize(migrated, LegolasSettingsJsonContext.Default.LegolasSettings);
+        written.Should().NotContain("mapOverlay", "the retired field is no longer declared, so STJ drops it");
+        written.Should().Contain($"\"schemaVersion\": {LegolasSettings.CurrentVersion}");
+        // Sibling overlay layouts are unaffected by the retire.
+        written.Should().Contain("inventoryOverlay");
+    }
+
+    [Fact]
     public void MotherlodeMultiMapMode_defaults_true_and_round_trips()
     {
         // Additive (#488): a v4 blob without the key loads the true default,
