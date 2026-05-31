@@ -7,6 +7,7 @@ using Arda.Hosting;
 using Arda.Wpf;
 using Arda.World.Chat;
 using Arda.World.Player;
+using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Capture.DependencyInjection;
 using Mithril.MapCalibration.DependencyInjection;
 using Mithril.Overlay.DependencyInjection;
@@ -106,6 +107,15 @@ public static class ShellComposition
             // MapOverlayView during migration steps 3–5 (step 6 retires
             // MapOverlayView and the new window becomes the canonical surface).
             .AddMithrilOverlay()
+            // #947: shell-owned persisted capture-rect store backing the
+            // Capture-defined IMapCaptureRectStore seam over ShellSettings.
+            // Registered BEFORE AddMithrilMapCalibrationCapture for logical clarity
+            // (the capture provider + draw controller consume it); DI lambdas are
+            // lazy so strict order isn't required for correctness.
+            .AddSingleton<IMapCaptureRectStore>(sp => new ShellMapCaptureRectStore(
+                sp.GetRequiredService<ShellSettings>(),
+                sp.GetRequiredService<ISettingsStore<ShellSettings>>(),
+                sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.Shell.MapCaptureRect")))
             // #914 PR-2: map auto-capture pipeline (OS capture + trigger +
             // persistence). Registered AFTER AddMithrilOverlay (consumes
             // IOverlayWindow) and AFTER AddMithrilMapCalibration (consumes

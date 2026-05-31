@@ -48,10 +48,13 @@ public static partial class CaptureServiceCollectionExtensions
     /// <see cref="Arda.World.Player.IAreaState"/>, and
     /// <see cref="Mithril.Shared.Reference.IReferenceDataService"/>.
     ///
-    /// <para>#940: the capture region is the live overlay-window bounds (one-rect
-    /// model, spec §7); there is no separately-persisted capture rect, so this no
-    /// longer takes a <c>settingsDir</c> — the overlay's own
-    /// <c>WindowLayoutBinder</c> persists its bounds to <c>LegolasSettings</c>.</para>
+    /// <para>#947: the capture region is a SHELL-persisted desktop rect, sourced
+    /// independently of any window (the previous #940 live-overlay-bounds model
+    /// returned null whenever the overlay wasn't shown). The shell registers
+    /// <see cref="IMapCaptureRectStore"/> (over <c>ShellSettings</c>); this method
+    /// consumes it optionally so the graph still builds in test setups without the
+    /// shell. The overlay's own <c>WindowLayoutBinder</c> (→ <c>LegolasSettings</c>)
+    /// is untouched; full overlay-reads-shell-store consolidation is a follow-up.</para>
     /// </summary>
     public static IServiceCollection AddMithrilMapCalibrationCapture(
         this IServiceCollection services,
@@ -72,12 +75,17 @@ public static partial class CaptureServiceCollectionExtensions
         services.AddSingleton<ICalibrationConfidenceGate>(sp =>
             BuildConfidenceGate(sp.GetRequiredService<GameConfig>()));
 
-        // Capture region = live overlay-window bounds (#940 one-rect model). No
-        // separate persisted rect: the overlay's own WindowLayoutBinder persists
-        // its bounds to LegolasSettings.MapOverlay.
+        // Capture region = SHELL-persisted desktop rect (#947), stored in physical
+        // pixels (resolved at snip-confirm time from the snip window's own device
+        // scale), so the provider returns it verbatim — no read-time DPI / monitor
+        // enumeration. Sourced independently of any window, so it survives regardless
+        // of overlay-window state (the #947 fix). IMapCaptureRectStore is registered
+        // shell-side (ShellMapCaptureRectStore over ShellSettings); resolved as
+        // optional here so unit-test graphs without the shell fail soft (provider
+        // returns null).
         services.AddSingleton<IMapCaptureRegionProvider>(sp =>
             new MapCaptureRegionProvider(
-                sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
+                sp.GetService<IMapCaptureRectStore>(),
                 sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Region")));
 
         // OS capture seams.
@@ -138,9 +146,13 @@ public static partial class CaptureServiceCollectionExtensions
             pgVersion: pgVersion));
         services.AddSingleton<IAutoCalibrationRunner>(sp => sp.GetRequiredService<AutoCalibrationEngine>());
 
-        // Bbox draw controller (shell-side, over IOverlayWindow).
+        // Bbox draw controller (shell-side, over IOverlayWindow). On a confirmed snip
+        // it persists the rect to the shell-owned IMapCaptureRectStore (#947) — the
+        // authoritative persistence path — and mirrors it onto the overlay for visual
+        // feedback. Store resolved optional (null in test graphs → session-only apply).
         services.AddSingleton<IMapBboxDrawController>(sp => new MapBboxDrawController(
             sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
+            sp.GetService<IMapCaptureRectStore>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Draw")));
 
         // Hotkeys.

@@ -1,12 +1,12 @@
 namespace Mithril.MapCalibration.Capture;
 
 /// <summary>
-/// Reads the single map-capture bbox (spec §7) as the <b>live overlay-window
-/// bounds</b> (#940 one-rect model). The overlay window's desktop rect IS the
-/// capture region AND the calibration frame; there is no separately-persisted
-/// rect — persistence rides the overlay's existing <c>WindowLayoutBinder</c>
-/// wiring. The auto-attempt reads <see cref="Current"/> to know whether a region
-/// has been framed.
+/// Reads the single map-capture bbox (spec §7) from the SHELL-persisted capture
+/// rect (#947), converted to physical desktop pixels. The capture region is a
+/// persisted desktop rectangle sourced independently of any window — see
+/// <see cref="IMapCaptureRectStore"/> for why it no longer rides the live
+/// overlay-window geometry. The auto-attempt reads <see cref="Current"/> to know
+/// whether a region has been framed.
 /// </summary>
 public interface IMapCaptureRegionProvider
 {

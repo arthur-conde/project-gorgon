@@ -1,3 +1,4 @@
+using System;
 using FluentAssertions;
 using Mithril.MapCalibration.Capture;
 using Xunit;
@@ -5,14 +6,14 @@ using Xunit;
 namespace Mithril.MapCalibration.Capture.Tests;
 
 /// <summary>
-/// #940: the capture region is the live overlay-window bounds converted to
-/// physical desktop pixels (one-rect model, spec §7) — there is no longer a
-/// separately-persisted rect (the old store + its round-trip are deleted). These
-/// tests pin the pure rect-math helpers: <see cref="CaptureRectMath.DiuToPhysical"/>
-/// (which must match what <c>BitBltScreenCapture</c> blits from <c>GetDC(NULL)</c>
-/// exactly — the decode/DPI bug class from the #897 gate study) and
-/// <see cref="SnipRectMath"/> (drag normalization + virtual-desktop offset). The
-/// live overlay read + drag are covered separately (fail-soft test + manual-verify).
+/// #947: the capture region is a SHELL-persisted rect in PHYSICAL pixels, resolved
+/// once at snip-confirm time from the snip window's single device scale (one-rect
+/// model, spec §7). These tests pin the pure rect-math helpers the snip relies on:
+/// <see cref="CaptureRectMath.DiuToPhysical"/> (which must match what
+/// <c>BitBltScreenCapture</c> blits from <c>GetDC(NULL)</c> exactly — the decode/DPI
+/// bug class from the #897 gate study) and <see cref="SnipRectMath"/> (drag
+/// normalization + virtual-desktop offset). The live snip + drag are covered
+/// separately (fail-soft test + manual-verify).
 /// </summary>
 public sealed class CaptureMathTests
 {
@@ -85,5 +86,34 @@ public sealed class CaptureMathTests
         // Local canvas rect on a layout whose virtual origin is negative.
         var abs = SnipRectMath.ToVirtualDesktop(new System.Windows.Rect(50, 60, 300, 200), -1920, -100);
         abs.Should().Be(new System.Windows.Rect(-1870, -40, 300, 200));
+    }
+
+    // ---- #947: snip-time DIU→physical resolution ----
+    //
+    // RegionSnipWindow.ToPhysical (private; needs a realized WPF window for
+    // PresentationSource, so it's manual-verify) feeds the absolute-virtual-desktop
+    // DIU selection + the snip window's single TransformToDevice scale into the pure
+    // CaptureRectMath.DiuToPhysical helper. These tests pin that exact math for a
+    // non-100% scale, so the persisted physical rect is provably correct: under
+    // PerMonitorV2 one top-level window maps its whole logical surface uniformly at
+    // one scale, so DIU·S_snip is the physical rect across the entire selection.
+
+    [Fact]
+    public void Snip_resolves_physical_rect_at_150_percent_scale()
+    {
+        // A DIU selection at (200, 100) sized 400x300, snipped on a window whose
+        // single device scale is 1.5 → physical (300, 150, 600, 450).
+        CaptureRectMath.DiuToPhysical(200, 100, 400, 300, 1.5, 1.5)
+            .Should().Be(new CaptureRect(300, 150, 600, 450),
+                "the snip persists DIU·S_snip uniformly across the whole selection");
+    }
+
+    [Fact]
+    public void Snip_resolves_physical_rect_with_negative_virtual_origin()
+    {
+        // A selection straddling a negative virtual origin (secondary monitor left of
+        // the primary) at 150% — the physical origin stays signed.
+        CaptureRectMath.DiuToPhysical(-800, -100, 400, 200, 1.5, 1.5)
+            .Should().Be(new CaptureRect(-1200, -150, 600, 300));
     }
 }

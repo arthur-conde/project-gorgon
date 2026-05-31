@@ -1,45 +1,45 @@
 using System;
-using System.Threading.Tasks;
-using System.Windows;
-using System.Windows.Interop;
-using System.Windows.Media;
 using Microsoft.Extensions.Logging;
-using Mithril.Overlay;
 
 namespace Mithril.MapCalibration.Capture;
 
 /// <summary>
-/// <see cref="IMapCaptureRegionProvider"/> backed by the <b>live overlay window
-/// bounds</b> — there is no separately-persisted rect (#940 one-rect model, spec
-/// §7). The overlay window's desktop rect IS the capture region AND the
-/// calibration frame; persistence is handled entirely by the overlay's existing
-/// <c>WindowLayoutBinder.Bind</c> wiring (Left/Top on LocationChanged,
-/// Width/Height on SizeChanged → <c>LegolasSettings.MapOverlay</c>), so this
-/// provider neither reads nor writes settings.
+/// <see cref="IMapCaptureRegionProvider"/> backed by the SHELL-persisted capture
+/// rect (#947). The capture region is a <b>persisted desktop rectangle in physical
+/// pixels</b> sourced independently of any window — NOT the live overlay-window
+/// geometry.
 ///
-/// <para><see cref="Current"/> reads <see cref="Window.Left"/>/<see cref="Window.Top"/>/
-/// <see cref="FrameworkElement.ActualWidth"/>/<see cref="FrameworkElement.ActualHeight"/>
-/// and converts them to <b>physical desktop pixels</b> via the window's
-/// per-monitor DPI (<see cref="PresentationSource.FromVisual"/> →
-/// <see cref="System.Windows.Media.CompositionTarget.TransformToDevice"/>), so the
-/// returned rect matches what <c>BitBltScreenCapture</c> blits from
-/// <c>GetDC(NULL)</c> exactly. The pixel math lives in the pure, unit-tested
-/// <see cref="CaptureRectMath.DiuToPhysical"/> helper.</para>
+/// <para><b>Why this changed (#947).</b> The previous implementation derived the
+/// region from the overlay window's realized geometry
+/// (<c>PresentationSource.FromVisual</c> + <c>Window.Left/Top/ActualWidth/Height</c>),
+/// so <see cref="Current"/> returned <see langword="null"/> whenever the overlay
+/// wasn't shown — yet <c>BitBlt</c> capture (with the overlay blanked) never needs
+/// the overlay shown. The user could snip a region and still get "no map bbox set".
+/// Reading a persisted store removes the window-state dependency entirely.</para>
 ///
-/// <para><b>Fail-soft.</b> When the overlay surface isn't available yet (no
-/// <see cref="PresentationSource"/>, window not shown, zero size) <see cref="Current"/>
-/// returns <see langword="null"/> — never throws. The trigger reads
-/// <see cref="Current"/> from a thread-pool thread, so the WPF property access is
-/// marshalled to the window's dispatcher.</para>
+/// <para>The persisted rect is already in physical desktop pixels (resolved once at
+/// snip-confirm time from the snip window's live <c>TransformToDevice</c> scale —
+/// see <see cref="RegionSnipWindow"/> / <see cref="IMapCaptureRectStore"/>), so
+/// <see cref="Current"/> returns it verbatim: zero read-time DPI work, no monitor
+/// enumeration, no per-monitor affine map. Correct for single-monitor and
+/// uniform-DPI multi-monitor; mixed-DPI multi-monitor is #938 manual-verify, and a
+/// DPI/resolution change after snipping makes the stored rect stale (re-snip).</para>
+///
+/// <para><b>Fail-soft.</b> No store (unit-test graphs without the shell) / no
+/// persisted rect (never snipped) / degenerate rect → <see cref="Current"/> returns
+/// <see langword="null"/>; the engine surfaces "no map bbox set". Never throws into
+/// the engine/host.</para>
 /// </summary>
 public sealed class MapCaptureRegionProvider : IMapCaptureRegionProvider
 {
-    private readonly IOverlayWindow _overlay;
+    private readonly IMapCaptureRectStore? _store;
     private readonly ILogger? _logger;
 
-    public MapCaptureRegionProvider(IOverlayWindow overlay, ILogger? logger = null)
+    public MapCaptureRegionProvider(
+        IMapCaptureRectStore? store,
+        ILogger? logger = null)
     {
-        _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
+        _store = store;
         _logger = logger;
     }
 
@@ -47,56 +47,25 @@ public sealed class MapCaptureRegionProvider : IMapCaptureRegionProvider
     {
         get
         {
-            var window = _overlay.Window;
-            var dispatcher = window.Dispatcher;
+            // No store wired (e.g. a unit-test graph without the shell) → fail soft.
+            if (_store is null) return null;
+
+            CaptureRect? rect;
             try
             {
-                // Touching WPF window properties must happen on the UI thread; the
-                // trigger reads Current from a thread-pool thread. Invoke (not
-                // InvokeAsync) so the caller gets the value synchronously, matching
-                // the property contract.
-                if (dispatcher.CheckAccess())
-                    return ResolveOnDispatcher(window);
-                return dispatcher.Invoke(() => ResolveOnDispatcher(window));
+                rect = _store.Get();
             }
-            catch (Exception ex) when (ex is OperationCanceledException
-                                       or TaskCanceledException
-                                       or InvalidOperationException)
+            catch (Exception ex)
             {
-                // Expected dispatcher-teardown race: the overlay window / dispatcher
-                // is shutting down mid-read (Invoke throws once the dispatcher has
-                // begun shutdown). Fail soft (the trigger/engine treats null as
-                // "no region framed yet") but don't swallow silently — log at Trace
-                // since this is an expected, noisy-during-shutdown condition.
-                _logger?.LogTrace(ex, "Overlay dispatcher unavailable while reading capture region; treating region as unset.");
+                _logger?.LogWarning(ex, "Reading the persisted capture rect failed; treating region as unset.");
                 return null;
             }
+
+            // Never snipped (null) or a degenerate stored rect → the legitimate
+            // "no bbox set" state.
+            if (rect is not { } r || r.IsEmpty) return null;
+
+            return r;
         }
-    }
-
-    /// <summary>
-    /// Resolve the live overlay rect on the dispatcher thread. Returns
-    /// <see langword="null"/> (fail-soft) when the surface isn't ready.
-    /// </summary>
-    private static CaptureRect? ResolveOnDispatcher(Window window)
-    {
-        // No HwndSource yet (window never shown / already closed) → no rect.
-        if (PresentationSource.FromVisual(window) is not HwndSource source
-            || source.CompositionTarget is null)
-        {
-            return null;
-        }
-
-        double left = window.Left;
-        double top = window.Top;
-        double width = window.ActualWidth;
-        double height = window.ActualHeight;
-
-        if (double.IsNaN(left) || double.IsNaN(top) || width <= 0 || height <= 0)
-            return null;
-
-        Matrix toDevice = source.CompositionTarget.TransformToDevice;
-        var rect = CaptureRectMath.DiuToPhysical(left, top, width, height, toDevice.M11, toDevice.M22);
-        return rect.IsEmpty ? null : rect;
     }
 }
