@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using Microsoft.Extensions.Logging;
 
 namespace Mithril.Shared.Hotkeys;
 
@@ -11,6 +12,7 @@ public sealed partial class HotkeyService : IHotkeyService
 
     private readonly HotkeyRegistry _registry;
     private readonly IHotkeyGate _gate;
+    private readonly ILogger<HotkeyService> _logger;
     private readonly Dictionary<int, IHotkeyCommand> _byRegistrationId = new();
     private readonly Dictionary<string, int> _byCommandId = new(StringComparer.Ordinal);
     private IReadOnlyList<HotkeyBinding> _lastBindings = Array.Empty<HotkeyBinding>();
@@ -19,10 +21,11 @@ public sealed partial class HotkeyService : IHotkeyService
     private int _nextId = 0xB000;
     private int _captureDepth;
 
-    public HotkeyService(HotkeyRegistry registry, IHotkeyGate gate)
+    public HotkeyService(HotkeyRegistry registry, IHotkeyGate gate, ILogger<HotkeyService> logger)
     {
         _registry = registry;
         _gate = gate;
+        _logger = logger;
         _gate.PropertyChanged += OnGatePropertyChanged;
         foreach (var gated in _registry.Commands.OfType<IGatedHotkeyCommand>())
         {
@@ -147,16 +150,19 @@ public sealed partial class HotkeyService : IHotkeyService
         public void Dispose() { if (_disposed) return; _disposed = true; _svc.EndCaptureSession(); }
     }
 
+    internal async Task ExecuteCommandSafelyAsync(IHotkeyCommand command)
+    {
+        try { await command.ExecuteAsync(CancellationToken.None); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Hotkey command {CommandId} threw.", command.Id); }
+    }
+
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg != WM_HOTKEY) return IntPtr.Zero;
         var id = wParam.ToInt32();
         if (!_byRegistrationId.TryGetValue(id, out var command)) return IntPtr.Zero;
         handled = true;
-        _ = Dispatcher.CurrentDispatcher.InvokeAsync(async () =>
-        {
-            try { await command.ExecuteAsync(CancellationToken.None); } catch { }
-        });
+        _ = Dispatcher.CurrentDispatcher.InvokeAsync(() => ExecuteCommandSafelyAsync(command));
         return IntPtr.Zero;
     }
 
