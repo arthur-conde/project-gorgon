@@ -11,3 +11,7 @@ BitBlt
 GetDIBits
 DeleteObject
 DeleteDC
+EnumDisplayMonitors
+GetMonitorInfo
+GetDpiForMonitor
+MONITOR_DPI_TYPE

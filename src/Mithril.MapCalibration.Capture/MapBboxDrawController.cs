@@ -8,20 +8,29 @@ namespace Mithril.MapCalibration.Capture;
 /// <summary>
 /// Shell-side <see cref="IMapBboxDrawController"/>. <see cref="BeginDraw"/> opens
 /// a transient Snipping-Tool-style <see cref="RegionSnipWindow"/> spanning the
-/// virtual desktop; on confirm it moves/resizes the <b>overlay window</b> to
-/// cover the snipped region (#940 one-rect model, spec §7 — the overlay frame IS
-/// the capture region and the calibration frame). Setting the overlay's
+/// virtual desktop; on confirm it (1) PERSISTS the snipped absolute-virtual-desktop
+/// DIU rect to the shell-owned <see cref="IMapCaptureRectStore"/> — the
+/// authoritative persistence path, independent of window state (#947) — and (2)
+/// moves/resizes the <b>overlay window</b> to cover the snipped region for
+/// immediate visual feedback / snip-time consistency.
+///
+/// <para><b>#947:</b> persistence no longer rides the overlay window's
+/// <c>SizeChanged</c>/<c>LocationChanged</c> binder. Before, a snip only stuck if
+/// the overlay window was realized; now the store is written directly so the
+/// region survives even when the overlay was never shown. Applying the rect to the
+/// overlay (when realized) is kept purely for visual feedback — setting only
 /// Left/Top/Width/Height is within the allowed surface (the existing
-/// <c>WindowLayoutBinder.Apply</c> does the same), and the binder's
-/// LocationChanged/SizeChanged handlers persist the new bounds automatically;
-/// this controller adds NO persistence and does NOT mutate the overlay's
-/// Topmost/WindowStyle/AllowsTransparency/Close.
+/// <c>WindowLayoutBinder.Apply</c> does the same); this controller does NOT mutate
+/// the overlay's Topmost/WindowStyle/AllowsTransparency/Close. The Legolas binder
+/// (→ <c>LegolasSettings.MapOverlay</c>) is untouched; full overlay-reads-shell-store
+/// consolidation is a follow-up.</para>
 ///
 /// <para>All WPF work runs on the overlay window's dispatcher (BeginDraw is
-/// invoked from <c>DrawMapBboxCommand</c>, which may run off the UI thread).</para>
+/// invoked from <c>DrawMapBboxCommand</c>, which may run off the UI thread). The
+/// store write is window-independent and runs inline.</para>
 ///
 /// <para><b>Manual-verify (needs running PG):</b> the live drag, the dim/hole
-/// visuals, and that the snipped rect → overlay bounds → BitBlt capture rect all
+/// visuals, and that the snipped rect → persisted store → BitBlt capture rect all
 /// coincide on a scaled (≠100% DPI) and a multi-monitor layout. The pure rect
 /// math is unit-tested (<see cref="SnipRectMath"/>,
 /// <see cref="ApplyVirtualDesktopRectToOverlay"/>).</para>
@@ -29,6 +38,7 @@ namespace Mithril.MapCalibration.Capture;
 public sealed class MapBboxDrawController : IMapBboxDrawController
 {
     private readonly IOverlayWindow _overlay;
+    private readonly IMapCaptureRectStore? _store;
     private readonly ILogger? _logger;
 
     /// <summary>Test seam: build the transient selector. Overridden in tests so the
@@ -37,17 +47,20 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
 
     public MapBboxDrawController(
         IOverlayWindow overlay,
+        IMapCaptureRectStore? store = null,
         ILogger? logger = null)
-        : this(overlay, logger, snip: null)
+        : this(overlay, store, logger, snip: null)
     {
     }
 
     internal MapBboxDrawController(
         IOverlayWindow overlay,
+        IMapCaptureRectStore? store,
         ILogger? logger,
         Func<Rect?>? snip)
     {
         _overlay = overlay;
+        _store = store;
         _logger = logger;
         _snip = snip ?? ShowRealSnipWindow;
     }
@@ -84,6 +97,27 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
             return;
         }
 
+        if (rect.Width <= 0 || rect.Height <= 0)
+        {
+            _logger?.LogInformation("Map-bbox snip produced a degenerate rect; capture region unchanged.");
+            return;
+        }
+
+        // Authoritative persistence (#947): write the snipped absolute-virtual-desktop
+        // DIU rect to the shell-owned store directly, independent of window state.
+        // Fail-soft if the store isn't wired (unit-test graphs) or the write throws —
+        // the snip still applies to the overlay for the current session.
+        try
+        {
+            _store?.Set(new MapCaptureRectDiu(rect.X, rect.Y, rect.Width, rect.Height));
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Persisting the snipped capture rect failed; the region applies to this session only.");
+        }
+
+        // Visual feedback: mirror the snip onto the overlay window when realized.
+        // No longer the persistence path — purely snip-time consistency.
         ApplyVirtualDesktopRectToOverlay(_overlay.Window, rect);
         _logger?.LogInformation(
             "Map capture region set to {Width}x{Height} at ({Left},{Top}) (DIU).",

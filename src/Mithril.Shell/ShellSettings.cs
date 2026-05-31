@@ -77,6 +77,19 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private double _sidebarWidth = 260.0;
     public double SidebarWidth { get => _sidebarWidth; set => Set(ref _sidebarWidth, value); }
 
+    /// <summary>
+    /// The persisted map-capture bbox (#947), in absolute virtual-desktop DIUs.
+    /// <see langword="null"/> until the user first snips a region (the legitimate
+    /// "no bbox set" state). Owned by the shell — not Legolas — because the shell
+    /// references both Legolas and the Capture project, so a shell-side
+    /// <c>ShellMapCaptureRectStore</c> can back the Capture-defined
+    /// <c>IMapCaptureRectStore</c> seam without crossing the
+    /// <c>Capture ↛ Legolas.Module</c> boundary. A nullable field is purely
+    /// additive (missing key → null on load), so no schema migration is needed.
+    /// </summary>
+    private MapCaptureBbox? _mapCaptureBbox;
+    public MapCaptureBbox? MapCaptureBbox { get => _mapCaptureBbox; set => Set(ref _mapCaptureBbox, value); }
+
     public Dictionary<string, HotkeyBinding> HotkeyBindings { get; set; } = new();
     public Dictionary<string, bool> ModuleEagerOverrides { get; set; } = new();
 
@@ -95,6 +108,25 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     }
 }
 
+/// <summary>
+/// The persisted map-capture bbox (#947), in absolute virtual-desktop DIUs (1 DIU =
+/// 1/96"). A plain POCO so STJ source-gen serializes it as a nested object on
+/// <see cref="ShellSettings.MapCaptureBbox"/>. The DIU frame matches WPF
+/// <c>Window.Left/Top</c> and the snip's absolute virtual-desktop output; the
+/// Capture project converts it to physical pixels at read time via the live
+/// per-monitor DPI layout. Mirrors the Capture project's <c>MapCaptureRectDiu</c>
+/// (kept separate so the shell-settings schema doesn't take a Capture dependency in
+/// its persisted shape).
+/// </summary>
+public sealed class MapCaptureBbox
+{
+    public double Left { get; set; }
+    public double Top { get; set; }
+    public double Width { get; set; }
+    public double Height { get; set; }
+}
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(ShellSettings))]
+[JsonSerializable(typeof(MapCaptureBbox))]
 public partial class ShellSettingsJsonContext : JsonSerializerContext { }

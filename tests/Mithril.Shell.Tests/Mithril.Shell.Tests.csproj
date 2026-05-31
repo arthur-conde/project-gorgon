@@ -18,6 +18,9 @@
   -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Mithril.Shell\Mithril.Shell.csproj" />
+    <!-- #947: the capture-rect store test references the Capture-defined seam types
+         (IMapCaptureRectStore, MapCaptureRectDiu) directly. -->
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration.Capture\Mithril.MapCalibration.Capture.csproj" />
     <ProjectReference Include="..\..\src\Arwen.Module\Arwen.Module.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Bilbo.Module\Bilbo.Module.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Celebrimbor.Module\Celebrimbor.Module.csproj" ReferenceOutputAssembly="false" />
