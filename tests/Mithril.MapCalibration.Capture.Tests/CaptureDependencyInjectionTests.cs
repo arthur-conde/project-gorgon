@@ -1,12 +1,14 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Arda.Contracts;
 using Arda.World.Player;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Mithril.MapCalibration.Capture.DependencyInjection;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
+using Mithril.MapCalibration.Detection;
 using Mithril.Overlay;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
@@ -29,8 +31,72 @@ public sealed class CaptureDependencyInjectionTests
     [Fact]
     public void Auto_capture_pipeline_resolves_from_a_built_provider()
     {
+        using var provider = BuildProvider(out _);
+
+        provider.GetRequiredService<AutoCalibrationEngine>().Should().NotBeNull();
+
+        var hotkeys = provider.GetServices<IHotkeyCommand>().ToList();
+        hotkeys.Should().Contain(h => h.Id == "mapcalibration.capture");
+        hotkeys.Should().Contain(h => h.Id == "mapcalibration.draw_bbox");
+
+        // The GameConfig-wired gate must win over the engine's default gate
+        // (last-registration-wins): a residual of 9.5 exceeds the configured 9.0.
+        var gate = provider.GetRequiredService<Detection.ICalibrationConfidenceGate>();
+        gate.Accept(new AreaCalibration(1, 0, 0, 0, 8, 9.5), 8, out _).Should().BeFalse();
+
+        provider.GetRequiredService<AutoCalibrationTrigger>().Should().NotBeNull();
+        provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .Should().Contain(s => s is AutoCalibrationTrigger);
+    }
+
+    /// <summary>
+    /// #945 Gap 1: the asset-extractor sidecar adapter is registered, so a
+    /// base-texture cache-miss in <see cref="AutoCalibrationEngine"/> can actually
+    /// invoke the sidecar (previously <c>GetService&lt;IAssetExtractor&gt;()</c>
+    /// returned null and the cache-miss path short-circuited, so the cache never
+    /// populated). It registers unconditionally (no File.Exists gate): the
+    /// fail-soft when the exe is absent lives in <see cref="ProcessAssetExtractor"/>.
+    /// </summary>
+    [Fact]
+    public void IAssetExtractor_is_registered_as_the_process_sidecar_adapter()
+    {
+        using var provider = BuildProvider(out _);
+
+        var extractor = provider.GetRequiredService<IAssetExtractor>();
+        extractor.Should().BeOfType<ProcessAssetExtractor>();
+    }
+
+    /// <summary>
+    /// #945 Gap 1: the engine actually receives the registered extractor (not the
+    /// optional <c>null</c> default). The engine resolves it the identical way the
+    /// DI lambda does (<c>sp.GetService&lt;IAssetExtractor&gt;()</c>), so asserting
+    /// the private field is non-null proves the cache-miss → sidecar path is live.
+    /// Reflection is used here deliberately: there is no public accessor for the
+    /// optional collaborator and a wiring test wants to prove the field, not behaviour.
+    /// </summary>
+    [Fact]
+    public void Engine_receives_the_registered_asset_extractor()
+    {
+        using var provider = BuildProvider(out _);
+
+        var engine = provider.GetRequiredService<AutoCalibrationEngine>();
+        var field = typeof(AutoCalibrationEngine)
+            .GetField("_assetExtractor", BindingFlags.Instance | BindingFlags.NonPublic);
+        field.Should().NotBeNull("the engine holds the optional sidecar extractor in a private field");
+        field!.GetValue(engine).Should().BeOfType<ProcessAssetExtractor>();
+    }
+
+    /// <summary>
+    /// Builds the full capture graph with faked cross-cutting collaborators, the
+    /// same shape the shell composes (<see cref="ShellComposition"/> calls
+    /// <c>AddMithrilMapCalibrationCapture(assetCacheDir)</c> with the real
+    /// single-arg signature). <c>ValidateOnBuild</c> catches a singleton cycle
+    /// (memory: di_cycle_invisible_to_unit_tests).
+    /// </summary>
+    private static ServiceProvider BuildProvider(out string assetCacheDir)
+    {
         var settingsDir = Path.Combine(Path.GetTempPath(), "mithril-capture-di-" + Guid.NewGuid());
-        var assetCacheDir = Path.Combine(settingsDir, "assets");
+        assetCacheDir = Path.Combine(settingsDir, "assets");
 
         var services = new ServiceCollection();
 
@@ -47,27 +113,14 @@ public sealed class CaptureDependencyInjectionTests
         services.AddSingleton<IReferenceDataService>(new FakeAreaReferenceData());
         services.AddSingleton<IMapCalibrationService>(new FakeCalibrationService());
 
-        services.AddMithrilMapCalibrationCapture(settingsDir, assetCacheDir);
+        // The live single-arg signature is (assetCacheDir, pgVersion = null). Passing
+        // just the cache dir mirrors ShellComposition.AddMithrilMapCalibrationCapture.
+        services.AddMithrilMapCalibrationCapture(assetCacheDir);
 
-        using var provider = services.BuildServiceProvider(new ServiceProviderOptions
+        return services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateOnBuild = true,
             ValidateScopes = true,
         });
-
-        provider.GetRequiredService<AutoCalibrationEngine>().Should().NotBeNull();
-
-        var hotkeys = provider.GetServices<IHotkeyCommand>().ToList();
-        hotkeys.Should().Contain(h => h.Id == "mapcalibration.capture");
-        hotkeys.Should().Contain(h => h.Id == "mapcalibration.draw_bbox");
-
-        // The GameConfig-wired gate must win over the engine's default gate
-        // (last-registration-wins): a residual of 9.5 exceeds the configured 9.0.
-        var gate = provider.GetRequiredService<Detection.ICalibrationConfidenceGate>();
-        gate.Accept(new AreaCalibration(1, 0, 0, 0, 8, 9.5), 8, out _).Should().BeFalse();
-
-        provider.GetRequiredService<AutoCalibrationTrigger>().Should().NotBeNull();
-        provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
-            .Should().Contain(s => s is AutoCalibrationTrigger);
     }
 }

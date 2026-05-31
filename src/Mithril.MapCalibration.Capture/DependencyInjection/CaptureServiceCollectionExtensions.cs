@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -16,6 +18,27 @@ namespace Mithril.MapCalibration.Capture.DependencyInjection;
 /// </summary>
 public static partial class CaptureServiceCollectionExtensions
 {
+    /// <summary>
+    /// File name of the out-of-process asset-extractor sidecar (issue #931), as
+    /// produced by <c>tools/Mithril.AssetExtractor</c>'s
+    /// <c>&lt;AssemblyName&gt;mithril-asset-extract&lt;/AssemblyName&gt;</c> and
+    /// published next to <c>Mithril.exe</c> in both pack variants
+    /// (<c>release.yml</c> "Publish asset-extractor sidecar"). Resolved at runtime
+    /// relative to <see cref="AppContext.BaseDirectory"/> (the install dir holding
+    /// the shell). Exposed so the wiring test can assert the same path the
+    /// registration builds.
+    /// </summary>
+    public const string AssetExtractorExeName = "mithril-asset-extract.exe";
+
+    /// <summary>
+    /// Hard upper bound on a single sidecar run. The sidecar decodes one area's
+    /// base texture or the full icon set from the on-disk PG bundles; on a healthy
+    /// install both complete in a couple of seconds, but a cold disk / large bundle
+    /// / contended IO can stretch that. 60s is generous headroom that still kills a
+    /// genuinely hung child (the timeout fail-softs to "no texture" → gate rejects).
+    /// </summary>
+    private static readonly TimeSpan AssetExtractorTimeout = TimeSpan.FromSeconds(60);
+
     /// <summary>
     /// Wire the auto-capture pipeline. <paramref name="assetCacheDir"/> is the
     /// out-of-process asset-extractor sidecar cache the #931 base-texture +
@@ -80,6 +103,21 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetRequiredService<Mithril.Shared.Reference.IReferenceDataService>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.References")));
         services.AddSingleton<IMapCalibrationSolver, MapCalibrationSolveEngineAdapter>();
+
+        // #945 Gap 1: the out-of-process asset-extractor sidecar adapter the engine
+        // invokes on a base-texture cache-miss (AutoCalibrationEngine resolves this
+        // via the optional sp.GetService<IAssetExtractor>() below — it returned null
+        // until this registration existed, so the cache never populated). Registered
+        // BEFORE the engine for logical ordering (DI lambdas are lazy, so strict
+        // order isn't required for correctness). BCL-only (System.Diagnostics.Process)
+        // — the decoder stays out-of-process (#921), the only link is the process
+        // boundary. Registered UNCONDITIONALLY (no File.Exists gate): when the exe is
+        // absent (dev/F5), ProcessAssetExtractor.ExtractAsync fail-softs with
+        // ExitMissingExe rather than throwing, so the graph stays deterministic.
+        services.AddSingleton<IAssetExtractor>(sp => new ProcessAssetExtractor(
+            exePath: Path.Combine(AppContext.BaseDirectory, AssetExtractorExeName),
+            timeout: AssetExtractorTimeout,
+            logger: sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.AssetExtractor")));
 
         // The orchestrator. Resolved as both the concrete type (for the hotkey +
         // DI test) and the narrow IAutoCalibrationRunner seam.
