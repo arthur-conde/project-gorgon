@@ -445,6 +445,7 @@ public sealed class ToggleFrameTimeLoggerCommand : IHotkeyCommand
         }
         else
         {
+            var captureRect = _captureRectStore.Get();
             var cfg = new FrameRunConfig(
                 PinCount: _session.Surveys.Count,
                 ActiveTreatment: _settings.ActivePinStyle.Treatment.ToString(),
@@ -452,8 +453,8 @@ public sealed class ToggleFrameTimeLoggerCommand : IHotkeyCommand
                 ClickThroughMap: _settings.ClickThroughMap,
                 ShowBearingWedges: _session.ShowBearingWedges,
                 ShowRouteLines: _session.ShowRouteLines,
-                MapWidth: _captureRectStore.Get() is { Width: > 0 } wr ? wr.Width : 800,
-                MapHeight: _captureRectStore.Get() is { Height: > 0 } hr ? hr.Height : 600,
+                MapWidth: captureRect is { Width: > 0 } ? captureRect.Value.Width : 800,
+                MapHeight: captureRect is { Height: > 0 } ? captureRect.Value.Height : 600,
                 FsmState: _surveyFlow.CurrentState.ToString());
             _logger.Start("manual", cfg);
             _session.LastLogEvent = "Frame logger started — press hotkey again to stop and write report.";

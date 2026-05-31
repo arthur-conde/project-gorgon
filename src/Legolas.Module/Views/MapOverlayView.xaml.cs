@@ -91,7 +91,8 @@ public partial class MapOverlayView : Window
         // shared IOverlayWindow.Window, positioned from the shell capture rect by
         // OverlayController via CaptureRectWindowBinder. This legacy view is no longer
         // Show()n in production (#835 step 6; step 7 deletes it), so it carries no
-        // window-position binding.
+        // window-position binding. The `saver` param is consequently unused now —
+        // kept in the signature for the transient DI factory until step 7's deletion.
         Loaded += (_, _) => ApplyClickThrough();
         // Re-assert TOPMOST on every show + on a low-frequency timer while
         // visible — Loaded/Activated alone miss the Hide()/Show() cycle the
