@@ -29,7 +29,7 @@ namespace Mithril.MapCalibration.Capture;
 /// null, fail-soft with a "preparing map assets…" reason (no texture → no
 /// detections → gate rejects → safe-degrade).</para>
 /// </summary>
-public sealed class AutoCalibrationEngine
+public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 {
     // Proven Phase-1 detection recipe (§0): the gate-study sweet-spot for real
     // assets. RenderSizePx 16 is the empirical icon render size.
