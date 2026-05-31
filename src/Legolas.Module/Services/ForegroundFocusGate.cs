@@ -1,9 +1,9 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
-using Legolas.Domain;
 using Legolas.Interop;
 using Microsoft.Extensions.Hosting;
+using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Modules;
 
@@ -18,15 +18,16 @@ namespace Legolas.Services;
 /// back.
 ///
 /// The "in-app" predicate matches by self-PID OR a case-insensitive substring
-/// match against <see cref="LegolasSettings.GameProcessName"/>. Substring
-/// match is forgiving across Steam/Itch/standalone naming variations (e.g.
-/// "ProjectGorgon", "Project Gorgon", "ProjectGorgon64") and lets the user
-/// override via the settings UI without a code change.
+/// match against <see cref="GameConfig.GameProcessName"/> (#919: relocated from
+/// LegolasSettings to the shared GameConfig). Substring match is forgiving
+/// across Steam/Itch/standalone naming variations (e.g. "ProjectGorgon",
+/// "Project Gorgon", "ProjectGorgon64") and lets the user override via the
+/// settings UI without a code change.
 /// </summary>
 public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged, IHotkeyGate
 {
     private readonly ModuleGates _gates;
-    private readonly LegolasSettings _settings;
+    private readonly GameConfig _gameConfig;
     private readonly CancellationTokenSource _stopCts = new();
     private readonly uint _ownPid;
 
@@ -36,10 +37,10 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
     private Task? _activationTask;
     private bool _isInApp = true;
 
-    public ForegroundFocusGate(ModuleGates gates, LegolasSettings settings)
+    public ForegroundFocusGate(ModuleGates gates, GameConfig gameConfig)
     {
         _gates = gates;
-        _settings = settings;
+        _gameConfig = gameConfig;
         _ownPid = (uint)Environment.ProcessId;
     }
 
@@ -107,7 +108,7 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
         // Re-evaluate the current foreground when the user changes the
         // configured process name — otherwise they'd have to alt-tab to make
         // a corrected name take effect.
-        _settings.PropertyChanged += OnSettingsPropertyChanged;
+        _gameConfig.PropertyChanged += OnSettingsPropertyChanged;
 
         // Hook delivery is event-driven, so seed the gate from the current
         // foreground window — otherwise IsInApp stays at its default until the
@@ -118,7 +119,7 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
     private void UninstallHook()
     {
         if (_hookHandle == IntPtr.Zero) return;
-        _settings.PropertyChanged -= OnSettingsPropertyChanged;
+        _gameConfig.PropertyChanged -= OnSettingsPropertyChanged;
         User32Focus.UnhookWinEvent(_hookHandle);
         _hookHandle = IntPtr.Zero;
         _hookProc = null;
@@ -155,7 +156,7 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
         if (pid == 0) return _isInApp;
         if (pid == _ownPid) return true;
 
-        var configured = _settings.GameProcessName;
+        var configured = _gameConfig.GameProcessName;
         if (string.IsNullOrWhiteSpace(configured)) return false;
 
         try

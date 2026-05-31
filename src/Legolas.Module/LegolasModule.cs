@@ -71,7 +71,9 @@ public sealed class LegolasModule : IMithrilModule
                 sp.GetRequiredService<IDomainEventSubscriber>(),
                 sp.GetRequiredService<LegolasSettings>(),
                 sp.GetService<SessionState>(),
-                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>()));
+                sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>(),
+                // #919: shared good-residual threshold (registered by the shell).
+                sp.GetService<Mithril.Shared.Game.GameConfig>()));
 
         // Session + flow controllers + VMs.
         services.AddSingleton<SessionState>(sp =>

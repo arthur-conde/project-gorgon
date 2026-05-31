@@ -100,18 +100,13 @@
                               Margin="0,4,0,0"
                               IsChecked="{Binding ControlPanel.HideOverlaysBetweenSessions}"
                               ToolTip="Hide both overlays when a session ends (Done) and re-show them when the next survey lands. Off keeps them visible across runs." />
-                    <TextBlock Text="Game process name (case-insensitive substring match — covers ProjectGorgon, ProjectGorgon64, Project Gorgon, etc.):"
+                    <!-- #919: the game-process-name editor moved to the shared
+                         Game Configuration panel (Settings → Game), since the
+                         map-calibration capture engine consumes it as shared
+                         infra. Left here as a read-only pointer to its new home. -->
+                    <TextBlock Text="Game process name moved to Settings → Game Configuration (shared with the map-calibration engine)."
                                Foreground="{StaticResource TextTertiaryBrush}"
-                               TextWrapping="Wrap" Margin="0,8,0,4" />
-                    <StackPanel Orientation="Horizontal">
-                        <TextBox Width="240" VerticalAlignment="Center"
-                                 Text="{Binding ControlPanel.GameProcessName, UpdateSourceTrigger=LostFocus}" />
-                        <Button Content="Detect from foreground (3s)" Margin="8,0,0,0" Padding="8,2"
-                                Command="{Binding ControlPanel.DetectGameProcessCommand}"
-                                ToolTip="Click, then alt-tab to the game window — its process name is captured after a 3-second countdown." />
-                    </StackPanel>
-                    <TextBlock Text="{Binding ControlPanel.DetectGameProcessStatus}"
-                               Foreground="{StaticResource TextTertiaryBrush}" Margin="0,4,0,0" />
+                               TextWrapping="Wrap" Margin="0,8,0,0" />
                 </StackPanel>
             </GroupBox>
 
