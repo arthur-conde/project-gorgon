@@ -74,6 +74,17 @@ public interface IOverlayWindow : INotifyPropertyChanged
     string? StatusMessage { get; }
 
     /// <summary>
+    /// Set (or clear with <see langword="null"/>) the consumer-facing status
+    /// chip text (<see cref="StatusMessage"/>). A consumer flips the chip for a
+    /// consumer-specific condition (e.g. the map auto-capture pipeline's
+    /// "couldn't auto-calibrate — zoom out and redraw the bbox" reason, #914)
+    /// and clears it when resolved. No-ops when the value is unchanged. Safe to
+    /// call from any thread (the implementation marshals the
+    /// <see cref="INotifyPropertyChanged.PropertyChanged"/> raise as needed).
+    /// </summary>
+    void SetStatusMessage(string? message);
+
+    /// <summary>
     /// Register a scene drawer that receives an
     /// <see cref="IOverlaySceneContext"/> per tick. Drawers fire on the
     /// dispatcher inside the surface's <c>BeginDraw</c>/<c>EndDraw</c> pair,

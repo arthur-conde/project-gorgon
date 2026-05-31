@@ -157,6 +157,7 @@ public sealed class OverlayControllerInputSmokeTests
             "the TestSimulate* seams bypass the Window-bound wiring path.");
         public bool IsReady => true;
         public string? StatusMessage => null;
+        public void SetStatusMessage(string? message) { }
         public IDisposable RegisterScene(Action<IOverlaySceneContext> draw) => new NoopDisposable();
         public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged { add { } remove { } }
         private sealed class NoopDisposable : IDisposable { public void Dispose() { } }

@@ -7,6 +7,7 @@ using Arda.Hosting;
 using Arda.Wpf;
 using Arda.World.Chat;
 using Arda.World.Player;
+using Mithril.MapCalibration.Capture.DependencyInjection;
 using Mithril.MapCalibration.DependencyInjection;
 using Mithril.Overlay.DependencyInjection;
 using Mithril.Shared.Audio;
@@ -56,6 +57,7 @@ public sealed record ShellCompositionOptions(
     string IconCacheDir,
     string ShellSettingsDir,
     string MapCalibrationDir,
+    string AssetCacheDir,
     Action<string>? ModuleLog = null);
 
 public static class ShellComposition
@@ -104,6 +106,13 @@ public static class ShellComposition
             // MapOverlayView during migration steps 3–5 (step 6 retires
             // MapOverlayView and the new window becomes the canonical surface).
             .AddMithrilOverlay()
+            // #914 PR-2: map auto-capture pipeline (OS capture + trigger +
+            // persistence). Registered AFTER AddMithrilOverlay (consumes
+            // IOverlayWindow) and AFTER AddMithrilMapCalibration (consumes
+            // IMapCalibrationService). The GameConfig-wired confidence gate
+            // override inside this call wins over the engine's default gate
+            // (last-registration-wins).
+            .AddMithrilMapCalibrationCapture(o.MapCalibrationDir, o.AssetCacheDir)
             .AddMithrilIcons(o.IconCacheDir)
             .AddMithrilAudio()
             .AddMithrilHotkeys()
