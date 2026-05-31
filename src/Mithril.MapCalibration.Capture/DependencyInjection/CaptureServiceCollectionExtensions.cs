@@ -1,4 +1,3 @@
-using System.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -6,7 +5,6 @@ using Mithril.MapCalibration.DependencyInjection;
 using Mithril.MapCalibration.Detection;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
-using Mithril.Shared.Settings;
 
 namespace Mithril.MapCalibration.Capture.DependencyInjection;
 
@@ -19,8 +17,7 @@ namespace Mithril.MapCalibration.Capture.DependencyInjection;
 public static partial class CaptureServiceCollectionExtensions
 {
     /// <summary>
-    /// Wire the auto-capture pipeline. <paramref name="settingsDir"/> holds the
-    /// persisted capture bbox; <paramref name="assetCacheDir"/> is the
+    /// Wire the auto-capture pipeline. <paramref name="assetCacheDir"/> is the
     /// out-of-process asset-extractor sidecar cache the #931 base-texture +
     /// icon-template loaders read (BCL-only). Requires the shell to have already
     /// registered the cross-cutting singletons it consumes: <see cref="GameConfig"/>,
@@ -28,19 +25,19 @@ public static partial class CaptureServiceCollectionExtensions
     /// <see cref="Arda.Contracts.IDomainEventSubscriber"/>,
     /// <see cref="Arda.World.Player.IAreaState"/>, and
     /// <see cref="Mithril.Shared.Reference.IReferenceDataService"/>.
+    ///
+    /// <para>#940: the capture region is the live overlay-window bounds (one-rect
+    /// model, spec §7); there is no separately-persisted capture rect, so this no
+    /// longer takes a <c>settingsDir</c> — the overlay's own
+    /// <c>WindowLayoutBinder</c> persists its bounds to <c>LegolasSettings</c>.</para>
     /// </summary>
     public static IServiceCollection AddMithrilMapCalibrationCapture(
         this IServiceCollection services,
-        string settingsDir,
         string assetCacheDir,
         string? pgVersion = null)
     {
-        if (string.IsNullOrWhiteSpace(settingsDir))
-            throw new System.ArgumentException("settingsDir required", nameof(settingsDir));
         if (string.IsNullOrWhiteSpace(assetCacheDir))
             throw new System.ArgumentException("assetCacheDir required", nameof(assetCacheDir));
-
-        Directory.CreateDirectory(settingsDir);
 
         // Phase-1 detect→solve engine + IconTemplateSet + IBaseTextureProvider
         // (the #931 sidecar-cache seam) over the asset cache. This also registers
@@ -53,16 +50,13 @@ public static partial class CaptureServiceCollectionExtensions
         services.AddSingleton<ICalibrationConfidenceGate>(sp =>
             BuildConfidenceGate(sp.GetRequiredService<GameConfig>()));
 
-        // Persisted capture bbox.
-        services.AddSingleton<ISettingsStore<MapCaptureSettings>>(_ =>
-            new JsonSettingsStore<MapCaptureSettings>(
-                Path.Combine(settingsDir, "map-capture.json"),
-                MapCaptureSettingsJsonContext.Default.MapCaptureSettings));
+        // Capture region = live overlay-window bounds (#940 one-rect model). No
+        // separate persisted rect: the overlay's own WindowLayoutBinder persists
+        // its bounds to LegolasSettings.MapOverlay.
         services.AddSingleton<IMapCaptureRegionProvider>(sp =>
-        {
-            var store = sp.GetRequiredService<ISettingsStore<MapCaptureSettings>>();
-            return new MapCaptureRegionProvider(store, store.Load());
-        });
+            new MapCaptureRegionProvider(
+                sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
+                sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Region")));
 
         // OS capture seams.
         services.AddSingleton<IGameWindowLocator>(sp => new Win32GameWindowLocator(
@@ -110,7 +104,6 @@ public static partial class CaptureServiceCollectionExtensions
         // Bbox draw controller (shell-side, over IOverlayWindow).
         services.AddSingleton<IMapBboxDrawController>(sp => new MapBboxDrawController(
             sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
-            sp.GetRequiredService<IMapCaptureRegionProvider>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Draw")));
 
         // Hotkeys.

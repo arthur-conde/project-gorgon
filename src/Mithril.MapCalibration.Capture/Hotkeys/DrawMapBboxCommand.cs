@@ -5,9 +5,11 @@ using Mithril.Shared.Hotkeys;
 namespace Mithril.MapCalibration.Capture.Hotkeys;
 
 /// <summary>
-/// "Draw the map capture bbox" hotkey. Arms the drag-to-rect mode on the overlay
-/// (<see cref="IMapBboxDrawController.BeginDraw"/>); the drag completion persists
-/// the rect via <see cref="IMapCaptureRegionProvider.Set"/>.
+/// "Draw the map capture bbox" hotkey. Arms the snip selector on the overlay
+/// (<see cref="IMapBboxDrawController.BeginDraw"/>) — a Snipping-Tool-style
+/// <c>RegionSnipWindow</c>; on confirm it moves/resizes the overlay window to the
+/// snipped rect (#940 one-rect model: the overlay bounds ARE the capture region),
+/// and the overlay's existing <c>WindowLayoutBinder</c> persists the new bounds.
 /// <see cref="RespectsFocusGate"/> is <see langword="false"/>: framing the bbox
 /// happens with the overlay (Mithril) focused, not the game.
 /// </summary>

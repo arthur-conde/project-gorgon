@@ -51,9 +51,7 @@ internal sealed class FakeWindowLocator : IGameWindowLocator
 internal sealed class FakeRegionProvider : IMapCaptureRegionProvider
 {
     public FakeRegionProvider(CaptureRect? current) => Current = current;
-    public CaptureRect? Current { get; private set; }
-    public void Set(CaptureRect rect) { Current = rect; Changed?.Invoke(this, EventArgs.Empty); }
-    public event EventHandler? Changed;
+    public CaptureRect? Current { get; }
 }
 
 internal sealed class SpyCapture : ICaptureService
