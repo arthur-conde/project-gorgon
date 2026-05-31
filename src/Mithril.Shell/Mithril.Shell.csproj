@@ -124,4 +124,61 @@
           DestinationFolder="$(PublishDir)modules"
           SkipUnchangedFiles="true" />
   </Target>
+
+  <!--
+    #951: stage the out-of-process asset-extractor sidecar (mithril-asset-extract.exe)
+    next to Mithril.exe on local/dev builds. The sidecar lives in
+    tools/Mithril.AssetExtractor (in Mithril.MapCalibration.Tools.slnx, NOT Mithril.slnx),
+    so a normal Shell build never produces it — yet ProcessAssetExtractor resolves it via
+    Path.Combine(AppContext.BaseDirectory, "mithril-asset-extract.exe") and fail-softs
+    ExitMissingExe when it's absent, blocking local auto-calibration testing (#938).
+
+    We publish it OUT-OF-BAND (Exec dotnet publish) and copy the single produced exe into
+    $(OutDir). This is deliberately NOT a <ProjectReference>: a reference from src/** to the
+    sidecar / Tools.Common would drag AssetsTools.NET + System.Drawing into the shipped graph
+    and trip ShippedGraphDecoderFreeTests (#921). Copy, never reference. Published
+    framework-dependent single-file (fast inner loop, one self-contained artifact, no loose
+    decoder DLLs polluting the shell output dir); release.yml keeps its own self-contained
+    single-file publish for shipped packs.
+
+    Gated off in CI (GITHUB_ACTIONS) so the test pipeline and release.yml — which has its own
+    explicit sidecar publish steps — don't double-publish. Incremental via Inputs/Outputs:
+    skipped entirely when the staged exe is newer than every sidecar source. Fail-soft: the
+    Exec is ContinueOnError so a contributor without the tools just gets no exe (safe-degrade),
+    never a broken Shell build.
+  -->
+  <!-- Gate property: distinct name from the target below by convention.
+       Override with -p:StageAssetExtractorSidecarEnabled=false. -->
+  <PropertyGroup>
+    <StageAssetExtractorSidecarEnabled Condition="'$(StageAssetExtractorSidecarEnabled)' == '' and '$(GITHUB_ACTIONS)' != 'true'">true</StageAssetExtractorSidecarEnabled>
+    <StageAssetExtractorSidecarEnabled Condition="'$(StageAssetExtractorSidecarEnabled)' == ''">false</StageAssetExtractorSidecarEnabled>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(StageAssetExtractorSidecarEnabled)' == 'true'">
+    <_AssetExtractorSrc Include="$(MSBuildThisFileDirectory)..\..\tools\Mithril.AssetExtractor\**\*.cs;$(MSBuildThisFileDirectory)..\..\tools\Mithril.AssetExtractor\*.csproj"
+                        Exclude="$(MSBuildThisFileDirectory)..\..\tools\Mithril.AssetExtractor\**\bin\**;$(MSBuildThisFileDirectory)..\..\tools\Mithril.AssetExtractor\**\obj\**" />
+    <_AssetExtractorSrc Include="$(MSBuildThisFileDirectory)..\..\tools\Mithril.MapCalibration.Tools.Common\**\*.cs;$(MSBuildThisFileDirectory)..\..\tools\Mithril.MapCalibration.Tools.Common\*.csproj"
+                        Exclude="$(MSBuildThisFileDirectory)..\..\tools\Mithril.MapCalibration.Tools.Common\**\bin\**;$(MSBuildThisFileDirectory)..\..\tools\Mithril.MapCalibration.Tools.Common\**\obj\**" />
+    <_AssetExtractorSrc Include="$(MSBuildThisFileDirectory)..\Mithril.MapCalibration\**\*.cs;$(MSBuildThisFileDirectory)..\Mithril.MapCalibration\*.csproj"
+                        Exclude="$(MSBuildThisFileDirectory)..\Mithril.MapCalibration\**\bin\**;$(MSBuildThisFileDirectory)..\Mithril.MapCalibration\**\obj\**" />
+  </ItemGroup>
+
+  <Target Name="StageAssetExtractorSidecar"
+          AfterTargets="Build"
+          Condition="'$(StageAssetExtractorSidecarEnabled)' == 'true' and '$(DesignTimeBuild)' != 'true'"
+          Inputs="@(_AssetExtractorSrc)"
+          Outputs="$(OutDir)mithril-asset-extract.exe">
+    <Message Importance="high" Text="Staging asset-extractor sidecar (fxdep single-file) → $(OutDir)" />
+    <Exec ContinueOnError="true"
+          Command="dotnet publish &quot;$(MSBuildThisFileDirectory)..\..\tools\Mithril.AssetExtractor\Mithril.AssetExtractor.csproj&quot; -c $(Configuration) -r win-x64 --self-contained false -p:PublishSingleFile=true -o &quot;$(IntermediateOutputPath)assetextractor&quot;" />
+    <ItemGroup>
+      <_StagedSidecarExe Include="$(IntermediateOutputPath)assetextractor\mithril-asset-extract.exe" />
+    </ItemGroup>
+    <Copy Condition="'@(_StagedSidecarExe)' != ''"
+          SourceFiles="@(_StagedSidecarExe)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+    <Warning Condition="!Exists('$(IntermediateOutputPath)assetextractor\mithril-asset-extract.exe')"
+             Text="asset-extractor sidecar was not produced; auto-calibration will safe-degrade locally (ExitMissingExe). Build tools/Mithril.MapCalibration.Tools.slnx if you need it." />
+  </Target>
 </Project>
