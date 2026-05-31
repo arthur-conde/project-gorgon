@@ -127,7 +127,7 @@ public sealed class ForegroundFocusGate : IHostedService, INotifyPropertyChanged
 
     private void OnSettingsPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(LegolasSettings.GameProcessName)) return;
+        if (e.PropertyName != nameof(GameConfig.GameProcessName)) return;
         EvaluateForeground(User32Focus.GetForegroundWindow());
     }
 
