@@ -48,6 +48,26 @@ mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <Are
   Addressables bundle and write the gray-only `map-texture-<AreaKey>.{json,bin}`
   into `<cacheDir>`.
 
+## Known limitation (v1)
+
+**`--icons` is non-functional in a packaged/released build.** The icon extractor
+needs `classdata.tpk` (~290 KB, the Unity class-data package — `sharedassets0.assets`
+is type-tree-stripped, so AssetsTools.NET can't decode the Texture2D/Sprite assets
+without it). That file is **neither bundled in the csproj nor staged by
+`release.yml`**, so in a shipped build `--icons` errors → exit `4` (decode-failed)
+→ the app fail-softs (icon templates stay empty → no detections → the confidence
+gate rejects → safe-degrade, never a wrong calibration).
+
+`--area` texture extraction is **unaffected** — area Addressables bundles ship
+inline type trees, so no `classdata.tpk` is required.
+
+This is an accepted v1 limitation: icon provisioning (staging `classdata.tpk`
+beside the published sidecar, or bundling it) rides with the
+[#914](https://github.com/moumantai-gg/mithril/issues/914) PR-2 capture/trigger
+work that actually drives `--icons` at runtime. Until then a released `--icons`
+run no-ops via the fail-soft chain; a local dev run works when `classdata.tpk`
+sits beside the exe (or at the Tools default path).
+
 ### Smoke run (against a real PG install)
 
 ```bash
