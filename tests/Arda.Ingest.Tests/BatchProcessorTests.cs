@@ -138,7 +138,7 @@ public class BatchProcessorTests : IDisposable
     public void ProcessBatch_BannerInBatch_AnchorsAgainstBannerNotMtime()
     {
         File.WriteAllText(_tempFile,
-            "[14:30:05] Logged in as character Bob. Time UTC=2026-01-15 14:30:05\n" +
+            "[14:30:05] Logged in as character Bob. Time UTC=01/15/2026 14:30:05. Timezone Offset 00:00:00\n" +
             "[14:30:06] LocalPlayer: ProcessAddItem(1)\n");
         // Mtime is wildly different from the banner — banner must win.
         File.SetLastWriteTimeUtc(_tempFile, new DateTime(2027, 6, 1, 0, 0, 0, DateTimeKind.Utc));
