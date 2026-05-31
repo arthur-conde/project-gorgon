@@ -28,6 +28,14 @@ namespace Mithril.MapCalibration.Capture;
 /// the sidecar once to populate the cache, then retry the provider. If still
 /// null, fail-soft with a "preparing map assets…" reason (no texture → no
 /// detections → gate rejects → safe-degrade).</para>
+///
+/// <para><b>Icon-template policy (#949).</b> Icon templates resolve from
+/// <see cref="IIconTemplateProvider"/> <i>per attempt</i> (it re-reads the cache
+/// each call — the icon analogue of the base-texture provider). On an empty set and
+/// when an <see cref="IAssetExtractor"/> is wired, the sidecar's <c>--icons</c> mode
+/// is demand-triggered once to populate the cache, then the set is re-resolved — so
+/// first-session calibration succeeds on a fresh icon cache without a restart. A
+/// still-empty set fails soft: no typed detections → the gate rejects.</para>
 /// </summary>
 public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 {
@@ -48,7 +56,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     private readonly IBaseTextureProvider _baseTextures;
     private readonly IAreaReferenceProvider _references;
     private readonly IMapCalibrationSolver _solver;
-    private readonly IconTemplateSet _templates;
+    private readonly IIconTemplateProvider _iconTemplates;
     private readonly IMapCalibrationService _calibrationService;
     private readonly ILogger? _logger;
 
@@ -69,7 +77,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         IBaseTextureProvider baseTextures,
         IAreaReferenceProvider references,
         IMapCalibrationSolver solver,
-        IconTemplateSet templates,
+        IIconTemplateProvider iconTemplates,
         IMapCalibrationService calibrationService,
         ILogger? logger,
         IAssetExtractor? assetExtractor = null,
@@ -85,7 +93,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _baseTextures = baseTextures;
         _references = references;
         _solver = solver;
-        _templates = templates;
+        _iconTemplates = iconTemplates;
         _calibrationService = calibrationService;
         _logger = logger;
         _assetExtractor = assetExtractor;
@@ -138,11 +146,18 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
 
         var references = _references.ForArea(area);
 
+        // Resolve icon templates per attempt (#949). On a fresh icon cache the
+        // provider returns Empty; if a sidecar is wired, demand-trigger its --icons
+        // mode ONCE to populate the cache, then re-resolve — so first-session
+        // calibration works without a restart. Fail-soft: still-Empty → no typed
+        // detections → the gate rejects → safe-degrade.
+        var templates = await EnsureIconTemplatesAsync(ct).ConfigureAwait(false);
+
         var request = new DetectionRequest(
             Screenshot: gray,
             BaseTexture: baseTexture,
             MapRect: mapRect,
-            Templates: _templates,
+            Templates: templates,
             RimMask: RimMaskMode.DeviationFlood,
             LowNcc: LowNcc,
             TypeFloor: TypeFloor,
@@ -226,6 +241,52 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 area);
         }
         return retried;
+    }
+
+    /// <summary>
+    /// #949 policy (icon analogue of <see cref="ResolveBaseTextureAsync"/>). Resolve
+    /// the icon-template set from the per-attempt <see cref="IIconTemplateProvider"/>;
+    /// on an empty set, optionally demand-trigger the sidecar's <c>--icons</c> mode
+    /// once to populate the cache, then re-resolve. Fail-soft to whatever the
+    /// provider returns (Empty included) on any path — never throws into the engine.
+    /// </summary>
+    private async Task<IconTemplateSet> EnsureIconTemplatesAsync(CancellationToken ct)
+    {
+        var templates = _iconTemplates.GetTemplates();
+        if (templates.Templates.Count > 0) return templates;
+
+        if (_assetExtractor is null || _gameConfig is null
+            || string.IsNullOrWhiteSpace(_gameConfig.GameRoot) || string.IsNullOrWhiteSpace(_assetCacheDir))
+        {
+            return templates; // no extractor wired → safe-degrade (Empty → gate rejects)
+        }
+
+        _logger?.LogInformation("Icon-template cache empty; invoking asset-extractor sidecar (--icons) on demand.");
+        try
+        {
+            var request = new ExtractRequest(
+                InstallRoot: _gameConfig.GameRoot,
+                OutDir: _assetCacheDir!,
+                Kind: ExtractKind.Icons,
+                AreaKey: null,
+                ExpectPgVersion: _pgVersion);
+            var extract = await _assetExtractor.ExtractAsync(request, ct).ConfigureAwait(false);
+            if (!extract.Ok)
+            {
+                _logger?.LogWarning(
+                    "Asset-extractor sidecar (--icons) failed (exit {Exit}): {Error}. Safe-degrade (no icon detections).",
+                    extract.ExitCode, extract.Error);
+                return templates;
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Asset-extractor sidecar (--icons) threw. Safe-degrade (no icon detections).");
+            return templates;
+        }
+
+        return _iconTemplates.GetTemplates(); // re-resolve after populate
     }
 
     private AutoCalibrationOutcome Fail(string area, string reason)
