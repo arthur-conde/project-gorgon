@@ -67,7 +67,21 @@ internal static class SelfCheck
 #pragma warning disable VSTHRD002 // no dispatcher yet; mirrors Program's pre-host load
             var shellSettings = shellStore.LoadAsync().GetAwaiter().GetResult();
 #pragma warning restore VSTHRD002
-            var gameConfig = new GameConfig { GameRoot = shellSettings.GameRoot };
+            // Mirror the real launch path's GameConfig seeding (Program.cs): seed
+            // the relocated game-config fields from ShellSettings, not just
+            // GameRoot, so this DI-graph self-check resolves against the same
+            // config shape the app runs with. GameProcessName +
+            // CalibrationGoodResidualPx were relocated here in #919 (#927).
+            // PollIntervalSeconds is not persisted in ShellSettings, so it keeps
+            // GameConfig's default — same as Program.cs. The carry-over migration
+            // is deliberately NOT run in this headless, process-isolated check —
+            // it only validates that the graph resolves, not runtime behaviour.
+            var gameConfig = new GameConfig
+            {
+                GameRoot = shellSettings.GameRoot,
+                GameProcessName = shellSettings.GameProcessName,
+                CalibrationGoodResidualPx = shellSettings.CalibrationGoodResidualPx,
+            };
 
             var options = new ShellCompositionOptions(
                 PreferencesPath: Path.Combine(localApp, "Mithril", "preferences.json"),
