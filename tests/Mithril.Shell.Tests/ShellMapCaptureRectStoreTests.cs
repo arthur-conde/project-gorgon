@@ -14,9 +14,9 @@ namespace Mithril.Shell.Tests;
 /// #947: <see cref="ShellMapCaptureRectStore"/> backs the Capture-defined
 /// <see cref="IMapCaptureRectStore"/> seam with the persisted
 /// <see cref="ShellSettings.MapCaptureBbox"/>. The store must round-trip a snipped
-/// rect, flush it to disk on <see cref="IMapCaptureRectStore.Set"/> (ShellSettings
-/// has no autosaver — it's saved explicitly), and report null when no rect has been
-/// snipped.
+/// rect (in physical pixels), flush it to disk on <see cref="IMapCaptureRectStore.Set"/>
+/// (ShellSettings has no autosaver — it's saved explicitly), and report null when no
+/// rect has been snipped.
 /// </summary>
 public sealed class ShellMapCaptureRectStoreTests : IDisposable
 {
@@ -42,9 +42,9 @@ public sealed class ShellMapCaptureRectStoreTests : IDisposable
         var settings = new ShellSettings();
         var store = new ShellMapCaptureRectStore(settings, new RecordingStore());
 
-        store.Set(new MapCaptureRectDiu(-200, 50, 640, 480));
+        store.Set(new CaptureRect(-200, 50, 640, 480));
 
-        store.Get().Should().Be(new MapCaptureRectDiu(-200, 50, 640, 480));
+        store.Get().Should().Be(new CaptureRect(-200, 50, 640, 480));
         settings.MapCaptureBbox.Should().NotBeNull();
         settings.MapCaptureBbox!.Left.Should().Be(-200);
         settings.MapCaptureBbox.Width.Should().Be(640);
@@ -56,7 +56,7 @@ public sealed class ShellMapCaptureRectStoreTests : IDisposable
         var recording = new RecordingStore();
         var store = new ShellMapCaptureRectStore(new ShellSettings(), recording);
 
-        store.Set(new MapCaptureRectDiu(10, 20, 30, 40));
+        store.Set(new CaptureRect(10, 20, 30, 40));
 
         recording.SaveCount.Should().Be(1, "Set must persist immediately — ShellSettings has no autosaver");
     }
@@ -69,7 +69,7 @@ public sealed class ShellMapCaptureRectStoreTests : IDisposable
         var jsonStore = new JsonSettingsStore<ShellSettings>(path, ShellSettingsJsonContext.Default.ShellSettings);
 
         var store = new ShellMapCaptureRectStore(settings, jsonStore);
-        store.Set(new MapCaptureRectDiu(100, 200, 300, 400));
+        store.Set(new CaptureRect(100, 200, 300, 400));
 
         File.Exists(path).Should().BeTrue();
 

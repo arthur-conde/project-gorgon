@@ -32,24 +32,24 @@ public sealed class ShellMapCaptureRectStore : IMapCaptureRectStore
         _logger = logger;
     }
 
-    public MapCaptureRectDiu? Get()
+    public CaptureRect? Get()
     {
         var b = _settings.MapCaptureBbox;
-        return b is null ? null : new MapCaptureRectDiu(b.Left, b.Top, b.Width, b.Height);
+        return b is null ? null : new CaptureRect(b.Left, b.Top, b.Width, b.Height);
     }
 
-    public void Set(MapCaptureRectDiu rect)
+    public void Set(CaptureRect rect)
     {
         _settings.MapCaptureBbox = new MapCaptureBbox
         {
-            Left = rect.Left,
-            Top = rect.Top,
+            Left = rect.X,
+            Top = rect.Y,
             Width = rect.Width,
             Height = rect.Height,
         };
         _store.Save(_settings);
         _logger?.LogInformation(
-            "Persisted map capture bbox {Width}x{Height} at ({Left},{Top}) DIU to shell settings.",
-            rect.Width, rect.Height, rect.Left, rect.Top);
+            "Persisted map capture bbox {Width}x{Height} at ({Left},{Top}) physical px to shell settings.",
+            rect.Width, rect.Height, rect.X, rect.Y);
     }
 }

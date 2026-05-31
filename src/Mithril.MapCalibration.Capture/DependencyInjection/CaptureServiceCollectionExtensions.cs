@@ -75,18 +75,17 @@ public static partial class CaptureServiceCollectionExtensions
         services.AddSingleton<ICalibrationConfidenceGate>(sp =>
             BuildConfidenceGate(sp.GetRequiredService<GameConfig>()));
 
-        // Capture region = SHELL-persisted desktop rect (#947), converted to physical
-        // pixels via the live per-monitor DPI layout. Sourced independently of any
-        // window, so it survives regardless of overlay-window state (the #947 fix).
-        // IMapCaptureRectStore is registered shell-side (ShellMapCaptureRectStore over
-        // ShellSettings); resolved as optional here so unit-test graphs without the
-        // shell fail soft (provider returns null).
-        services.AddSingleton<IMonitorDpiProvider>(sp => new MonitorDpiProvider(
-            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Monitors")));
+        // Capture region = SHELL-persisted desktop rect (#947), stored in physical
+        // pixels (resolved at snip-confirm time from the snip window's own device
+        // scale), so the provider returns it verbatim — no read-time DPI / monitor
+        // enumeration. Sourced independently of any window, so it survives regardless
+        // of overlay-window state (the #947 fix). IMapCaptureRectStore is registered
+        // shell-side (ShellMapCaptureRectStore over ShellSettings); resolved as
+        // optional here so unit-test graphs without the shell fail soft (provider
+        // returns null).
         services.AddSingleton<IMapCaptureRegionProvider>(sp =>
             new MapCaptureRegionProvider(
                 sp.GetService<IMapCaptureRectStore>(),
-                sp.GetRequiredService<IMonitorDpiProvider>(),
                 sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Region")));
 
         // OS capture seams.

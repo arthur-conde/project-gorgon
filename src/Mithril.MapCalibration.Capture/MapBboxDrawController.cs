@@ -9,10 +9,12 @@ namespace Mithril.MapCalibration.Capture;
 /// Shell-side <see cref="IMapBboxDrawController"/>. <see cref="BeginDraw"/> opens
 /// a transient Snipping-Tool-style <see cref="RegionSnipWindow"/> spanning the
 /// virtual desktop; on confirm it (1) PERSISTS the snipped absolute-virtual-desktop
-/// DIU rect to the shell-owned <see cref="IMapCaptureRectStore"/> — the
-/// authoritative persistence path, independent of window state (#947) — and (2)
-/// moves/resizes the <b>overlay window</b> to cover the snipped region for
-/// immediate visual feedback / snip-time consistency.
+/// PHYSICAL rect to the shell-owned <see cref="IMapCaptureRectStore"/> — the
+/// authoritative persistence path, independent of window state (#947); the physical
+/// rect is resolved at snip-confirm time from the snip window's own device scale so
+/// the read path needs no DPI work — and (2) moves/resizes the <b>overlay window</b>
+/// to cover the snipped region (using the DIU rect, since the overlay is a DIU/WPF
+/// surface) for immediate visual feedback / snip-time consistency.
 ///
 /// <para><b>#947:</b> persistence no longer rides the overlay window's
 /// <c>SizeChanged</c>/<c>LocationChanged</c> binder. Before, a snip only stuck if
@@ -41,9 +43,20 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
     private readonly IMapCaptureRectStore? _store;
     private readonly ILogger? _logger;
 
+    /// <summary>
+    /// A confirmed snip carries BOTH frames: the absolute-virtual-desktop DIU rect
+    /// (mirrored onto the overlay window for visual feedback — the overlay is a
+    /// DIU/WPF surface) and the absolute-virtual-desktop PHYSICAL rect (persisted to
+    /// the store — what BitBlt reads). The physical rect is computed once at
+    /// snip-confirm time from the snip window's own live device scale (#947), so the
+    /// read path stays frame-independent. <c>Physical</c> may be null even on a
+    /// confirmed DIU selection if the window's transform was unavailable.
+    /// </summary>
+    internal readonly record struct SnipResult(Rect Diu, CaptureRect? Physical);
+
     /// <summary>Test seam: build the transient selector. Overridden in tests so the
     /// live drag isn't required; production uses the real WPF window.</summary>
-    private readonly Func<Rect?> _snip;
+    private readonly Func<SnipResult?> _snip;
 
     public MapBboxDrawController(
         IOverlayWindow overlay,
@@ -57,7 +70,7 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
         IOverlayWindow overlay,
         IMapCaptureRectStore? store,
         ILogger? logger,
-        Func<Rect?>? snip)
+        Func<SnipResult?>? snip)
     {
         _overlay = overlay;
         _store = store;
@@ -80,7 +93,7 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
     {
         _logger?.LogInformation("Map-bbox snip armed; drag a rectangle over the in-game map.");
 
-        Rect? selected;
+        SnipResult? selected;
         try
         {
             selected = _snip();
@@ -91,12 +104,13 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
             return;
         }
 
-        if (selected is not { } rect)
+        if (selected is not { } result)
         {
             _logger?.LogInformation("Map-bbox snip cancelled; capture region unchanged.");
             return;
         }
 
+        var rect = result.Diu;
         if (rect.Width <= 0 || rect.Height <= 0)
         {
             _logger?.LogInformation("Map-bbox snip produced a degenerate rect; capture region unchanged.");
@@ -104,20 +118,31 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
         }
 
         // Authoritative persistence (#947): write the snipped absolute-virtual-desktop
-        // DIU rect to the shell-owned store directly, independent of window state.
-        // Fail-soft if the store isn't wired (unit-test graphs) or the write throws —
-        // the snip still applies to the overlay for the current session.
-        try
+        // PHYSICAL rect to the shell-owned store directly, independent of window state.
+        // The physical rect was resolved at snip-confirm time from the snip window's
+        // own device scale, so the store is frame-independent (the provider reads it
+        // verbatim). Fail-soft if the store isn't wired (unit-test graphs), the
+        // physical rect couldn't be resolved, or the write throws — the snip still
+        // applies to the overlay for the current session.
+        if (result.Physical is { } physical && !physical.IsEmpty)
         {
-            _store?.Set(new MapCaptureRectDiu(rect.X, rect.Y, rect.Width, rect.Height));
+            try
+            {
+                _store?.Set(physical);
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Persisting the snipped capture rect failed; the region applies to this session only.");
+            }
         }
-        catch (Exception ex)
+        else
         {
-            _logger?.LogWarning(ex, "Persisting the snipped capture rect failed; the region applies to this session only.");
+            _logger?.LogWarning("Snip produced no physical rect (window transform unavailable); capture region not persisted.");
         }
 
         // Visual feedback: mirror the snip onto the overlay window when realized.
-        // No longer the persistence path — purely snip-time consistency.
+        // No longer the persistence path — purely snip-time consistency. The overlay
+        // is a DIU/WPF surface, so it takes the DIU rect.
         ApplyVirtualDesktopRectToOverlay(_overlay.Window, rect);
         _logger?.LogInformation(
             "Map capture region set to {Width}x{Height} at ({Left},{Top}) (DIU).",
@@ -140,10 +165,12 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
         window.Height = rect.Height;
     }
 
-    private static Rect? ShowRealSnipWindow()
+    private static SnipResult? ShowRealSnipWindow()
     {
         var snip = new RegionSnipWindow();
         snip.ShowDialog();
-        return snip.SelectedRect;
+        return snip.SelectedRect is { } diu
+            ? new SnipResult(diu, snip.SelectedPhysicalRect)
+            : null;
     }
 }

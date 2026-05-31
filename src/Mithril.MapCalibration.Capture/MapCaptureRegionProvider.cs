@@ -5,8 +5,9 @@ namespace Mithril.MapCalibration.Capture;
 
 /// <summary>
 /// <see cref="IMapCaptureRegionProvider"/> backed by the SHELL-persisted capture
-/// rect (#947). The capture region is a <b>persisted desktop rectangle</b> sourced
-/// independently of any window — NOT the live overlay-window geometry.
+/// rect (#947). The capture region is a <b>persisted desktop rectangle in physical
+/// pixels</b> sourced independently of any window — NOT the live overlay-window
+/// geometry.
 ///
 /// <para><b>Why this changed (#947).</b> The previous implementation derived the
 /// region from the overlay window's realized geometry
@@ -14,34 +15,31 @@ namespace Mithril.MapCalibration.Capture;
 /// so <see cref="Current"/> returned <see langword="null"/> whenever the overlay
 /// wasn't shown — yet <c>BitBlt</c> capture (with the overlay blanked) never needs
 /// the overlay shown. The user could snip a region and still get "no map bbox set".
-/// Reading a persisted store removes the window-state dependency entirely; reading
-/// the store + Win32 per-monitor DPI is thread-safe, so this no longer touches the
-/// UI thread / dispatcher.</para>
+/// Reading a persisted store removes the window-state dependency entirely.</para>
 ///
-/// <para><see cref="Current"/> reads the persisted absolute virtual-desktop DIU
-/// rect and converts it to the physical-pixel <see cref="CaptureRect"/> BitBlt
-/// reads, using the live per-monitor DPI layout (<see cref="MonitorScaleSelector"/>
-/// over <see cref="IMonitorDpiProvider"/>). The pixel math is the pure, unit-tested
-/// <see cref="CaptureRectMath.DiuToPhysical"/> / <see cref="MonitorScaleSelector"/>.</para>
+/// <para>The persisted rect is already in physical desktop pixels (resolved once at
+/// snip-confirm time from the snip window's live <c>TransformToDevice</c> scale —
+/// see <see cref="RegionSnipWindow"/> / <see cref="IMapCaptureRectStore"/>), so
+/// <see cref="Current"/> returns it verbatim: zero read-time DPI work, no monitor
+/// enumeration, no per-monitor affine map. Correct for single-monitor and
+/// uniform-DPI multi-monitor; mixed-DPI multi-monitor is #938 manual-verify, and a
+/// DPI/resolution change after snipping makes the stored rect stale (re-snip).</para>
 ///
 /// <para><b>Fail-soft.</b> No store (unit-test graphs without the shell) / no
-/// persisted rect (never snipped) / degenerate or off-screen rect → <see cref="Current"/>
-/// returns <see langword="null"/>; the engine surfaces "no map bbox set". Never
-/// throws into the engine/host.</para>
+/// persisted rect (never snipped) / degenerate rect → <see cref="Current"/> returns
+/// <see langword="null"/>; the engine surfaces "no map bbox set". Never throws into
+/// the engine/host.</para>
 /// </summary>
 public sealed class MapCaptureRegionProvider : IMapCaptureRegionProvider
 {
     private readonly IMapCaptureRectStore? _store;
-    private readonly IMonitorDpiProvider _monitors;
     private readonly ILogger? _logger;
 
     public MapCaptureRegionProvider(
         IMapCaptureRectStore? store,
-        IMonitorDpiProvider? monitors = null,
         ILogger? logger = null)
     {
         _store = store;
-        _monitors = monitors ?? new MonitorDpiProvider(logger);
         _logger = logger;
     }
 
@@ -52,10 +50,10 @@ public sealed class MapCaptureRegionProvider : IMapCaptureRegionProvider
             // No store wired (e.g. a unit-test graph without the shell) → fail soft.
             if (_store is null) return null;
 
-            MapCaptureRectDiu? diu;
+            CaptureRect? rect;
             try
             {
-                diu = _store.Get();
+                rect = _store.Get();
             }
             catch (Exception ex)
             {
@@ -63,21 +61,11 @@ public sealed class MapCaptureRegionProvider : IMapCaptureRegionProvider
                 return null;
             }
 
-            // Never snipped → the legitimate "no bbox set" state.
-            if (diu is not { } rect) return null;
+            // Never snipped (null) or a degenerate stored rect → the legitimate
+            // "no bbox set" state.
+            if (rect is not { } r || r.IsEmpty) return null;
 
-            CaptureRect physical;
-            try
-            {
-                physical = MonitorScaleSelector.ToPhysical(rect, _monitors.Monitors());
-            }
-            catch (Exception ex)
-            {
-                _logger?.LogWarning(ex, "Converting the persisted capture rect to physical pixels failed; treating region as unset.");
-                return null;
-            }
-
-            return physical.IsEmpty ? null : physical;
+            return r;
         }
     }
 }
