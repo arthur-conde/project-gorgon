@@ -2,12 +2,22 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Arda.Contracts;
 using Arda.World.Player;
 using Mithril.MapCalibration;
 using Mithril.MapCalibration.Capture;
 using Mithril.MapCalibration.Detection;
 
 namespace Mithril.MapCalibration.Capture.Tests.Fixtures;
+
+/// <summary>No-op event bus: the trigger's hosted-service Subscribe wiring is
+/// exercised by the DI-resolution test; the gating logic is tested directly via
+/// the extracted OnAreaChangedAsync seam.</summary>
+internal sealed class FakeDomainEventSubscriber : IDomainEventSubscriber
+{
+    public IDisposable Subscribe<T>(Action<T> handler) where T : struct => new Noop();
+    private sealed class Noop : IDisposable { public void Dispose() { } }
+}
 
 internal sealed class FakeAreaState : IAreaState
 {
