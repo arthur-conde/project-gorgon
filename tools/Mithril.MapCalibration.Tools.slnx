@@ -10,13 +10,26 @@
     listed so a solution-level Release build maps it to Release too — a P2P
     reference to a project outside the solution would otherwise build Debug.
     It also lives in Mithril.slnx; multi-solution membership is fine.
+
+    Mithril.MapCalibration.Harness + its test project moved here from Mithril.slnx
+    (issue #921): the harness is dev tooling whose only tie to the heavy
+    AssetsTools.NET / System.Drawing deps is Tools.Common, so keeping it in the
+    main solution leaked those decoders into `dotnet restore Mithril.slnx`. The
+    Harness is listed explicitly (same Release-mapping reason as
+    Mithril.MapCalibration). The harness test project's DPI guard keeps CI
+    coverage via a direct `dotnet test <Harness.Tests.csproj>` step — see
+    .github/workflows/release.yml.
   -->
   <Folder Name="/src/">
     <Project Path="../src/Mithril.MapCalibration/Mithril.MapCalibration.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="Mithril.MapCalibration.Tools.Common/Mithril.MapCalibration.Tools.Common.csproj" />
+    <Project Path="Mithril.MapCalibration.Harness/Mithril.MapCalibration.Harness.csproj" />
     <Project Path="MapCalibrationFromScreenshot/MapCalibrationFromScreenshot.csproj" />
     <Project Path="MapCalibrationWpf/MapCalibrationWpf.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="../tests/Mithril.MapCalibration.Harness.Tests/Mithril.MapCalibration.Harness.Tests.csproj" />
   </Folder>
 </Solution>
