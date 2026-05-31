@@ -31,53 +31,58 @@ public sealed class AutoCaptureCalibrationSourceTests
     }
 
     [Fact]
-    public void Downgrade_window_an_unknown_source_name_degrades_to_an_empty_store_not_a_crash()
+    public void Downgrade_window_an_unknown_source_name_drops_only_that_entry_not_the_whole_store()
     {
-        // §D3 downgrade-window documentation. AutoCapture is persisted by NAME.
-        // A downgraded pre-AutoCapture build reading a refinements.json that
-        // contains "AutoCapture" hits the source-gen string-enum converter,
-        // which THROWS JsonException on an unknown member name (it does not
-        // tolerate-and-default at the single-record level — verified here so the
-        // behaviour is pinned, not assumed). The real consumer path is
-        // UserRefinementStore.Load, which catches JsonException for the whole
-        // file and degrades to an EMPTY in-memory store + a logged warning — a
-        // safe degrade (no wrong transform is ever served; the user re-runs
-        // calibration), NOT a throw that crashes boot and NOT a silently wrong
-        // projection. That is the "benign downgrade" §D3 calls out.
+        // §D3 downgrade-window documentation, post GATE-2 Fix A. AutoCapture is
+        // persisted by NAME. A downgraded pre-AutoCapture build reading a
+        // refinements.json that contains "AutoCapture" hits the source-gen
+        // string-enum converter, which THROWS JsonException on an unknown member
+        // name (verified here so the behaviour is pinned, not assumed). The real
+        // consumer path is UserRefinementStore.Load, which now deserialises each
+        // area entry INDIVIDUALLY and skips+warns ONLY the unparseable entry while
+        // every other area survives — a durable, per-entry degrade rather than the
+        // earlier whole-store wipe.
         var dir = Path.Combine(Path.GetTempPath(), "mithril-downgrade-" + Guid.NewGuid());
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, "refinements.json");
         try
         {
-            // Hand-write a store whose one entry carries a Source name the
-            // converter can't parse (stands in for a future/unknown source name
-            // as seen by a build that predates it).
-            File.WriteAllText(path,
-                "{\"schemaVersion\":1,\"calibrations\":{\"AreaSerbule\":{" +
-                "\"scale\":1,\"rotationRadians\":0,\"originX\":10,\"originY\":10," +
-                "\"referenceCount\":6,\"residualPixels\":0.7,\"source\":\"SomeFutureSource\"}}}");
-
             // (a) the single-record converter genuinely throws on the unknown name.
             var directParse = () => JsonSerializer.Deserialize(
                 "{\"source\":\"SomeFutureSource\"}", MapCalibrationJsonContext.Default.AreaCalibration);
             directParse.Should().Throw<JsonException>(
                 "the source-gen string-enum converter rejects unknown member names");
 
-            // (b) the store-level loader degrades rather than crashing: building
-            // the service does not throw, and the corrupt user-store entry is NOT
-            // served (the service falls through to whatever the bundled baseline
-            // holds — possibly null, possibly a baseline — but never the
-            // unparseable originX=10 transform). Use an area with no bundled
-            // baseline so the user-store degrade is observable as a clean null.
+            // (b) Two area entries: one valid UserRefinement, one carrying a Source
+            // name the converter can't parse (stands in for a future/unknown source
+            // name as seen by a build that predates it). The poisoned entry must be
+            // dropped while the valid entry survives — NOT a whole-store wipe.
+            File.WriteAllText(path,
+                "{\"schemaVersion\":1,\"calibrations\":{" +
+                "\"AreaSerbule\":{" +
+                "\"scale\":1,\"rotationRadians\":0,\"originX\":10,\"originY\":10," +
+                "\"referenceCount\":6,\"residualPixels\":0.7,\"source\":\"SomeFutureSource\"}," +
+                "\"AreaEltibule\":{" +
+                "\"scale\":2,\"rotationRadians\":0,\"originX\":42,\"originY\":99," +
+                "\"referenceCount\":8,\"residualPixels\":0.5,\"source\":\"UserRefinement\"}" +
+                "}}");
+
             var build = () => MapCalibrationServiceCollectionExtensions.Build(dir);
             var service = build.Should().NotThrow(
-                "an unparseable refinements.json must degrade, not crash the loader").Subject;
+                "a single unparseable entry must degrade per-entry, not crash the loader").Subject;
 
-            var served = service.GetCalibration("AreaSerbule");
-            // The corrupt entry had originX=10; the user store dropped it, so it
-            // is never served. If a bundled baseline exists it wins; otherwise null.
-            (served is null || served.OriginX != 10 || served.Source != CalibrationSource.UserRefinement)
+            // The poisoned entry (originX=10) is dropped: never served as a user
+            // refinement (a bundled baseline may win, but never the bad transform).
+            var poisoned = service.GetCalibration("AreaSerbule");
+            (poisoned is null || poisoned.OriginX != 10 || poisoned.Source != CalibrationSource.UserRefinement)
                 .Should().BeTrue("the unparseable user-store refinement must not be served");
+
+            // The valid sibling entry SURVIVES — this is the resilience the fix adds.
+            var survivor = service.GetCalibration("AreaEltibule");
+            survivor.Should().NotBeNull("a poisoned sibling entry must not wipe the whole store");
+            survivor!.OriginX.Should().Be(42, "the valid entry's transform is preserved verbatim");
+            survivor.OriginY.Should().Be(99);
+            survivor.Source.Should().Be(CalibrationSource.UserRefinement);
         }
         finally
         {

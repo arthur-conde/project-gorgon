@@ -165,21 +165,64 @@ internal sealed class UserRefinementStore
         if (!File.Exists(_filePath)) return;
         try
         {
+            // Per-entry resilient parse (mithril#914 GATE-2 Fix A). Deserialising
+            // the whole file in one call meant ONE unparseable calibration entry
+            // (e.g. a downgraded pre-AutoCapture build hitting the unknown
+            // "AutoCapture" enum NAME — UseStringEnumConverter THROWS on unknown
+            // names) tripped the outer catch and discarded EVERY area's refinement
+            // — total data loss, not a benign degrade. Instead we walk the
+            // Calibrations object with JsonDocument and deserialise each value
+            // individually so a single poisoned entry is skipped+warned while every
+            // other area survives. Durable against any future additive enum/field
+            // change, not just AutoCapture.
             using var stream = File.OpenRead(_filePath);
-            var file = JsonSerializer.Deserialize(stream, MapCalibrationJsonContext.Default.UserRefinementFile);
-            if (file?.Calibrations is null) return;
-            // Stamp Source on every entry; lifted records from older shapes may
-            // not carry it explicitly and the default on the record is
-            // UserRefinement, which matches this store's contents — but be
-            // defensive in case a future shape change reorders defaults.
-            _refinements = new Dictionary<string, AreaCalibration>(file.Calibrations.Count, StringComparer.Ordinal);
-            foreach (var (key, cal) in file.Calibrations)
+            using var doc = JsonDocument.Parse(stream);
+            var loaded = new Dictionary<string, AreaCalibration>(StringComparer.Ordinal);
+
+            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                !doc.RootElement.TryGetProperty("calibrations", out var calibrations) ||
+                calibrations.ValueKind != JsonValueKind.Object)
             {
-                _refinements[key] = cal with { Source = CalibrationSource.UserRefinement };
+                // No (or malformed) calibrations object → nothing to load. An empty
+                // store is the correct result; a structurally-broken file is caught
+                // below by JsonDocument.Parse throwing.
+                _refinements = loaded;
+                return;
             }
+
+            foreach (var entry in calibrations.EnumerateObject())
+            {
+                try
+                {
+                    var cal = entry.Value.Deserialize(MapCalibrationJsonContext.Default.AreaCalibration);
+                    if (cal is null) continue;
+                    // Stamp Source on every surviving entry; lifted records from
+                    // older shapes may not carry it explicitly and the default on
+                    // the record is UserRefinement, which matches this store's
+                    // contents — but be defensive in case a future shape change
+                    // reorders defaults.
+                    loaded[entry.Name] = cal with { Source = CalibrationSource.UserRefinement };
+                }
+                catch (JsonException ex)
+                {
+                    // One unparseable entry (unknown future enum NAME / added field
+                    // an older build can't read) — skip it, keep the rest. This is
+                    // the durable downgrade-window degrade: the area re-runs
+                    // calibration; no other area's data is touched.
+                    _logger?.LogWarning(ex,
+                        "Skipping unparseable user refinement entry {Area} in {Path} — {Reason}.",
+                        entry.Name, _filePath, ex.Message);
+                }
+            }
+
+            _refinements = loaded;
         }
         catch (Exception ex) when (ex is IOException or JsonException)
         {
+            // Genuine whole-file failure (IO error, or the file is not valid JSON
+            // at all so JsonDocument.Parse threw). Degrade to empty + warn — the
+            // store can't be trusted as a unit. Per-entry resilience above means
+            // we only reach here for structural corruption, not a single bad value.
             _logger?.LogWarning(ex, "Failed to load user refinement store at {Path} — starting empty.", _filePath);
             _refinements = new Dictionary<string, AreaCalibration>(StringComparer.Ordinal);
         }

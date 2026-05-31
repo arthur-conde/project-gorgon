@@ -54,8 +54,12 @@ public enum CalibrationSource
     /// user-store precedence by construction. Carried so the consumer can label
     /// an auto-captured fit distinctly from a hand-driven one. Persisted by NAME
     /// (additive; no SchemaVersion bump &#8212; §D3): a downgraded pre-AutoCapture
-    /// build that can't parse the name falls back to the record default
-    /// (<see cref="UserRefinement"/>), a safe degrade rather than data loss.
+    /// build can't parse the <c>"AutoCapture"</c> name, but
+    /// <c>UserRefinementStore.Load</c> deserialises each area entry individually,
+    /// so it skips ONLY that one area's entry on load (with a warning) and
+    /// preserves every other area's refinement &#8212; no whole-store data loss.
+    /// The §D3 "benign downgrade" framing is true <i>because</i> of that
+    /// per-entry resilience.
     /// </summary>
     AutoCapture = 3,
 }
