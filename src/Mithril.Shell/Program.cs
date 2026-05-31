@@ -33,7 +33,7 @@ public static class Program
 
     private static readonly string BootLogPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Mithril", "Shell", "boot.log");
+        "Mithril", "Shell", "logs", "mithril-boot.log");
 
     /// <summary>
     /// Drop-off file the second instance uses to hand an activation URI (e.g. <c>mithril://item/X</c>)
@@ -360,9 +360,9 @@ public static class Program
         {
             var dir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Mithril", "Shell");
+                "Mithril", "Shell", "logs");
             Directory.CreateDirectory(dir);
-            File.AppendAllText(Path.Combine(dir, "crash.log"),
+            File.AppendAllText(Path.Combine(dir, "mithril-crash.log"),
                 $"\n=== {DateTime.Now:s} ===\n{ex}\n");
         }
         catch { }

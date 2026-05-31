@@ -54,6 +54,44 @@
                        FontSize="{DynamicResource AppFontSizeHint}"
                        Text="Changes preview live. Settings persist on shutdown."/>
 
+            <!-- Log maintenance -->
+            <Border Margin="0,24,0,0" Padding="0,16,0,0" BorderThickness="0,1,0,0" BorderBrush="#22FFFFFF">
+                <StackPanel>
+                    <TextBlock Text="Logs" Foreground="#88FFFFFF" Margin="0,0,0,4" FontWeight="SemiBold"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#88FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,8"
+                               Text="All Mithril logs live in one folder. 'Clear Mithril logs' removes only the rolling diagnostics JSON; 'Clear all logs' also removes boot/crash logs and saved performance-trace sessions. Files in use stay until restart."/>
+
+                    <TextBlock TextWrapping="Wrap" Foreground="#66FFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}" Margin="0,0,0,4"
+                               Text="Log folder:"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="#AAFFFFFF"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               FontFamily="Consolas, Cascadia Mono"
+                               Text="{Binding LogDirectoryHint}" Margin="0,0,0,12"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Content="Clear Mithril logs" Padding="10,4" Margin="0,0,8,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Delete the rolling diagnostics logs (mithril-*.json). Files in use stay until restart."
+                                Command="{Binding ClearMithrilLogsCommand}"/>
+                        <Button Content="Clear all logs" Padding="10,4" Margin="0,0,8,0"
+                                VerticalAlignment="Center"
+                                ToolTip="Delete all logs (diagnostics, boot, crash) and saved perf-trace sessions. Files in use stay until restart."
+                                Command="{Binding ClearAllLogsCommand}"/>
+                        <Button Content="Open log directory" Padding="10,4"
+                                VerticalAlignment="Center"
+                                ToolTip="Open the log folder in File Explorer."
+                                Command="{Binding OpenLogDirectoryCommand}"/>
+                    </StackPanel>
+
+                    <TextBlock TextWrapping="Wrap" Foreground="#AAD4A847"
+                               FontSize="{DynamicResource AppFontSizeHint}"
+                               Text="{Binding MaintenanceStatus}"
+                               Visibility="{Binding MaintenanceStatus, Converter={StaticResource NullOrEmptyToVis}}"/>
+                </StackPanel>
+            </Border>
+
             <!-- Telemetry export (OTLP) sub-section. The VM is always registered
                  (ShellComposition adds fallback scrubber-graph singletons when
                  OTLP export is off), so this expander is always available — letting

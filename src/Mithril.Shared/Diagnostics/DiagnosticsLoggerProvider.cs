@@ -36,8 +36,14 @@ public sealed class DiagnosticsLoggerProvider : ILoggerProvider, IDiagnosticsLog
     {
         _capacity = capacity;
         Directory.CreateDirectory(logDirectory);
-        DiagnosticsLogSerilog.MigrateLegacyLogFiles(Publish, logDirectory);
+        // Create the file logger BEFORE migrating, so the migration's Publish() calls have a
+        // live _fileLogger to write to. (Publish dereferences _fileLogger unconditionally; if
+        // migration runs first and emits any Info/Warn — as the boot.log/crash.log sweep does —
+        // a null _fileLogger would throw out of this ctor and abort host build.) Migration only
+        // touches legacy gorgon-*/boot/crash files, never the live mithril-.json this logger
+        // opens, so ordering it after CreateFileLogger is safe.
         _fileLogger = DiagnosticsLogSerilog.CreateFileLogger(logDirectory, enrichers);
+        DiagnosticsLogSerilog.MigrateLegacyLogFiles(Publish, logDirectory);
     }
 
     public IObservable<DiagnosticEntry> Live => _live;

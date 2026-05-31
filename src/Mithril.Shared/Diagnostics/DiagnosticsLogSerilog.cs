@@ -57,10 +57,20 @@ internal static class DiagnosticsLogSerilog
     public static LogEventLevel MapMel(MelLogLevel level) => Map(Map(level));
 
     /// <summary>
-    /// Renames pre-rebrand <c>gorgon-*.json</c> diagnostic files to <c>mithril-*.json</c>.
+    /// Migrates pre-rebrand log artifacts into the unified <c>logs\</c> directory:
+    /// <list type="bullet">
+    /// <item>renames pre-rebrand <c>gorgon-*.json</c> diagnostic files to <c>mithril-*-prebrand.json</c>;</item>
+    /// <item>moves the old root-level <c>boot.log</c>/<c>crash.log</c> (which used to live in the
+    /// parent <c>Shell\</c> directory) into <c>logs\</c> as <c>mithril-boot-prebrand.log</c> /
+    /// <c>mithril-crash-prebrand.log</c>, never clobbering the live <c>mithril-boot.log</c>
+    /// the current run may already have written.</item>
+    /// </list>
+    /// Idempotent and per-file fault tolerant.
     /// </summary>
     internal static void MigrateLegacyLogFiles(Action<DiagnosticLevel, string, string> write, string logDirectory)
     {
+        MigrateLegacyRootLogFiles(write, logDirectory);
+
         IEnumerable<string> legacy;
         try
         {
@@ -91,6 +101,41 @@ internal static class DiagnosticsLogSerilog
             {
                 write(DiagnosticLevel.Warn, "SerilogSink",
                     $"Failed to migrate legacy log file {src}: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Moves the pre-unification root-level <c>boot.log</c> / <c>crash.log</c> (formerly written
+    /// directly under <c>Shell\</c>) into the unified <c>logs\</c> directory under a non-clashing
+    /// <c>mithril-{name}-prebrand.log</c> name. The old files used append-per-write (open/close),
+    /// so they are not locked and can be moved.
+    /// </summary>
+    private static void MigrateLegacyRootLogFiles(Action<DiagnosticLevel, string, string> write, string logDirectory)
+    {
+        var parentDir = Path.GetDirectoryName(logDirectory);
+        if (string.IsNullOrEmpty(parentDir))
+            return;
+
+        foreach (var legacyName in new[] { "boot.log", "crash.log" })
+        {
+            var src = Path.Combine(parentDir, legacyName);
+            if (!File.Exists(src))
+                continue;
+
+            try
+            {
+                var stem = Path.GetFileNameWithoutExtension(legacyName);
+                var ext = Path.GetExtension(legacyName);
+                var target = ResolveNonClashingTarget(logDirectory, stem, ext);
+                File.Move(src, target);
+                write(DiagnosticLevel.Info, "SerilogSink",
+                    $"Moved legacy log file {legacyName} -> {Path.GetFileName(target)}");
+            }
+            catch (Exception ex)
+            {
+                write(DiagnosticLevel.Warn, "SerilogSink",
+                    $"Failed to migrate legacy root log file {src}: {ex.Message}");
             }
         }
     }
