@@ -8,7 +8,7 @@ The app is read-only with respect to the game. It never injects into the client,
 
 | If you're looking for… | It's at… |
 |---|---|
-| **Roadmap & live status** | the [Mithril Roadmap Project](https://github.com/users/arthur-conde/projects/3) (board view, custom fields per module / target version) |
+| **Roadmap & live status** | the [Mithril Roadmap Project](https://github.com/orgs/moumantai-gg/projects/1) (org-level board, custom fields: `Status` / `Priority` / `Module`) |
 | **Open work / bugs** | [Issues](https://github.com/moumantai-gg/mithril/issues) — file via the bug / feature templates |
 | **Stable reference & user guides** | the [Wiki](https://github.com/moumantai-gg/mithril/wiki) — CDN data, releasing, treasure system, Arwen / Legolas user guides |
 | **Design rationale & roadmap narrative** | [`docs/`](docs/) — per-module roadmap narrative + design notebooks |
@@ -17,18 +17,26 @@ The app is read-only with respect to the game. It never injects into the client,
 
 Each feature lives in its own class library, loaded dynamically at startup. Modules share infrastructure from `Mithril.Shared` but are otherwise independent.
 
-| Module  | Id       | Purpose                                                      | Activation |
-|---------|----------|--------------------------------------------------------------|------------|
-| Samwise | samwise  | Garden / crop tracking, ripeness alarms                      | Eager      |
-| Pippin  | pippin   | Food consumption and recipe tracking                         | Lazy       |
-| Legolas | legolas  | Surveying, route optimization, map overlay                   | Lazy       |
-| Arwen   | arwen    | NPC favor and gift tracking ([guide](https://github.com/moumantai-gg/mithril/wiki/User-Guide-Arwen)) | Lazy     |
-| Elrond  | elrond   | Skill leveling advisor                                       | Lazy       |
-| Gandalf | gandalf  | User-created timers with alarms                              | Eager      |
-| Bilbo   | bilbo    | Storage / inventory management                               | Lazy       |
-| Saruman | saruman  | Words of Power — chat-log discovery tracking                 | Lazy       |
+Listed in tab order (`SortOrder`):
 
-*Eager* modules start their background services at app launch. *Lazy* modules defer work behind a `ModuleGate` latch that opens the first time the user selects the module's tab, keeping startup cheap.
+| Module       | Id           | Purpose                                                                 | Activation |
+|--------------|--------------|-------------------------------------------------------------------------|------------|
+| Samwise      | samwise      | Garden / crop tracking, ripeness & loss-prevention alarms               | Eager      |
+| Pippin       | pippin       | Gourmand support — not-yet-eaten foods and where to get them            | Lazy       |
+| Elrond       | elrond       | Skill leveling advisor (recipe-anchored)                                | Lazy       |
+| Legolas      | legolas      | Surveying, route optimization, map overlay                              | Lazy       |
+| Arwen        | arwen        | NPC favor and gift tracking ([guide](https://github.com/moumantai-gg/mithril/wiki/User-Guide-Arwen)) | Eager |
+| Smaug        | smaug        | NPC store prices & sale economics                                       | Lazy       |
+| Saruman      | saruman      | Words of Power — learn / known / consumed tracking                      | Lazy       |
+| Gandalf      | gandalf      | Timers & repeatable-quest cooldowns                                     | Eager      |
+| Bilbo        | bilbo        | Storage browsing + immediate craftability                               | Lazy       |
+| Celebrimbor  | celebrimbor  | Crafting planner — shopping lists for *N* of *X*                        | Lazy       |
+| Palantir     | palantir     | Debug / dev tools — inspector over the live world state                 | Lazy       |
+| Silmarillion | silmarillion | Reference-data browser (items, recipes, NPCs, treasure system, …)       | Lazy       |
+
+*Eager* modules start their background services at app launch. *Lazy* modules defer work behind a `ModuleGate` latch that opens the first time the user selects the module's tab, keeping startup cheap. Palantir is a developer/diagnostic surface, not a player-facing feature.
+
+Each module's responsibility *boundaries* — what it owns and, just as importantly, what it explicitly does **not** own — live in [docs/module-charters.md](docs/module-charters.md).
 
 ## Requirements
 
@@ -88,29 +96,34 @@ The binding survives turning Developer mode back off — that flag only gates wh
 ## Repository layout
 
 ```
-Mithril.slnx                 Solution file (SLNX format)
+Mithril.slnx                Solution file (SLNX format)
 Directory.Build.props       Shared MSBuild settings (C# latest, nullable, warnings-as-errors)
 Directory.Build.targets     Module auto-copy convention + VSTHRD analyzer tuning
 Directory.Packages.props    Central package version management
 global.json                 Pins .NET 10 SDK
 
 src/
-  Mithril.Shell/             WPF host app, startup, module loader, tray/hotkeys
-  Mithril.Shared/            Shared infrastructure (see below)
-  Samwise.Module/           Garden tracker
-  Pippin.Module/            Food tracker
-  Legolas.Module/           Survey / map module
-  Arwen.Module/             NPC favor module
-  Elrond.Module/            Skill advisor
-  Gandalf.Module/           Timers
-  Bilbo.Module/             Storage / inventory
-  Saruman.Module/           Words of Power codebook
+  Mithril.Shell/            WPF host app, startup, module loader, tray/hotkeys
+  Mithril.Shared/           Shared infrastructure (see below)
+  Mithril.Shared.Wpf/       Shared WPF styles, converters, brushes, icons
+  Arda/                     Log-replay & world-state engine (L0–L4; see Architecture)
+  Mithril.Reference/        CDN reference-data models + serialization
+  Mithril.GameReports/      Character-export (Reports/) parsing
+  Mithril.Leveling/         Skill-XP math engine (consumed by Elrond)
+  Mithril.Planning/         Craft-plan / shopping-list engine
+  Mithril.Persistence/      Per-character JSON stores
+  Mithril.Overlay/          DirectX overlay surface + windowing layer
+  Mithril.MapCalibration/   Per-area world ↔ map-pixel transforms
+  Mithril.Shared.Telemetry/ OTLP export wiring (opt-in)
+  *.Module/                 One project per module (Samwise, Legolas, …)
 
 tests/
-  Mithril.Shared.Tests/      + one test project per module
+  Mithril.Shared.Tests/     + one test project per module and per library
 
 tools/
-  CropsExtractor/           Helper for building reference data
+  Mithril.LogSanitizer/     Scrub personal paths/names out of captured logs
+  RefreshAndValidate/       Refresh bundled CDN data and validate it
+  XamlResourceLint/         Lint shared XAML resource usage
 ```
 
 ## Architecture
@@ -146,19 +159,29 @@ public interface IMithrilModule
 
 Modules are discovered at runtime via reflection by `ShellServiceCollectionExtensions.AddMithrilModules`, which scans the `modules/` folder next to the shell. Lazy modules are gated by `ModuleGate` — a `TaskCompletionSource`-based latch that opens on first tab selection — so hosted services can `await gate.WaitAsync()` before doing work.
 
+### Log processing — the Arda pipeline
+
+All log ingestion runs through **Arda**, a deterministic log-replay and live world-state engine under [src/Arda/](src/Arda/). It is the sole log-processing engine — modules never tail `Player.log` themselves. The pipeline is layered:
+
+| Layer | Project | Responsibility |
+|---|---|---|
+| L0 | `Arda.Ingest` | Tails `Player.log` + `ChatLogs/*.log` via `ILogLineSource` |
+| L1 | `Arda.Ingest` | Span-based zero-alloc line parsing + string interning |
+| L2 | `Arda.Dispatch` | `VerbExtractor` + `FrozenDictionary` dispatch table |
+| L3 | `Arda.World.Player`, `Arda.World.Chat` | Stateful `IFrameHandler` implementations that emit domain events via `IDomainEventPublisher` |
+| L4 | `Arda.Composition` | Cross-source composers (session fusion, inventory correlation, word-of-power) |
+
+`Arda.Hosting` bootstraps the pipeline and exposes options for DI. `Arda.Contracts` holds the public domain events plus the read-only state interfaces (`ISessionState`, `IAreaState`, `IPlayerState`, `IChatSessionState`) and the subscriber/publisher contracts (`IDomainEventSubscriber`, `IDomainEventPublisher`). Modules consume Arda through `IDomainEventSubscriber` and these state interfaces — they never reference the internal handler or dispatch types. Because the engine replays the log deterministically, a module sees the same event sequence whether it attaches at startup or after the fact.
+
 ### Shared infrastructure (`Mithril.Shared`)
 
 DI is composed via extension methods in [src/Mithril.Shared/DependencyInjection/ServiceCollectionExtensions.cs](src/Mithril.Shared/DependencyInjection/ServiceCollectionExtensions.cs).
 
-- **Game services** — `IPlayerLogStream`, `IChatLogStream`, `ICharacterDataService`. These tail the live game logs and parse the JSON character exports the game produces.
+- **Game services** — `IGameClock`, `IShiftCatalog`, `IGameReportsService`, `IActiveCharacterService`: game clocks, the time-of-day shift schedule, and character snapshots parsed from the game's `Reports/` exports. Live log tailing is *not* here — it belongs to the Arda pipeline above.
 - **Reference data** — `IReferenceDataService` fetches versioned JSON (items, recipes, skills, NPCs, XP tables) from `https://cdn.projectgorgon.com/{version}/data/{file}.json` with bundled JSON under [src/Mithril.Shared/Reference/BundledData/](src/Mithril.Shared/Reference/BundledData/) as fallback. `CdnVersionDetector` resolves the current CDN version by parsing a redirect meta tag. Item icons come from `https://cdn.projectgorgon.com/{version}/icons/icon_{IconId}.png`.
 - **Settings** — `ISettingsStore<T>` / `JsonSettingsStore<T>` using `System.Text.Json` source-generated contexts (no reflection-based serialization). `SettingsAutoSaver<T>` periodically flushes dirty state.
 - **Hotkeys** — OS-level Win32 global hotkey registration. Modules contribute `IHotkeyCommand` implementations; `HotkeyConflictDetector` validates uniqueness at registration.
-- **Diagnostics** — `ILogger` via `DiagnosticsLoggerProvider` (in-app ring buffer, Serilog compact-JSON file sink).
-
-### Log parsing
-
-Log parsers implement `ILogParser.TryParse(string line, DateTime timestamp)` and return a `LogEvent?`. Modules compose parsers into state machines that consume events from `IPlayerLogStream` and `IChatLogStream`, both of which tail their respective files with rotation handling. Under the world-sim migration ([docs/world-simulator.md](docs/world-simulator.md)), the canonical chat consumer is the `ChatWorld` folder rather than per-module chat tails.
+- **Diagnostics & telemetry** — `ILogger` via `DiagnosticsLoggerProvider` (in-app ring buffer, Rx live stream, Serilog compact-JSON file sink). Traces and metrics are emitted through the canonical `System.Diagnostics` `ActivitySource`/`Meter` instances in `Mithril.Shared.Diagnostics.Telemetry`; an opt-in OTLP exporter (`Mithril.Shared.Telemetry`) is available behind a setting. Recording is zero-cost when no session is listening.
 
 ### Patterns
 
@@ -188,9 +211,17 @@ App settings persist under `%LocalAppData%\Mithril\` — each module gets its ow
 ## Contributing
 
 - Keep modules independent of each other. Cross-module dependencies go through `Mithril.Shared`.
-- New log parsers belong in the owning module unless they're reused — parsers used by two or more modules get promoted into `Mithril.Shared`.
+- New log grammar belongs in the Arda pipeline (a L2/L3 handler emitting a domain event), not in a module. Modules consume the resulting domain events via `IDomainEventSubscriber` — they don't parse `Player.log` themselves.
 - Match the existing MVVM and settings conventions (source-generated, not reflection).
 - Every behavioral change ships with a test. The test projects mirror the module layout one-for-one.
+
+## Credits
+
+First and foremost, thank you to the team at **Elder Game** for making [*Project Gorgon*](https://projectgorgon.com), the wonderfully strange MMORPG this companion app exists to serve. Mithril is a fan project built *around* their game: it reads the log and report files the game writes to disk, draws on the publicly published reference data, and would have nothing to do without the world they've built. All game content, names, and data belong to Elder Game; this project claims none of it.
+
+Mithril is unofficial and not affiliated with or endorsed by Elder Game. As noted above, it only ever reads what the game writes to disk.
+
+The project and module names (*Mithril*, *Arda*, Samwise, Gandalf, and the rest) are affectionate nods to J.R.R. Tolkien's legendarium, used purely as internal code names. They imply no affiliation with, endorsement by, or rights to Tolkien's works, which belong to their respective rights holders.
 
 ## Acknowledgements
 
