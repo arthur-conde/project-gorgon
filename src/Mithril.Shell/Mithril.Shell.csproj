@@ -11,6 +11,11 @@
     <AssemblyName>Mithril</AssemblyName>
     <EnableDefaultApplicationEntryPoint>false</EnableDefaultApplicationEntryPoint>
     <StartupObject>Mithril.Shell.Program</StartupObject>
+    <!-- #919: GameConfigViewModel's "Detect from foreground" uses [LibraryImport]
+         P/Invokes (GetForegroundWindow / GetWindowThreadProcessId); the
+         source-generated marshalling stubs require unsafe code (SYSLIB1062 /
+         CS0227). Matches Legolas.Module, which set this for the same interop. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <!-- Reflection-based module loader requires DLLs on disk under modules/. -->
     <PublishSingleFile>false</PublishSingleFile>
