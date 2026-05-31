@@ -25,6 +25,24 @@
         <TextBlock Text="Poll interval (seconds)" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
         <TextBox Text="{Binding PollSeconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" Width="100" HorizontalAlignment="Left"/>
 
+        <!-- #919: relocated here from the Legolas settings tab so the shared
+             map-calibration capture engine can consume the value. -->
+        <TextBlock Text="Game process name (case-insensitive substring match — covers ProjectGorgon, ProjectGorgon64, Project Gorgon, etc.)"
+                   Foreground="#88FFFFFF" TextWrapping="Wrap" Margin="0,16,0,4"/>
+        <StackPanel Orientation="Horizontal">
+            <TextBox Width="240" VerticalAlignment="Center" Padding="6,4"
+                     Text="{Binding GameProcessName, UpdateSourceTrigger=LostFocus}"/>
+            <Button Content="Detect from foreground (3s)" Margin="8,0,0,0" Padding="8,4"
+                    Command="{Binding DetectGameProcessCommand}"
+                    ToolTip="Click, then alt-tab to the game window — its process name is captured after a 3-second countdown."/>
+        </StackPanel>
+        <TextBlock Text="{Binding DetectGameProcessStatus}" Foreground="#88FFFFFF" Margin="0,4,0,0"/>
+
+        <TextBlock Text="Calibration good-residual threshold (px)" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
+        <TextBox Text="{Binding CalibrationGoodResidualPx, StringFormat=0.#, UpdateSourceTrigger=LostFocus}"
+                 Padding="6,4" Width="100" HorizontalAlignment="Left"
+                 ToolTip="RMS pixel residual at or below which a map calibration is considered good. Lower is stricter; 12 is the default."/>
+
         <TextBlock Margin="0,24,0,0" TextWrapping="Wrap" Foreground="#88FFFFFF" FontSize="{DynamicResource AppFontSizeHint}"
                    Text="Modules subscribe to this folder. Changes apply immediately — the log tail restarts when the path changes."/>
     </StackPanel>

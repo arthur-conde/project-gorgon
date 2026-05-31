@@ -11,6 +11,24 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private string _gameRoot = "";
     public string GameRoot { get => _gameRoot; set => Set(ref _gameRoot, value); }
 
+    /// <summary>
+    /// Case-insensitive substring matched against the foreground window's
+    /// process name to decide whether the game is in focus. Relocated here from
+    /// <c>LegolasSettings</c> (#919) so the shared map-calibration capture engine
+    /// can consume it without depending on a module. Mirrors the live
+    /// <see cref="Mithril.Shared.Game.GameConfig.GameProcessName"/>.
+    /// </summary>
+    private string _gameProcessName = "ProjectGorgon";
+    public string GameProcessName { get => _gameProcessName; set => Set(ref _gameProcessName, value); }
+
+    /// <summary>
+    /// RMS pixel-residual at or below which a calibration is considered "good".
+    /// Relocated here from <c>LegolasSettings</c> (#919); mirrors the live
+    /// <see cref="Mithril.Shared.Game.GameConfig.CalibrationGoodResidualPx"/>.
+    /// </summary>
+    private double _calibrationGoodResidualPx = 12.0;
+    public double CalibrationGoodResidualPx { get => _calibrationGoodResidualPx; set => Set(ref _calibrationGoodResidualPx, value); }
+
     private string _activeModuleId = "";
     public string ActiveModuleId { get => _activeModuleId; set => Set(ref _activeModuleId, value); }
 
