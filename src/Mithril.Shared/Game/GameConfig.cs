@@ -13,6 +13,23 @@ public sealed class GameConfig : INotifyPropertyChanged
         set => Set(ref _gameRoot, value);
     }
 
+    /// <summary>
+    /// The PG Unity/Steam <b>install</b> directory (e.g.
+    /// <c>…\steamapps\common\Project Gorgon</c>, which contains
+    /// <c>WindowsPlayer_Data\StreamingAssets</c>). This is what the map-calibration
+    /// asset-extractor sidecar reads as its <c>--install</c> root. Distinct from
+    /// <see cref="GameRoot"/>, which is the LocalLow <i>data</i> dir (Player.log,
+    /// ChatLogs, Reports). Deliberately does NOT participate in the
+    /// <see cref="PlayerLogPath"/>/<see cref="ChatLogDirectory"/>/<see cref="ReportsDirectory"/>
+    /// recomputation — those stay GameRoot-only.
+    /// </summary>
+    private string _installRoot = "";
+    public string InstallRoot
+    {
+        get => _installRoot;
+        set => Set(ref _installRoot, value);
+    }
+
     private double _pollIntervalSeconds = 1.0;
     public double PollIntervalSeconds
     {

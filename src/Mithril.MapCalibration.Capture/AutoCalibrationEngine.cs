@@ -195,7 +195,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (tex is not null) return tex;
 
         if (_assetExtractor is null || _gameConfig is null
-            || string.IsNullOrWhiteSpace(_gameConfig.GameRoot) || string.IsNullOrWhiteSpace(_assetCacheDir))
+            || string.IsNullOrWhiteSpace(_gameConfig.InstallRoot) || string.IsNullOrWhiteSpace(_assetCacheDir))
         {
             return null; // no extractor wired → safe-degrade (caller surfaces "preparing map assets…")
         }
@@ -204,7 +204,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         try
         {
             var request = new ExtractRequest(
-                InstallRoot: _gameConfig.GameRoot,
+                InstallRoot: _gameConfig.InstallRoot,
                 OutDir: _assetCacheDir!,
                 Kind: ExtractKind.Texture,
                 AreaKey: area,
@@ -256,7 +256,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         if (templates.Templates.Count > 0) return templates;
 
         if (_assetExtractor is null || _gameConfig is null
-            || string.IsNullOrWhiteSpace(_gameConfig.GameRoot) || string.IsNullOrWhiteSpace(_assetCacheDir))
+            || string.IsNullOrWhiteSpace(_gameConfig.InstallRoot) || string.IsNullOrWhiteSpace(_assetCacheDir))
         {
             return templates; // no extractor wired → safe-degrade (Empty → gate rejects)
         }
@@ -265,7 +265,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         try
         {
             var request = new ExtractRequest(
-                InstallRoot: _gameConfig.GameRoot,
+                InstallRoot: _gameConfig.InstallRoot,
                 OutDir: _assetCacheDir!,
                 Kind: ExtractKind.Icons,
                 AreaKey: null,

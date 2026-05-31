@@ -149,6 +149,22 @@ public static class Program
             if (string.IsNullOrEmpty(shellSettings.GameRoot))
                 shellSettings.GameRoot = GameLocator.AutoDetectGameRoot() ?? "";
 
+            // #959: the asset-extractor sidecar needs the Steam INSTALL dir
+            // (…\steamapps\common\Project Gorgon — contains WindowsPlayer_Data),
+            // which is distinct from GameRoot (the LocalLow data dir). Auto-detect
+            // Steam-only + fail-soft when unset; a manual override always wins. Persist
+            // only when detection actually filled it in (skip a redundant save when it
+            // returns null and the value stays "").
+            if (string.IsNullOrEmpty(shellSettings.InstallRoot))
+            {
+                var detectedInstall = GameLocator.AutoDetectInstallRoot();
+                if (!string.IsNullOrEmpty(detectedInstall))
+                {
+                    shellSettings.InstallRoot = detectedInstall;
+                    shellStore.SaveAsync(shellSettings).GetAwaiter().GetResult();
+                }
+            }
+
             // #919 one-time cross-file carry-over: GameProcessName +
             // CalibrationGoodResidualPx moved from LegolasSettings (legolas.json)
             // to the shared shell store. Per-file Migrate can't cross files, so
@@ -174,6 +190,7 @@ public static class Program
             var gameConfig = new GameConfig
             {
                 GameRoot = shellSettings.GameRoot,
+                InstallRoot = shellSettings.InstallRoot,
                 GameProcessName = shellSettings.GameProcessName,
                 CalibrationGoodResidualPx = shellSettings.CalibrationGoodResidualPx,
             };
@@ -183,6 +200,9 @@ public static class Program
                 {
                     case nameof(GameConfig.GameRoot):
                         shellSettings.GameRoot = gameConfig.GameRoot;
+                        break;
+                    case nameof(GameConfig.InstallRoot):
+                        shellSettings.InstallRoot = gameConfig.InstallRoot;
                         break;
                     case nameof(GameConfig.GameProcessName):
                         shellSettings.GameProcessName = gameConfig.GameProcessName;

@@ -15,12 +15,14 @@ public sealed partial class GameConfigViewModel : ObservableObject
     {
         _config = config;
         _gameRoot = config.GameRoot;
+        _installRoot = config.InstallRoot;
         _pollSeconds = config.PollIntervalSeconds;
         _gameProcessName = config.GameProcessName;
         _calibrationGoodResidualPx = config.CalibrationGoodResidualPx;
     }
 
     [ObservableProperty] private string _gameRoot;
+    [ObservableProperty] private string _installRoot;
     [ObservableProperty] private double _pollSeconds;
     [ObservableProperty] private string _gameProcessName;
     [ObservableProperty] private double _calibrationGoodResidualPx;
@@ -35,6 +37,8 @@ public sealed partial class GameConfigViewModel : ObservableObject
         _config.GameRoot = value;
         OnPropertyChanged(nameof(PlayerLogPath));
     }
+
+    partial void OnInstallRootChanged(string value) => _config.InstallRoot = value;
 
     partial void OnPollSecondsChanged(double value) => _config.PollIntervalSeconds = value;
 
@@ -57,6 +61,23 @@ public sealed partial class GameConfigViewModel : ObservableObject
     {
         var detected = GameLocator.AutoDetectGameRoot();
         if (detected is not null) GameRoot = detected;
+    }
+
+    [RelayCommand]
+    private void BrowseInstall()
+    {
+        var dlg = new OpenFolderDialog
+        {
+            Title = "Select Project Gorgon install folder (the Steam one containing WindowsPlayer_Data)",
+        };
+        if (dlg.ShowDialog() == true) InstallRoot = dlg.FolderName;
+    }
+
+    [RelayCommand]
+    private void AutoDetectInstall()
+    {
+        var detected = GameLocator.AutoDetectInstallRoot();
+        if (detected is not null) InstallRoot = detected;
     }
 
     /// <summary>

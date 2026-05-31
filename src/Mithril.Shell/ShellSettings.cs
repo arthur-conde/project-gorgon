@@ -30,6 +30,18 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     public string GameRoot { get => _gameRoot; set => Set(ref _gameRoot, value); }
 
     /// <summary>
+    /// The PG Unity/Steam <b>install</b> directory (Steam
+    /// <c>…\steamapps\common\Project Gorgon</c>, contains <c>WindowsPlayer_Data</c>),
+    /// consumed by the map-calibration asset-extractor sidecar. Distinct from
+    /// <see cref="GameRoot"/> (the LocalLow data dir). Auto-detected when empty
+    /// (<see cref="Mithril.Shared.Game.GameLocator.AutoDetectInstallRoot"/>); a manual
+    /// override always wins. Purely additive field → no schema bump needed (missing
+    /// key → "" on load).
+    /// </summary>
+    private string _installRoot = "";
+    public string InstallRoot { get => _installRoot; set => Set(ref _installRoot, value); }
+
+    /// <summary>
     /// Case-insensitive substring matched against the foreground window's
     /// process name to decide whether the game is in focus. Relocated here from
     /// <c>LegolasSettings</c> (#919) so the shared map-calibration capture engine
