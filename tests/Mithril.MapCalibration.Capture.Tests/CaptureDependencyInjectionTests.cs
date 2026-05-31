@@ -1,6 +1,4 @@
-using System;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using Arda.Contracts;
 using Arda.World.Player;
@@ -47,6 +45,12 @@ public sealed class CaptureDependencyInjectionTests
         provider.GetRequiredService<AutoCalibrationTrigger>().Should().NotBeNull();
         provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
             .Should().Contain(s => s is AutoCalibrationTrigger);
+
+        // #945 Gap 3: the one-time icon-template bootstrap is also a hosted service.
+        // Asserts the AddHostedService line survives (guards a future regression that
+        // drops it, leaving IconTemplateSet permanently Empty).
+        provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .Should().Contain(s => s is IconTemplateBootstrap);
     }
 
     /// <summary>

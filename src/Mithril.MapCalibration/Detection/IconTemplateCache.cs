@@ -14,11 +14,12 @@ namespace Mithril.MapCalibration.Detection;
 public static class IconTemplateCache
 {
     /// <summary>
-    /// True iff <paramref name="cacheDir"/> holds a readable, non-empty icon-template
-    /// manifest — i.e. the sidecar's <c>--icons</c> mode has already populated it.
-    /// Used to make the bootstrap run at most once per fresh cache (don't re-launch
-    /// the sidecar on every app start). Fail-soft: any read/parse error reads as
-    /// "not populated".
+    /// True iff <paramref name="cacheDir"/> holds a readable icon-template manifest
+    /// with a recorded pixel hash — i.e. the sidecar's <c>--icons</c> mode has already
+    /// run. This is a "has the sidecar produced a manifest yet?" gate, not a validation
+    /// of icon count or manifest contents. Used to make the bootstrap run at most once
+    /// per fresh cache (don't re-launch the sidecar on every app start). Fail-soft: any
+    /// read/parse error reads as "not populated".
     /// </summary>
     public static bool IsPopulated(string cacheDir, ILogger? logger = null) =>
         BundledIconTemplateLoader.ManifestPixelSha256(cacheDir, logger) is not null;
