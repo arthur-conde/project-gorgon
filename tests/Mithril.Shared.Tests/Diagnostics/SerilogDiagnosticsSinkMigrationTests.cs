@@ -111,4 +111,127 @@ public class DiagnosticsLogSerilogMigrationTests
         entries.Should().Contain(e =>
             e.Level == DiagnosticLevel.Warn && e.Category == "SerilogSink");
     }
+
+    /// <summary>
+    /// Creates a <c>…\Shell\logs</c> directory inside a fresh temp root and returns
+    /// the logs path. The parent (<c>…\Shell</c>) is where legacy root-level
+    /// <c>boot.log</c>/<c>crash.log</c> historically lived.
+    /// </summary>
+    private static (string Parent, string LogsDir) FreshShellWithLogs()
+    {
+        var parent = Path.Combine(Path.GetTempPath(), $"mithril-shell-{Guid.NewGuid():N}");
+        var logsDir = Path.Combine(parent, "logs");
+        Directory.CreateDirectory(logsDir);
+        return (parent, logsDir);
+    }
+
+    [Fact]
+    public void Moves_Legacy_Root_BootLog_And_CrashLog_Into_Logs_Dir()
+    {
+        var (parent, logsDir) = FreshShellWithLogs();
+        try
+        {
+            File.WriteAllText(Path.Combine(parent, "boot.log"), "boot");
+            File.WriteAllText(Path.Combine(parent, "crash.log"), "crash");
+
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles((_, _, _) => { }, logsDir);
+
+            File.Exists(Path.Combine(parent, "boot.log")).Should().BeFalse();
+            File.Exists(Path.Combine(parent, "crash.log")).Should().BeFalse();
+
+            File.Exists(Path.Combine(logsDir, "mithril-boot-prebrand.log")).Should().BeTrue();
+            File.Exists(Path.Combine(logsDir, "mithril-crash-prebrand.log")).Should().BeTrue();
+            File.ReadAllText(Path.Combine(logsDir, "mithril-boot-prebrand.log")).Should().Be("boot");
+            File.ReadAllText(Path.Combine(logsDir, "mithril-crash-prebrand.log")).Should().Be("crash");
+        }
+        finally { Directory.Delete(parent, recursive: true); }
+    }
+
+    [Fact]
+    public void Does_Not_Clobber_Live_Mithril_BootLog()
+    {
+        var (parent, logsDir) = FreshShellWithLogs();
+        try
+        {
+            // The current run has already written the live boot log.
+            File.WriteAllText(Path.Combine(logsDir, "mithril-boot.log"), "live");
+            File.WriteAllText(Path.Combine(parent, "boot.log"), "old");
+
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles((_, _, _) => { }, logsDir);
+
+            File.Exists(Path.Combine(parent, "boot.log")).Should().BeFalse();
+            File.ReadAllText(Path.Combine(logsDir, "mithril-boot.log")).Should().Be("live");
+            File.Exists(Path.Combine(logsDir, "mithril-boot-prebrand.log")).Should().BeTrue();
+            File.ReadAllText(Path.Combine(logsDir, "mithril-boot-prebrand.log")).Should().Be("old");
+        }
+        finally { Directory.Delete(parent, recursive: true); }
+    }
+
+    [Fact]
+    public void Disambiguates_When_Prebrand_BootLog_Target_Already_Exists()
+    {
+        var (parent, logsDir) = FreshShellWithLogs();
+        try
+        {
+            File.WriteAllText(Path.Combine(logsDir, "mithril-boot-prebrand.log"), "previous-attempt");
+            File.WriteAllText(Path.Combine(parent, "boot.log"), "old");
+
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles((_, _, _) => { }, logsDir);
+
+            File.Exists(Path.Combine(parent, "boot.log")).Should().BeFalse();
+            File.ReadAllText(Path.Combine(logsDir, "mithril-boot-prebrand.log")).Should().Be("previous-attempt");
+            File.Exists(Path.Combine(logsDir, "mithril-boot-prebrand_001.log")).Should().BeTrue();
+            File.ReadAllText(Path.Combine(logsDir, "mithril-boot-prebrand_001.log")).Should().Be("old");
+        }
+        finally { Directory.Delete(parent, recursive: true); }
+    }
+
+    [Fact]
+    public void Is_Idempotent_When_No_Legacy_Root_Files_Present()
+    {
+        var (parent, logsDir) = FreshShellWithLogs();
+        try
+        {
+            var entries = new List<(DiagnosticLevel Level, string Category, string Message)>();
+            void Capture(DiagnosticLevel level, string category, string message) =>
+                entries.Add((level, category, message));
+
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles(Capture, logsDir);
+            DiagnosticsLogSerilog.MigrateLegacyLogFiles(Capture, logsDir);
+
+            File.Exists(Path.Combine(parent, "boot.log")).Should().BeFalse();
+            File.Exists(Path.Combine(parent, "crash.log")).Should().BeFalse();
+            entries.Should().NotContain(e => e.Level == DiagnosticLevel.Warn);
+        }
+        finally { Directory.Delete(parent, recursive: true); }
+    }
+
+    /// <summary>
+    /// Regression: the migration runs inside the <see cref="DiagnosticsLoggerProvider"/> ctor and
+    /// reports each move via <c>Publish</c>, which dereferences the Serilog file logger. If the
+    /// file logger is not yet constructed when the migration emits its first line, the ctor throws
+    /// and aborts host build. This exercises the real ctor with a legacy root <c>boot.log</c>
+    /// present (which forces a Publish during migration) and asserts it neither throws nor leaves
+    /// the legacy file behind.
+    /// </summary>
+    [Fact]
+    public void Provider_Ctor_Migrates_Root_BootLog_Without_Throwing()
+    {
+        var (parent, logsDir) = FreshShellWithLogs();
+        try
+        {
+            File.WriteAllText(Path.Combine(parent, "boot.log"), "old-boot");
+
+            var act = () =>
+            {
+                using var provider = new DiagnosticsLoggerProvider(logsDir);
+            };
+
+            act.Should().NotThrow();
+            File.Exists(Path.Combine(parent, "boot.log")).Should().BeFalse();
+            File.Exists(Path.Combine(logsDir, "mithril-boot-prebrand.log")).Should().BeTrue();
+            File.ReadAllText(Path.Combine(logsDir, "mithril-boot-prebrand.log")).Should().Be("old-boot");
+        }
+        finally { Directory.Delete(parent, recursive: true); }
+    }
 }
