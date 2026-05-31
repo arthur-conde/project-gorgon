@@ -165,6 +165,22 @@ public static partial class CaptureServiceCollectionExtensions
             sp.GetRequiredService<ILoggerFactory>().CreateLogger("Mithril.MapCalibration.Capture.Trigger")));
         services.AddHostedService(sp => sp.GetRequiredService<AutoCalibrationTrigger>());
 
+        // #945 Gap 3: one-time icon-template cache bootstrap. The engine's cache-miss
+        // path only requests per-area textures, so nothing ever runs the sidecar's
+        // --icons mode and IconTemplateSet stays Empty. This hosted service runs
+        // --icons once on startup when the icon cache isn't yet populated. NEXT-LAUNCH
+        // semantics by design: IconTemplateSet is resolved once at startup (when the
+        // hosted services are constructed), so the populated cache takes in-memory
+        // effect on the SUBSEQUENT launch — see IconTemplateBootstrap's class doc.
+        // Fail-soft: no exe / GameRoot empty / non-zero exit → no icons, no throw.
+        services.AddSingleton<IconTemplateBootstrap>(sp => new IconTemplateBootstrap(
+            sp.GetRequiredService<IAssetExtractor>(),
+            sp.GetRequiredService<GameConfig>(),
+            assetCacheDir,
+            pgVersion,
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Mithril.MapCalibration.Capture.IconBootstrap")));
+        services.AddHostedService(sp => sp.GetRequiredService<IconTemplateBootstrap>());
+
         return services;
     }
 
