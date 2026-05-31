@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Mithril.Tools.AssetExtractor</RootNamespace>
+    <AssemblyName>mithril-asset-extract</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      Out-of-process asset-extraction sidecar (issue #931). Same isolation pattern
+      as tools/MapCalibrationFromScreenshot + Tools.Common: keep AssetsTools.NET /
+      System.Drawing out of central package management and avoid the repo's
+      Directory.Build.targets (versionless analyzer / GitVersioning clashes with
+      non-central versioning). This exe carries the decoders so src/** never does —
+      the only app↔exe link is System.Diagnostics.Process, never a project ref. NOT
+      added to Mithril.slnx; it's a packaged artifact published next to the shell.
+    -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <ImportDirectoryBuildTargets>false</ImportDirectoryBuildTargets>
+    <!-- Reads the registry (Steam install) and decodes via System.Drawing — Windows-only. -->
+    <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Reuse the AssetsTools.NET / System.Drawing decoders in Tools.Common and the
+      decoder-free contract (GrayImage, manifest format) in the core. The core
+      itself stays on the repo's central package management — that's independent of
+      this csproj's local opt-out.
+    -->
+    <ProjectReference Include="..\..\src\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <ProjectReference Include="..\Mithril.MapCalibration.Tools.Common\Mithril.MapCalibration.Tools.Common.csproj" />
+  </ItemGroup>
+</Project>

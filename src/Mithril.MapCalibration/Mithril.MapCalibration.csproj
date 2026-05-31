@@ -18,7 +18,10 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="BundledData\map-calibration-baseline.json" />
-    <EmbeddedResource Include="BundledData\icon-templates.json" />
-    <EmbeddedResource Include="BundledData\icon-templates.bin" />
+    <!-- canonical-asset-hashes.json embeds our own SHA-256 hashes (not PG art):
+         redistribution-clean, so it ships embedded. The icon-templates.{json,bin}
+         PG-art blobs were REMOVED in #931 — the asset-extractor sidecar now
+         re-derives those at runtime into a cache dir the loaders read BCL-only. -->
+    <EmbeddedResource Include="BundledData\canonical-asset-hashes.json" />
   </ItemGroup>
 </Project>

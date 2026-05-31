@@ -1,0 +1,214 @@
+// Out-of-process asset-extraction sidecar for mithril#931. Decodes PG assets
+// (AssetsTools.NET + System.Drawing) in a child process and writes the
+// pre-decoded manifest+blob cache the decoder-free app graph reads BCL-only.
+//
+// CLI:
+//   mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>]
+//
+// Outputs: cache files on disk (existing manifest+blob format) + ONE JSON result
+// line on stdout + an exit code. stderr = human diagnostics.
+//
+// Exit codes: 0 ok · 2 install-not-found · 3 bundle-missing-for-area
+//            · 4 decode-failed · 5 output-unwritable.
+
+using System.Reflection;
+using System.Text.Json;
+using Mithril.Tools.AssetExtractor;
+using Mithril.Tools.MapCalibration.Common;
+
+return SidecarProgram.Run(args);
+
+namespace Mithril.Tools.AssetExtractor
+{
+    internal static class SidecarProgram
+    {
+        public const int ExitOk = 0;
+        public const int ExitInstallNotFound = 2;
+        public const int ExitBundleMissing = 3;
+        public const int ExitDecodeFailed = 4;
+        public const int ExitOutputUnwritable = 5;
+
+        public static int Run(string[] args)
+        {
+            SidecarArgs parsed;
+            try
+            {
+                parsed = SidecarArgs.Parse(args);
+            }
+            catch (UserFacingException ex)
+            {
+                Console.Error.WriteLine($"error: {ex.Message}");
+                SidecarArgs.PrintUsage();
+                return ExitInstallNotFound; // arg error ≈ can't proceed; closest data-only code.
+            }
+
+            try
+            {
+                return Extract(parsed);
+            }
+            catch (UserFacingException ex)
+            {
+                // Map the user-facing message to the appropriate data-only exit code.
+                Console.Error.WriteLine($"error: {ex.Message}");
+                return ClassifyExit(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.Error.WriteLine($"error: output unwritable: {ex.Message}");
+                return ExitOutputUnwritable;
+            }
+            catch (IOException ex) when (IsOutputPath(ex, parsed.OutDir))
+            {
+                Console.Error.WriteLine($"error: output unwritable: {ex.Message}");
+                return ExitOutputUnwritable;
+            }
+            catch (Exception ex)
+            {
+                // Any decode failure (AssetsTools / System.Drawing) lands here.
+                Console.Error.WriteLine($"error: decode failed: {ex.GetType().Name}: {ex.Message}");
+                Console.Error.WriteLine(ex.StackTrace);
+                return ExitDecodeFailed;
+            }
+        }
+
+        private static int Extract(SidecarArgs args)
+        {
+            // Validate the install up front so a bad path reports exit 2 cleanly.
+            if (string.IsNullOrWhiteSpace(args.InstallRoot) || !Directory.Exists(args.InstallRoot))
+            {
+                Console.Error.WriteLine($"error: PG install not found at '{args.InstallRoot}'");
+                return ExitInstallNotFound;
+            }
+
+            try { Directory.CreateDirectory(args.OutDir); }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"error: output dir not writable '{args.OutDir}': {ex.Message}");
+                return ExitOutputUnwritable;
+            }
+
+            var pgVersion = PgVersionDetector.TryDetect(args.InstallRoot);
+            var extractorVersion = Assembly.GetExecutingAssembly().GetName().Version?.ToString();
+
+            if (!string.IsNullOrWhiteSpace(args.ExpectPgVersion)
+                && !string.IsNullOrWhiteSpace(pgVersion)
+                && !string.Equals(args.ExpectPgVersion, pgVersion, StringComparison.OrdinalIgnoreCase))
+            {
+                Console.Error.WriteLine(
+                    $"warning: detected PG version '{pgVersion}' != expected '{args.ExpectPgVersion}' (continuing).");
+            }
+
+            var artifacts = new List<ResultArtifact>();
+
+            if (args.Kind == ExtractKind.Icons)
+            {
+                var iconsDir = Path.Combine(args.OutDir, "icons-src");
+                IconTemplateExtractor.EnsureExtracted(args.InstallRoot, iconsDir, ResolveTpkPath());
+                var sha = IconTemplateEmitter.EmitFromIcons(iconsDir, args.OutDir, pgVersion, extractorVersion);
+                artifacts.Add(new ResultArtifact("icons", null, Path.Combine(args.OutDir, "icon-templates.json"), sha));
+            }
+            else
+            {
+                var mapDir = Path.Combine(args.OutDir, "maps-src");
+                string pngPath;
+                try
+                {
+                    pngPath = MapTextureExtractor.EnsureExtracted(args.InstallRoot, mapDir, args.AreaKey!);
+                }
+                catch (UserFacingException ex) when (ex.Message.Contains("no map bundle for area", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.Error.WriteLine($"error: {ex.Message}");
+                    return ExitBundleMissing;
+                }
+                var (manifestPath, sha) = MapTextureCacheEmitter.EmitFromPng(
+                    pngPath, args.AreaKey!, args.OutDir, pgVersion, extractorVersion);
+                artifacts.Add(new ResultArtifact("texture", args.AreaKey, manifestPath, sha));
+            }
+
+            EmitResult(pgVersion, extractorVersion, artifacts);
+            return ExitOk;
+        }
+
+        private static void EmitResult(string? pgVersion, string? extractorVersion, List<ResultArtifact> artifacts)
+        {
+            var result = new SidecarResultDto("ok", pgVersion, extractorVersion, artifacts);
+            // Single JSON line on stdout (the app parses this). camelCase to match
+            // the app's source-gen contract.
+            var json = JsonSerializer.Serialize(result, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.Never,
+            });
+            Console.Out.WriteLine(json);
+        }
+
+        private static string ResolveTpkPath()
+        {
+            // The icon extractor needs classdata.tpk. Prefer one next to the exe,
+            // then the Tools default. EnsureExtracted errors with a download URL if
+            // it's genuinely missing (→ decode-failed exit).
+            var beside = Path.Combine(AppContext.BaseDirectory, "classdata.tpk");
+            return File.Exists(beside) ? beside : RepoPaths.DefaultTpkPath();
+        }
+
+        private static int ClassifyExit(string message)
+        {
+            if (message.Contains("install", StringComparison.OrdinalIgnoreCase) && message.Contains("not found", StringComparison.OrdinalIgnoreCase))
+                return ExitInstallNotFound;
+            if (message.Contains("no map bundle for area", StringComparison.OrdinalIgnoreCase))
+                return ExitBundleMissing;
+            if (message.Contains("not writable", StringComparison.OrdinalIgnoreCase) || message.Contains("unwritable", StringComparison.OrdinalIgnoreCase))
+                return ExitOutputUnwritable;
+            // sharedassets0 / bundle / tpk / texture decode problems.
+            return ExitDecodeFailed;
+        }
+
+        private static bool IsOutputPath(IOException ex, string outDir)
+            => ex.Message.Contains(outDir, StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal enum ExtractKind { Icons, Texture }
+
+    internal sealed record SidecarArgs(string InstallRoot, string OutDir, ExtractKind Kind, string? AreaKey, string? ExpectPgVersion)
+    {
+        public static SidecarArgs Parse(string[] args)
+        {
+            string? install = null, outDir = null, area = null, expect = null;
+            bool icons = false;
+            for (int i = 0; i < args.Length; i++)
+            {
+                switch (args[i])
+                {
+                    case "--install": install = Next(args, ref i, "--install"); break;
+                    case "--out": outDir = Next(args, ref i, "--out"); break;
+                    case "--icons": icons = true; break;
+                    case "--area": area = Next(args, ref i, "--area"); break;
+                    case "--expect-pg-version": expect = Next(args, ref i, "--expect-pg-version"); break;
+                    default:
+                        throw new UserFacingException($"unknown argument '{args[i]}'");
+                }
+            }
+            if (string.IsNullOrWhiteSpace(install)) throw new UserFacingException("--install <pgRoot> is required");
+            if (string.IsNullOrWhiteSpace(outDir)) throw new UserFacingException("--out <cacheDir> is required");
+            if (icons && area is not null) throw new UserFacingException("--icons and --area are mutually exclusive");
+            if (!icons && area is null) throw new UserFacingException("one of --icons or --area <AreaKey> is required");
+            return new SidecarArgs(install, outDir, icons ? ExtractKind.Icons : ExtractKind.Texture, area, expect);
+        }
+
+        private static string Next(string[] args, ref int i, string flag)
+        {
+            if (i + 1 >= args.Length) throw new UserFacingException($"{flag} requires a value");
+            return args[++i];
+        }
+
+        public static void PrintUsage()
+        {
+            Console.Error.WriteLine(
+                "usage: mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>]");
+        }
+    }
+
+    internal sealed record ResultArtifact(string Kind, string? Area, string Path, string PixelSha256);
+
+    internal sealed record SidecarResultDto(string Status, string? PgVersion, string? ExtractorVersion, List<ResultArtifact> Artifacts);
+}

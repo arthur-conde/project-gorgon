@@ -28,6 +28,11 @@
     <Project Path="Mithril.MapCalibration.Harness/Mithril.MapCalibration.Harness.csproj" />
     <Project Path="MapCalibrationFromScreenshot/MapCalibrationFromScreenshot.csproj" />
     <Project Path="MapCalibrationWpf/MapCalibrationWpf.csproj" />
+    <!-- Out-of-process asset-extraction sidecar (issue #931). Lives here, NOT in
+         Mithril.slnx: its Tools.Common dep carries AssetsTools.NET + System.Drawing,
+         kept out of the main solution restore (issue #921). Published next to the
+         shell as a packaged artifact; the app launches it via Process. -->
+    <Project Path="Mithril.AssetExtractor/Mithril.AssetExtractor.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="../tests/Mithril.MapCalibration.Harness.Tests/Mithril.MapCalibration.Harness.Tests.csproj" />

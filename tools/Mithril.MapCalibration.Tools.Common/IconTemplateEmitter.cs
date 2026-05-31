@@ -40,10 +40,25 @@ public static class IconTemplateEmitter
 
     private sealed record ManifestEntry(string Name, string LandmarkType, double PivotX, double PivotY, int Width, int Height);
 
-    private sealed record Manifest(int SchemaVersion, string PixelSha256, List<ManifestEntry> Icons);
+    private sealed record Manifest(
+        int SchemaVersion,
+        string PixelSha256,
+        List<ManifestEntry> Icons,
+        string? PgVersion,
+        string? ExtractorVersion);
 
     /// <summary>Real-PG path: load the extracted icon PNGs from <paramref name="iconsDir"/>.</summary>
     public static void EmitFromIcons(string iconsDir, string outDir)
+        => EmitFromIcons(iconsDir, outDir, pgVersion: null, extractorVersion: null);
+
+    /// <summary>
+    /// Real-PG path with version stamps (issue #931): load the extracted icon PNGs
+    /// and write the manifest+blob cache, stamping <paramref name="pgVersion"/> +
+    /// <paramref name="extractorVersion"/> into the manifest (the cache-
+    /// invalidation / canonical-hash keys). Returns the pixelSha256 over the
+    /// decompressed gray+alpha stream — the value the sidecar reports on stdout.
+    /// </summary>
+    public static string EmitFromIcons(string iconsDir, string outDir, string? pgVersion, string? extractorVersion)
     {
         var index = IconTemplateExtractor.Load(iconsDir);
         var decoded = new List<Decoded>();
@@ -56,7 +71,7 @@ public static class IconTemplateEmitter
         }
         if (decoded.Count == 0)
             throw new UserFacingException($"no icons loaded from {iconsDir}; run --phase extract-icons first");
-        Write(decoded, outDir);
+        return Write(decoded, outDir, pgVersion, extractorVersion);
     }
 
     /// <summary>
@@ -80,10 +95,10 @@ public static class IconTemplateEmitter
             double pivotY = pin ? 0.0 : 0.5;
             decoded.Add(new Decoded(name, type, 0.5, pivotY, w, h, gray, alpha));
         }
-        Write(decoded, outDir);
+        Write(decoded, outDir, pgVersion: null, extractorVersion: null);
     }
 
-    private static void Write(List<Decoded> decoded, string outDir)
+    private static string Write(List<Decoded> decoded, string outDir, string? pgVersion, string? extractorVersion)
     {
         Directory.CreateDirectory(outDir);
 
@@ -101,7 +116,9 @@ public static class IconTemplateEmitter
         var manifest = new Manifest(
             SchemaVersion,
             sha,
-            decoded.Select(d => new ManifestEntry(d.Name, d.LandmarkType, d.PivotX, d.PivotY, d.W, d.H)).ToList());
+            decoded.Select(d => new ManifestEntry(d.Name, d.LandmarkType, d.PivotX, d.PivotY, d.W, d.H)).ToList(),
+            pgVersion,
+            extractorVersion);
 
         var json = JsonSerializer.Serialize(manifest, new JsonSerializerOptions
         {
@@ -129,6 +146,7 @@ public static class IconTemplateEmitter
         Console.WriteLine($"[emit-templates] {decoded.Count} icons -> {outDir}");
         Console.WriteLine($"[emit-templates] pixelSha256 = {sha}");
         Console.WriteLine($"[emit-templates] icon-templates.bin = {new FileInfo(binPath).Length} bytes (deflated)");
+        return sha;
     }
 
     // Two-tone teardrop: filled interior + darker 1-px outline, transparent

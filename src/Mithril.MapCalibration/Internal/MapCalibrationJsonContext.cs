@@ -27,6 +27,9 @@ namespace Mithril.MapCalibration.Internal;
 [JsonSerializable(typeof(Dictionary<string, AreaCalibration>))]
 [JsonSerializable(typeof(AreaCalibration))]
 [JsonSerializable(typeof(IconTemplateManifest))]
+[JsonSerializable(typeof(MapTextureManifest))]
+[JsonSerializable(typeof(CanonicalAssetHashes))]
+[JsonSerializable(typeof(SidecarResult))]
 internal sealed partial class MapCalibrationJsonContext : JsonSerializerContext;
 
 /// <summary>On-disk shape for the embedded baseline JSON resource.</summary>

@@ -124,7 +124,13 @@ public sealed class ReplayFixtureTests
         // texture extent) for the replay; real captures crop via MapRectLocator
         // in Phase 2.
         var rect = new MapRect(0, 0, shot.Width, shot.Height, tex.Width, tex.Height);
-        var templates = BundledIconTemplateLoader.Load(logger: null);
+        // #931: icon templates are no longer embedded — they're loaded from the
+        // asset-extractor cache dir. For this fixture-gated replay the cache (a dev
+        // populated it via the sidecar) lives under study/templates. Absent → Empty
+        // → the assertions below would fail, so a dev running the replay must
+        // populate it; CI never reaches here (study/ is gitignored).
+        var templatesDir = Path.Combine(StudyRoot()!, "templates");
+        var templates = BundledIconTemplateLoader.LoadFromDirectory(templatesDir, logger: null);
         var refs = LoadStudyRefs(area);
         refs.Should().NotBeEmpty($"study/refs/{area}.json must list the area's landmark/NPC references for replay");
 
