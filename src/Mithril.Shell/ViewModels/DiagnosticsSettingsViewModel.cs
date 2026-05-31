@@ -19,9 +19,12 @@ namespace Mithril.Shell.ViewModels;
 /// controls and the OTLP export configuration in one place — see mithril#815.
 ///
 /// Also hosts the log-maintenance commands (clear diagnostics logs / clear all
-/// logs / open the log folder). Files currently held open — the live
-/// <c>mithril-.json</c> (Serilog <c>shared:false</c>), <c>mithril-boot.log</c>,
-/// and an active perf session — are skipped and clear on next restart.
+/// logs / open the log folder). The only files held open at runtime — the live
+/// diagnostics log (<c>mithril-&lt;date&gt;.json</c>, Serilog <c>shared:false</c>)
+/// and, while recording, the active perf-session file — are skipped and clear on
+/// next restart. <c>mithril-boot.log</c> is written line-by-line with
+/// <c>File.AppendAllText</c> (not held open), so it IS deleted by "Clear all
+/// logs" and simply re-created on the next launch.
 /// </summary>
 public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
 {
@@ -106,8 +109,9 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
                 "Clear all logs",
                 "This removes ALL diagnostics and boot/crash logs in the log folder " +
                 "(mithril-*.json and *.log) AND every saved performance-trace session.\n\n" +
-                "Files currently in use (the active diagnostics log, the boot log, and any " +
-                "running perf session) stay until the next restart.\n\nContinue?"))
+                "The active diagnostics log (and the perf session, if you're recording) " +
+                "is held open and stays until the next restart. The boot log is recreated " +
+                "on the next launch.\n\nContinue?"))
             return;
 
         var result = LogDirectoryCleaner.Clean(new[]
