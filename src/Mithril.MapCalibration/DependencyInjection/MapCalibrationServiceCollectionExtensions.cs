@@ -64,17 +64,44 @@ public static class MapCalibrationServiceCollectionExtensions
     /// Register the headless detect→solve engine (Phase 1): the deviation-blob
     /// <see cref="ICalibrationDetector"/>, the
     /// <see cref="ICalibrationConfidenceGate"/>, the
-    /// <see cref="MapCalibrationSolveEngine"/>, and the bundled
-    /// <see cref="IconTemplateSet"/> (loaded once via
-    /// <c>BundledIconTemplateLoader</c>). Independent of
+    /// <see cref="MapCalibrationSolveEngine"/>, the
+    /// <see cref="IconTemplateSet"/> (loaded once from the asset cache dir via
+    /// <c>BundledIconTemplateLoader.LoadFromDirectory</c>), and an
+    /// <see cref="IBaseTextureProvider"/> over the same cache. Independent of
     /// <see cref="AddMithrilMapCalibration"/> (the persistence registration) —
     /// register either or both.
+    ///
+    /// <para><b>#931:</b> the icon templates + base textures are no longer shipped
+    /// as embedded PG art; the out-of-process asset-extractor sidecar populates
+    /// <paramref name="assetCacheDir"/> at runtime and these loaders read it
+    /// BCL-only. When the dir is absent/empty the registrations yield
+    /// <see cref="IconTemplateSet.Empty"/> / a null-returning base-texture
+    /// provider — the intended fail-soft (no detections → gate rejects →
+    /// safe-degrade). The optional <paramref name="pgVersion"/> keys the
+    /// canonical-hash gate that guards base textures.</para>
     /// </summary>
-    public static IServiceCollection AddMithrilMapCalibrationEngine(this IServiceCollection services)
+    public static IServiceCollection AddMithrilMapCalibrationEngine(
+        this IServiceCollection services,
+        string assetCacheDir,
+        string? pgVersion = null)
     {
+        if (string.IsNullOrWhiteSpace(assetCacheDir))
+            throw new ArgumentException("assetCacheDir required", nameof(assetCacheDir));
+
         services.AddSingleton<IconTemplateSet>(sp =>
-            BundledIconTemplateLoader.Load(
+            BundledIconTemplateLoader.LoadFromDirectory(
+                assetCacheDir,
                 sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Templates")));
+        services.AddSingleton<IBaseTextureProvider>(sp =>
+        {
+            var loggerFactory = sp.GetService<ILoggerFactory>();
+            var gate = CanonicalAssetHashGate.Load(loggerFactory?.CreateLogger("Mithril.MapCalibration.HashGate"));
+            return new CachedBaseTextureProvider(
+                assetCacheDir,
+                gate,
+                pgVersion,
+                loggerFactory?.CreateLogger("Mithril.MapCalibration.BaseTexture"));
+        });
         services.AddSingleton<ICalibrationDetector, DeviationBlobCalibrationDetector>();
         services.AddSingleton<ICalibrationConfidenceGate, CalibrationConfidenceGate>();
         services.AddSingleton(sp => new MapCalibrationSolveEngine(

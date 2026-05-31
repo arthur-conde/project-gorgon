@@ -34,6 +34,15 @@ Self-test (no PG / no `classdata.tpk` needed — synthesises a fake screenshot e
 dotnet run --project tools/MapCalibrationFromScreenshot -c Release -- --phase self-test
 ```
 
+> **Runtime asset extraction (issue #931):** the app no longer ships the
+> pre-decoded `icon-templates.{json,bin}` PG art. At runtime the
+> [`Mithril.AssetExtractor`](../Mithril.AssetExtractor/README.md) sidecar
+> (`mithril-asset-extract --install <PG> --out <dir> --icons` /
+> `--area AreaSerbule`) re-derives icons + base textures into a cache the app
+> loads BCL-only, and a committed canonical-hash catalogue (hashes, not art)
+> gates them. The `emit-templates` mode below is the legacy in-repo regen path; it
+> still works for local experimentation but no longer feeds a shipped resource.
+
 ## Regenerating the bundled icon templates (`--phase emit-templates`)
 
 The in-process detection engine (`src/Mithril.MapCalibration/Detection/`) ships

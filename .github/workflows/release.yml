@@ -147,6 +147,19 @@ jobs:
           -p:MithrilUpdateChannel=selfcontained
           -o publish/selfcontained
 
+      # Out-of-process asset-extraction sidecar (issue #931). Published into the
+      # same dir vpk sweeps so it ships next to Mithril.exe; the app launches it
+      # via System.Diagnostics.Process. It carries AssetsTools.NET + System.Drawing,
+      # which stay out of the shipped src/** graph (issue #921) precisely BECAUSE
+      # this is a separate exe behind a process boundary. Self-contained single-file
+      # so the decoders are encapsulated in one binary.
+      - name: Publish asset-extractor sidecar (selfcontained)
+        run: >
+          dotnet publish tools/Mithril.AssetExtractor/Mithril.AssetExtractor.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -o publish/selfcontained
+
       - name: Velopack pack (selfcontained)
         run: >
           vpk pack
@@ -169,6 +182,16 @@ jobs:
           -c Release -r win-x64 --self-contained false --no-restore
           -p:PublishReadyToRun=true
           -p:MithrilUpdateChannel=fxdep
+          -o publish/fxdep
+
+      # Asset-extractor sidecar for the fxdep SKU (issue #931). Self-contained
+      # single-file even in the fxdep variant: the sidecar's decoders are a
+      # discrete artifact, decoupled from whether the shell bundles the runtime.
+      - name: Publish asset-extractor sidecar (fxdep)
+        run: >
+          dotnet publish tools/Mithril.AssetExtractor/Mithril.AssetExtractor.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
           -o publish/fxdep
 
       - name: Velopack pack (fxdep)

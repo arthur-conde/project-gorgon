@@ -13,10 +13,23 @@ namespace Mithril.Shared.Tests.Architecture;
 /// <c>Mithril.MapCalibration.Tools.Common</c> tool library.
 ///
 /// The detect→solve engine the product needs lives decoder-free in
-/// <c>src/Mithril.MapCalibration</c> (it loads pre-baked icon templates BCL-only);
-/// the heavy decoders are confined to <c>tools/</c> and the
-/// <c>Mithril.MapCalibration.Tools.slnx</c> solution. This test fails red if any
-/// shipped project re-introduces a decoder, so the boundary can't silently rot.
+/// <c>src/Mithril.MapCalibration</c> (it loads pre-decoded icon templates +
+/// base textures BCL-only from a runtime cache); the heavy decoders are confined
+/// to <c>tools/</c> and the <c>Mithril.MapCalibration.Tools.slnx</c> solution.
+/// This test fails red if any shipped project re-introduces a decoder, so the
+/// boundary can't silently rot.
+///
+/// <para><b>Sanctioned out-of-process exception (issue #931):</b> the
+/// <c>tools/Mithril.AssetExtractor</c> sidecar exe carries the decoders
+/// (AssetsTools.NET + System.Drawing, via <c>Tools.Common</c>) and is published
+/// next to the shell as a packaged artifact. The <i>only</i> app↔exe link is
+/// <c>System.Diagnostics.Process</c> (<c>ProcessAssetExtractor</c>) — a process
+/// boundary, never a <c>ProjectReference</c> / <c>PackageReference</c>. So the
+/// sidecar runs decoders out-of-process while <c>src/**</c> stays decoder-free and
+/// this test stays green truthfully (the sidecar lives under <c>tools/</c>, off
+/// the scanned <c>src/**</c> graph). The assertions below are unchanged: loading
+/// the extractor in-process via reflection to dodge this scan is explicitly
+/// forbidden — the value is the process boundary, not a green check.</para>
 /// </summary>
 public class ShippedGraphDecoderFreeTests
 {
