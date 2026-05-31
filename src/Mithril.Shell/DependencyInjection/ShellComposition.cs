@@ -112,7 +112,7 @@ public static class ShellComposition
             // IMapCalibrationService). The GameConfig-wired confidence gate
             // override inside this call wins over the engine's default gate
             // (last-registration-wins).
-            .AddMithrilMapCalibrationCapture(o.MapCalibrationDir, o.AssetCacheDir)
+            .AddMithrilMapCalibrationCapture(o.AssetCacheDir)
             .AddMithrilIcons(o.IconCacheDir)
             .AddMithrilAudio()
             .AddMithrilHotkeys()
