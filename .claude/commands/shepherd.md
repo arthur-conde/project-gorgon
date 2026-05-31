@@ -28,6 +28,8 @@ You are the shepherd for issue `<issue-id>` and you own it end-to-end **in this 
 
 When you scale review down, say so, so coverage isn't silently dropped. You may reuse `code-review:code-review` for the heavier passes. Exit the loop as soon as review is clean, or after `<max-iterations>` rounds — whichever comes first. **You are the only party that commits the merge.**
 
+**Engineer continuity — fix with the same agent, re-dispatch on a premise change.** Within a review round, have the *same* engineer fix the findings: it already holds the just-written code in context, so incremental fixes are cheap and stay coherent with the original design. But when the context's premise changes materially — the brief was wrong, the scope pivots, or the engineer went down a wrong path — **re-dispatch a fresh engineer with a corrected brief** instead of message-patching the long-lived one. Stacking corrections onto an accumulating context anchors the engineer to its bad start and leaves superseded instructions lingering in the window; a fresh dispatch starts clean. (A long-lived context also re-reads its full, growing history uncached after any idle gap, so resetting on a premise change is cheaper too.)
+
 **At cap.** If the loop hits the iteration cap without a clean review, decide between (a) merging with follow-up issues filed for outstanding concerns, or (b) escalating back to the user. Do not merge silently over unresolved blockers.
 
 **Wind-down.** Once the PR is merged (or escalated), dismantle the team, file any follow-up issues you own, and return a brief summary covering: what was delivered, the final iteration count, and any follow-ups created or recommended.
