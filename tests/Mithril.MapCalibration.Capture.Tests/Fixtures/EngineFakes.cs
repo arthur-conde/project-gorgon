@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Threading;
-using System.Threading.Tasks;
 using Arda.Contracts;
 using Arda.World.Player;
 using Mithril.MapCalibration;
@@ -97,6 +93,33 @@ internal sealed class SpySolver : IMapCalibrationSolver
         Called = true;
         return _result;
     }
+}
+
+/// <summary>
+/// Records each <see cref="IAssetExtractor.ExtractAsync"/> call and returns a
+/// configurable canned result, so the icon bootstrap's decision logic can be
+/// tested headless (no real exe). Defaults to a success with no artifacts.
+/// </summary>
+internal sealed class RecordingAssetExtractor : IAssetExtractor
+{
+    private readonly ExtractResult _result;
+    public RecordingAssetExtractor(ExtractResult? result = null) =>
+        _result = result ?? new ExtractResult(true, 0, Array.Empty<ExtractedArtifact>(), null);
+
+    public List<ExtractRequest> Calls { get; } = new();
+
+    public Task<ExtractResult> ExtractAsync(ExtractRequest request, CancellationToken ct)
+    {
+        Calls.Add(request);
+        return Task.FromResult(_result);
+    }
+}
+
+/// <summary>An extractor whose ExtractAsync throws — proves the bootstrap fail-softs.</summary>
+internal sealed class ThrowingAssetExtractor : IAssetExtractor
+{
+    public Task<ExtractResult> ExtractAsync(ExtractRequest request, CancellationToken ct) =>
+        throw new InvalidOperationException("boom");
 }
 
 internal sealed class FakeCalibrationService : IMapCalibrationService

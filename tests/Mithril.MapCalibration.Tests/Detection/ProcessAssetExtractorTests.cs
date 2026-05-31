@@ -1,9 +1,5 @@
-using System;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using FluentAssertions;
 using Mithril.MapCalibration.Detection;
 using Xunit;
@@ -134,6 +130,29 @@ public sealed class ProcessAssetExtractorTests : IDisposable
         result.Ok.Should().BeFalse();
         result.ExitCode.Should().Be(ProcessAssetExtractor.ExitMissingExe);
         result.Error.Should().Contain("not found");
+    }
+
+    [Fact]
+    public async Task Sidecar_resolved_beside_the_host_fail_softs_when_absent()
+    {
+        // #945 Gap 1/2 contract: the Capture DI registers the extractor with
+        // exePath = Path.Combine(AppContext.BaseDirectory, "mithril-asset-extract.exe").
+        // In dev/F5 (and this test host) the sidecar isn't published beside the
+        // binary, so that path doesn't exist. The registration is unconditional
+        // (no File.Exists gate) precisely because this path fail-softs: assert it
+        // returns ExitMissingExe and does NOT throw, so the DI graph stays
+        // deterministic and the engine safe-degrades ("preparing map assets…").
+        var exePath = Path.Combine(AppContext.BaseDirectory, "mithril-asset-extract.exe");
+        File.Exists(exePath).Should().BeFalse("the sidecar isn't published beside the test host");
+
+        var sut = new ProcessAssetExtractor(exePath, TimeSpan.FromSeconds(5),
+            launcher: (_, _) => throw new InvalidOperationException("launcher must not run when the exe is absent"));
+
+        var result = await sut.ExtractAsync(
+            new ExtractRequest("C:/PG", "C:/cache", ExtractKind.Texture, "AreaSerbule", null), CancellationToken.None);
+
+        result.Ok.Should().BeFalse();
+        result.ExitCode.Should().Be(ProcessAssetExtractor.ExitMissingExe);
     }
 
     [Fact]
