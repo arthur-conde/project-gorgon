@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Mithril.Shared.Game;
+using Mithril.Shared.MapCalibration;
 using Microsoft.Win32;
 
 namespace Mithril.Shell.ViewModels;
@@ -10,15 +11,21 @@ namespace Mithril.Shell.ViewModels;
 public sealed partial class GameConfigViewModel : ObservableObject
 {
     private readonly GameConfig _config;
+    private readonly IClassDataTpkProvisioner? _tpkProvisioner;
 
-    public GameConfigViewModel(GameConfig config)
+    public GameConfigViewModel(GameConfig config, IClassDataTpkProvisioner? tpkProvisioner = null)
     {
         _config = config;
+        _tpkProvisioner = tpkProvisioner;
         _gameRoot = config.GameRoot;
         _installRoot = config.InstallRoot;
         _pollSeconds = config.PollIntervalSeconds;
         _gameProcessName = config.GameProcessName;
         _calibrationGoodResidualPx = config.CalibrationGoodResidualPx;
+        _tpkInstalled = _tpkProvisioner?.IsInstalled() ?? false;
+        _downloadTpkStatus = _tpkInstalled
+            ? "Map-decoder data is installed."
+            : string.Empty;
     }
 
     [ObservableProperty] private string _gameRoot;
@@ -29,6 +36,20 @@ public sealed partial class GameConfigViewModel : ObservableObject
 
     /// <summary>Status line shown after "Detect from foreground" completes.</summary>
     [ObservableProperty] private string _detectGameProcessStatus = string.Empty;
+
+    /// <summary>True when the classdata.tpk map-decoder package is present (#960).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanDownloadTpk))]
+    private bool _tpkInstalled;
+
+    /// <summary>
+    /// Drives the download button's <c>IsEnabled</c>: offer the download only when
+    /// a provisioner is wired and the tpk isn't already installed.
+    /// </summary>
+    public bool CanDownloadTpk => _tpkProvisioner is not null && !TpkInstalled;
+
+    /// <summary>Status/progress line for the map-decoder-data download.</summary>
+    [ObservableProperty] private string _downloadTpkStatus = string.Empty;
 
     public string PlayerLogPath => string.IsNullOrEmpty(GameRoot) ? "(unset)" : System.IO.Path.Combine(GameRoot, "Player.log");
 
@@ -125,6 +146,46 @@ public sealed partial class GameConfigViewModel : ObservableObject
         {
             DetectGameProcessStatus = $"Could not read process: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// One-click download of the third-party UABEA <c>classdata.tpk</c> the
+    /// map-calibration asset-extractor sidecar needs to decode PG icons (#960).
+    /// Fail-soft: the provisioner never throws; any failure just updates the
+    /// status line and leaves icons disabled (calibration degrades as before).
+    /// </summary>
+    [RelayCommand]
+    private async Task DownloadTpkAsync()
+    {
+        if (_tpkProvisioner is null)
+        {
+            DownloadTpkStatus = "Map-decoder download is unavailable.";
+            return;
+        }
+
+        if (_tpkProvisioner.IsInstalled())
+        {
+            TpkInstalled = true;
+            DownloadTpkStatus = "Map-decoder data is already installed.";
+            return;
+        }
+
+        DownloadTpkStatus = "Downloading map-decoder data…";
+        var progress = new Progress<TpkProvisionProgress>(p =>
+        {
+            DownloadTpkStatus = p.TotalBytes is { } total && total > 0
+                ? $"Downloading map-decoder data… {p.BytesReceived * 100 / total}%"
+                : $"Downloading map-decoder data… {p.BytesReceived / 1024:N0} KB";
+        });
+
+        var result = await _tpkProvisioner.EnsureAsync(progress, CancellationToken.None);
+        TpkInstalled = _tpkProvisioner.IsInstalled();
+        DownloadTpkStatus = result.Status switch
+        {
+            TpkProvisionStatus.AlreadyPresent => "Map-decoder data is installed.",
+            TpkProvisionStatus.Downloaded => "Map-decoder data installed.",
+            _ => $"Download failed — map icons stay disabled. {result.Message}",
+        };
     }
 
     [LibraryImport("user32.dll", SetLastError = true)]

@@ -3,7 +3,7 @@
 // pre-decoded manifest+blob cache the decoder-free app graph reads BCL-only.
 //
 // CLI:
-//   mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>]
+//   mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>] [--tpk <path>]
 //
 // Outputs: cache files on disk (existing manifest+blob format) + ONE JSON result
 // line on stdout + an exit code. stderr = human diagnostics.
@@ -103,7 +103,7 @@ namespace Mithril.Tools.AssetExtractor
             if (args.Kind == ExtractKind.Icons)
             {
                 var iconsDir = Path.Combine(args.OutDir, "icons-src");
-                IconTemplateExtractor.EnsureExtracted(args.InstallRoot, iconsDir, ResolveTpkPath());
+                IconTemplateExtractor.EnsureExtracted(args.InstallRoot, iconsDir, ResolveTpkPath(args.TpkPath));
                 var sha = IconTemplateEmitter.EmitFromIcons(iconsDir, args.OutDir, pgVersion, extractorVersion);
                 artifacts.Add(new ResultArtifact("icons", null, Path.Combine(args.OutDir, "icon-templates.json"), sha));
             }
@@ -142,11 +142,16 @@ namespace Mithril.Tools.AssetExtractor
             Console.Out.WriteLine(json);
         }
 
-        private static string ResolveTpkPath()
+        private static string ResolveTpkPath(string? explicitPath)
         {
-            // The icon extractor needs classdata.tpk. Prefer one next to the exe,
-            // then the Tools default. EnsureExtracted errors with a download URL if
-            // it's genuinely missing (→ decode-failed exit).
+            // The icon extractor needs classdata.tpk. Prefer an explicit --tpk path
+            // when the caller provided one and it exists (the app downloads the tpk
+            // to its always-writable asset cache and threads that path in — #960),
+            // then one next to the exe, then the Tools default. EnsureExtracted
+            // errors with a download URL if it's genuinely missing (→ decode-failed
+            // exit), so missing-tpk still fail-softs exactly as before.
+            if (!string.IsNullOrWhiteSpace(explicitPath) && File.Exists(explicitPath))
+                return explicitPath;
             var beside = Path.Combine(AppContext.BaseDirectory, "classdata.tpk");
             return File.Exists(beside) ? beside : RepoPaths.DefaultTpkPath();
         }
@@ -169,11 +174,11 @@ namespace Mithril.Tools.AssetExtractor
 
     internal enum ExtractKind { Icons, Texture }
 
-    internal sealed record SidecarArgs(string InstallRoot, string OutDir, ExtractKind Kind, string? AreaKey, string? ExpectPgVersion)
+    internal sealed record SidecarArgs(string InstallRoot, string OutDir, ExtractKind Kind, string? AreaKey, string? ExpectPgVersion, string? TpkPath)
     {
         public static SidecarArgs Parse(string[] args)
         {
-            string? install = null, outDir = null, area = null, expect = null;
+            string? install = null, outDir = null, area = null, expect = null, tpk = null;
             bool icons = false;
             for (int i = 0; i < args.Length; i++)
             {
@@ -184,6 +189,7 @@ namespace Mithril.Tools.AssetExtractor
                     case "--icons": icons = true; break;
                     case "--area": area = Next(args, ref i, "--area"); break;
                     case "--expect-pg-version": expect = Next(args, ref i, "--expect-pg-version"); break;
+                    case "--tpk": tpk = Next(args, ref i, "--tpk"); break;
                     default:
                         throw new UserFacingException($"unknown argument '{args[i]}'");
                 }
@@ -192,7 +198,7 @@ namespace Mithril.Tools.AssetExtractor
             if (string.IsNullOrWhiteSpace(outDir)) throw new UserFacingException("--out <cacheDir> is required");
             if (icons && area is not null) throw new UserFacingException("--icons and --area are mutually exclusive");
             if (!icons && area is null) throw new UserFacingException("one of --icons or --area <AreaKey> is required");
-            return new SidecarArgs(install, outDir, icons ? ExtractKind.Icons : ExtractKind.Texture, area, expect);
+            return new SidecarArgs(install, outDir, icons ? ExtractKind.Icons : ExtractKind.Texture, area, expect, tpk);
         }
 
         private static string Next(string[] args, ref int i, string flag)
@@ -204,7 +210,7 @@ namespace Mithril.Tools.AssetExtractor
         public static void PrintUsage()
         {
             Console.Error.WriteLine(
-                "usage: mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>]");
+                "usage: mithril-asset-extract --install <pgRoot> --out <cacheDir> (--icons | --area <AreaKey>) [--expect-pg-version <v>] [--tpk <path>]");
         }
     }
 

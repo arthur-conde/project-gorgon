@@ -29,12 +29,17 @@ public interface IAssetExtractor
 /// <param name="Kind">Icons or a single area's base texture.</param>
 /// <param name="AreaKey">Required when <see cref="Kind"/> is <see cref="ExtractKind.Texture"/>.</param>
 /// <param name="ExpectPgVersion">Optional <c>--expect-pg-version</c> assertion.</param>
+/// <param name="TpkPath">Optional explicit <c>--tpk</c> path to the UABEA
+/// <c>classdata.tpk</c> the icon decoder needs (#960). When set, the sidecar
+/// prefers it over its beside-exe / repo-default resolution; when null, the
+/// sidecar falls back to its old resolution and fail-softs if none is present.</param>
 public sealed record ExtractRequest(
     string InstallRoot,
     string OutDir,
     ExtractKind Kind,
     string? AreaKey,
-    string? ExpectPgVersion);
+    string? ExpectPgVersion,
+    string? TpkPath = null);
 
 public enum ExtractKind
 {

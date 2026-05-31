@@ -1,5 +1,6 @@
 using System.Collections.Frozen;
 using System.IO;
+using System.Net.Http;
 using Arda.Abstractions.Diagnostics;
 using Arda.Composition;
 using Arda.Contracts.State.Health;
@@ -19,6 +20,7 @@ using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Game;
 using Mithril.Shared.Hotkeys;
 using Mithril.Shared.Icons;
+using Mithril.Shared.MapCalibration;
 using Mithril.Shared.Modules;
 using Mithril.Shared.Reference;
 using Mithril.Shared.Settings;
@@ -123,6 +125,14 @@ public static class ShellComposition
             // override inside this call wins over the engine's default gate
             // (last-registration-wins).
             .AddMithrilMapCalibrationCapture(o.AssetCacheDir)
+            // #960: BCL-only provisioner that one-click downloads the third-party
+            // UABEA classdata.tpk into the asset cache (same dir the sidecar reads),
+            // so icon decoding can engage without bundling the artifact. Needs the
+            // shared HttpClient registered by AddMithrilReferenceData above.
+            .AddSingleton<IClassDataTpkProvisioner>(sp => new ClassDataTpkProvisioner(
+                o.AssetCacheDir,
+                sp.GetRequiredService<HttpClient>(),
+                sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Tpk")))
             .AddMithrilIcons(o.IconCacheDir)
             .AddMithrilAudio()
             .AddMithrilHotkeys()

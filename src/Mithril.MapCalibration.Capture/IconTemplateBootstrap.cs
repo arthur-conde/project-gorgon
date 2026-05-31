@@ -1,7 +1,9 @@
+using System.IO;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 using Mithril.Shared.Game;
+using Mithril.Shared.MapCalibration;
 
 namespace Mithril.MapCalibration.Capture;
 
@@ -53,6 +55,18 @@ public sealed class IconTemplateBootstrap : IHostedService, IDisposable
         _assetCacheDir = assetCacheDir;
         _pgVersion = pgVersion;
         _logger = logger;
+    }
+
+    /// <summary>
+    /// The downloaded <c>classdata.tpk</c> path inside the asset cache, or null when
+    /// it isn't present yet (#960). When null the sidecar falls back to its old
+    /// resolution and fail-softs (icons stay disabled until the user downloads it).
+    /// </summary>
+    private string? ResolveTpkPath()
+    {
+        if (string.IsNullOrWhiteSpace(_assetCacheDir)) return null;
+        var tpk = Path.Combine(_assetCacheDir, ClassDataTpkProvisioner.TpkFileName);
+        return File.Exists(tpk) ? tpk : null;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -114,7 +128,8 @@ public sealed class IconTemplateBootstrap : IHostedService, IDisposable
                 OutDir: _assetCacheDir,
                 Kind: ExtractKind.Icons,
                 AreaKey: null,
-                ExpectPgVersion: _pgVersion);
+                ExpectPgVersion: _pgVersion,
+                TpkPath: ResolveTpkPath());
             var result = await _extractor.ExtractAsync(request, ct).ConfigureAwait(false);
             if (result.Ok)
             {

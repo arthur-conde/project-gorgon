@@ -1,10 +1,12 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Arda.World.Player;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
 using Mithril.Shared.Game;
+using Mithril.Shared.MapCalibration;
 
 namespace Mithril.MapCalibration.Capture;
 
@@ -100,6 +102,19 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _gameConfig = gameConfig;
         _assetCacheDir = assetCacheDir;
         _pgVersion = pgVersion;
+    }
+
+    /// <summary>
+    /// The downloaded <c>classdata.tpk</c> path inside the asset cache, or null when
+    /// it isn't present yet (#960). Threaded into <see cref="ExtractRequest.TpkPath"/>
+    /// so the sidecar can decode icons; when null the sidecar falls back to its old
+    /// resolution and fail-softs exactly as before.
+    /// </summary>
+    private string? ResolveTpkPath()
+    {
+        if (string.IsNullOrWhiteSpace(_assetCacheDir)) return null;
+        var tpk = Path.Combine(_assetCacheDir, ClassDataTpkProvisioner.TpkFileName);
+        return File.Exists(tpk) ? tpk : null;
     }
 
     public async Task<AutoCalibrationOutcome> TryCalibrateCurrentAreaAsync(CancellationToken ct)
@@ -208,7 +223,8 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 OutDir: _assetCacheDir!,
                 Kind: ExtractKind.Texture,
                 AreaKey: area,
-                ExpectPgVersion: _pgVersion);
+                ExpectPgVersion: _pgVersion,
+                TpkPath: ResolveTpkPath());
             var extract = await _assetExtractor.ExtractAsync(request, ct).ConfigureAwait(false);
             if (!extract.Ok)
             {
@@ -269,7 +285,8 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
                 OutDir: _assetCacheDir!,
                 Kind: ExtractKind.Icons,
                 AreaKey: null,
-                ExpectPgVersion: _pgVersion);
+                ExpectPgVersion: _pgVersion,
+                TpkPath: ResolveTpkPath());
             var extract = await _assetExtractor.ExtractAsync(request, ct).ConfigureAwait(false);
             if (!extract.Ok)
             {

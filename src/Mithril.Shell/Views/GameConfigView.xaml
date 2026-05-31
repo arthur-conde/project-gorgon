@@ -33,6 +33,20 @@
             <TextBox Text="{Binding InstallRoot, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"/>
         </DockPanel>
 
+        <!-- #960: one-click download of the third-party UABEA classdata.tpk the
+             asset-extractor sidecar needs to decode map icons. Not bundled (keeps
+             the artifact out of the repo/release); downloaded to the always-writable
+             asset cache that survives app updates. Disabled once installed. -->
+        <TextBlock Text="Map-decoder data (classdata.tpk — required for map-calibration icon detection; downloaded once, ~283 KB)"
+                   Foreground="#88FFFFFF" TextWrapping="Wrap" Margin="0,16,0,4"/>
+        <StackPanel Orientation="Horizontal">
+            <Button Content="Download map-decoder data" Padding="10,4"
+                    Command="{Binding DownloadTpkCommand}"
+                    IsEnabled="{Binding CanDownloadTpk}"
+                    ToolTip="Downloads classdata.tpk (UABEA) to %LocalAppData%/Mithril/assets/ so the calibrator can decode map icons."/>
+        </StackPanel>
+        <TextBlock Text="{Binding DownloadTpkStatus}" Foreground="#88FFFFFF" TextWrapping="Wrap" Margin="0,4,0,0"/>
+
         <TextBlock Text="Poll interval (seconds)" Foreground="#88FFFFFF" Margin="0,16,0,4"/>
         <TextBox Text="{Binding PollSeconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" Width="100" HorizontalAlignment="Left"/>
 

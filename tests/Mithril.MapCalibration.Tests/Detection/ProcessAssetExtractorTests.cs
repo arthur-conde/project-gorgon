@@ -83,6 +83,45 @@ public sealed class ProcessAssetExtractorTests : IDisposable
     }
 
     [Fact]
+    public async Task Tpk_path_is_added_to_args_when_set()
+    {
+        ProcessStartInfo? captured = null;
+        var sut = new ProcessAssetExtractor(_fakeExe, TimeSpan.FromSeconds(5),
+            launcher: (psi, _) =>
+            {
+                captured = psi;
+                return Task.FromResult(new ProcessRunResult(0,
+                    "{\"status\":\"ok\",\"pgVersion\":\"1\",\"extractorVersion\":\"1\",\"artifacts\":[]}", ""));
+            });
+
+        await sut.ExtractAsync(
+            new ExtractRequest("C:/PG", "C:/cache", ExtractKind.Icons, null, null, TpkPath: "C:/cache/classdata.tpk"),
+            CancellationToken.None);
+
+        captured!.ArgumentList.Should().ContainInOrder("--tpk", "C:/cache/classdata.tpk");
+    }
+
+    [Fact]
+    public async Task Tpk_path_is_omitted_when_null()
+    {
+        ProcessStartInfo? captured = null;
+        var sut = new ProcessAssetExtractor(_fakeExe, TimeSpan.FromSeconds(5),
+            launcher: (psi, _) =>
+            {
+                captured = psi;
+                return Task.FromResult(new ProcessRunResult(0,
+                    "{\"status\":\"ok\",\"pgVersion\":\"1\",\"extractorVersion\":\"1\",\"artifacts\":[]}", ""));
+            });
+
+        // Default TpkPath = null (omitted last positional arg).
+        await sut.ExtractAsync(
+            new ExtractRequest("C:/PG", "C:/cache", ExtractKind.Icons, null, null),
+            CancellationToken.None);
+
+        captured!.ArgumentList.Should().NotContain("--tpk");
+    }
+
+    [Fact]
     public async Task Exit_code_3_maps_to_failure_mentioning_the_area_bundle()
     {
         var sut = new ProcessAssetExtractor(_fakeExe, TimeSpan.FromSeconds(5),
