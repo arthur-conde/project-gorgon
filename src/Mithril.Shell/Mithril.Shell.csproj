@@ -89,6 +89,11 @@
          arrived transitively via Elrond's ref — fragile; make it explicit. -->
     <ProjectReference Include="..\Mithril.Leveling\Mithril.Leveling.csproj" />
     <ProjectReference Include="..\Mithril.MapCalibration\Mithril.MapCalibration.csproj" />
+    <!-- Mithril.MapCalibration.Capture (#914 PR-2a): windows-only capture infra
+         (CsWin32 BitBlt). Shell must reference it so the DLL lands in the app
+         base dir even though no DI wiring consumes it yet (Phase 3 wires the
+         orchestrator + hotkeys). Memory pointer: shell_must_projectref_shared_libs. -->
+    <ProjectReference Include="..\Mithril.MapCalibration.Capture\Mithril.MapCalibration.Capture.csproj" />
     <!-- Mithril.Overlay (#835): scaffold-only. Shell must reference so the
          DLL lands in the app base dir for the reflection module loader to
          resolve when consumer modules call IWorldOverlayMarkers / IOverlayWindow

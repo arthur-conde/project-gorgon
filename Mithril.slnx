@@ -9,6 +9,7 @@
     <Project Path="src/Mithril.GameReports/Mithril.GameReports.csproj" />
     <Project Path="src/Mithril.Leveling/Mithril.Leveling.csproj" />
     <Project Path="src/Mithril.MapCalibration/Mithril.MapCalibration.csproj" />
+    <Project Path="src/Mithril.MapCalibration.Capture/Mithril.MapCalibration.Capture.csproj" />
     <Project Path="src/Mithril.Overlay/Mithril.Overlay.csproj" />
     <Project Path="src/Mithril.Planning/Mithril.Planning.csproj" />
     <Project Path="src/Mithril.Reference/Mithril.Reference.csproj" />
@@ -52,6 +53,7 @@
     <Project Path="tests/Mithril.Leveling.Tests/Mithril.Leveling.Tests.csproj" />
     <Project Path="tests/Mithril.LogSanitizer.Tests/Mithril.LogSanitizer.Tests.csproj" />
     <Project Path="tests/Mithril.MapCalibration.Tests/Mithril.MapCalibration.Tests.csproj" />
+    <Project Path="tests/Mithril.MapCalibration.Capture.Tests/Mithril.MapCalibration.Capture.Tests.csproj" />
     <Project Path="tests/Mithril.Overlay.Tests/Mithril.Overlay.Tests.csproj" />
     <Project Path="tests/Mithril.Planning.Tests/Mithril.Planning.Tests.csproj" />
     <Project Path="tests/Mithril.Reference.Tests/Mithril.Reference.Tests.csproj" />

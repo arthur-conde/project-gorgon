@@ -1,0 +1,13 @@
+GetForegroundWindow
+GetWindowThreadProcessId
+GetClientRect
+ClientToScreen
+GetDC
+ReleaseDC
+CreateCompatibleDC
+CreateCompatibleBitmap
+SelectObject
+BitBlt
+GetDIBits
+DeleteObject
+DeleteDC
