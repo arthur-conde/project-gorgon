@@ -70,7 +70,12 @@ public class PlayerLogClockTests
     [Fact]
     public void TryConsumeBanner_CapturedRealBanner_AnchorsToCorrectDate()
     {
-        var clock = new PlayerLogClock(TimeProvider.System);
+        // "now" is deliberately a far-off date so that if banner parsing ever
+        // silently breaks, the wall-clock fallback in TryParse would surface a
+        // 2099 date — keeping this verbatim-capture assertion load-bearing on
+        // any calendar day, not just the day the line was captured (05/31).
+        var clock = new PlayerLogClock(new FixedUtcTimeProvider(
+            new DateTimeOffset(2099, 1, 1, 0, 0, 0, TimeSpan.Zero)));
 
         // Verbatim line captured from a live Player.log (issue #942).
         clock.TryConsumeBanner(
@@ -158,6 +163,11 @@ public class PlayerLogClockTests
         }
 
         return (sb.ToString().ToCharArray(), spans);
+    }
+
+    private sealed class FixedUtcTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
     }
 
     [Fact]

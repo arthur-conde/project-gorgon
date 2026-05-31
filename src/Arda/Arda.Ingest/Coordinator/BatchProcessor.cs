@@ -54,7 +54,7 @@ internal sealed class BatchProcessor
         {
             // Pre-scan: a session banner anywhere in the batch can override
             // the date/timezone state (e.g. Player.log "Logged in as ...
-            // Time UTC=YYYY-MM-DD HH:MM:SS"). Must run BEFORE EnsureAnchored
+            // Time UTC=MM/dd/yyyy HH:mm:ss"). Must run BEFORE EnsureAnchored
             // so banner wins over mtime fallback, and BEFORE classification
             // so the FIRST classified line is stamped against the banner.
             for (var i = 0; i < batch.LineCount; i++)
