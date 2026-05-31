@@ -23,9 +23,17 @@ namespace Mithril.MapCalibration.Capture;
 /// overlay (when realized) is kept purely for visual feedback — setting only
 /// Left/Top/Width/Height is within the allowed surface (the existing
 /// <c>WindowLayoutBinder.Apply</c> does the same); this controller does NOT mutate
-/// the overlay's Topmost/WindowStyle/AllowsTransparency/Close. The Legolas binder
-/// (→ <c>LegolasSettings.MapOverlay</c>) is untouched; full overlay-reads-shell-store
-/// consolidation is a follow-up.</para>
+/// the overlay's Topmost/WindowStyle/AllowsTransparency/Close.</para>
+///
+/// <para><b>#957 (one-rect consolidation).</b> The overlay window now reads its own
+/// position from this same <see cref="IMapCaptureRectStore"/> via
+/// <c>CaptureRectWindowBinder</c> (physical→DIU at the overlay's live device scale)
+/// and writes drags/resizes back through it — so the store is the single source of
+/// truth for both the capture frame and the overlay frame. The DIU mirror below is
+/// retained purely for <i>immediate</i> snip-time feedback when the overlay is
+/// already shown; the binder's debounced write-back then re-persists the same rect.
+/// <c>LegolasSettings.MapOverlay</c> was retired (its value migrated into the store
+/// by <c>MapCaptureRectCarryOver</c>).</para>
 ///
 /// <para>All WPF work runs on the overlay window's dispatcher (BeginDraw is
 /// invoked from <c>DrawMapBboxCommand</c>, which may run off the UI thread). The

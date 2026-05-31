@@ -114,7 +114,8 @@ public sealed class OverlayControllerInputSmokeTests
         var moduleGates = new Mithril.Shared.Modules.ModuleGates();
         var overlayWindow = new FakeOverlayWindow();
         var controller = new OverlayController(
-            stub, moduleGates, session, settings, focusGate: null!, overlayWindow, settingsSaver: null!);
+            stub, moduleGates, session, settings, focusGate: null!, overlayWindow,
+            settingsSaver: null!, captureRectStore: null!);
 
         // The "viewport" stands in for the shared window's ViewportRoot.
         // The TestSimulate* seams don't read its rendered surface, only

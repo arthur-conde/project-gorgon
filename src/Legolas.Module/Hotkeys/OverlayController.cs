@@ -10,6 +10,8 @@ using Legolas.ViewModels;
 using Legolas.Views;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration;
 using Mithril.Overlay;
 
 namespace Legolas.Hotkeys;
@@ -34,6 +36,9 @@ public sealed class OverlayController : IHostedService
     private readonly ForegroundFocusGate _focusGate;
     private readonly IOverlayWindow _overlayWindow;
     private readonly SettingsAutoSaver<LegolasSettings> _settingsSaver;
+    // #957: the survey overlay reads/writes its frame through the one shell-persisted
+    // capture rect, so capture-frame and overlay-frame are a single source of truth.
+    private readonly IMapCaptureRectStore _captureRectStore;
     private readonly CancellationTokenSource _stopCts = new();
     private Task? _activationTask;
     private bool _subscribed;
@@ -64,7 +69,8 @@ public sealed class OverlayController : IHostedService
         LegolasSettings settings,
         ForegroundFocusGate focusGate,
         IOverlayWindow overlayWindow,
-        SettingsAutoSaver<LegolasSettings> settingsSaver)
+        SettingsAutoSaver<LegolasSettings> settingsSaver,
+        IMapCaptureRectStore captureRectStore)
     {
         _services = services;
         _gates = gates;
@@ -73,6 +79,7 @@ public sealed class OverlayController : IHostedService
         _focusGate = focusGate;
         _overlayWindow = overlayWindow;
         _settingsSaver = settingsSaver;
+        _captureRectStore = captureRectStore;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -210,7 +217,14 @@ public sealed class OverlayController : IHostedService
             };
         }
 
-        WindowLayoutBinder.Bind(window, _settings.MapOverlay, _settingsSaver.Touch);
+        // #957: bind the survey overlay to the shell capture rect (physical px) — the
+        // window positions itself from it and writes drags/resizes back, so the overlay
+        // frame IS the capture frame (one-rect). Replaces the WindowLayoutBinder +
+        // LegolasSettings.MapOverlay path used by the inventory/calibration overlays.
+        CaptureRectWindowBinder.Bind(
+            window,
+            _captureRectStore,
+            _services.GetService<ILoggerFactory>()?.CreateLogger("Legolas.OverlayLayout"));
         ClickThrough.KeepTopmost(window);
 
         // #835 step 6 review iter-1 B4: wire the survey-drag + calibration-

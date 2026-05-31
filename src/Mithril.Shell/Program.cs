@@ -43,6 +43,20 @@ public static class Program
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Mithril", "Shell", "activation.uri");
 
+    /// <summary>System (primary-monitor) DPI scale at process start — 1.0 at 96 DPI
+    /// (100%), 1.5 at 144 (150%). Used once at bootstrap to convert the retired
+    /// overlay DIU rect to physical px (#957, <see cref="MapCaptureRectCarryOver"/>)
+    /// before any window exists. The process is PerMonitorV2-aware via the app
+    /// manifest, so this reflects the real system setting (not a flat 96).</summary>
+    private static double SystemDpiScale()
+    {
+        uint dpi = GetDpiForSystem();
+        return dpi == 0 ? 1.0 : dpi / 96.0;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForSystem();
+
     [STAThread]
     public static void Main(string[] args)
     {
@@ -119,6 +133,19 @@ public static class Program
             var shellStore = new JsonSettingsStore<ShellSettings>(
                 shellSettingsPath, ShellSettingsJsonContext.Default.ShellSettings);
             var shellSettings = shellStore.LoadAsync().GetAwaiter().GetResult();
+
+            // #957: ShellSettings became schema-versioned (#208). Mirror
+            // AddMithrilVersionedSettings — dispatch through Migrate + persist when the
+            // loaded version lags CurrentVersion (identity for v1; future bumps add
+            // upgrade logic). Done inline because the shell store is loaded by hand
+            // here, before the host is built.
+            if (shellSettings.SchemaVersion != ShellSettings.CurrentVersion)
+            {
+                shellSettings = ShellSettings.Migrate(shellSettings);
+                shellSettings.SchemaVersion = ShellSettings.CurrentVersion;
+                shellStore.SaveAsync(shellSettings).GetAwaiter().GetResult();
+            }
+
             if (string.IsNullOrEmpty(shellSettings.GameRoot))
                 shellSettings.GameRoot = GameLocator.AutoDetectGameRoot() ?? "";
 
@@ -131,6 +158,16 @@ public static class Program
             // closes. Runs before the module loads, so the shared store wins.
             var legolasSettingsPath = Path.Combine(localApp, "Mithril", "Legolas", "settings.json");
             if (GameConfigCarryOver.Apply(legolasSettingsPath, shellSettings))
+                shellStore.SaveAsync(shellSettings).GetAwaiter().GetResult();
+
+            // #957 one-time cross-file carry-over: the retired LegolasSettings.MapOverlay
+            // (overlay position, DIUs) → ShellSettings.MapCaptureBbox (the one-rect
+            // capture frame, physical px), so an upgrading user's overlay frame becomes
+            // the capture frame instead of resetting to "no bbox". Idempotent — only
+            // fires when the shell rect is still unset. DIU→physical needs a device
+            // scale and no window exists yet, so use the system/primary DPI (exact for
+            // uniform-DPI; mixed-DPI is #938 best-effort — re-snip to correct).
+            if (MapCaptureRectCarryOver.Apply(legolasSettingsPath, shellSettings, SystemDpiScale()))
                 shellStore.SaveAsync(shellSettings).GetAwaiter().GetResult();
 
             // Game config (live, observable)

@@ -7,7 +7,7 @@ using Arda.Hosting;
 using Arda.Wpf;
 using Arda.World.Chat;
 using Arda.World.Player;
-using Mithril.MapCalibration.Capture;
+using Mithril.MapCalibration;
 using Mithril.MapCalibration.Capture.DependencyInjection;
 using Mithril.MapCalibration.DependencyInjection;
 using Mithril.Overlay.DependencyInjection;

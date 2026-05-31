@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using Mithril.MapCalibration;
 using Mithril.Shared.Hotkeys;
 using Legolas.Diagnostics;
 using Legolas.Domain;
@@ -414,16 +415,20 @@ public sealed class ToggleFrameTimeLoggerCommand : IHotkeyCommand
     private readonly LegolasSettings _settings;
     private readonly SessionState _session;
     private readonly SurveyFlowController _surveyFlow;
+    // #957: the overlay frame is the shell capture rect now (MapOverlay retired).
+    private readonly IMapCaptureRectStore _captureRectStore;
     public ToggleFrameTimeLoggerCommand(
         FrameTimeLogger logger,
         LegolasSettings settings,
         SessionState session,
-        SurveyFlowController surveyFlow)
+        SurveyFlowController surveyFlow,
+        IMapCaptureRectStore captureRectStore)
     {
         _logger = logger;
         _settings = settings;
         _session = session;
         _surveyFlow = surveyFlow;
+        _captureRectStore = captureRectStore;
     }
     public string Id => "legolas.diag.frame_logger.toggle";
     public string DisplayName => "Toggle Frame-Time Logger";
@@ -440,6 +445,7 @@ public sealed class ToggleFrameTimeLoggerCommand : IHotkeyCommand
         }
         else
         {
+            var captureRect = _captureRectStore.Get();
             var cfg = new FrameRunConfig(
                 PinCount: _session.Surveys.Count,
                 ActiveTreatment: _settings.ActivePinStyle.Treatment.ToString(),
@@ -447,8 +453,8 @@ public sealed class ToggleFrameTimeLoggerCommand : IHotkeyCommand
                 ClickThroughMap: _settings.ClickThroughMap,
                 ShowBearingWedges: _session.ShowBearingWedges,
                 ShowRouteLines: _session.ShowRouteLines,
-                MapWidth: _settings.MapOverlay.Width,
-                MapHeight: _settings.MapOverlay.Height,
+                MapWidth: captureRect is { Width: > 0 } ? captureRect.Value.Width : 800,
+                MapHeight: captureRect is { Height: > 0 } ? captureRect.Value.Height : 600,
                 FsmState: _surveyFlow.CurrentState.ToString());
             _logger.Start("manual", cfg);
             _session.LastLogEvent = "Frame logger started — press hotkey again to stop and write report.";

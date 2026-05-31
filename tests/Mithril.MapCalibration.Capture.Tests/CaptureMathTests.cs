@@ -116,4 +116,63 @@ public sealed class CaptureMathTests
         CaptureRectMath.DiuToPhysical(-800, -100, 400, 200, 1.5, 1.5)
             .Should().Be(new CaptureRect(-1200, -150, 600, 300));
     }
+
+    // ---- #957: physical→DIU for the overlay read path ----
+    //
+    // The overlay window reads its frame from the physical-px capture store and must
+    // convert back to DIU to set Window.Left/Top/Width/Height. PhysicalToDiu is the
+    // inverse of DiuToPhysical; round-tripping at the same scale must reproduce the
+    // original integer rect (the binder positions the window where the snip framed it).
+
+    [Fact]
+    public void PhysicalToDiu_is_identity_at_100_percent()
+    {
+        CaptureRectMath.PhysicalToDiu(new CaptureRect(120, 80, 800, 600), 1.0, 1.0)
+            .Should().Be((120.0, 80.0, 800.0, 600.0));
+    }
+
+    [Theory]
+    [InlineData(1.50, 300, 150, 600, 450, 200, 100, 400, 300)]  // 150%
+    [InlineData(2.00, 200, 100, 800, 600, 100, 50, 400, 300)]   // 200%
+    public void PhysicalToDiu_divides_by_dpi(
+        double scale,
+        int px, int py, int pw, int ph,
+        double dl, double dt, double dw, double dh)
+    {
+        CaptureRectMath.PhysicalToDiu(new CaptureRect(px, py, pw, ph), scale, scale)
+            .Should().Be((dl, dt, dw, dh));
+    }
+
+    [Fact]
+    public void PhysicalToDiu_preserves_negative_virtual_origin()
+    {
+        // Secondary monitor left/above the primary: the signed origin survives the
+        // inverse scale just as it does the forward one.
+        CaptureRectMath.PhysicalToDiu(new CaptureRect(-1200, -150, 600, 300), 1.5, 1.5)
+            .Should().Be((-800.0, -100.0, 400.0, 200.0));
+    }
+
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(1.25)]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    public void PhysicalToDiu_round_trips_back_to_the_original_physical_rect(double scale)
+    {
+        var original = new CaptureRect(150, 90, 640, 480);
+        var (l, t, w, h) = CaptureRectMath.PhysicalToDiu(original, scale, scale);
+        // DIU → physical at the same scale must reproduce the integer rect the snip
+        // framed (edge-rounding is a no-op on already-integer device edges).
+        CaptureRectMath.DiuToPhysical(l, t, w, h, scale, scale).Should().Be(original);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0, 0, 1.0, 1.0)]    // empty rect
+    [InlineData(0, 0, 100, 100, 0.0, 1.0)] // bad scale
+    public void PhysicalToDiu_returns_zero_on_degenerate_input(
+        int px, int py, int pw, int ph, double sx, double sy)
+    {
+        CaptureRectMath.PhysicalToDiu(new CaptureRect(px, py, pw, ph), sx, sy)
+            .Should().Be((0.0, 0.0, 0.0, 0.0));
+    }
 }

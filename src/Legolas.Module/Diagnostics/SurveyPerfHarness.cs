@@ -3,6 +3,7 @@ using Legolas.Domain;
 using Legolas.Flow;
 using Legolas.Services;
 using Legolas.ViewModels;
+using Mithril.MapCalibration;
 
 namespace Legolas.Diagnostics;
 
@@ -28,19 +29,32 @@ public sealed class SurveyPerfHarness
     private readonly MapOverlayViewModel _mapVm;
     private readonly LegolasSettings _settings;
     private readonly FrameTimeLogger _logger;
+    // #957: the overlay frame is the shell capture rect now (MapOverlay retired).
+    private readonly IMapCaptureRectStore _captureRectStore;
 
     public SurveyPerfHarness(
         SessionState session,
         SurveyFlowController surveyFlow,
         MapOverlayViewModel mapVm,
         LegolasSettings settings,
-        FrameTimeLogger logger)
+        FrameTimeLogger logger,
+        IMapCaptureRectStore captureRectStore)
     {
         _session = session;
         _surveyFlow = surveyFlow;
         _mapVm = mapVm;
         _settings = settings;
         _logger = logger;
+        _captureRectStore = captureRectStore;
+    }
+
+    // Current map-overlay frame size as a rough origin/metadata for the synthetic
+    // load. Sourced from the one-rect capture store (physical px — exact magnitude
+    // is irrelevant here, just a valid centre), falling back to 800×600 when unset.
+    private (double Width, double Height) CurrentMapSize()
+    {
+        var rect = _captureRectStore.Get() ?? default;
+        return (rect.Width > 0 ? rect.Width : 800, rect.Height > 0 ? rect.Height : 600);
     }
 
     public bool IsRunning { get; private set; }
@@ -185,8 +199,7 @@ public sealed class SurveyPerfHarness
         // (the user may have resized it). Width/Height fall back if the
         // settings layout hasn't hydrated yet — irrelevant for the synthetic
         // load, just need a valid origin.
-        var w = _settings.MapOverlay.Width > 0 ? _settings.MapOverlay.Width : 800;
-        var h = _settings.MapOverlay.Height > 0 ? _settings.MapOverlay.Height : 600;
+        var (w, h) = CurrentMapSize();
         var centre = new PixelPoint(w / 2, h / 2);
 
         // #454: pins are absolute now — inject them directly at pixel
@@ -208,14 +221,18 @@ public sealed class SurveyPerfHarness
         }
     }
 
-    private FrameRunConfig SnapshotConfig(int pinCount, string fsmState) => new(
-        PinCount: pinCount,
-        ActiveTreatment: _settings.ActivePinStyle.Treatment.ToString(),
-        AllowsTransparency: true, // MapOverlayView XAML hard-sets this; recorded for the report
-        ClickThroughMap: _settings.ClickThroughMap,
-        ShowBearingWedges: _session.ShowBearingWedges,
-        ShowRouteLines: _session.ShowRouteLines,
-        MapWidth: _settings.MapOverlay.Width,
-        MapHeight: _settings.MapOverlay.Height,
-        FsmState: fsmState);
+    private FrameRunConfig SnapshotConfig(int pinCount, string fsmState)
+    {
+        var (mapWidth, mapHeight) = CurrentMapSize();
+        return new(
+            PinCount: pinCount,
+            ActiveTreatment: _settings.ActivePinStyle.Treatment.ToString(),
+            AllowsTransparency: true, // MapOverlayView XAML hard-sets this; recorded for the report
+            ClickThroughMap: _settings.ClickThroughMap,
+            ShowBearingWedges: _session.ShowBearingWedges,
+            ShowRouteLines: _session.ShowRouteLines,
+            MapWidth: mapWidth,
+            MapHeight: mapHeight,
+            FsmState: fsmState);
+    }
 }

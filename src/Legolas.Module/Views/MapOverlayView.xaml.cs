@@ -87,7 +87,12 @@ public partial class MapOverlayView : Window
         // assigning here guarantees the pad has its VM before any user input
         // arrives, so Command/IsChecked bindings inside the pad always work.
         OverlayNudgePad.DataContext = nudgePad;
-        WindowLayoutBinder.Bind(this, settings.MapOverlay, saver.Touch);
+        // #957: LegolasSettings.MapOverlay retired — the live survey overlay is the
+        // shared IOverlayWindow.Window, positioned from the shell capture rect by
+        // OverlayController via CaptureRectWindowBinder. This legacy view is no longer
+        // Show()n in production (#835 step 6; step 7 deletes it), so it carries no
+        // window-position binding. The `saver` param is consequently unused now —
+        // kept in the signature for the transient DI factory until step 7's deletion.
         Loaded += (_, _) => ApplyClickThrough();
         // Re-assert TOPMOST on every show + on a low-frequency timer while
         // visible — Loaded/Activated alone miss the Hide()/Show() cycle the
