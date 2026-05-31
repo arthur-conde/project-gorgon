@@ -54,7 +54,9 @@ public static partial class CaptureServiceCollectionExtensions
         // separate persisted rect: the overlay's own WindowLayoutBinder persists
         // its bounds to LegolasSettings.MapOverlay.
         services.AddSingleton<IMapCaptureRegionProvider>(sp =>
-            new MapCaptureRegionProvider(sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>()));
+            new MapCaptureRegionProvider(
+                sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
+                sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Region")));
 
         // OS capture seams.
         services.AddSingleton<IGameWindowLocator>(sp => new Win32GameWindowLocator(
@@ -102,7 +104,6 @@ public static partial class CaptureServiceCollectionExtensions
         // Bbox draw controller (shell-side, over IOverlayWindow).
         services.AddSingleton<IMapBboxDrawController>(sp => new MapBboxDrawController(
             sp.GetRequiredService<Mithril.Overlay.IOverlayWindow>(),
-            sp.GetRequiredService<IMapCaptureRegionProvider>(),
             sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Draw")));
 
         // Hotkeys.

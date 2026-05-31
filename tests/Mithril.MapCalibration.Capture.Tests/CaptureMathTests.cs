@@ -7,12 +7,14 @@ namespace Mithril.MapCalibration.Capture.Tests;
 /// <summary>
 /// #940: the capture region is the live overlay-window bounds converted to
 /// physical desktop pixels (one-rect model, spec §7) — there is no longer a
-/// separately-persisted rect. These tests pin the pure DIU→physical helper that
-/// must match what <c>BitBltScreenCapture</c> blits from <c>GetDC(NULL)</c>
-/// exactly (the decode/DPI bug class from the #897 gate study). The live overlay
-/// read + drag are covered separately (fail-soft test + manual-verify).
+/// separately-persisted rect (the old store + its round-trip are deleted). These
+/// tests pin the pure rect-math helpers: <see cref="CaptureRectMath.DiuToPhysical"/>
+/// (which must match what <c>BitBltScreenCapture</c> blits from <c>GetDC(NULL)</c>
+/// exactly — the decode/DPI bug class from the #897 gate study) and
+/// <see cref="SnipRectMath"/> (drag normalization + virtual-desktop offset). The
+/// live overlay read + drag are covered separately (fail-soft test + manual-verify).
 /// </summary>
-public sealed class MapCaptureRegionRoundTripTests
+public sealed class CaptureMathTests
 {
     [Fact]
     public void DiuToPhysical_is_identity_at_100_percent()

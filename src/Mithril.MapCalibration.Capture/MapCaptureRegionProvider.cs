@@ -1,7 +1,9 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Microsoft.Extensions.Logging;
 using Mithril.Overlay;
 
 namespace Mithril.MapCalibration.Capture;
@@ -33,10 +35,12 @@ namespace Mithril.MapCalibration.Capture;
 public sealed class MapCaptureRegionProvider : IMapCaptureRegionProvider
 {
     private readonly IOverlayWindow _overlay;
+    private readonly ILogger? _logger;
 
-    public MapCaptureRegionProvider(IOverlayWindow overlay)
+    public MapCaptureRegionProvider(IOverlayWindow overlay, ILogger? logger = null)
     {
         _overlay = overlay ?? throw new ArgumentNullException(nameof(overlay));
+        _logger = logger;
     }
 
     public CaptureRect? Current
@@ -55,9 +59,16 @@ public sealed class MapCaptureRegionProvider : IMapCaptureRegionProvider
                     return ResolveOnDispatcher(window);
                 return dispatcher.Invoke(() => ResolveOnDispatcher(window));
             }
-            catch
+            catch (Exception ex) when (ex is OperationCanceledException
+                                       or TaskCanceledException
+                                       or InvalidOperationException)
             {
-                // Window torn down / dispatcher shutting down mid-read → fail soft.
+                // Expected dispatcher-teardown race: the overlay window / dispatcher
+                // is shutting down mid-read (Invoke throws once the dispatcher has
+                // begun shutdown). Fail soft (the trigger/engine treats null as
+                // "no region framed yet") but don't swallow silently — log at Trace
+                // since this is an expected, noisy-during-shutdown condition.
+                _logger?.LogTrace(ex, "Overlay dispatcher unavailable while reading capture region; treating region as unset.");
                 return null;
             }
         }
@@ -88,48 +99,4 @@ public sealed class MapCaptureRegionProvider : IMapCaptureRegionProvider
         var rect = CaptureRectMath.DiuToPhysical(left, top, width, height, toDevice.M11, toDevice.M22);
         return rect.IsEmpty ? null : rect;
     }
-
-    /// <summary>
-    /// One-rect model: setting the capture region means moving/resizing the
-    /// overlay window to cover it. The region is expressed in physical desktop
-    /// pixels (the same frame <see cref="Current"/> returns); we convert back to
-    /// DIUs and apply Left/Top/Width/Height on the overlay window. Setting bounds
-    /// is within the overlay's allowed surface (the existing
-    /// <c>WindowLayoutBinder.Apply</c> does the same), and the binder's
-    /// LocationChanged/SizeChanged handlers persist the new bounds automatically.
-    /// </summary>
-    public void Set(CaptureRect rect)
-    {
-        if (rect.IsEmpty) return;
-
-        var window = _overlay.Window;
-        var dispatcher = window.Dispatcher;
-
-        void Apply()
-        {
-            if (PresentationSource.FromVisual(window) is not HwndSource source
-                || source.CompositionTarget is null)
-            {
-                return; // surface not ready — can't faithfully convert; fail soft
-            }
-
-            Matrix fromDevice = source.CompositionTarget.TransformFromDevice;
-            double scaleX = fromDevice.M11; // device→DIU (1/dpiScaleX)
-            double scaleY = fromDevice.M22;
-
-            window.Left = rect.X * scaleX;
-            window.Top = rect.Y * scaleY;
-            window.Width = rect.Width * scaleX;
-            window.Height = rect.Height * scaleY;
-
-            Changed?.Invoke(this, EventArgs.Empty);
-        }
-
-        if (dispatcher.CheckAccess())
-            Apply();
-        else
-            dispatcher.Invoke(Apply);
-    }
-
-    public event EventHandler? Changed;
 }

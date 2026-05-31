@@ -121,10 +121,9 @@ public sealed class MapCaptureRegionProviderTests
             DrainDispatcher();
 
             var overlay = new RealWindowOverlay(window);
-            var region = new Fixtures.FakeRegionProvider(null);
             // Inject a snip seam that returns a fixed confirmed rect (no live drag).
             var controller = new MapBboxDrawController(
-                overlay, region, logger: null, snip: () => new Rect(120, 80, 500, 400));
+                overlay, logger: null, snip: () => new Rect(120, 80, 500, 400));
 
             controller.BeginDraw();
             DrainDispatcher();
@@ -155,7 +154,7 @@ public sealed class MapCaptureRegionProviderTests
             DrainDispatcher();
 
             var controller = new MapBboxDrawController(
-                new RealWindowOverlay(window), new Fixtures.FakeRegionProvider(null),
+                new RealWindowOverlay(window),
                 logger: null, snip: () => null);
 
             controller.BeginDraw();

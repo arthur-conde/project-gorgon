@@ -29,7 +29,6 @@ namespace Mithril.MapCalibration.Capture;
 public sealed class MapBboxDrawController : IMapBboxDrawController
 {
     private readonly IOverlayWindow _overlay;
-    private readonly IMapCaptureRegionProvider _region;
     private readonly ILogger? _logger;
 
     /// <summary>Test seam: build the transient selector. Overridden in tests so the
@@ -38,20 +37,17 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
 
     public MapBboxDrawController(
         IOverlayWindow overlay,
-        IMapCaptureRegionProvider region,
         ILogger? logger = null)
-        : this(overlay, region, logger, snip: null)
+        : this(overlay, logger, snip: null)
     {
     }
 
     internal MapBboxDrawController(
         IOverlayWindow overlay,
-        IMapCaptureRegionProvider region,
         ILogger? logger,
         Func<Rect?>? snip)
     {
         _overlay = overlay;
-        _region = region;
         _logger = logger;
         _snip = snip ?? ShowRealSnipWindow;
     }
@@ -93,7 +89,6 @@ public sealed class MapBboxDrawController : IMapBboxDrawController
             "Map capture region set to {Width}x{Height} at ({Left},{Top}) (DIU).",
             (int)Math.Round(rect.Width), (int)Math.Round(rect.Height),
             (int)Math.Round(rect.X), (int)Math.Round(rect.Y));
-        _ = _region; // the live overlay bounds ARE the region now (one-rect model).
     }
 
     /// <summary>
