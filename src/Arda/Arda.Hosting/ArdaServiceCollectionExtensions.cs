@@ -1,3 +1,4 @@
+using Arda.Abstractions.Diagnostics;
 using Arda.Contracts;
 using Arda.Dispatch;
 using Arda.Hosting.Internal;
@@ -27,18 +28,21 @@ public static class ArdaServiceCollectionExtensions
         var chatDir = options.ChatLogDirectory
             ?? Path.Combine(options.LogDirectory, "ChatLogs");
 
-        // Ingest sources (L0/L1)
+        // Ingest sources (L0/L1) — pulse sink threads through so live-tail
+        // poll iterations feed WorldHealth drift (#856).
         services.AddSingleton(sp => new PlayerLogSource(
             options.LogDirectory,
             sp.GetService<TimeProvider>() ?? TimeProvider.System,
             pollInterval,
-            sp.GetService<ILoggerFactory>()?.CreateLogger("Arda.Player")));
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Arda.Player"),
+            sp.GetRequiredService<IIngestPulseSink>()));
 
         services.AddSingleton(sp => new ChatLogSource(
             chatDir,
             sp.GetService<TimeProvider>() ?? TimeProvider.System,
             pollInterval,
-            sp.GetService<ILoggerFactory>()?.CreateLogger("Arda.Chat")));
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Arda.Chat"),
+            sp.GetRequiredService<IIngestPulseSink>()));
 
         // Event bus (shared across both driver families). The composite interface
         // (IDomainEventBus, internal to Arda.Dispatch) is intentionally not
@@ -65,6 +69,13 @@ public static class ArdaServiceCollectionExtensions
         services.AddSingleton(sp =>
             new ReplayProgress(sp.GetService<ILogger<ReplayProgress>>()));
         services.AddSingleton<IReplayProgress>(sp => sp.GetRequiredService<ReplayProgress>());
+
+        // Tailer-poll pulse (#856): one singleton implements both read and
+        // write sides. Ingest sources write via IIngestPulseSink (in
+        // Arda.Abstractions); WorldHealthView reads via IIngestPulse (here).
+        services.AddSingleton<IngestPulse>();
+        services.AddSingleton<IIngestPulse>(sp => sp.GetRequiredService<IngestPulse>());
+        services.AddSingleton<IIngestPulseSink>(sp => sp.GetRequiredService<IngestPulse>());
 
         // Background services (L2 drivers)
         services.AddHostedService<PlayerWorldService>();

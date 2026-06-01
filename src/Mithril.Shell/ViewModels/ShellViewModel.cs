@@ -198,13 +198,16 @@ public sealed partial class ShellViewModel : ObservableObject
         var chat = _health.Chat;
         var brk = _health.Break;
 
-        PipelineModeText = _health.IsHalted ? "HALTED" : (_health.AllLive ? "LIVE" : "REPLAY");
+        // Pipeline mode-text reflects the worst of the two drivers (#856):
+        // HALTED beats STALLED beats REPLAY beats LIVE.
+        PipelineModeText = ComputePipelineModeText(player.Mode, chat.Mode, _health.AllLive);
         PlayerDriftText = FormatDrift(player);
         ChatDriftText = FormatDrift(chat);
-        IsHealthDegraded = _health.AllLive &&
-            (player.Drift > WorldHealth.DriftWarningThreshold || chat.Drift > WorldHealth.DriftWarningThreshold);
-        HealthTooltip = $"Player: {player.Mode} · {player.FrameCount:N0} frames · drift {player.Drift.TotalSeconds:0.0}s\n" +
-                        $"Chat: {chat.Mode} · {chat.FrameCount:N0} frames · drift {chat.Drift.TotalSeconds:0.0}s";
+        // Stall is the attention-worthy state for the badge — Halted has its
+        // own banner path, so it doesn't double-count here.
+        IsHealthDegraded = player.Mode == WorldMode.Stalled || chat.Mode == WorldMode.Stalled;
+        HealthTooltip = $"Player: {player.Mode} · {player.FrameCount:N0} frames · poll age {player.Drift.TotalSeconds:0.0}s\n" +
+                        $"Chat: {chat.Mode} · {chat.FrameCount:N0} frames · poll age {chat.Drift.TotalSeconds:0.0}s";
 
         IsHalted = _health.IsHalted;
         IsTolerantBreakActive = _health.IsTolerantBreakActive;
@@ -214,9 +217,18 @@ public sealed partial class ShellViewModel : ObservableObject
         HaltBannerHint = brk?.ParserHint ?? "";
     }
 
+    private static string ComputePipelineModeText(WorldMode player, WorldMode chat, bool allLive)
+    {
+        if (player == WorldMode.Halted || chat == WorldMode.Halted) return "HALTED";
+        if (player == WorldMode.Stalled || chat == WorldMode.Stalled) return "STALLED";
+        if (allLive) return "LIVE";
+        return "REPLAY";
+    }
+
     private static string FormatDrift(WorldHealth h)
     {
-        if (h.LastTimestamp is null) return "—";
+        // Drift is tailer-poll age (#856) — always meaningful once a family
+        // is live, regardless of whether a log line has arrived.
         var d = h.Drift;
         return d.TotalSeconds < 2 ? "<2s" : $"{d.TotalSeconds:0}s";
     }

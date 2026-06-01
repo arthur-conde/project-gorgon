@@ -92,6 +92,8 @@ The distinguishing question: "does more than one consumer need the *interpreted*
 
 **Migration complete:** The legacy `IPlayerLogStream` / `IChatLogStream` / `ILogStreamDriver` pipeline has been retired. All modules consume Arda domain events exclusively. The legacy pipeline's health signaling (`LogStreamAttentionSource`) has been replaced by `IWorldHealthView` in `Arda.Contracts`.
 
+**Tailer liveness — `IIngestPulse` (infra, not a domain event):** `WorldHealth.Drift` is the wall-clock age of the tailer's last poll iteration, NOT the age of the last in-stream log timestamp (#856). The signal is exposed via `IIngestPulse` in `Arda.Hosting` (read-side) and recorded by ingest poll loops via `IIngestPulseSink` in `Arda.Abstractions` (write-side, placed there so `Arda.Ingest` doesn't reference `Arda.Hosting`). The same singleton implements both. `WorldMode.Stalled` is a first-class state — "was Live, pulse has gone silent past `DriftWarningThreshold` (5s)" — distinct from `Halted` (grammar break) and `Replaying` (catching up). Critically, the pulse is NOT a domain event on `IDomainEventBus`: the bus's vocabulary stays game-domain events only. `IIngestPulse` parallels `IReplayProgress` as infra.
+
 ## State handler catalogue
 
 Arda state handlers are named by their domain (`Map`, `Inventory`, `Npc`, `Player`, `Calendar`, `ChatInventory`, `ChatSession`, `ChatLine`). No suffix — the handler IS the state owner. Each handler implements `IFrameHandler`, receives verb dispatches, owns mutable state, and emits domain events via `IDomainEventPublisher`.

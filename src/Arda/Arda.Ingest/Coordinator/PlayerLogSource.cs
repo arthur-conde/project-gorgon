@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Arda.Abstractions.Diagnostics;
 using Arda.Abstractions.Logs;
 using Arda.Ingest.Classification;
 using Arda.Ingest.Clock;
@@ -37,6 +38,7 @@ internal sealed class PlayerLogSource : ILogLineSource
     private readonly BatchProcessor _processor;
     private readonly TimeSpan _pollInterval;
     private readonly ILogger? _logger;
+    private readonly IIngestPulseSink? _pulseSink;
 
     private bool _reachedLive;
     private bool _warnedMissingLog;
@@ -45,7 +47,8 @@ internal sealed class PlayerLogSource : ILogLineSource
         string logDirectory,
         TimeProvider time,
         TimeSpan? pollInterval = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IIngestPulseSink? pulseSink = null)
     {
         _logDirectory = logDirectory ?? throw new ArgumentNullException(nameof(logDirectory));
         _time = time ?? throw new ArgumentNullException(nameof(time));
@@ -53,6 +56,7 @@ internal sealed class PlayerLogSource : ILogLineSource
         _processor = new BatchProcessor(new LineClassifier(_clock), time);
         _pollInterval = pollInterval ?? TimeSpan.FromMilliseconds(250);
         _logger = logger;
+        _pulseSink = pulseSink;
     }
 
     /// <inheritdoc/>
@@ -150,6 +154,16 @@ internal sealed class PlayerLogSource : ILogLineSource
                 _reachedLive = true;
                 _logger?.LogInformation("Player log reached live (IsReplay=false)");
             }
+
+            // Pulse on every live-tail iteration, including empty reads. This is
+            // the load-bearing signal for WorldHealth drift (issue #856): "the
+            // tailer looked at the file" is distinct from "the game wrote a new
+            // line". An empty poll on an AFK character is a healthy pulse.
+            _pulseSink?.RecordPoll(
+                LogFamily.Player,
+                _time.GetUtcNow(),
+                bytesRead: 0, // batch processor doesn't expose byte counts; line count is the useful signal
+                linesEmitted: results?.Count ?? 0);
 
             if (results is null)
             {
