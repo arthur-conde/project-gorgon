@@ -568,6 +568,63 @@ public sealed class EltibuleLiveFrameDetectionRepro
         return mean;
     }
 
+    /// <summary>
+    /// Why frame 1 is NOT recoverable by accepting its 3-inlier fit — and why the
+    /// inlier floor of 4 is load-bearing. Both frames are the SAME area, so a CORRECT
+    /// world→texture calibration must be identical (a property of the area+texture).
+    /// Frame 1's clean 3-inlier fit (1.42px residual) DIVERGES wildly from frame 2's
+    /// trusted 10–12-inlier fit (≈40% scale, mirror flipped, ~200° rotation): three
+    /// points under-constrain a 4-DOF similarity, so a low-residual fit can pin a
+    /// confidently-WRONG transform. Lowering the floor / accepting 3-inlier solves
+    /// would persist garbage calibrations — frame 1 needs a genuine 4th correct
+    /// detection (better capture/detection), not a gate relaxation.
+    /// </summary>
+    [SkippableFact]
+    public void Frame1_three_inlier_fit_is_untrustworthy()
+    {
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+        var f1 = Path.Combine(FrameDir, "eltibule-frame1-rejected-3inliers.gray.png");
+        var f2 = Path.Combine(FrameDir, "eltibule-frame2-accepted-7.61px.gray.png");
+        Skip.IfNot(File.Exists(f1) && File.Exists(f2), "frame fixtures missing");
+        using var sp = new ServiceCollection().AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var templates = sp.GetRequiredService<IIconTemplateProvider>().GetTemplates();
+        var refs = EltibuleReferences();
+
+        AreaCalibration Solve(string path, int bx, int by, int bw, int bh, int floor)
+        {
+            var crop = ImageOps.Crop(ImageIo.LoadGray(path), bx, by, bw, bh);
+            var tex = ImageOps.Resize(baseTex!, bw, bh);
+            var rect = new DetectionMapRect(0, 0, bw, bh, baseTex!.Width, baseTex.Height);
+            var req = new DetectionRequest(crop, tex, rect, templates, RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts) { RenderSizePx = RenderSizePx };
+            return new MapCalibrationSolveEngine(new DeviationBlobCalibrationDetector(),
+                new CalibrationConfidenceGate(goodResidualThresholdPx: 1000, inlierFloor: floor)).Solve(req, refs).Calibration!;
+        }
+
+        var c1 = Solve(f1, 204, 133, 847, 841, floor: 2);   // frame1: its 3-inlier fit
+        var c2 = Solve(f2, 130, 60, 995, 986, floor: 4);    // frame2: trusted 10-12-inlier fit
+        Skip.If(c1 is null || c2 is null, "a solve returned null");
+
+        string Fmt(AreaCalibration c) => $"scale={c.Scale:0.0000} rot={c.RotationRadians * 180 / Math.PI:0.00}° origin=({c.OriginX:0},{c.OriginY:0}) mirror={c.MirrorNorth} resid={c.ResidualPixels:0.00}";
+        _out.WriteLine($"frame1 (3-inlier): {Fmt(c1)}");
+        _out.WriteLine($"frame2 (trusted):  {Fmt(c2)}");
+        double scaleErrPct = Math.Abs(c1.Scale - c2.Scale) / c2.Scale * 100;
+        double rotErrDeg = Math.Abs(c1.RotationRadians - c2.RotationRadians) * 180 / Math.PI;
+        double originDist = Math.Sqrt(Math.Pow(c1.OriginX - c2.OriginX, 2) + Math.Pow(c1.OriginY - c2.OriginY, 2));
+        _out.WriteLine($"agreement: scaleΔ={scaleErrPct:0.0}%  rotΔ={rotErrDeg:0.00}°  originΔ={originDist:0.0}px  mirrorMatch={c1.MirrorNorth == c2.MirrorNorth}");
+
+        // Verdict: frame1's 3-inlier fit does NOT match the trusted frame2 cal despite
+        // its clean residual — proving a low-residual 3-inlier solve can be confidently
+        // wrong. Accepting it (lowering the floor) would persist a garbage calibration;
+        // the floor of 4 is load-bearing, and frame1 needs a real 4th detection.
+        bool agrees = scaleErrPct < 3 && rotErrDeg < 2 && originDist < 25 && c1.MirrorNorth == c2.MirrorNorth;
+        agrees.Should().BeFalse(
+            "frame1's clean-residual 3-inlier fit is a WRONG transform vs the trusted frame2 cal — " +
+            "demonstrating 3-inlier acceptance is unsafe and the inlier floor of 4 is load-bearing");
+    }
+
     private void Dump(string label, IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> det)
     {
         var total = det.Sum(kv => kv.Value.Count);
