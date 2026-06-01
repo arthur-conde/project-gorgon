@@ -64,6 +64,11 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
     /// "Open log directory" command.</summary>
     public string LogDirectoryHint => LogDirectory;
 
+    /// <summary>The folder where map-calibration capture-frame dumps land when the
+    /// dump toggle (#966 Task 3) is on. Surfaced read-only so the settings UI can
+    /// show the path without duplicating <c>CaptureFrameDumper</c>'s derivation.</summary>
+    public string CalibrationDumpDirectoryHint => CalibrationDumpDirectory;
+
     private static string ShellDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "Mithril", "Shell");
@@ -71,6 +76,12 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
     private static string LogDirectory => Path.Combine(ShellDirectory, "logs");
 
     private static string PerfDirectory => Path.Combine(ShellDirectory, "perf");
+
+    /// <summary>Mirrors <c>CaptureFrameDumper</c>'s output directory
+    /// (<c>%LocalAppData%\Mithril\diagnostics\calibration</c>) for display.</summary>
+    private static string CalibrationDumpDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Mithril", "diagnostics", "calibration");
 
     /// <summary>Outcome of the most recent clear command, shown beneath the buttons.</summary>
     [ObservableProperty]

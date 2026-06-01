@@ -83,6 +83,16 @@ public static class ShellComposition
     public static IServiceCollection AddMithrilShell(
         this IServiceCollection services, ShellCompositionOptions o)
     {
+        // #966 Task-3 capture-frame dump toggle. Seed the Capture project's
+        // CaptureDiagnosticsOptions singleton from the persisted ShellSettings flags
+        // and keep it live by mirroring PropertyChanged onto the mutable POCO (the
+        // GameConfig precedent in Program.cs). Registered BELOW (before
+        // AddMithrilMapCalibrationCapture) so this AddSingleton wins over that call's
+        // TryAddSingleton(new CaptureDiagnosticsOptions()). Process-lifetime
+        // subscription (never unsubscribed) — both instances live for the whole
+        // process, same as the GameConfig mirror; no disposal ceremony needed.
+        var captureDiag = MirrorCaptureDiagnostics(o.ShellSettings);
+
         services
             .AddMithrilSettings<UserPreferences>(o.PreferencesPath, UserPreferencesJsonContext.Default.UserPreferences)
             .AddSingleton<ISettingsStore<ShellSettings>>(o.ShellStore)
@@ -118,6 +128,11 @@ public static class ShellComposition
                 sp.GetRequiredService<ShellSettings>(),
                 sp.GetRequiredService<ISettingsStore<ShellSettings>>(),
                 sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.Shell.MapCaptureRect")))
+            // #966 Task 3: seed + live-mirror the capture-frame-dump toggle (see
+            // MirrorCaptureDiagnostics above). Registered BEFORE
+            // AddMithrilMapCalibrationCapture so this concrete instance wins over
+            // that call's TryAddSingleton(new CaptureDiagnosticsOptions()).
+            .AddSingleton(captureDiag)
             // #914 PR-2: map auto-capture pipeline (OS capture + trigger +
             // persistence). Registered AFTER AddMithrilOverlay (consumes
             // IOverlayWindow) and AFTER AddMithrilMapCalibration (consumes
@@ -263,5 +278,37 @@ public static class ShellComposition
         services.AddHostedService(sp => sp.GetRequiredService<SessionAgreementComposer>());
 
         return services;
+    }
+
+    /// <summary>
+    /// Builds the live <see cref="Mithril.MapCalibration.Capture.CaptureDiagnosticsOptions"/>
+    /// singleton seeded from the persisted <see cref="ShellSettings"/> capture-dump
+    /// flags, then mirrors subsequent <see cref="ShellSettings.PropertyChanged"/>
+    /// edits onto the mutable POCO so a Settings → Diagnostics checkbox flip takes
+    /// effect at runtime without re-resolving the graph (#966 Task 3). Mirrors the
+    /// GameConfig live-POCO precedent in <c>Program.Main</c>. The subscription is
+    /// process-lifetime (never detached) — both objects live for the whole process.
+    /// </summary>
+    internal static Mithril.MapCalibration.Capture.CaptureDiagnosticsOptions
+        MirrorCaptureDiagnostics(ShellSettings settings)
+    {
+        var captureDiag = new Mithril.MapCalibration.Capture.CaptureDiagnosticsOptions
+        {
+            DumpCaptureFrames = settings.DumpCalibrationCaptureFrames,
+            DumpGrayFrames = settings.DumpCalibrationGrayFrames,
+        };
+        settings.PropertyChanged += (_, e) =>
+        {
+            switch (e.PropertyName)
+            {
+                case nameof(ShellSettings.DumpCalibrationCaptureFrames):
+                    captureDiag.DumpCaptureFrames = settings.DumpCalibrationCaptureFrames;
+                    break;
+                case nameof(ShellSettings.DumpCalibrationGrayFrames):
+                    captureDiag.DumpGrayFrames = settings.DumpCalibrationGrayFrames;
+                    break;
+            }
+        };
+        return captureDiag;
     }
 }
