@@ -9,6 +9,12 @@ namespace Palantir.ViewModels;
 /// rows showing mode, frame count, drift, and liveness. The health view fires
 /// <see cref="IWorldHealthView.Changed"/> on the Arda dispatch thread, so
 /// every handler marshals through <see cref="_dispatch"/>.
+/// <para>
+/// Issue #856: row colour/icon binds to <see cref="WorldMode"/> directly
+/// rather than a derived "degraded" boolean — Stalled is now a first-class
+/// mode and Halted has its own state, so a single bool can't represent the
+/// row's attention level cleanly.
+/// </para>
 /// </summary>
 public sealed partial class WorldHealthViewModel : ObservableObject, IDisposable
 {
@@ -16,17 +22,17 @@ public sealed partial class WorldHealthViewModel : ObservableObject, IDisposable
     private readonly Action<Action> _dispatch;
     private bool _disposed;
 
-    [ObservableProperty] private string _playerMode = "—";
+    [ObservableProperty] private WorldMode _playerMode;
+    [ObservableProperty] private string _playerModeText = "—";
     [ObservableProperty] private string _playerFrames = "0";
     [ObservableProperty] private string _playerDrift = "—";
-    [ObservableProperty] private string _playerTimestamp = "—";
-    [ObservableProperty] private bool _playerDegraded;
+    [ObservableProperty] private string _playerLastLog = "—";
 
-    [ObservableProperty] private string _chatMode = "—";
+    [ObservableProperty] private WorldMode _chatMode;
+    [ObservableProperty] private string _chatModeText = "—";
     [ObservableProperty] private string _chatFrames = "0";
     [ObservableProperty] private string _chatDrift = "—";
-    [ObservableProperty] private string _chatTimestamp = "—";
-    [ObservableProperty] private bool _chatDegraded;
+    [ObservableProperty] private string _chatLastLog = "—";
 
     [ObservableProperty] private bool _allLive;
     [ObservableProperty] private string _overallStatus = "Waiting for data…";
@@ -52,28 +58,37 @@ public sealed partial class WorldHealthViewModel : ObservableObject, IDisposable
         var p = _health.Player;
         var c = _health.Chat;
 
-        PlayerMode = p.Mode.ToString();
+        PlayerMode = p.Mode;
+        PlayerModeText = p.Mode.ToString();
         PlayerFrames = p.FrameCount.ToString("N0", CultureInfo.CurrentCulture);
         PlayerDrift = FormatDrift(p);
-        PlayerTimestamp = FormatTimestamp(p.LastTimestamp);
-        PlayerDegraded = p.Mode == WorldMode.Live && p.Drift > WorldHealth.DriftWarningThreshold;
+        PlayerLastLog = FormatTimestamp(p.LastLogTimestamp);
 
-        ChatMode = c.Mode.ToString();
+        ChatMode = c.Mode;
+        ChatModeText = c.Mode.ToString();
         ChatFrames = c.FrameCount.ToString("N0", CultureInfo.CurrentCulture);
         ChatDrift = FormatDrift(c);
-        ChatTimestamp = FormatTimestamp(c.LastTimestamp);
-        ChatDegraded = c.Mode == WorldMode.Live && c.Drift > WorldHealth.DriftWarningThreshold;
+        ChatLastLog = FormatTimestamp(c.LastLogTimestamp);
 
         AllLive = _health.AllLive;
-        OverallStatus = _health.AllLive
-            ? (PlayerDegraded || ChatDegraded ? "Live — drift warning" : "Live — healthy")
-            : "Replaying log history…";
+        OverallStatus = ComputeOverall(p.Mode, c.Mode, _health.AllLive, _health.IsHalted);
+    }
+
+    private static string ComputeOverall(WorldMode player, WorldMode chat, bool allLive, bool isHalted)
+    {
+        if (isHalted) return "Halted — grammar break";
+        if (player == WorldMode.Stalled || chat == WorldMode.Stalled)
+            return "Tailer stalled";
+        if (allLive) return "Live — healthy";
+        return "Replaying log history…";
     }
 
     private static string FormatDrift(WorldHealth h)
     {
-        if (h.LastTimestamp is null) return "—";
         var d = h.Drift;
+        // Drift is tailer-poll age — meaningful from the moment a family
+        // goes live, regardless of whether a log line has arrived. The old
+        // "no timestamp → '—'" guard no longer applies.
         if (d.TotalSeconds < 1) return "<1s";
         if (d.TotalMinutes < 1) return $"{d.TotalSeconds:0.0}s";
         return $"{d.TotalMinutes:0.0}m";

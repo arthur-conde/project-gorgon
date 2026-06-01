@@ -27,11 +27,11 @@
             <TextBlock TextWrapping="Wrap" Foreground="#AAFFFFFF"
                        FontSize="{DynamicResource AppFontSizeHint}"
                        Margin="0,0,0,16">
-                Live Arda pipeline health: per-driver mode (replaying vs live),
-                frame count, last-seen log timestamp, and wall-clock drift.
-                Drift is the gap between the log timestamp Arda last processed
-                and the current wall-clock — a growing drift in Live mode means
-                tailing is falling behind.
+                Live Arda pipeline health: per-driver mode (replaying / live /
+                stalled / halted), frame count, last-seen log timestamp, and
+                wall-clock drift. Drift is the gap between the wall-clock and
+                the tailer's last poll iteration — a growing drift means the
+                polling loop has stopped, not that the user is quiet.
             </TextBlock>
 
             <!-- Overall status -->
@@ -71,7 +71,7 @@
                         <TextBlock DockPanel.Dock="Left" Text="Mode"
                                    Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
                         <TextBlock HorizontalAlignment="Right"
-                                   Text="{Binding PlayerMode}"
+                                   Text="{Binding PlayerModeText}"
                                    Foreground="#FFFFFFFF" FontWeight="SemiBold"/>
                     </DockPanel>
                     <DockPanel Margin="0,0,0,6">
@@ -83,20 +83,33 @@
                                    Foreground="#FFFFFFFF"/>
                     </DockPanel>
                     <DockPanel Margin="0,0,0,6">
-                        <TextBlock DockPanel.Dock="Left" Text="Last timestamp (UTC)"
+                        <TextBlock DockPanel.Dock="Left" Text="Last log timestamp (UTC)"
                                    Foreground="#88FFFFFF" VerticalAlignment="Center"/>
                         <TextBlock HorizontalAlignment="Right"
-                                   Text="{Binding PlayerTimestamp}"
+                                   Text="{Binding PlayerLastLog}"
                                    FontFamily="{DynamicResource AppMonoFontFamily}"
                                    Foreground="#88FFFFFF"/>
                     </DockPanel>
                     <DockPanel>
-                        <TextBlock DockPanel.Dock="Left" Text="Wall-clock drift"
+                        <TextBlock DockPanel.Dock="Left" Text="Tailer-poll age"
                                    Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
                         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
                             <Ellipse Width="8" Height="8" Fill="#FFE04545"
-                                     VerticalAlignment="Center" Margin="0,0,6,0"
-                                     Visibility="{Binding PlayerDegraded, Converter={StaticResource BoolToVis}}"/>
+                                     VerticalAlignment="Center" Margin="0,0,6,0">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PlayerMode}" Value="Stalled">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PlayerMode}" Value="Halted">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
                             <TextBlock Text="{Binding PlayerDrift}"
                                        FontFamily="{DynamicResource AppMonoFontFamily}"
                                        Foreground="#FFFFFFFF" FontWeight="SemiBold"/>
@@ -115,7 +128,7 @@
                         <TextBlock DockPanel.Dock="Left" Text="Mode"
                                    Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
                         <TextBlock HorizontalAlignment="Right"
-                                   Text="{Binding ChatMode}"
+                                   Text="{Binding ChatModeText}"
                                    Foreground="#FFFFFFFF" FontWeight="SemiBold"/>
                     </DockPanel>
                     <DockPanel Margin="0,0,0,6">
@@ -127,20 +140,33 @@
                                    Foreground="#FFFFFFFF"/>
                     </DockPanel>
                     <DockPanel Margin="0,0,0,6">
-                        <TextBlock DockPanel.Dock="Left" Text="Last timestamp (UTC)"
+                        <TextBlock DockPanel.Dock="Left" Text="Last log timestamp (UTC)"
                                    Foreground="#88FFFFFF" VerticalAlignment="Center"/>
                         <TextBlock HorizontalAlignment="Right"
-                                   Text="{Binding ChatTimestamp}"
+                                   Text="{Binding ChatLastLog}"
                                    FontFamily="{DynamicResource AppMonoFontFamily}"
                                    Foreground="#88FFFFFF"/>
                     </DockPanel>
                     <DockPanel>
-                        <TextBlock DockPanel.Dock="Left" Text="Wall-clock drift"
+                        <TextBlock DockPanel.Dock="Left" Text="Tailer-poll age"
                                    Foreground="#CCFFFFFF" VerticalAlignment="Center"/>
                         <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
                             <Ellipse Width="8" Height="8" Fill="#FFE04545"
-                                     VerticalAlignment="Center" Margin="0,0,6,0"
-                                     Visibility="{Binding ChatDegraded, Converter={StaticResource BoolToVis}}"/>
+                                     VerticalAlignment="Center" Margin="0,0,6,0">
+                                <Ellipse.Style>
+                                    <Style TargetType="Ellipse">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding ChatMode}" Value="Stalled">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding ChatMode}" Value="Halted">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Ellipse.Style>
+                            </Ellipse>
                             <TextBlock Text="{Binding ChatDrift}"
                                        FontFamily="{DynamicResource AppMonoFontFamily}"
                                        Foreground="#FFFFFFFF" FontWeight="SemiBold"/>

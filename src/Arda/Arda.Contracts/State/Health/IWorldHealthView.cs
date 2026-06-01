@@ -13,7 +13,13 @@ public interface IWorldHealthView
     /// <summary>Health snapshot for the Chat log driver.</summary>
     WorldHealth Chat { get; }
 
-    /// <summary>True when both drivers are in <see cref="WorldMode.Live"/>.</summary>
+    /// <summary>
+    /// True iff both drivers are in <see cref="WorldMode.Live"/> exactly.
+    /// <see cref="WorldMode.Stalled"/> does NOT count — a stall is a soft
+    /// liveness warning, not "live and healthy". Modules continue to gate
+    /// activation on <c>IReplayProgress.ReplayComplete</c> (not AllLive)
+    /// so a transient stall doesn't pull them offline.
+    /// </summary>
     bool AllLive { get; }
 
     /// <summary>

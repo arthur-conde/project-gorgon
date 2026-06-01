@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using Arda.Abstractions.Diagnostics;
 using Arda.Abstractions.Logs;
 using Arda.Ingest.Classification;
 using Arda.Ingest.Clock;
@@ -21,6 +22,7 @@ internal sealed class ChatLogSource : ILogLineSource
     private readonly BatchProcessor _processor;
     private readonly TimeSpan _pollInterval;
     private readonly ILogger? _logger;
+    private readonly IIngestPulseSink? _pulseSink;
 
     private bool _reachedLive;
     private bool _warnedMissingDir;
@@ -29,7 +31,8 @@ internal sealed class ChatLogSource : ILogLineSource
         string chatLogDirectory,
         TimeProvider time,
         TimeSpan? pollInterval = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IIngestPulseSink? pulseSink = null)
     {
         _chatLogDirectory = chatLogDirectory ?? throw new ArgumentNullException(nameof(chatLogDirectory));
         _time = time ?? throw new ArgumentNullException(nameof(time));
@@ -37,6 +40,7 @@ internal sealed class ChatLogSource : ILogLineSource
         _processor = new BatchProcessor(new LineClassifier(_clock), time);
         _pollInterval = pollInterval ?? TimeSpan.FromMilliseconds(500);
         _logger = logger;
+        _pulseSink = pulseSink;
     }
 
     /// <inheritdoc/>
@@ -103,6 +107,17 @@ internal sealed class ChatLogSource : ILogLineSource
                 _reachedLive = true;
                 _logger?.LogInformation("Chat log reached live (IsReplay=false)");
             }
+
+            // Pulse on every live-tail iteration including empty reads — the
+            // load-bearing signal for WorldHealth drift (#856). A quiet chat
+            // channel produces zero domain events but the tailer is still
+            // running its poll loop normally; that's "live", not "stalled".
+            // (Not pulsed before the file even existed — see the
+            // files.Length == 0 waiting loop above. Per #856 design lock #2.)
+            _pulseSink?.RecordPoll(
+                LogFamily.Chat,
+                _time.GetUtcNow(),
+                linesEmitted: results?.Count ?? 0);
 
             if (results is null)
             {

@@ -269,8 +269,28 @@ Canonical source: [`docs/world-simulator.md` migration item #13, Decisions ratif
 
 Enum on [IWorldClock](#iworldclock): `Replaying` (draining recorded frames toward the live tail) or `Live` (caught up, blocking on new frames). Each world tracks `WorldMode` independently; PlayerWorld may catch up before ChatWorld or vice versa. Transitions emit a `ModeChanged(from, to, at)` domain event on the bus.
 
-See also: [Replaying](#replaying-worldmode), [Live](#live-worldmode), [Mode == Live gate](#mode--live-gate), [ModeChanged](#modechanged).
+The legacy Arda pipeline (today's `Arda.Contracts.State.Health.WorldMode`) also exposes `Stalled` and `Halted` for tailer-health reporting in the shell health view; those are not world-sim states and don't appear in `IWorldClock`.
+
+See also: [Replaying](#replaying-worldmode), [Live](#live-worldmode), [Stalled (WorldMode)](#stalled-worldmode), [Mode == Live gate](#mode--live-gate), [ModeChanged](#modechanged).
 Canonical source: [`docs/world-simulator.md` Vocabulary, principle 12](world-simulator.md).
+
+### Stalled (WorldMode)
+
+Health-only [WorldMode](#worldmode) state on `Arda.Contracts.State.Health.WorldMode` (the shell-facing `IWorldHealthView`, **not** the world-sim `IWorldClock`). Means: was [Live](#live-worldmode), but the tailer-poll pulse has gone silent past `WorldHealth.DriftWarningThreshold` (5s). Distinct from `Halted` (grammar break stopped the driver) and `Replaying` (still catching up).
+
+Introduced in #856 alongside the redefinition of `WorldHealth.Drift` to "wall-clock − last tailer poll" (down from the old "wall-clock − last in-stream log timestamp", which false-fired on quiet chat channels). Drives the shell attention badge; `WorldHealth.AllLive` is strict and does NOT include Stalled.
+
+See also: [Tailer-poll pulse](#tailer-poll-pulse), [WorldMode](#worldmode).
+Canonical source: GitHub issue #856.
+
+### Tailer-poll pulse
+
+A per-family "the tailer just polled the log file" heartbeat, distinct from "the game wrote a log line". Exposed via `IIngestPulse` (read, in `Arda.Hosting`) and recorded by ingest poll loops via `IIngestPulseSink` (write, in `Arda.Abstractions` — placed there so `Arda.Ingest` doesn't reference `Arda.Hosting`). The same singleton implements both sides.
+
+Fires on every iteration of the live-tail loop, **including empty reads** — that's the load-bearing semantic. Does not fire during replay drain or while the chat-source is waiting for any chat file to exist. Drives `WorldHealth.Drift` and the [Stalled](#stalled-worldmode) mode transition. The pulse is **not** a domain event on `IDomainEventBus`; the bus's vocabulary stays game-domain events only.
+
+See also: [Stalled (WorldMode)](#stalled-worldmode).
+Canonical source: GitHub issue #856.
 
 ### World runtime
 
