@@ -151,16 +151,18 @@ public sealed class EltibuleLiveFrameDetectionRepro
     }
 
     /// <summary>
-    /// Renders the detector's deviation pipeline to PNGs for the accepted-bad frame 2:
-    /// the raw deviation map, the dev>=threshold foreground, the edge-connected
-    /// "DeviationFlood" rim mask, and the post-mask blob input — for both the live
-    /// (AS-IS) inputs and the crop+resample ALIGNED inputs. Saved under
-    /// %LocalAppData%/Mithril/diagnostics/calibration/938-masks/ for inspection.
+    /// Renders the detector's deviation pipeline to PNGs for BOTH frames at their
+    /// pixel-perfect bboxes (so registration is held good and we see the detection
+    /// input the zoom level produces): the raw deviation map, the dev>=threshold
+    /// foreground, the edge-connected "DeviationFlood" rim mask, and the post-mask
+    /// blob input. Saved under %LocalAppData%/Mithril/diagnostics/calibration/938-masks/.
     /// </summary>
-    [SkippableFact]
-    public void Dump_deviation_masks_frame2()
+    [SkippableTheory]
+    [InlineData("eltibule-frame1-rejected-3inliers.gray.png", "frame1", 204, 133, 847, 841)]
+    [InlineData("eltibule-frame2-accepted-7.61px.gray.png", "frame2", 130, 60, 995, 986)]
+    public void Dump_deviation_masks(string frameFile, string prefix, int bx, int by, int bw, int bh)
     {
-        var framePath = Path.Combine(FrameDir, "eltibule-frame2-accepted-7.61px.gray.png");
+        var framePath = Path.Combine(FrameDir, frameFile);
         Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
         Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
             $"base-texture cache missing under {AssetCacheDir}");
@@ -169,21 +171,18 @@ public sealed class EltibuleLiveFrameDetectionRepro
         var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
         Skip.If(baseTex is null, "base texture failed to load");
         var frame = ImageIo.LoadGray(framePath);
-        var mapRect = MapRectLocator.AutoDetect(frame, baseTex!, LowNcc, MapRectLocator.DefaultWorkingLongEdgePx);
-        Skip.If(mapRect is null, "map sub-rect not located");
 
         var outDir = Path.Combine(AssetCacheDir, "..", "diagnostics", "calibration", "938-masks");
         Directory.CreateDirectory(outDir);
 
-        RenderMasks("asis", frame, baseTex!, outDir);
-        var crop = ImageOps.Crop(frame, mapRect!.OriginX, mapRect.OriginY, mapRect.Width, mapRect.Height);
-        var alignedTex = ImageOps.Resize(baseTex!, mapRect.Width, mapRect.Height);
-        RenderMasks("aligned", crop, alignedTex, outDir);
-
-        _out.WriteLine($"deviation masks written to {Path.GetFullPath(outDir)}");
+        // Aligned at the pixel-perfect bbox (good registration held constant across frames).
+        var crop = ImageOps.Crop(frame, bx, by, bw, bh);
+        var alignedTex = ImageOps.Resize(baseTex!, bw, bh);
+        RenderMasks(prefix, "aligned", crop, alignedTex, outDir);
+        _out.WriteLine($"{prefix} ({bw}x{bh}) deviation masks written to {Path.GetFullPath(outDir)}");
     }
 
-    private void RenderMasks(string tag, GrayImage shot, GrayImage tex, string outDir)
+    private void RenderMasks(string framePrefix, string tag, GrayImage shot, GrayImage tex, string outDir)
     {
         int w = shot.Width, h = shot.Height, n = w * h;
         var dev = LocalNccDeviation.DeviationMap(
@@ -193,13 +192,13 @@ public sealed class EltibuleLiveFrameDetectionRepro
         // 1) raw deviation map (0..1 -> 0..255)
         var devPx = new byte[n];
         for (int i = 0; i < n; i++) devPx[i] = (byte)Math.Clamp(dev[i] * 255.0, 0, 255);
-        ImageIo.SaveGrayPng(new GrayImage(w, h, devPx), Path.Combine(outDir, $"frame2-{tag}-1-deviation.png"));
+        ImageIo.SaveGrayPng(new GrayImage(w, h, devPx), Path.Combine(outDir, $"{framePrefix}-{tag}-1-deviation.png"));
 
         // 2) foreground: dev >= 1-LowNcc (the detector's threshold)
         double devThr = 1.0 - LowNcc;
         var fg = new bool[n];
         for (int i = 0; i < n; i++) fg[i] = dev[i] >= devThr;
-        SaveMask(fg, w, h, Path.Combine(outDir, $"frame2-{tag}-2-foreground.png"));
+        SaveMask(fg, w, h, Path.Combine(outDir, $"{framePrefix}-{tag}-2-foreground.png"));
 
         // 3) edge-connected DeviationFlood rim mask (replicates DeviationBlobDetector)
         var rim = new bool[n];
@@ -217,12 +216,12 @@ public sealed class EltibuleLiveFrameDetectionRepro
             int k = q.Dequeue();
             Enq(k % w - 1, k / w); Enq(k % w + 1, k / w); Enq(k % w, k / w - 1); Enq(k % w, k / w + 1);
         }
-        SaveMask(rim, w, h, Path.Combine(outDir, $"frame2-{tag}-3-rimflood.png"));
+        SaveMask(rim, w, h, Path.Combine(outDir, $"{framePrefix}-{tag}-3-rimflood.png"));
 
         // 4) post-mask blob input: foreground with the rim removed
         var clean = new bool[n];
         for (int i = 0; i < n; i++) clean[i] = fg[i] && !rim[i];
-        SaveMask(clean, w, h, Path.Combine(outDir, $"frame2-{tag}-4-blobinput.png"));
+        SaveMask(clean, w, h, Path.Combine(outDir, $"{framePrefix}-{tag}-4-blobinput.png"));
 
         int fgCount = fg.Count(b => b), rimCount = rim.Count(b => b), cleanCount = clean.Count(b => b);
         _out.WriteLine($"  {tag} ({w}x{h}): foreground={fgCount} ({100.0*fgCount/n:0.0}%)  rimflood={rimCount}  blobinput={cleanCount} ({100.0*cleanCount/n:0.0}%)");
