@@ -208,10 +208,31 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         // detections → the gate rejects → safe-degrade.
         var templates = await EnsureIconTemplatesAsync(ct).ConfigureAwait(false);
 
+        // #978 ALIGNED detection inputs. The ECC-refined rect is sub-pixel-accurate,
+        // so cropping the captured frame to it and resampling the base texture to the
+        // same size makes the two pixel-register — terrain cancels in the deviation
+        // map and only the added icons survive (the coarse rect floods with terrain
+        // false-positives). The rect handed to the request is crop-anchored
+        // ((0,0)+crop size) but carries the FULL texture dims, so the solver's
+        // ScreenshotToTexture still maps crop pixels into full-texture world space.
+        //
+        // Guard the crop against an ECC rect that ran slightly past the frame edge:
+        // clamp origin ≥0 and origin+size ≤ frame dims (fail-soft, never throw). A
+        // degenerate (empty) clamped rect → reject this attempt with a reason.
+        var clamped = ClampToFrame(mapRect, gray.Width, gray.Height);
+        if (clamped is null)
+        {
+            return Fail(area, "the located map rect fell outside the captured frame — redraw the capture box tightly around the in-game map");
+        }
+
+        var crop = ImageOps.Crop(gray, clamped.OriginX, clamped.OriginY, clamped.Width, clamped.Height);
+        var alignedTexture = ImageOps.Resize(baseTexture, clamped.Width, clamped.Height);
+        var alignedRect = new MapRect(0, 0, clamped.Width, clamped.Height, clamped.TextureWidth, clamped.TextureHeight);
+
         var request = new DetectionRequest(
-            Screenshot: gray,
-            BaseTexture: baseTexture,
-            MapRect: mapRect,
+            Screenshot: crop,
+            BaseTexture: alignedTexture,
+            MapRect: alignedRect,
             Templates: templates,
             RimMask: RimMaskMode.DeviationFlood,
             LowNcc: LowNcc,
@@ -363,6 +384,33 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
 
         return _iconTemplates.GetTemplates(); // re-resolve after populate
+    }
+
+    /// <summary>
+    /// Clamp a refined <see cref="MapRect"/> to the captured-frame bounds (#978). The
+    /// ECC refine can place the rect's far edge a pixel or two past the frame when the
+    /// in-game map is captured right up to the edge; clamping the origin to ≥0 and the
+    /// extent to the frame keeps <see cref="ImageOps.Crop"/> in-bounds (it throws on an
+    /// out-of-range region) without crashing the attempt. Returns null when the clamp
+    /// leaves nothing to crop (origin already at/past the far edge) so the caller can
+    /// fail-soft with a reason instead of cropping an empty region. Texture dims pass
+    /// through unchanged — they're metadata, not pixels.
+    /// </summary>
+    private static MapRect? ClampToFrame(MapRect rect, int frameWidth, int frameHeight)
+    {
+        int x = Math.Clamp(rect.OriginX, 0, frameWidth);
+        int y = Math.Clamp(rect.OriginY, 0, frameHeight);
+        int w = Math.Min(rect.Width, frameWidth - x);
+        int h = Math.Min(rect.Height, frameHeight - y);
+        if (w <= 0 || h <= 0)
+        {
+            return null;
+        }
+        if (x == rect.OriginX && y == rect.OriginY && w == rect.Width && h == rect.Height)
+        {
+            return rect; // already in-bounds — no allocation
+        }
+        return rect with { OriginX = x, OriginY = y, Width = w, Height = h };
     }
 
     private AutoCalibrationOutcome Fail(string area, string reason)
