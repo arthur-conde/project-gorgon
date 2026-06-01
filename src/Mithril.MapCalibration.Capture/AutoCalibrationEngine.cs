@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Arda.World.Player;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Detection;
+using Mithril.Shared.Diagnostics.Telemetry;
 using Mithril.Shared.Game;
 using Mithril.Shared.MapCalibration;
 
@@ -122,6 +123,13 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
     {
         ct.ThrowIfCancellationRequested();
 
+        // Per-attempt trace span (#914). Null when no listener is attached (no OTLP
+        // export / no perf-recording), so this is zero-overhead when off. Child
+        // capture/refine/solve spans nest under it → a Seq waterfall showing which
+        // step is slow (the brute-force refine, until #966). Per-candidate refine
+        // spans live deeper (MapRectLocator, in the Shared-free core) — deferred to #966.
+        using var attempt = MithrilActivitySources.MapCalibration.StartActivity("calibration.attempt");
+
         var area = _areaState.CurrentArea;
         if (string.IsNullOrWhiteSpace(area))
         {
@@ -142,10 +150,18 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return Fail(area, "no map bbox set — use the draw-map-bbox hotkey first");
         }
 
+        attempt?.SetTag("map.area", area);
         _logger?.LogInformation(
             "Auto-calibration {Area}: capturing map region {Width}x{Height} at ({X},{Y})…",
             area, bbox.Value.Width, bbox.Value.Height, bbox.Value.X, bbox.Value.Y);
-        var gray = await _capture.CaptureMapAsync(bbox.Value, ct).ConfigureAwait(false);
+        GrayImage? gray;
+        using (var captureAct = MithrilActivitySources.MapCalibration.StartActivity("calibration.capture"))
+        {
+            captureAct?.SetTag("bbox.width", bbox.Value.Width);
+            captureAct?.SetTag("bbox.height", bbox.Value.Height);
+            gray = await _capture.CaptureMapAsync(bbox.Value, ct).ConfigureAwait(false);
+            captureAct?.SetTag("capture.ok", gray is not null);
+        }
         if (gray is null)
         {
             return Fail(area, "map capture failed or was rejected (black / wrong-size frame)");
@@ -167,7 +183,12 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         _logger?.LogInformation(
             "Auto-calibration {Area}: locating the map within the captured frame (texture registration)…", area);
         var refineStart = Stopwatch.GetTimestamp();
-        var mapRect = _refiner.Refine(gray, baseTexture, RefineMinScore);
+        MapRect? mapRect;
+        using (var refineAct = MithrilActivitySources.MapCalibration.StartActivity("calibration.refine"))
+        {
+            mapRect = _refiner.Refine(gray, baseTexture, RefineMinScore);
+            refineAct?.SetTag("map.located", mapRect is not null);
+        }
         if (mapRect is null)
         {
             return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out");
@@ -204,7 +225,19 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             "Auto-calibration {Area}: running detect→solve ({TemplateCount} icon template(s), {ReferenceCount} reference(s))…",
             area, templates.Templates.Count, references.Count);
         var solveStart = Stopwatch.GetTimestamp();
-        var result = _solver.Solve(request, references);
+        CalibrationSolveResult result;
+        using (var solveAct = MithrilActivitySources.MapCalibration.StartActivity("calibration.solve"))
+        {
+            solveAct?.SetTag("templates", templates.Templates.Count);
+            solveAct?.SetTag("references", references.Count);
+            result = _solver.Solve(request, references);
+            solveAct?.SetTag("solve.inliers", result.InlierCount);
+            solveAct?.SetTag("solve.calibrated", result.Calibration is not null);
+            if (result.Calibration is not null)
+            {
+                solveAct?.SetTag("solve.residual_px", result.Calibration.ResidualPixels);
+            }
+        }
         _logger?.LogInformation(
             "Auto-calibration {Area}: solve finished in {ElapsedMs:0} ms (calibration {HasCalibration}, {Inliers} inlier(s)).",
             area, Stopwatch.GetElapsedTime(solveStart).TotalMilliseconds, result.Calibration is not null, result.InlierCount);
