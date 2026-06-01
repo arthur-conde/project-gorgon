@@ -38,5 +38,4 @@ public interface IIngestPulse
 public readonly record struct IngestPulseEventArgs(
     LogFamily Family,
     DateTimeOffset PolledAt,
-    int BytesRead,
     int LinesEmitted);

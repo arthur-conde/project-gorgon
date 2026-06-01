@@ -22,7 +22,6 @@ public interface IIngestPulseSink
     /// </summary>
     /// <param name="family">Which log family's tailer just polled.</param>
     /// <param name="polledAt">Wall-clock time of the poll.</param>
-    /// <param name="bytesRead">Number of bytes read in this poll (0 for empty reads).</param>
     /// <param name="linesEmitted">Number of <c>LogLine</c>s yielded from this poll.</param>
-    void RecordPoll(LogFamily family, System.DateTimeOffset polledAt, int bytesRead, int linesEmitted);
+    void RecordPoll(LogFamily family, System.DateTimeOffset polledAt, int linesEmitted);
 }

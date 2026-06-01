@@ -162,7 +162,6 @@ internal sealed class PlayerLogSource : ILogLineSource
             _pulseSink?.RecordPoll(
                 LogFamily.Player,
                 _time.GetUtcNow(),
-                bytesRead: 0, // batch processor doesn't expose byte counts; line count is the useful signal
                 linesEmitted: results?.Count ?? 0);
 
             if (results is null)

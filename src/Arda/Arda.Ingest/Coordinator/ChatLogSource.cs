@@ -117,7 +117,6 @@ internal sealed class ChatLogSource : ILogLineSource
             _pulseSink?.RecordPoll(
                 LogFamily.Chat,
                 _time.GetUtcNow(),
-                bytesRead: 0,
                 linesEmitted: results?.Count ?? 0);
 
             if (results is null)

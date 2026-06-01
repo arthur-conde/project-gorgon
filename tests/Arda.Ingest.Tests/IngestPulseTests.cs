@@ -34,9 +34,9 @@ public sealed class IngestPulseTests : IDisposable
     private sealed class RecordingSink : IIngestPulseSink
     {
         private readonly object _gate = new();
-        private readonly List<(LogFamily Family, DateTimeOffset At, int Bytes, int Lines)> _entries = [];
+        private readonly List<(LogFamily Family, DateTimeOffset At, int Lines)> _entries = [];
 
-        public IReadOnlyList<(LogFamily Family, DateTimeOffset At, int Bytes, int Lines)> Snapshot()
+        public IReadOnlyList<(LogFamily Family, DateTimeOffset At, int Lines)> Snapshot()
         {
             lock (_gate) return [.. _entries];
         }
@@ -51,9 +51,9 @@ public sealed class IngestPulseTests : IDisposable
             lock (_gate) return _entries.Count(e => e.Family == family && e.Lines == 0);
         }
 
-        public void RecordPoll(LogFamily family, DateTimeOffset polledAt, int bytesRead, int linesEmitted)
+        public void RecordPoll(LogFamily family, DateTimeOffset polledAt, int linesEmitted)
         {
-            lock (_gate) _entries.Add((family, polledAt, bytesRead, linesEmitted));
+            lock (_gate) _entries.Add((family, polledAt, linesEmitted));
         }
     }
 

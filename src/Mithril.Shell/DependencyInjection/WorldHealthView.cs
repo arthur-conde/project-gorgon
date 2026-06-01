@@ -5,6 +5,7 @@ using Arda.Dispatch;
 using Arda.Hosting;
 using Arda.World.Chat.Events;
 using Arda.World.Player.Events;
+using Mithril.Shared.Diagnostics;
 using Mithril.Shared.Modules;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -45,6 +46,8 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
     private readonly IIngestPulse _pulse;
     private readonly TimeProvider _time;
     private readonly ILogger<WorldHealthView> _logger;
+    private readonly ThrottledWarn _playerStallWarn;
+    private readonly ThrottledWarn _chatStallWarn;
 
     private readonly object _gate = new();
     private DateTimeOffset? _playerLogTimestamp;
@@ -74,6 +77,12 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
         _pulse = pulse;
         _logger = logger;
         _time = time ?? TimeProvider.System;
+        // Per-family ThrottledWarn so a player stall doesn't suppress a chat
+        // stall warning. OnPulse fires every ~250–500 ms in the healthy case;
+        // once a family is past DriftWarningThreshold the LogWarning would
+        // otherwise emit per pulse interval until recovery.
+        _playerStallWarn = new ThrottledWarn(_logger, "WorldHealthView", time: _time);
+        _chatStallWarn = new ThrottledWarn(_logger, "WorldHealthView", time: _time);
     }
 
     public WorldHealth Player
@@ -347,21 +356,26 @@ internal sealed class WorldHealthView : IWorldHealthView, IAttentionSource, IHos
             chatLive = _chatLive;
         }
 
-        LogStallIfNeeded("Player", playerLive, playerLastPoll);
-        LogStallIfNeeded("Chat", chatLive, chatLastPoll);
+        LogStallIfNeeded("Player", playerLive, playerLastPoll, _playerStallWarn);
+        LogStallIfNeeded("Chat", chatLive, chatLastPoll, _chatStallWarn);
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    private void LogStallIfNeeded(string family, bool live, DateTimeOffset? lastPoll)
+    private void LogStallIfNeeded(string family, bool live, DateTimeOffset? lastPoll, ThrottledWarn warn)
     {
+        // Halted has its own banner path (design lock #10) and the Count
+        // property already suppresses the attention badge while halted; do not
+        // also emit a "stall" warning per pulse for a state that's already
+        // visibly surfaced elsewhere.
+        if (_grammarSignal.IsRaised) return;
         if (!live || lastPoll is null) return;
         var drift = _time.GetUtcNow() - lastPoll.Value;
         if (drift <= WorldHealth.DriftWarningThreshold) return;
-        _logger.LogWarning(
-            "Pipeline stall for {Family}: {DriftSeconds:F0}s since last tailer poll {LastPoll}",
-            family,
-            drift.TotalSeconds,
-            lastPoll);
+        // OnPulse runs every ~250–500 ms; route through ThrottledWarn so a
+        // sustained stall produces one log per window with a "+N suppressed"
+        // rollup instead of one per pulse (CLAUDE.md: hot ingest paths).
+        warn.Warn(
+            $"Pipeline stall for {family}: {drift.TotalSeconds:F0}s since last tailer poll {lastPoll:o}");
     }
 
     public Task StopAsync(CancellationToken cancellationToken)

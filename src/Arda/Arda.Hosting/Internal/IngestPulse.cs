@@ -8,10 +8,11 @@ namespace Arda.Hosting.Internal;
 /// <c>WorldHealthView</c> reads via the pulse and subscribes to
 /// <see cref="Pulsed"/> for stall detection.
 /// <para>
-/// Per-family <c>LastPoll</c> is stored in <see cref="Volatile.Read"/> /
-/// <see cref="Volatile.Write"/>-style fields; reads are lock-free. The event
-/// fires synchronously from the writer's thread (the ingest poll loop), so
-/// subscribers must avoid blocking work in the handler.
+/// Per-family <c>LastPoll</c> reads and writes are serialized through a single
+/// <c>lock</c> so the read-side snapshot is internally consistent; the lock is
+/// uncontended in practice (one writer per family, occasional reader). The
+/// event fires synchronously from the writer's thread (the ingest poll loop),
+/// so subscribers must avoid blocking work in the handler.
 /// </para>
 /// </summary>
 internal sealed class IngestPulse : IIngestPulse, IIngestPulseSink
@@ -35,7 +36,7 @@ internal sealed class IngestPulse : IIngestPulse, IIngestPulseSink
 
     public event EventHandler<IngestPulseEventArgs>? Pulsed;
 
-    public void RecordPoll(LogFamily family, DateTimeOffset polledAt, int bytesRead, int linesEmitted)
+    public void RecordPoll(LogFamily family, DateTimeOffset polledAt, int linesEmitted)
     {
         lock (_gate)
         {
@@ -50,6 +51,6 @@ internal sealed class IngestPulse : IIngestPulse, IIngestPulseSink
             }
         }
 
-        Pulsed?.Invoke(this, new IngestPulseEventArgs(family, polledAt, bytesRead, linesEmitted));
+        Pulsed?.Invoke(this, new IngestPulseEventArgs(family, polledAt, linesEmitted));
     }
 }

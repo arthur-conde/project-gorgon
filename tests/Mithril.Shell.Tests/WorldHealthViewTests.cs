@@ -70,10 +70,10 @@ public sealed class WorldHealthViewTests : IAsyncLifetime
 
         public event EventHandler<IngestPulseEventArgs>? Pulsed;
 
-        public void Pulse(LogFamily family, DateTimeOffset at, int bytes = 0, int lines = 0)
+        public void Pulse(LogFamily family, DateTimeOffset at, int lines = 0)
         {
             _last[family] = at;
-            Pulsed?.Invoke(this, new IngestPulseEventArgs(family, at, bytes, lines));
+            Pulsed?.Invoke(this, new IngestPulseEventArgs(family, at, lines));
         }
     }
 
