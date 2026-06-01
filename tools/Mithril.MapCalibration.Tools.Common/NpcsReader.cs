@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Mithril.MapCalibration;
+using Mithril.MapCalibration.Detection;
 
 namespace Mithril.Tools.MapCalibration.Common;
 
@@ -39,7 +40,7 @@ public static class NpcsReader
             var world = WorldCoord.TryParse(posStr);
             if (world is null) continue;
             var name = v.TryGetProperty("Name", out var nameProp) ? nameProp.GetString() ?? entry.Name : entry.Name;
-            list.Add(new LandmarkRef("Npc", name, world.Value));
+            list.Add(new LandmarkRef(CanonicalLandmarkTypes.Npc, name, world.Value));
         }
         return list;
     }

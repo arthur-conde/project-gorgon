@@ -5,6 +5,7 @@ using System.Text.Json;
 using AssetsTools.NET;
 using AssetsTools.NET.Extra;
 using AssetsTools.NET.Texture;
+using Mithril.MapCalibration.Detection;
 
 namespace Mithril.Tools.MapCalibration.Common;
 
@@ -41,10 +42,10 @@ public static class IconTemplateExtractor
     // discriminator (or "Player"/"Pet" for the player-self pins).
     private static readonly (string TextureName, string LandmarkType)[] LandmarkIcons =
     [
-        ("landmark_telepad", "TeleportationPlatform"),
-        ("landmark_medipillar", "MeditationPillar"),
-        ("landmark_portal", "Portal"),
-        ("landmark_npc", "Npc"),
+        ("landmark_telepad", CanonicalLandmarkTypes.TeleportationPlatform),
+        ("landmark_medipillar", CanonicalLandmarkTypes.MeditationPillar),
+        ("landmark_portal", CanonicalLandmarkTypes.Portal),
+        ("landmark_npc", CanonicalLandmarkTypes.Npc),
         // landmark_star is generic waypoint; skip for v1 — no Type to match on.
     ];
 
@@ -147,6 +148,13 @@ public static class IconTemplateExtractor
             }
             else if (PlayerPinPrefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal)))
             {
+                // "Player" is intentionally NOT a CanonicalLandmarkTypes member.
+                // Player-self pins have no reference source (they appear in neither
+                // landmarks.json nor npcs.json), so a "Player" detection simply
+                // contributes nothing to the type-constrained pairing pool — its
+                // absence from CanonicalLandmarkTypes.All is by-design, not the
+                // detect↔reference vocabulary divergence #974 guards against.
+                // (PlayerPinPrefixes is currently empty, so this branch is dead.)
                 landmarkType = "Player";
             }
             else
