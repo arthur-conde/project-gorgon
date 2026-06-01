@@ -51,11 +51,13 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
         if (string.IsNullOrWhiteSpace(areaKey)) return Array.Empty<LandmarkReference>();
 
         var result = new List<LandmarkReference>();
-        // Count references dropped for unparseable coords (NOT the unmapped-type
-        // case, which is warned per-entry above). Aggregated into ONE warning per
-        // area so a future landmarks.json / npcs.json coord-shape change is visible
-        // rather than silently shrinking the reference set (Fix E).
-        var unparseableCoords = 0;
+        // Count references dropped because a position string was PRESENT but didn't
+        // parse — that, and only that, signals a possible landmarks.json / npcs.json
+        // coord-shape change worth a warning (Fix E). A null/empty position is a
+        // legitimately positionless table entry (e.g. the "Work Orders" sign, the
+        // "Sacrificial Bowl" pedestal in npcs.json) and is skipped silently — it was
+        // never a calibration reference and is not a shape regression.
+        var malformedCoords = 0;
 
         if (_refData.Landmarks.TryGetValue(areaKey, out var landmarks))
         {
@@ -72,6 +74,7 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
                         lm.Type, areaKey, lm.Name);
                     continue;
                 }
+                if (string.IsNullOrWhiteSpace(lm.Loc)) continue; // positionless entry — skip, not a shape change
                 if (TryParseWorld(lm.Loc, out var world))
                 {
                     // Emit the raw PG type verbatim — the same vocabulary the
@@ -80,7 +83,7 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
                 }
                 else
                 {
-                    unparseableCoords++;
+                    malformedCoords++;
                 }
             }
         }
@@ -89,22 +92,23 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
         {
             if (npc is null) continue;
             if (!string.Equals(npc.AreaName, areaKey, StringComparison.Ordinal)) continue;
+            if (string.IsNullOrWhiteSpace(npc.Pos)) continue; // positionless entry — skip, not a shape change
             if (TryParseWorld(npc.Pos, out var world))
             {
                 result.Add(new LandmarkReference(CanonicalLandmarkTypes.Npc, npc.Name ?? "NPC", world));
             }
             else
             {
-                unparseableCoords++;
+                malformedCoords++;
             }
         }
 
-        if (unparseableCoords > 0)
+        if (malformedCoords > 0)
         {
             _logger?.LogWarning(
-                "Dropped {Count} reference(s) in area {Area} with unparseable coords — possible landmarks.json / npcs.json "
+                "Dropped {Count} reference(s) in area {Area} with malformed coords — possible landmarks.json / npcs.json "
                 + "coord-shape change. Verification owed (#914): confirm the \"x:N y:N z:N\" position shape vs live data.",
-                unparseableCoords, areaKey);
+                malformedCoords, areaKey);
         }
 
         return result;

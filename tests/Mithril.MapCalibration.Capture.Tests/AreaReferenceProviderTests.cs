@@ -1,5 +1,8 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
 using Mithril.MapCalibration.Detection;
 using Mithril.Reference.Models.Misc;
@@ -52,6 +55,42 @@ public sealed class AreaReferenceProviderTests
     }
 
     [Fact]
+    public void Positionless_entries_are_skipped_without_a_coord_shape_warning()
+    {
+        // npcs.json carries non-spatial table entries (the "Work Orders" sign, the
+        // "Sacrificial Bowl" pedestal) with no Pos. They were never calibration
+        // references; skipping them is not a coord-shape regression, so the
+        // shape-change Warning must NOT fire (Fix E — kills the recurring false alarm).
+        var refData = new FakeAreaReferenceData()
+            .WithNpc("AreaEltibule", "Braigon", pos: "x:1099 y:37 z:1398")
+            .WithPositionlessNpc("AreaEltibule", "Work Orders")
+            .WithPositionlessNpc("AreaEltibule", "Sacrificial Bowl");
+
+        var logger = new ListLogger();
+        var refs = new ReferenceDataAreaReferenceProvider(refData, logger).ForArea("AreaEltibule");
+
+        refs.Should().ContainSingle(r => r.Type == "Npc" && r.Name == "Braigon");
+        logger.Warnings.Should().NotContain(m => m.Contains("coord", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Present_but_malformed_coords_trigger_the_shape_change_warning()
+    {
+        // A position string that IS present but doesn't parse is the genuine
+        // shape-change signal — that, and only that, warrants the Warning.
+        var refData = new FakeAreaReferenceData()
+            .WithLandmarks("AreaSerbule",
+                new Landmark { Name = "Good", Loc = "x:1 y:2 z:3", Type = "Portal" },
+                new Landmark { Name = "Garbage", Loc = "not a position", Type = "Portal" });
+
+        var logger = new ListLogger();
+        new ReferenceDataAreaReferenceProvider(refData, logger).ForArea("AreaSerbule");
+
+        logger.Warnings.Should().ContainSingle(m =>
+            m.Contains("malformed coords") && m.Contains("1"));
+    }
+
+    [Fact]
     public void Drops_an_unmapped_landmark_type_rather_than_guessing_a_token()
     {
         // An unknown Type must not be silently coerced to a wrong token; it is
@@ -86,5 +125,25 @@ public sealed class AreaReferenceProviderTests
 
         refs.Select(r => r.Type).Distinct().Should().OnlyContain(t => CanonicalLandmarkTypes.All.Contains(t));
         refs.Should().NotBeEmpty();
+    }
+
+    /// <summary>Minimal <see cref="ILogger"/> that collects Warning messages for assertions.</summary>
+    private sealed class ListLogger : ILogger
+    {
+        public List<string> Warnings { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning) Warnings.Add(formatter(state, exception));
+        }
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 }

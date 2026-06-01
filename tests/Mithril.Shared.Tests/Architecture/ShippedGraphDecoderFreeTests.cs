@@ -30,6 +30,18 @@ namespace Mithril.Shared.Tests.Architecture;
 /// the scanned <c>src/**</c> graph). The assertions below are unchanged: loading
 /// the extractor in-process via reflection to dodge this scan is explicitly
 /// forbidden — the value is the process boundary, not a green check.</para>
+///
+/// <para><b>Sanctioned in-process OpenCv exception (issue #978):</b> screenshot↔
+/// texture registration (<c>Cv2.FindTransformECC</c>) runs IN-PROCESS in the
+/// calibration capture assembly (<c>Mithril.MapCalibration.Capture</c>). Maintainer
+/// decision: OpenCvSharp is an <i>alignment</i> library, not an asset decoder; Mithril
+/// is Windows-only WPF (not trimmed / not AOT) and registration is occasional, so an
+/// in-process call beats an out-of-process sidecar round-trip and its native-runtime
+/// staging cost. To keep that exception EXPLICIT and stop OpenCv silently spreading,
+/// <c>OpenCvSharp</c> is added to <see cref="ForbiddenPackages"/> across <c>src/**</c>
+/// and re-permitted ONLY for the named project in
+/// <see cref="PackageAllowlistByProject"/> — the #921 decoder-free split is relaxed via
+/// a named allowlist, never removed and never replaced with a sidecar.</para>
 /// </summary>
 public class ShippedGraphDecoderFreeTests
 {
@@ -38,7 +50,22 @@ public class ShippedGraphDecoderFreeTests
     [
         "AssetsTools.NET",          // also covers AssetsTools.NET.Texture
         "System.Drawing.Common",
+        "OpenCvSharp",              // #978: covers OpenCvSharp4 + OpenCvSharp4.runtime.win
     ];
+
+    // #978: OpenCvSharp is permitted IN-PROCESS only in these explicitly named
+    // shipped assemblies — the calibration capture project that owns the ECC
+    // screenshot->texture registration refine (Cv2.FindTransformECC). OpenCvSharp is
+    // an alignment library, not an asset decoder; Mithril is Windows-only WPF (not
+    // trimmed/AOT) and registration is occasional, so in-process beats an
+    // out-of-process sidecar. The #921 split is RELAXED via this named allowlist, not
+    // removed: any OTHER src/** project taking an OpenCvSharp reference is a violation.
+    // Keyed by csproj file name so the exception is unambiguous and cannot widen
+    // silently. (AssetsTools.NET / System.Drawing.Common are NOT allowlisted anywhere.)
+    private static readonly Dictionary<string, string[]> PackageAllowlistByProject = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Mithril.MapCalibration.Capture.csproj"] = ["OpenCvSharp"],
+    };
 
     private static readonly string[] ForbiddenProjects =
     [
@@ -59,13 +86,20 @@ public class ShippedGraphDecoderFreeTests
         {
             var doc = XDocument.Load(csproj);
             var rel = Path.GetRelativePath(RepoRoot(), csproj).Replace('\\', '/');
+            var fileName = Path.GetFileName(csproj);
+            var allowed = PackageAllowlistByProject.TryGetValue(fileName, out var a) ? a : [];
 
             foreach (var include in Includes(doc, "PackageReference"))
             {
                 foreach (var bad in ForbiddenPackages)
                 {
-                    if (include.Contains(bad, StringComparison.OrdinalIgnoreCase))
-                        violations.Add($"{rel}: PackageReference '{include}' (matches forbidden '{bad}')");
+                    if (!include.Contains(bad, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    // #978: a forbidden substring is fine only when this exact project
+                    // is allowlisted for that substring (OpenCvSharp in the capture asm).
+                    if (allowed.Any(ok => bad.Contains(ok, StringComparison.OrdinalIgnoreCase)))
+                        continue;
+                    violations.Add($"{rel}: PackageReference '{include}' (matches forbidden '{bad}')");
                 }
             }
 

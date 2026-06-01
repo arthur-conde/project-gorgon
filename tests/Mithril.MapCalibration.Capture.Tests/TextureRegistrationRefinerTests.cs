@@ -77,16 +77,25 @@ public sealed class TextureRegistrationRefinerTests
         rect.TextureWidth.Should().Be(tw);
         rect.TextureHeight.Should().Be(th);
 
-        // SPEED (structural tripwire): at the 384px working resolution the seam's NCC
-        // ladder completes in a few seconds even in Debug (measured ≈3.8 s isolated,
-        // ≈4.1 s under the full parallel suite on a 16-core box). If the seam reverted to
-        // the native 3-arg overload it would run the FULL-resolution ladder (~1–2e12
-        // multiply-adds, MINUTES — ≥120 s observed live for #966). The 10 s budget gives
-        // ~2.4× headroom over the observed contended working-res cost (so it never flakes
-        // on a loaded CI box) while still sitting >12× below the minutes-long native
-        // regression — so PASSING this assertion PROVES the seam ran at working resolution,
-        // not native, and would unambiguously trip on a revert of TextureRegistrationRefiner.cs.
-        sw.ElapsedMilliseconds.Should().BeLessThan(10_000,
-            "the seam must take the #966 downsampling path; the native ladder would blow this budget by orders of magnitude");
+        // SPEED (structural tripwire): this measures the WHOLE seam — the 384px working-res
+        // NCC ladder PLUS the new #978 ECC sub-pixel refine (Cv2.FindTransformECC, 200 iters /
+        // 1e-6 / gaussFilt 5). On real captures ECC correlates well and converges in well under
+        // a second (≈330–640 ms, issue #978 data); on THIS synthetic structured-noise input it
+        // correlates poorly and runs near its 200-iteration cap, adding several seconds. The
+        // coarse ladder alone is a few seconds in Debug (measured ≈3.8 s isolated, ≈4.1 s under
+        // the full parallel suite on a 16-core box); with ECC on top the contended total reaches
+        // ≈11.4 s. None of that is a production perf concern — it's an artefact of the synthetic
+        // input, and real-frame ECC stays sub-second.
+        //
+        // What this assertion still PROVES is purely structural: that the seam takes the #966
+        // DOWNSAMPLING path. If the seam reverted to the native 3-arg AutoDetect overload it
+        // would run the FULL-resolution ladder (~1–2e12 multiply-adds, MINUTES — ≥120 s observed
+        // live for #966) BEFORE ECC ever runs, so the revert floor is still ~120 s+. The 28 s
+        // budget sits ~2.5× above the observed ≈11.4 s contended working-res + ECC cost (so it
+        // never flakes on a loaded CI box) and still ~4.3× BELOW the ≥120 s native-ladder
+        // regression — a comfortable, unambiguous gap. PASSING therefore proves the seam ran at
+        // working resolution, not native, and would trip on a revert of TextureRegistrationRefiner.cs.
+        sw.ElapsedMilliseconds.Should().BeLessThan(28_000,
+            "the seam must take the #966 downsampling path; the native ladder would blow this budget by orders of magnitude (≥120 s)");
     }
 }

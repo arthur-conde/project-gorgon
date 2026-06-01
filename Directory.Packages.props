@@ -12,6 +12,9 @@
     <PackageVersion Include="MahApps.Metro" Version="2.4.11" />
     <PackageVersion Include="MahApps.Metro.IconPacks.Lucide" Version="6.0.0" />
     <PackageVersion Include="NAudio" Version="2.2.1" />
+    <!-- #938 registration prototype (tools test only — evaluating OpenCV for screenshot↔texture matching). -->
+    <PackageVersion Include="OpenCvSharp4" Version="4.10.0.20240616" />
+    <PackageVersion Include="OpenCvSharp4.runtime.win" Version="4.10.0.20240616" />
     <PackageVersion Include="OpenTelemetry" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.1" />

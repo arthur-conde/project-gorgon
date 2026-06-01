@@ -34,6 +34,15 @@ internal sealed class FakeAreaReferenceData : IReferenceDataService
         return this;
     }
 
+    /// <summary>Seed a positionless table entry (no <see cref="Npc.Pos"/>) — e.g. the
+    /// "Work Orders" sign / "Sacrificial Bowl" pedestal that live in npcs.json without
+    /// a map position. These must be skipped silently, not counted as a coord-shape change.</summary>
+    public FakeAreaReferenceData WithPositionlessNpc(string areaKey, string name)
+    {
+        _npcsByInternalName["NPC_" + name] = new Npc { Name = name, AreaName = areaKey };
+        return this;
+    }
+
     public IReadOnlyDictionary<string, IReadOnlyList<Landmark>> Landmarks => _landmarks;
     public IReadOnlyDictionary<string, Npc> NpcsByInternalName => _npcsByInternalName;
 
