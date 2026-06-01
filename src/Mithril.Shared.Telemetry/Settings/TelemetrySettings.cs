@@ -46,7 +46,17 @@ public sealed class TelemetrySettings : INotifyPropertyChanged, IVersionedState<
     private bool _enableOtlpExport;
     public bool EnableOtlpExport { get => _enableOtlpExport; set => Set(ref _enableOtlpExport, value); }
 
-    private string _endpoint = "http://localhost:5341/ingest/otlp/v1/traces";
+    private string _endpoint = "http://localhost:5341/ingest/otlp";
+    /// <summary>
+    /// Base OTLP endpoint. The exporter derives the per-signal path
+    /// (<c>v1/traces</c> / <c>v1/metrics</c> / <c>v1/logs</c>) from this for each
+    /// signal, so paste the <strong>base</strong> (e.g.
+    /// <c>http://localhost:5341/ingest/otlp</c>), not a signal-specific URL. A
+    /// pasted <c>…/v1/traces</c> is tolerated — the trailing signal path is
+    /// stripped and re-derived per signal so metrics/logs still route correctly
+    /// (mithril#968). For gRPC the value is used verbatim (the signal is carried
+    /// by the gRPC method, not the path).
+    /// </summary>
     public string Endpoint { get => _endpoint; set => Set(ref _endpoint, value); }
 
     private OtlpProtocol _protocol = OtlpProtocol.HttpProtobuf;
