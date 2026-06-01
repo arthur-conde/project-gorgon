@@ -9,10 +9,20 @@
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Xunit.SkippableFact" />
   </ItemGroup>
   <ItemGroup>
     <!-- Cross-boundary ProjectReference into the isolated harness lib is fine:
          the lib's PM/targets opt-out is build-local (issue #884 decision). -->
     <ProjectReference Include="..\..\tools\Mithril.MapCalibration.Harness\Mithril.MapCalibration.Harness.csproj" />
+    <!-- The DI engine factory (AddMithrilMapCalibrationEngine) for the live-frame repro. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Real Eltibule capture frames (#938) — the deterministic detect repro inputs.
+         These are PG screenshots; kept local to the repro test, not shipped product art. -->
+    <None Include="Fixtures\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>
