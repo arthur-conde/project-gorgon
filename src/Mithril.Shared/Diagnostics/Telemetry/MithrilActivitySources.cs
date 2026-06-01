@@ -32,6 +32,9 @@ public static class MithrilActivitySources
     /// <summary>Mithril.Overlay window lifecycle, device reset, per-area projection start (#835).</summary>
     public static readonly ActivitySource Overlay = new("Mithril.Overlay");
 
+    /// <summary>Map auto-calibration capture pipeline: per-attempt capture → refine → solve timing (#914).</summary>
+    public static readonly ActivitySource MapCalibration = new("Mithril.MapCalibration.Capture");
+
     // Arda pipeline sources live in Arda.Abstractions.Diagnostics.ArdaActivitySources
     // because Arda projects can't take a dependency on Mithril.Shared. Both catalogs
     // share the "Mithril." prefix below so listeners receive both uniformly.
