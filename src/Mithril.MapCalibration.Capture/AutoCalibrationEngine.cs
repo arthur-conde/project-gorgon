@@ -191,7 +191,7 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
         }
         if (mapRect is null)
         {
-            return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out");
+            return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out and draw the capture box tightly around the map");
         }
         _logger?.LogInformation(
             "Auto-calibration {Area}: map sub-rect located ({MapRect}) in {ElapsedMs:0} ms.",
