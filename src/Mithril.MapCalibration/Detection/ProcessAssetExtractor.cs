@@ -166,6 +166,11 @@ public sealed class ProcessAssetExtractor : IAssetExtractor
             psi.ArgumentList.Add("--expect-pg-version");
             psi.ArgumentList.Add(request.ExpectPgVersion);
         }
+        if (!string.IsNullOrWhiteSpace(request.TpkPath))
+        {
+            psi.ArgumentList.Add("--tpk");
+            psi.ArgumentList.Add(request.TpkPath);
+        }
         return psi;
     }
 
