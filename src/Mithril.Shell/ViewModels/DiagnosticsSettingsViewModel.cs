@@ -4,6 +4,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Capture;
 using Mithril.Shared.Wpf.Dialogs;
 
 namespace Mithril.Shell.ViewModels;
@@ -65,9 +66,10 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
     public string LogDirectoryHint => LogDirectory;
 
     /// <summary>The folder where map-calibration capture-frame dumps land when the
-    /// dump toggle (#966 Task 3) is on. Surfaced read-only so the settings UI can
-    /// show the path without duplicating <c>CaptureFrameDumper</c>'s derivation.</summary>
-    public string CalibrationDumpDirectoryHint => CalibrationDumpDirectory;
+    /// dump toggle (#966 Task 3) is on. Surfaced read-only by delegating to
+    /// <see cref="CaptureFrameDumper.DumpDirectory"/> — the single source of truth for
+    /// the path — so the displayed hint can never drift from where dumps are written.</summary>
+    public string CalibrationDumpDirectoryHint => CaptureFrameDumper.DumpDirectory;
 
     private static string ShellDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -76,12 +78,6 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
     private static string LogDirectory => Path.Combine(ShellDirectory, "logs");
 
     private static string PerfDirectory => Path.Combine(ShellDirectory, "perf");
-
-    /// <summary>Mirrors <c>CaptureFrameDumper</c>'s output directory
-    /// (<c>%LocalAppData%\Mithril\diagnostics\calibration</c>) for display.</summary>
-    private static string CalibrationDumpDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Mithril", "diagnostics", "calibration");
 
     /// <summary>Outcome of the most recent clear command, shown beneath the buttons.</summary>
     [ObservableProperty]
