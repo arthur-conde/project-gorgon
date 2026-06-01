@@ -1,5 +1,6 @@
 using System.IO;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Mithril.MapCalibration.DependencyInjection;
@@ -97,13 +98,19 @@ public static partial class CaptureServiceCollectionExtensions
         services.AddSingleton<IMapRegionRefiner, TextureRegistrationRefiner>();
         services.AddSingleton<CaptureValidation>();
 
+        // #966 Task 3: capture-frame debug-dump options (OFF by default). Registered
+        // only if the shell hasn't already supplied one, so a settings surface can
+        // override by registering its own instance first.
+        services.TryAddSingleton(new CaptureDiagnosticsOptions());
+
         // Overlay blanking + the capture orchestration over it.
         services.AddSingleton<IOverlayBlanker, OverlayBlanker>();
         services.AddSingleton<ICaptureService>(sp => new CaptureService(
             sp.GetRequiredService<IScreenCapture>(),
             sp.GetRequiredService<IOverlayBlanker>(),
             sp.GetRequiredService<CaptureValidation>(),
-            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Service")));
+            sp.GetService<ILoggerFactory>()?.CreateLogger("Mithril.MapCalibration.Capture.Service"),
+            sp.GetRequiredService<CaptureDiagnosticsOptions>()));
 
         // Reference points + the solve seam.
         services.AddSingleton<IAreaReferenceProvider>(sp => new ReferenceDataAreaReferenceProvider(
