@@ -150,6 +150,424 @@ public sealed class EltibuleLiveFrameDetectionRepro
             "the coarse align trims the count — but DumpSolve shows it does NOT improve the solve");
     }
 
+    /// <summary>
+    /// Renders the detector's deviation pipeline to PNGs for the accepted-bad frame 2:
+    /// the raw deviation map, the dev>=threshold foreground, the edge-connected
+    /// "DeviationFlood" rim mask, and the post-mask blob input — for both the live
+    /// (AS-IS) inputs and the crop+resample ALIGNED inputs. Saved under
+    /// %LocalAppData%/Mithril/diagnostics/calibration/938-masks/ for inspection.
+    /// </summary>
+    [SkippableFact]
+    public void Dump_deviation_masks_frame2()
+    {
+        var framePath = Path.Combine(FrameDir, "eltibule-frame2-accepted-7.61px.gray.png");
+        Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+
+        using var sp = new ServiceCollection().AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var frame = ImageIo.LoadGray(framePath);
+        var mapRect = MapRectLocator.AutoDetect(frame, baseTex!, LowNcc, MapRectLocator.DefaultWorkingLongEdgePx);
+        Skip.If(mapRect is null, "map sub-rect not located");
+
+        var outDir = Path.Combine(AssetCacheDir, "..", "diagnostics", "calibration", "938-masks");
+        Directory.CreateDirectory(outDir);
+
+        RenderMasks("asis", frame, baseTex!, outDir);
+        var crop = ImageOps.Crop(frame, mapRect!.OriginX, mapRect.OriginY, mapRect.Width, mapRect.Height);
+        var alignedTex = ImageOps.Resize(baseTex!, mapRect.Width, mapRect.Height);
+        RenderMasks("aligned", crop, alignedTex, outDir);
+
+        _out.WriteLine($"deviation masks written to {Path.GetFullPath(outDir)}");
+    }
+
+    private void RenderMasks(string tag, GrayImage shot, GrayImage tex, string outDir)
+    {
+        int w = shot.Width, h = shot.Height, n = w * h;
+        var dev = LocalNccDeviation.DeviationMap(
+            LocalNccDeviation.ToGrayFloat(shot), LocalNccDeviation.ToGrayFloat(tex),
+            w, h, win: 11, out _, addedOnly: true);
+
+        // 1) raw deviation map (0..1 -> 0..255)
+        var devPx = new byte[n];
+        for (int i = 0; i < n; i++) devPx[i] = (byte)Math.Clamp(dev[i] * 255.0, 0, 255);
+        ImageIo.SaveGrayPng(new GrayImage(w, h, devPx), Path.Combine(outDir, $"frame2-{tag}-1-deviation.png"));
+
+        // 2) foreground: dev >= 1-LowNcc (the detector's threshold)
+        double devThr = 1.0 - LowNcc;
+        var fg = new bool[n];
+        for (int i = 0; i < n; i++) fg[i] = dev[i] >= devThr;
+        SaveMask(fg, w, h, Path.Combine(outDir, $"frame2-{tag}-2-foreground.png"));
+
+        // 3) edge-connected DeviationFlood rim mask (replicates DeviationBlobDetector)
+        var rim = new bool[n];
+        var q = new Queue<int>();
+        void Enq(int x, int y)
+        {
+            if (x < 0 || x >= w || y < 0 || y >= h) return;
+            int k = y * w + x;
+            if (fg[k] && !rim[k]) { rim[k] = true; q.Enqueue(k); }
+        }
+        for (int x = 0; x < w; x++) { Enq(x, 0); Enq(x, h - 1); }
+        for (int y = 0; y < h; y++) { Enq(0, y); Enq(w - 1, y); }
+        while (q.Count > 0)
+        {
+            int k = q.Dequeue();
+            Enq(k % w - 1, k / w); Enq(k % w + 1, k / w); Enq(k % w, k / w - 1); Enq(k % w, k / w + 1);
+        }
+        SaveMask(rim, w, h, Path.Combine(outDir, $"frame2-{tag}-3-rimflood.png"));
+
+        // 4) post-mask blob input: foreground with the rim removed
+        var clean = new bool[n];
+        for (int i = 0; i < n; i++) clean[i] = fg[i] && !rim[i];
+        SaveMask(clean, w, h, Path.Combine(outDir, $"frame2-{tag}-4-blobinput.png"));
+
+        int fgCount = fg.Count(b => b), rimCount = rim.Count(b => b), cleanCount = clean.Count(b => b);
+        _out.WriteLine($"  {tag} ({w}x{h}): foreground={fgCount} ({100.0*fgCount/n:0.0}%)  rimflood={rimCount}  blobinput={cleanCount} ({100.0*cleanCount/n:0.0}%)");
+    }
+
+    private static void SaveMask(bool[] mask, int w, int h, string path)
+    {
+        var px = new byte[w * h];
+        for (int i = 0; i < px.Length; i++) px[i] = mask[i] ? (byte)255 : (byte)0;
+        ImageIo.SaveGrayPng(new GrayImage(w, h, px), path);
+    }
+
+    /// <summary>
+    /// Reports the located MapRect bbox per frame + how well the crop+resampled
+    /// texture actually register (deviation meanNcc — 1.0 = perfect terrain cancel,
+    /// lower = misregistered). Saves the crop and the resampled texture so the
+    /// registration can be eyeballed.
+    /// </summary>
+    [SkippableFact]
+    public void Dump_crop_accuracy()
+    {
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+        using var sp = new ServiceCollection().AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var outDir = Path.Combine(AssetCacheDir, "..", "diagnostics", "calibration", "938-masks");
+        Directory.CreateDirectory(outDir);
+
+        foreach (var (file, label) in new[]
+        {
+            ("eltibule-frame1-rejected-3inliers.gray.png", "frame1"),
+            ("eltibule-frame2-accepted-7.61px.gray.png", "frame2"),
+        })
+        {
+            var path = Path.Combine(FrameDir, file);
+            if (!File.Exists(path)) continue;
+            var frame = ImageIo.LoadGray(path);
+            var r = MapRectLocator.AutoDetect(frame, baseTex!, LowNcc, MapRectLocator.DefaultWorkingLongEdgePx);
+            if (r is null) { _out.WriteLine($"{label}: no rect"); continue; }
+
+            var crop = ImageOps.Crop(frame, r.OriginX, r.OriginY, r.Width, r.Height);
+            var tex = ImageOps.Resize(baseTex!, r.Width, r.Height);
+            LocalNccDeviation.DeviationMap(
+                LocalNccDeviation.ToGrayFloat(crop), LocalNccDeviation.ToGrayFloat(tex),
+                r.Width, r.Height, win: 11, out var meanNcc, addedOnly: false);
+
+            _out.WriteLine(
+                $"{label}: bbox=({r.OriginX},{r.OriginY}) {r.Width}x{r.Height}  " +
+                $"[right={r.OriginX + r.Width}, bottom={r.OriginY + r.Height}]  of {frame.Width}x{frame.Height}  " +
+                $"score={r.AutoDetectScore:0.000} scaleF={r.SourceScaleFactor:0.000}  " +
+                $"crop↔texture meanNCC={meanNcc:0.000} (1.0=perfect register)");
+
+            ImageIo.SaveGrayPng(crop, Path.Combine(outDir, $"{label}-crop.png"));
+            ImageIo.SaveGrayPng(tex, Path.Combine(outDir, $"{label}-texture-resampled.png"));
+        }
+    }
+
+    /// <summary>
+    /// Tests whether the poor crop↔texture registration is caused by the base
+    /// texture's decorative frame (terrain inset within an ornate border the in-game
+    /// crop lacks). Strips a border of each candidate fraction off the texture,
+    /// re-runs the locator, and reports the registration score + crop↔texture
+    /// meanNCC. A clear peak at some inset ⇒ frame-inset is the cause (fixable);
+    /// flat-and-low everywhere ⇒ the in-game render and asset texture are
+    /// fundamentally dissimilar (a deeper problem for the deviation approach).
+    /// </summary>
+    [SkippableFact]
+    public void Frame_inset_registration_sweep_frame2()
+    {
+        var framePath = Path.Combine(FrameDir, "eltibule-frame2-accepted-7.61px.gray.png");
+        Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+        using var sp = new ServiceCollection().AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var frame = ImageIo.LoadGray(framePath);
+
+        foreach (var inset in new[] { 0.0, 0.04, 0.06, 0.08, 0.10, 0.12, 0.15 })
+        {
+            int mx = (int)Math.Round(baseTex!.Width * inset);
+            int my = (int)Math.Round(baseTex.Height * inset);
+            var tex = inset == 0.0
+                ? baseTex
+                : ImageOps.Crop(baseTex, mx, my, baseTex.Width - 2 * mx, baseTex.Height - 2 * my);
+
+            var r = MapRectLocator.AutoDetect(frame, tex, 0.0, MapRectLocator.DefaultWorkingLongEdgePx);
+            if (r is null) { _out.WriteLine($"inset {inset:0.00}: no rect"); continue; }
+
+            var crop = ImageOps.Crop(frame, r.OriginX, r.OriginY, r.Width, r.Height);
+            var texR = ImageOps.Resize(tex, r.Width, r.Height);
+            LocalNccDeviation.DeviationMap(
+                LocalNccDeviation.ToGrayFloat(crop), LocalNccDeviation.ToGrayFloat(texR),
+                r.Width, r.Height, win: 11, out var meanNcc, addedOnly: false);
+
+            _out.WriteLine(
+                $"inset {inset:0.00} (tex {tex.Width}x{tex.Height}): " +
+                $"bbox=({r.OriginX},{r.OriginY}) {r.Width}x{r.Height}  score={r.AutoDetectScore:0.000}  meanNCC={meanNcc:0.000}");
+        }
+    }
+
+    /// <summary>
+    /// Since the base texture and the in-game render don't pixel-register (the
+    /// deviation premise is weak), test the alternative: the
+    /// <see cref="WholeImageTemplateDetector"/>, which NCC-matches icon glyphs
+    /// directly over the screenshot and needs no terrain cancellation. Runs both
+    /// detectors through the production engine+gate on frame 2 AS-IS and compares
+    /// detection counts + solve inliers/residual.
+    /// </summary>
+    [SkippableFact]
+    public void Detector_comparison_frame2()
+    {
+        var framePath = Path.Combine(FrameDir, "eltibule-frame2-accepted-7.61px.gray.png");
+        Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+        using var sp = new ServiceCollection().AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var templates = sp.GetRequiredService<IIconTemplateProvider>().GetTemplates();
+        var frame = ImageIo.LoadGray(framePath);
+        var mapRect = MapRectLocator.AutoDetect(frame, baseTex!, LowNcc, MapRectLocator.DefaultWorkingLongEdgePx);
+        Skip.If(mapRect is null, "map sub-rect not located");
+        var refs = EltibuleReferences();
+
+        var request = new DetectionRequest(
+            frame, baseTex!, mapRect!, templates, RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts)
+        { RenderSizePx = RenderSizePx };
+
+        foreach (var (name, det) in new (string, ICalibrationDetector)[]
+        {
+            ("DeviationBlob (production)", new DeviationBlobCalibrationDetector()),
+            ("WholeImageTemplate", new WholeImageTemplateDetector()),
+        })
+        {
+            Dump($"{name} detect", det.Detect(request));
+            var engine = new MapCalibrationSolveEngine(det, new CalibrationConfidenceGate());
+            DumpSolve($"{name} solve", engine.Solve(request, refs));
+        }
+    }
+
+    /// <summary>
+    /// Runs detect→solve with a MANUALLY-supplied map bbox (via InlineData) instead
+    /// of the auto-located MapRect, to test whether an accurate screenshot↔texture
+    /// rect improves the solve. The bbox bounds the full rocky-edged map in
+    /// screenshot pixels; TextureWidth/Height stay the full 2048x2033. Runs AS-IS
+    /// (detector ignores the rect; the solver's ScreenshotToTexture uses it) and the
+    /// aligned crop, and reports crop↔texture meanNCC + inlier correspondences.
+    /// PLACEHOLDER bboxes are the auto-located values — replace with manual ones.
+    /// </summary>
+    [SkippableTheory]
+    [InlineData("eltibule-frame1-rejected-3inliers.gray.png", 204, 133, 847, 841)]   // manual bbox (122726)
+    [InlineData("eltibule-frame2-accepted-7.61px.gray.png", 130, 60, 995, 986)]      // manual bbox (123012)
+    public void Manual_bbox_solve(string frameFile, int bx, int by, int bw, int bh)
+    {
+        var framePath = Path.Combine(FrameDir, frameFile);
+        Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+
+        using var sp = new ServiceCollection()
+            .AddSingleton<ILoggerFactory>(new TestOutputLoggerFactory(_out))
+            .AddMithrilMapCalibrationEngine(AssetCacheDir)
+            .BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var templates = sp.GetRequiredService<IIconTemplateProvider>().GetTemplates();
+        var detector = sp.GetRequiredService<ICalibrationDetector>();
+        var engine = sp.GetRequiredService<MapCalibrationSolveEngine>();
+        var refs = EltibuleReferences();
+        var frame = ImageIo.LoadGray(framePath);
+
+        var manual = new DetectionMapRect(bx, by, bw, bh, baseTex!.Width, baseTex.Height);
+        _out.WriteLine($"{frameFile}: manual bbox ({bx},{by}) {bw}x{bh}  of {frame.Width}x{frame.Height}");
+
+        // AS-IS detection (full frame) + solve using the manual rect to map anchors->texture.
+        var asIs = new DetectionRequest(frame, baseTex, manual, templates,
+            RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts) { RenderSizePx = RenderSizePx };
+        Dump("AS-IS detect", detector.Detect(asIs));
+        DumpSolve("AS-IS solve (manual rect)", engine.Solve(asIs, refs));
+
+        // Aligned crop to the manual bbox + resampled texture; report registration quality.
+        var crop = ImageOps.Crop(frame, bx, by, bw, bh);
+        var tex = ImageOps.Resize(baseTex, bw, bh);
+        LocalNccDeviation.DeviationMap(
+            LocalNccDeviation.ToGrayFloat(crop), LocalNccDeviation.ToGrayFloat(tex),
+            bw, bh, win: 11, out var meanNcc, addedOnly: false);
+        _out.WriteLine($"  crop↔texture meanNCC={meanNcc:0.000} (1.0=perfect register)");
+        var alignedRect = new DetectionMapRect(0, 0, bw, bh, baseTex.Width, baseTex.Height);
+        var aligned = new DetectionRequest(crop, tex, alignedRect, templates,
+            RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts) { RenderSizePx = RenderSizePx };
+        Dump("ALIGNED detect", detector.Detect(aligned));
+        DumpSolve("ALIGNED solve", engine.Solve(aligned, refs));
+    }
+
+    /// <summary>
+    /// Frame 1 rescue probe: refine the manual bbox by a local offset+scale search
+    /// that maximizes crop↔texture meanNCC, then solve the aligned crop with a
+    /// PERMISSIVE gate (floor 2, residual 1000px) so every inlier correspondence
+    /// prints — to see whether frame 1 is bbox-limited (a better rect → ≥4 inliers)
+    /// or genuinely icon-poor (a zoomed-in capture with too few distinct landmarks).
+    /// </summary>
+    [SkippableFact]
+    public void Frame1_rescue_attempt()
+    {
+        var framePath = Path.Combine(FrameDir, "eltibule-frame1-rejected-3inliers.gray.png");
+        Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+        using var sp = new ServiceCollection()
+            .AddSingleton<ILoggerFactory>(new TestOutputLoggerFactory(_out))
+            .AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var templates = sp.GetRequiredService<IIconTemplateProvider>().GetTemplates();
+        var detector = sp.GetRequiredService<ICalibrationDetector>();
+        var refs = EltibuleReferences();
+        var frame = ImageIo.LoadGray(framePath);
+
+        // Manual bbox from the user.
+        int bx0 = 204, by0 = 133, bw0 = 847, bh0 = 841;
+
+        // Local search: maximize crop↔texture meanNCC over small offset + scale.
+        double bestMean = -1; int bbx = bx0, bby = by0, bbw = bw0, bbh = bh0;
+        foreach (var s in new[] { 0.96, 0.98, 0.99, 1.0, 1.01, 1.02, 1.04 })
+            foreach (var dx in new[] { -16, -8, 0, 8, 16 })
+                foreach (var dy in new[] { -16, -8, 0, 8, 16 })
+                {
+                    int w = (int)Math.Round(bw0 * s), h = (int)Math.Round(bh0 * s);
+                    int x = bx0 + dx, y = by0 + dy;
+                    if (x < 0 || y < 0 || x + w > frame.Width || y + h > frame.Height) continue;
+                    var c = ImageOps.Crop(frame, x, y, w, h);
+                    var t = ImageOps.Resize(baseTex!, w, h);
+                    LocalNccDeviation.DeviationMap(
+                        LocalNccDeviation.ToGrayFloat(c), LocalNccDeviation.ToGrayFloat(t),
+                        w, h, win: 11, out var mean, addedOnly: false);
+                    if (mean > bestMean) { bestMean = mean; bbx = x; bby = y; bbw = w; bbh = h; }
+                }
+
+        _out.WriteLine($"manual bbox ({bx0},{by0}) {bw0}x{bh0} → refined ({bbx},{bby}) {bbw}x{bbh}  meanNCC {0.736:0.000}→{bestMean:0.000}");
+
+        var crop = ImageOps.Crop(frame, bbx, bby, bbw, bbh);
+        var tex = ImageOps.Resize(baseTex!, bbw, bbh);
+        var rect = new DetectionMapRect(0, 0, bbw, bbh, baseTex!.Width, baseTex.Height);
+        var req = new DetectionRequest(crop, tex, rect, templates,
+            RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts) { RenderSizePx = RenderSizePx };
+        Dump("refined ALIGNED detect", detector.Detect(req));
+
+        // Permissive gate so the inlier set (and the near-4th) is logged regardless.
+        var engine = new MapCalibrationSolveEngine(detector,
+            new CalibrationConfidenceGate(goodResidualThresholdPx: 1000, inlierFloor: 2),
+            sp.GetRequiredService<ILoggerFactory>().CreateLogger("Engine"));
+        DumpSolve("refined ALIGNED solve (permissive gate)", engine.Solve(req, refs));
+    }
+
+    /// <summary>
+    /// The registration target: a meanNCC-maximizing coarse→fine search must
+    /// reproduce the hand-verified pixel-perfect map bbox for each frame (the
+    /// objective the current MapRectLocator does NOT optimize — it maximizes a
+    /// downsampled global NCC, which lands ~10-60px / several % off, collapsing
+    /// terrain cancellation). Aspect is locked to the texture's (h = w·H/W).
+    /// </summary>
+    [SkippableTheory]
+    [InlineData("eltibule-frame1-rejected-3inliers.gray.png", 204, 133, 847, 841)]
+    [InlineData("eltibule-frame2-accepted-7.61px.gray.png", 130, 60, 995, 986)]
+    public void Registration_search_reproduces_ground_truth(string frameFile, int gtX, int gtY, int gtW, int gtH)
+    {
+        var framePath = Path.Combine(FrameDir, frameFile);
+        Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+        using var sp = new ServiceCollection().AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var frame = ImageIo.LoadGray(framePath);
+
+        // Seed from the coarse auto-locator (the realistic starting point a fix would have).
+        var seed = MapRectLocator.AutoDetect(frame, baseTex!, LowNcc, MapRectLocator.DefaultWorkingLongEdgePx);
+        Skip.If(seed is null, "seed locate failed");
+        _out.WriteLine($"{frameFile}: seed (auto) ({seed!.OriginX},{seed.OriginY}) {seed.Width}x{seed.Height} meanNCC={MeanNcc(frame, baseTex!, seed.OriginX, seed.OriginY, seed.Width):0.000}");
+
+        // Coarse→fine→ultrafine local search maximizing meanNCC; h aspect-locked.
+        // The meanNCC peak is razor-sharp (a few px off halves it), so the final
+        // stage steps at 2px to actually land on it and cancel terrain.
+        var (bx, by, bw, bm) = SearchRect(frame, baseTex!, seed.OriginX, seed.OriginY, seed.Width,
+            offsets: new[] { -48, -32, -16, 0, 16, 32, 48 }, widthSteps: new[] { -120, -80, -40, 0, 40 });
+        (bx, by, bw, bm) = SearchRect(frame, baseTex!, bx, by, bw,
+            offsets: new[] { -12, -8, -4, 0, 4, 8, 12 }, widthSteps: new[] { -16, -8, 0, 8, 16 });
+        (bx, by, bw, bm) = SearchRect(frame, baseTex!, bx, by, bw,
+            offsets: new[] { -6, -4, -2, 0, 2, 4, 6 }, widthSteps: new[] { -6, -4, -2, 0, 2, 4, 6 });
+        int bh = (int)Math.Round(bw * (double)baseTex!.Height / baseTex.Width);
+
+        _out.WriteLine($"  recovered ({bx},{by}) {bw}x{bh} meanNCC={bm:0.000}   ground-truth ({gtX},{gtY}) {gtW}x{gtH}");
+        _out.WriteLine($"  delta: origin=({bx - gtX},{by - gtY}) size=({bw - gtW},{bh - gtH})");
+
+        // Solve at the recovered rect (aligned crop) to confirm the registration drives the good solve.
+        var templates = sp.GetRequiredService<IIconTemplateProvider>().GetTemplates();
+        var crop = ImageOps.Crop(frame, bx, by, bw, bh);
+        var tex = ImageOps.Resize(baseTex!, bw, bh);
+        var rect = new DetectionMapRect(0, 0, bw, bh, baseTex!.Width, baseTex.Height);
+        var req = new DetectionRequest(crop, tex, rect, templates,
+            RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts) { RenderSizePx = RenderSizePx };
+        var solve = new MapCalibrationSolveEngine(
+            sp.GetRequiredService<ICalibrationDetector>(), new CalibrationConfidenceGate()).Solve(req, EltibuleReferences());
+        DumpSolve("  recovered-rect solve", solve);
+
+        Math.Abs(bx - gtX).Should().BeLessThanOrEqualTo(12, "recovered origin.X must reproduce the ground-truth bbox");
+        Math.Abs(by - gtY).Should().BeLessThanOrEqualTo(12, "recovered origin.Y must reproduce the ground-truth bbox");
+        Math.Abs(bw - gtW).Should().BeLessThanOrEqualTo(12, "recovered width must reproduce the ground-truth bbox");
+        bm.Should().BeGreaterThan(0.5, "the recovered rect must register (terrain cancels) — auto-locator gives <0.1");
+    }
+
+    private (int X, int Y, int W, double Mean) SearchRect(
+        GrayImage frame, GrayImage baseTex, int cx, int cy, int cw, int[] offsets, int[] widthSteps)
+    {
+        double best = -1; int bx = cx, by = cy, bw = cw;
+        foreach (var dw in widthSteps)
+        {
+            int w = cw + dw;
+            int h = (int)Math.Round(w * (double)baseTex.Height / baseTex.Width);
+            foreach (var dx in offsets)
+                foreach (var dy in offsets)
+                {
+                    int x = cx + dx, y = cy + dy;
+                    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > frame.Width || y + h > frame.Height) continue;
+                    double m = MeanNcc(frame, baseTex, x, y, w);
+                    if (m > best) { best = m; bx = x; by = y; bw = w; }
+                }
+        }
+        return (bx, by, bw, best);
+    }
+
+    private static double MeanNcc(GrayImage frame, GrayImage baseTex, int x, int y, int w)
+    {
+        int h = (int)Math.Round(w * (double)baseTex.Height / baseTex.Width);
+        if (x < 0 || y < 0 || x + w > frame.Width || y + h > frame.Height) return -1;
+        var crop = ImageOps.Crop(frame, x, y, w, h);
+        var tex = ImageOps.Resize(baseTex, w, h);
+        LocalNccDeviation.DeviationMap(
+            LocalNccDeviation.ToGrayFloat(crop), LocalNccDeviation.ToGrayFloat(tex),
+            w, h, win: 11, out var mean, addedOnly: false);
+        return mean;
+    }
+
     private void Dump(string label, IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> det)
     {
         var total = det.Sum(kv => kv.Value.Count);
@@ -173,7 +591,7 @@ public sealed class EltibuleLiveFrameDetectionRepro
     /// World coords are (X, Y, Z); the solver pairs on X/Z. The 2 positionless npcs.json
     /// entries (Work Orders sign, Sacrificial Bowl pedestal) are intentionally absent.
     /// </summary>
-    private static List<LandmarkReference> EltibuleReferences()
+    internal static List<LandmarkReference> EltibuleReferences()
     {
         static LandmarkReference R(string type, string name, double x, double y, double z) =>
             new(type, name, new WorldCoord(x, y, z));
