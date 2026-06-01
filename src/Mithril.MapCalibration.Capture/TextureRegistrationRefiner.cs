@@ -35,9 +35,8 @@ namespace Mithril.MapCalibration.Capture;
 /// </summary>
 public sealed class TextureRegistrationRefiner : IMapRegionRefiner
 {
-    // ECC stopping criteria: ported verbatim from the #938 prototype
-    // (OpenCvRegistrationProbe.Ecc_registration_vs_ground_truth). 200 iterations /
-    // 1e-6 epsilon converges in ~230–642ms on the real Eltibule frames.
+    // ECC stopping criteria: ported verbatim from the #938 ECC prototype. 200
+    // iterations / 1e-6 epsilon converges in ~230–642ms on the real Eltibule frames.
     private const int MaxIterations = 200;
     private const double Epsilon = 1e-6;
     private const int GaussFiltSize = 5;
