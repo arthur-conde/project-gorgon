@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 
 namespace Mithril.MapCalibration.Detection;
@@ -44,6 +45,7 @@ public sealed class MapCalibrationSolveEngine
             var req = request with { BaseTexture = texture };
 
             var detections = _detector.Detect(req);
+            LogDetectSummary(rotate180, detections, references);
             var (cal, inliers) = TypeAwareRansacSolver.Solve(ToMutable(detections), references, request.MapRect);
 
             if (cal is null)
@@ -82,6 +84,47 @@ public sealed class MapCalibrationSolveEngine
         var rejected = bestRejected ?? new CalibrationSolveResult(null, 0, "no detections");
         _logger?.LogInformation("Auto-calibration rejected: {Reason}.", rejected.RejectReason);
         return rejected;
+    }
+
+    /// <summary>
+    /// Per-orientation detect summary: typed detection total + per-type breakdown
+    /// and the reference per-type breakdown, plus a targeted Warning when the two
+    /// type-key sets are disjoint (the mithril#974 failure mode: a detection-side
+    /// IconTemplate.LandmarkType vocabulary that doesn't overlap the reference-side
+    /// LandmarkReference.Type vocabulary → 0 correspondences possible). Cheap: at
+    /// most one Information line + (rarely) one Warning per orientation, ≤ 2 each
+    /// per solve attempt.
+    /// </summary>
+    private void LogDetectSummary(
+        bool rotate180,
+        IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> detections,
+        IReadOnlyList<LandmarkReference> references)
+    {
+        if (_logger is null) return;
+
+        var detTotal = detections.Sum(kv => kv.Value.Count);
+        var detBreakdown = string.Join(" ", detections
+            .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+            .Select(kv => $"{kv.Key}={kv.Value.Count}"));
+        var refBreakdown = string.Join(" ", references
+            .GroupBy(r => r.Type, StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => $"{g.Key}={g.Count()}"));
+
+        _logger.LogInformation(
+            "Detect (rotate180={Rotate180}): {DetTotal} typed detections [{DetBreakdown}]; references [{RefBreakdown}].",
+            rotate180, detTotal, detBreakdown, refBreakdown);
+
+        var detKeys = new HashSet<string>(detections.Keys, StringComparer.Ordinal);
+        var refKeys = new HashSet<string>(references.Select(r => r.Type), StringComparer.Ordinal);
+        if (detKeys.Count > 0 && refKeys.Count > 0 && !detKeys.Overlaps(refKeys))
+        {
+            _logger.LogWarning(
+                "Detection type-keys [{DetKeys}] and reference type-keys [{RefKeys}] are disjoint — "
+                + "0 correspondences possible; likely an icon-template ↔ reference type-vocabulary mismatch.",
+                string.Join(",", detKeys.OrderBy(k => k, StringComparer.Ordinal)),
+                string.Join(",", refKeys.OrderBy(k => k, StringComparer.Ordinal)));
+        }
     }
 
     private static IReadOnlyDictionary<string, List<TypedDetection>> ToMutable(

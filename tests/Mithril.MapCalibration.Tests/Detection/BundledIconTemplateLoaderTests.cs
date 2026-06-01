@@ -97,6 +97,24 @@ public sealed class BundledIconTemplateLoaderTests : IDisposable
     }
 
     [Fact]
+    public void CanonicalLandmarkTypes_All_matches_the_manifest_landmarkType_value_set()
+    {
+        // mithril#974 parity guard: the CanonicalLandmarkTypes vocabulary the
+        // reference provider emits MUST equal the icon-template manifest's
+        // landmarkType value set (the detection-side keys), casing exact —
+        // otherwise the type-constrained solver pool is empty and every solve
+        // rejects with 0 inliers.
+        WriteCacheFixture(FourLandmarks);
+
+        var set = BundledIconTemplateLoader.LoadFromDirectory(_dir, logger: null);
+        var manifestTypes = set.Templates.Select(t => t.LandmarkType).ToHashSet(StringComparer.Ordinal);
+
+        manifestTypes.Should().BeEquivalentTo(CanonicalLandmarkTypes.All);
+        // Casing-exact: no Ordinal-mismatched member sneaks in.
+        manifestTypes.Should().OnlyContain(t => CanonicalLandmarkTypes.All.Contains(t));
+    }
+
+    [Fact]
     public void Every_template_has_positive_dims_and_matching_buffer_lengths()
     {
         WriteCacheFixture(FourLandmarks);

@@ -15,32 +15,27 @@ namespace Mithril.MapCalibration.Capture;
 /// whose <see cref="Npc.AreaName"/> matches the area.
 ///
 /// <para>Each source is mapped to a <see cref="LandmarkReference"/> whose
-/// <c>Type</c> is one of the four template/solver tokens
-/// (<c>landmark_telepad</c> / <c>landmark_medipillar</c> / <c>landmark_portal</c>
-/// / <c>landmark_npc</c>) the detector pairs against. World coords are parsed
+/// <c>Type</c> is the <b>raw PG landmark type</b> — the canonical vocabulary
+/// (<c>Portal</c> / <c>MeditationPillar</c> / <c>TeleportationPlatform</c> /
+/// <c>Npc</c>, see <see cref="CanonicalLandmarkTypes"/>) the detector also keys
+/// its <see cref="IconTemplate.LandmarkType"/> detections by, so the
+/// type-constrained RANSAC solver can pair them with an Ordinal type match
+/// (mithril#974). The <c>landmark_*</c> sprite strings are template <i>names</i>
+/// (<see cref="LandmarkReference.Name"/>), never types. World coords are parsed
 /// from the <c>"x:N y:N z:N"</c> position string (the live <c>landmarks.json</c> /
 /// <c>npcs.json</c> shape — memory <c>pg_reference_coords_are_world_frame</c>).</para>
 /// </summary>
 public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
 {
-    // Verification owed (#914): confirm the Landmark.Type → template-token mapping
-    // against live landmarks.json. Confirmed against v470 corpus on 2026-05-31:
-    // Type ∈ { Portal, MeditationPillar, TeleportationPlatform } — every landmark
-    // carries exactly one of these. The four template tokens come from
-    // IconTemplateExtractor's canonical pairing (tools/Mithril.MapCalibration.Tools.Common):
-    //   Portal → landmark_portal, MeditationPillar → landmark_medipillar,
-    //   TeleportationPlatform → landmark_telepad, (NPCs) → landmark_npc.
-    // Any future/unmapped Type is WARNED and dropped (no silent coercion to a
-    // wrong token, which would mispair a detection and corrupt the solve).
-    private static readonly IReadOnlyDictionary<string, string> LandmarkTypeToToken =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Portal"] = "landmark_portal",
-            ["MeditationPillar"] = "landmark_medipillar",
-            ["TeleportationPlatform"] = "landmark_telepad",
-        };
-
-    private const string NpcToken = "landmark_npc";
+    // The canonical raw-PG landmark types we accept from landmarks.json. Confirmed
+    // against the v470 corpus on 2026-05-31: Type ∈ { Portal, MeditationPillar,
+    // TeleportationPlatform } — every landmark carries exactly one of these. NPCs
+    // are emitted with the CanonicalLandmarkTypes.Npc type. The vocabulary lives
+    // in CanonicalLandmarkTypes so detection-side (IconTemplate.LandmarkType) and
+    // reference-side keys never diverge again (mithril#974). Any future/unmapped
+    // Type is WARNED and dropped (no silent coercion to a wrong type, which would
+    // mispair a detection and corrupt the solve).
+    private static readonly IReadOnlySet<string> KnownLandmarkTypes = CanonicalLandmarkTypes.LandmarkTypes;
 
     private readonly IReferenceDataService _refData;
     private readonly ILogger? _logger;
@@ -67,19 +62,21 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
             foreach (var lm in landmarks)
             {
                 if (lm is null || string.IsNullOrEmpty(lm.Type)) continue;
-                if (!LandmarkTypeToToken.TryGetValue(lm.Type, out var token))
+                if (!KnownLandmarkTypes.Contains(lm.Type))
                 {
                     // No silent drop: surface the unmapped type so an uncovered
                     // landmark category is visible (verification-owed follow-up).
                     _logger?.LogWarning(
-                        "Unmapped landmark Type {Type} in area {Area} (landmark {Name}); dropped — no template token. " +
-                        "Verification owed (#914): confirm Landmark.Type → template-token mapping vs live landmarks.json.",
+                        "Unmapped landmark Type {Type} in area {Area} (landmark {Name}); dropped — not a canonical landmark type. " +
+                        "Verification owed (#914): confirm Landmark.Type vocabulary vs live landmarks.json + the icon-template manifest.",
                         lm.Type, areaKey, lm.Name);
                     continue;
                 }
                 if (TryParseWorld(lm.Loc, out var world))
                 {
-                    result.Add(new LandmarkReference(token, lm.Name ?? lm.Type, world));
+                    // Emit the raw PG type verbatim — the same vocabulary the
+                    // detector keys IconTemplate.LandmarkType by (mithril#974).
+                    result.Add(new LandmarkReference(lm.Type, lm.Name ?? lm.Type, world));
                 }
                 else
                 {
@@ -94,7 +91,7 @@ public sealed class ReferenceDataAreaReferenceProvider : IAreaReferenceProvider
             if (!string.Equals(npc.AreaName, areaKey, StringComparison.Ordinal)) continue;
             if (TryParseWorld(npc.Pos, out var world))
             {
-                result.Add(new LandmarkReference(NpcToken, npc.Name ?? "NPC", world));
+                result.Add(new LandmarkReference(CanonicalLandmarkTypes.Npc, npc.Name ?? "NPC", world));
             }
             else
             {

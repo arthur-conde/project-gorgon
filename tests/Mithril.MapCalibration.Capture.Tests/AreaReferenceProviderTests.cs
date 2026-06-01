@@ -1,5 +1,7 @@
+using System.Linq;
 using FluentAssertions;
 using Mithril.MapCalibration.Capture.Tests.Fixtures;
+using Mithril.MapCalibration.Detection;
 using Mithril.Reference.Models.Misc;
 using Xunit;
 
@@ -25,10 +27,13 @@ public sealed class AreaReferenceProviderTests
 
         var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea("AreaSerbule");
 
-        refs.Should().Contain(r => r.Type == "landmark_portal" && r.World.X == 10 && r.World.Z == -20);
-        refs.Should().Contain(r => r.Type == "landmark_medipillar");
-        refs.Should().Contain(r => r.Type == "landmark_telepad");
-        refs.Should().Contain(r => r.Type == "landmark_npc" && r.Name == "Marna" && r.World.X == 30 && r.World.Z == 40);
+        // mithril#974: Type carries the raw PG vocabulary (the same the detector
+        // keys IconTemplate.LandmarkType by); the landmark_* sprite strings are
+        // template NAMES, never types.
+        refs.Should().Contain(r => r.Type == "Portal" && r.World.X == 10 && r.World.Z == -20);
+        refs.Should().Contain(r => r.Type == "MeditationPillar");
+        refs.Should().Contain(r => r.Type == "TeleportationPlatform");
+        refs.Should().Contain(r => r.Type == "Npc" && r.Name == "Marna" && r.World.X == 30 && r.World.Z == 40);
     }
 
     [Fact]
@@ -42,7 +47,7 @@ public sealed class AreaReferenceProviderTests
 
         var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea("AreaSerbule");
 
-        refs.Should().ContainSingle(r => r.Type == "landmark_portal");
+        refs.Should().ContainSingle(r => r.Type == "Portal");
         refs.Should().OnlyContain(r => r.Name == "Good");
     }
 
@@ -62,4 +67,24 @@ public sealed class AreaReferenceProviderTests
     [Fact]
     public void Unknown_area_yields_empty()
         => new ReferenceDataAreaReferenceProvider(new FakeAreaReferenceData()).ForArea("AreaNope").Should().BeEmpty();
+
+    [Fact]
+    public void Emitted_types_are_a_subset_of_the_canonical_vocabulary()
+    {
+        // mithril#974 seam guard: every reference Type the provider emits must be
+        // in CanonicalLandmarkTypes.All — the same vocabulary the detector keys
+        // IconTemplate.LandmarkType by — so the type-constrained solver can pair
+        // them. A stray landmark_* token here would re-open the 0-inliers bug.
+        var refData = new FakeAreaReferenceData()
+            .WithLandmarks("AreaSerbule",
+                new Landmark { Name = "P", Loc = "x:1 y:0 z:1", Type = "Portal" },
+                new Landmark { Name = "M", Loc = "x:2 y:0 z:2", Type = "MeditationPillar" },
+                new Landmark { Name = "T", Loc = "x:3 y:0 z:3", Type = "TeleportationPlatform" })
+            .WithNpc("AreaSerbule", "Marna", pos: "x:4 y:0 z:4");
+
+        var refs = new ReferenceDataAreaReferenceProvider(refData).ForArea("AreaSerbule");
+
+        refs.Select(r => r.Type).Distinct().Should().OnlyContain(t => CanonicalLandmarkTypes.All.Contains(t));
+        refs.Should().NotBeEmpty();
+    }
 }

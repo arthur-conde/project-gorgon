@@ -30,10 +30,10 @@ public static class IconTemplateEmitter
     // IconTemplateExtractor.LandmarkIcons). Name → (LandmarkType, synthetic dims).
     private static readonly (string Name, string LandmarkType, int W, int H)[] Landmarks =
     [
-        ("landmark_telepad", "TeleportationPlatform", 28, 22),
-        ("landmark_medipillar", "MeditationPillar", 18, 40),
-        ("landmark_portal", "Portal", 24, 32),
-        ("landmark_npc", "Npc", 17, 16),
+        ("landmark_telepad", CanonicalLandmarkTypes.TeleportationPlatform, 28, 22),
+        ("landmark_medipillar", CanonicalLandmarkTypes.MeditationPillar, 18, 40),
+        ("landmark_portal", CanonicalLandmarkTypes.Portal, 24, 32),
+        ("landmark_npc", CanonicalLandmarkTypes.Npc, 17, 16),
     ];
 
     private sealed record Decoded(string Name, string LandmarkType, double PivotX, double PivotY, int W, int H, byte[] Gray, byte[] Alpha);
