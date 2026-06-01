@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -141,25 +142,43 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             return Fail(area, "no map bbox set — use the draw-map-bbox hotkey first");
         }
 
+        _logger?.LogInformation(
+            "Auto-calibration {Area}: capturing map region {Width}x{Height} at ({X},{Y})…",
+            area, bbox.Value.Width, bbox.Value.Height, bbox.Value.X, bbox.Value.Y);
         var gray = await _capture.CaptureMapAsync(bbox.Value, ct).ConfigureAwait(false);
         if (gray is null)
         {
             return Fail(area, "map capture failed or was rejected (black / wrong-size frame)");
         }
 
+        _logger?.LogInformation(
+            "Auto-calibration {Area}: captured {Width}x{Height} frame; resolving base texture…",
+            area, gray.Width, gray.Height);
         var baseTexture = await ResolveBaseTextureAsync(area, ct).ConfigureAwait(false);
         if (baseTexture is null)
         {
             return Fail(area, "preparing map assets… (base texture unavailable — no detections possible)");
         }
 
+        // Texture-registration refine — a synchronous NCC pass over the base
+        // texture that can take a noticeable moment on a cold call. Bracket it
+        // with before/after + timing so a slow or stalled refine is visible (the
+        // attempt previously went dark after "Loaded base texture …").
+        _logger?.LogInformation(
+            "Auto-calibration {Area}: locating the map within the captured frame (texture registration)…", area);
+        var refineStart = Stopwatch.GetTimestamp();
         var mapRect = _refiner.Refine(gray, baseTexture, RefineMinScore);
         if (mapRect is null)
         {
             return Fail(area, "couldn't locate the map in the captured frame — zoom the in-game map all the way out");
         }
+        _logger?.LogInformation(
+            "Auto-calibration {Area}: map sub-rect located ({MapRect}) in {ElapsedMs:0} ms.",
+            area, mapRect, Stopwatch.GetElapsedTime(refineStart).TotalMilliseconds);
 
         var references = _references.ForArea(area);
+        _logger?.LogInformation(
+            "Auto-calibration {Area}: {ReferenceCount} landmark reference(s) for this area.", area, references.Count);
 
         // Resolve icon templates per attempt (#949). On a fresh icon cache the
         // provider returns Empty; if a sidecar is wired, demand-trigger its --icons
@@ -181,7 +200,14 @@ public sealed class AutoCalibrationEngine : IAutoCalibrationRunner
             RenderSizePx = RenderSizePx,
         };
 
+        _logger?.LogInformation(
+            "Auto-calibration {Area}: running detect→solve ({TemplateCount} icon template(s), {ReferenceCount} reference(s))…",
+            area, templates.Templates.Count, references.Count);
+        var solveStart = Stopwatch.GetTimestamp();
         var result = _solver.Solve(request, references);
+        _logger?.LogInformation(
+            "Auto-calibration {Area}: solve finished in {ElapsedMs:0} ms (calibration {HasCalibration}, {Inliers} inlier(s)).",
+            area, Stopwatch.GetElapsedTime(solveStart).TotalMilliseconds, result.Calibration is not null, result.InlierCount);
         if (result.Calibration is null)
         {
             var reason = result.RejectReason ?? "no geometrically-consistent fit";
