@@ -92,6 +92,25 @@ public sealed class ShellSettings : INotifyPropertyChanged, IActiveCharacterPers
     private bool _autoStartPerfTrace;
     public bool AutoStartPerfTrace { get => _autoStartPerfTrace; set => Set(ref _autoStartPerfTrace, value); }
 
+    /// <summary>When true, the map-calibration capture seam dumps each successfully
+    /// validated <b>color</b> capture frame to a PNG under
+    /// <c>%LocalAppData%/Mithril/diagnostics/calibration/</c> (mirrors
+    /// <c>CaptureDiagnosticsOptions.DumpCaptureFrames</c>, #966 Task 3). Off by
+    /// default — a debug aid for investigating a slow/stalled refine, leaving the
+    /// exact pixels the solve engine was handed on disk to inspect. Purely additive
+    /// field → no schema bump (missing key → false on load).</summary>
+    private bool _dumpCalibrationCaptureFrames;
+    public bool DumpCalibrationCaptureFrames { get => _dumpCalibrationCaptureFrames; set => Set(ref _dumpCalibrationCaptureFrames, value); }
+
+    /// <summary>When true (and <see cref="DumpCalibrationCaptureFrames"/> is on),
+    /// also dump the derived <b>grayscale</b> frame alongside the color one to
+    /// <c>%LocalAppData%/Mithril/diagnostics/calibration/</c> (mirrors
+    /// <c>CaptureDiagnosticsOptions.DumpGrayFrames</c>) — catches a <c>ToGray</c>
+    /// bug a color-only dump would hide. Off by default; purely additive field →
+    /// no schema bump (missing key → false on load).</summary>
+    private bool _dumpCalibrationGrayFrames;
+    public bool DumpCalibrationGrayFrames { get => _dumpCalibrationGrayFrames; set => Set(ref _dumpCalibrationGrayFrames, value); }
+
     private string _uiFontFamily = "Segoe UI";
     public string UiFontFamily { get => _uiFontFamily; set => Set(ref _uiFontFamily, value); }
 

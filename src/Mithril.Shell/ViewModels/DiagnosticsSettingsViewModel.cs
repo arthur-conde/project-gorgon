@@ -4,6 +4,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using Mithril.MapCalibration.Capture;
 using Mithril.Shared.Wpf.Dialogs;
 
 namespace Mithril.Shell.ViewModels;
@@ -63,6 +64,12 @@ public sealed partial class DiagnosticsSettingsViewModel : ObservableObject
     /// <see cref="PerfDirectoryHint"/> — surfaced for display and the
     /// "Open log directory" command.</summary>
     public string LogDirectoryHint => LogDirectory;
+
+    /// <summary>The folder where map-calibration capture-frame dumps land when the
+    /// dump toggle (#966 Task 3) is on. Surfaced read-only by delegating to
+    /// <see cref="CaptureFrameDumper.DumpDirectory"/> — the single source of truth for
+    /// the path — so the displayed hint can never drift from where dumps are written.</summary>
+    public string CalibrationDumpDirectoryHint => CaptureFrameDumper.DumpDirectory;
 
     private static string ShellDirectory => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
