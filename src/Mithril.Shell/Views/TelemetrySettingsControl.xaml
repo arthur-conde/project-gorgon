@@ -80,8 +80,10 @@
                        FontWeight="SemiBold" Margin="0,4,0,4"/>
             <TextBox Text="{Binding Settings.Endpoint, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                      Background="#FF252525" Foreground="#FFE8E8E8" BorderBrush="#44FFFFFF"
-                     Padding="6,4" Margin="0,0,0,12"
-                     ToolTip="Restart required to apply. OTel SDK 1.15.x captures the endpoint in the exporter at provider build; live swap needs a provider rebuild (tracked in follow-up)."/>
+                     Padding="6,4" Margin="0,0,0,2"
+                     ToolTip="Restart required to apply. Paste the BASE OTLP endpoint (e.g. http://localhost:5341/ingest/otlp) — each signal's v1/{traces,metrics,logs} path is derived from it. A pasted …/v1/traces is tolerated. For gRPC the value is used verbatim. OTel SDK 1.15.x captures the endpoint at provider build; live swap needs a provider rebuild (tracked in follow-up)."/>
+            <TextBlock Text="Base endpoint, e.g. http://localhost:5341/ingest/otlp — the v1/{traces,metrics,logs} path is appended per signal."
+                       Foreground="#66FFFFFF" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12"/>
 
             <!-- Protocol. Restart-required for the same reason as Endpoint:
                  the protocol selects the exporter transport at provider build. -->

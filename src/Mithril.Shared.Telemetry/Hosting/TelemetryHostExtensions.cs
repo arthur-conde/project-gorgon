@@ -224,7 +224,7 @@ public static class TelemetryHostExtensions
                 {
                     tb.AddProcessor<AllowlistAndRedactionProcessor>();
                 }
-                tb.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
+                tb.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString, "traces"));
             })
             .WithMetrics(mb =>
             {
@@ -248,7 +248,7 @@ public static class TelemetryHostExtensions
                     });
                 }
 
-                mb.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
+                mb.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString, "metrics"));
             });
 
         services.AddLogging(lb =>
@@ -276,26 +276,22 @@ public static class TelemetryHostExtensions
                     o.AddProcessor(sp => sp.GetRequiredService<LogScrubbingProcessor>());
                 }
 
-                o.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString));
+                o.AddOtlpExporter(opts => ConfigureOtlp(opts, settings, headerString, "logs"));
             });
         });
 
         return services;
     }
 
+    /// <summary>The three OTLP signal sub-paths, longest-stable ordering for the strip pass.</summary>
+    private static readonly string[] SignalPaths = ["traces", "metrics", "logs"];
+
     private static void ConfigureOtlp(
         OtlpExporterOptions opts,
         TelemetrySettings settings,
-        string headerString)
+        string headerString,
+        string signal)
     {
-        if (Uri.TryCreate(settings.Endpoint, UriKind.Absolute, out var uri))
-        {
-            opts.Endpoint = uri;
-        }
-        // If parsing fails, leave the OTel default endpoint in place rather
-        // than throw at registration — the exporter will fail to connect at
-        // runtime and surface via the diagnostics log / ExporterHealthMonitor.
-
         opts.Protocol = settings.Protocol switch
         {
             OtlpProtocol.Grpc => OtlpExportProtocol.Grpc,
@@ -303,10 +299,71 @@ public static class TelemetryHostExtensions
             _ => OtlpExportProtocol.HttpProtobuf,
         };
 
+        var resolved = ResolveSignalEndpoint(settings.Endpoint, settings.Protocol, signal);
+        if (resolved is not null)
+        {
+            opts.Endpoint = resolved;
+        }
+        // If parsing fails, leave the OTel default endpoint in place rather
+        // than throw at registration — the exporter will fail to connect at
+        // runtime and surface via the diagnostics log / ExporterHealthMonitor.
+
         if (!string.IsNullOrEmpty(headerString))
         {
             opts.Headers = headerString;
         }
+    }
+
+    /// <summary>
+    /// Derive the per-signal OTLP endpoint for <paramref name="signal"/>
+    /// (<c>"traces"</c> / <c>"metrics"</c> / <c>"logs"</c>) from the single
+    /// user-configured <paramref name="endpoint"/> (mithril#968).
+    ///
+    /// <para>Mithril registers a <strong>per-signal</strong> exporter
+    /// (<c>WithTracing(… AddOtlpExporter)</c>, <c>WithMetrics(…)</c>,
+    /// <c>AddLogging(… AddOtlpExporter)</c>) and sets <c>Endpoint</c>
+    /// programmatically. The OTel SDK's <c>AppendSignalPathToEndpoint</c> is
+    /// <c>internal</c> and the <c>OtlpExporterOptions.Endpoint</c> setter forces
+    /// it to <c>false</c>, so a programmatically-set HTTP endpoint is used
+    /// <em>verbatim</em> with no automatic <c>v1/{signal}</c> append. Mithril
+    /// therefore derives the path itself: with a single <c>Endpoint</c> field,
+    /// reusing it across all three signals would POST metrics and logs to the
+    /// traces path (the default Seq layout) and they never ingest.</para>
+    ///
+    /// <para>For <see cref="OtlpProtocol.HttpProtobuf"/>: strip any existing
+    /// trailing <c>/v1/{traces|metrics|logs}</c> (so a pasted signal URL — the
+    /// common mistake — re-derives correctly per pipeline) and any trailing
+    /// slash, then append <c>/v1/{signal}</c>. For
+    /// <see cref="OtlpProtocol.Grpc"/> the endpoint is returned verbatim: gRPC
+    /// routes the signal via the service method, not a URL path.</para>
+    ///
+    /// Returns <c>null</c> when <paramref name="endpoint"/> is not an absolute
+    /// URI, so the caller leaves the OTel default endpoint in place.
+    /// </summary>
+    internal static Uri? ResolveSignalEndpoint(string? endpoint, OtlpProtocol protocol, string signal)
+    {
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        if (protocol == OtlpProtocol.Grpc)
+        {
+            return uri;
+        }
+
+        var left = uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        foreach (var existing in SignalPaths)
+        {
+            var suffix = "/v1/" + existing;
+            if (left.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+            {
+                left = left[..^suffix.Length];
+                break;
+            }
+        }
+
+        return new Uri(left + "/v1/" + signal, UriKind.Absolute);
     }
 
     /// <summary>
