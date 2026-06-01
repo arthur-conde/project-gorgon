@@ -4,6 +4,34 @@ Offline tool for [mithril#852](https://github.com/moumantai-gg/mithril/issues/85
 
 **Achieves sub-pixel residual** (0.30 px on AreaSerbule, parity with manual click-calibration via Legolas) when invoked with the recipe in [Real usage](#real-usage) below.
 
+## Status & relationship to the production pipeline (read before trusting this)
+
+This is the **#852-era** offline calibrator. The shipped runtime auto-capture path
+(#914 capture → #931 asset sidecar → deviation-blob detector → per-area
+`refinements.json`) has since **diverged from this tool**, so treat it as a
+**detection + diagnostics reference, not the production calibration producer**:
+
+- **Different detector.** This tool uses **whole-image single-scale NCC**; production
+  uses `DeviationBlobCalibrationDetector` (deviation-vs-base-texture blobs). They do
+  not behave identically — e.g. on a more zoomed-out capture this tool can recover an
+  area (16 inliers / 1.3 px) where the production detector collapses (see #979). Use
+  it to *characterise* what a more robust detector achieves; don't assume production
+  matches it.
+- **`--border-mask` is the colour `BorderMask`, not production's mask.** Production
+  uses the **deviation-flood** rim mask. #897 found the colour mask **over-masks**
+  irregular-interior maps (Eltibule 67.6 % vs deviation-flood 11.3 %): its keep-rule is
+  "green (vegetation) or blue (water)", so brown interior terrain that's edge-connected
+  to the rim gets flooded and real landmarks are dropped → a clustered, wrong fit. **Do
+  NOT pass `--border-mask` on maps whose interior shares the rim's colour / is
+  edge-connected (Eltibule, KurMountains).**
+- **Detection threshold differs.** This tool's `--detection-threshold` defaults to
+  **0.50**; the production whole-image detector uses `TypeFloor = 0.80`, which can
+  exclude real (0.5–0.8-scoring) icons and collapse to a tiny-scale fit (#979).
+- **It auto-writes the bundled baseline.** A normal run **overwrites**
+  `src/Mithril.MapCalibration/BundledData/map-calibration-baseline.json`. For analysis /
+  debugging, **always pass `--dry-run`** so it prints what would change without clobbering
+  the committed baseline.
+
 ## What it does
 
 Pipeline:
