@@ -568,15 +568,20 @@ public sealed class EltibuleLiveFrameDetectionRepro
     }
 
     /// <summary>
-    /// Why frame 1 is NOT recoverable by accepting its 3-inlier fit — and why the
-    /// inlier floor of 4 is load-bearing. Both frames are the SAME area, so a CORRECT
-    /// world→texture calibration must be identical (a property of the area+texture).
-    /// Frame 1's clean 3-inlier fit (1.42px residual) DIVERGES wildly from frame 2's
-    /// trusted 10–12-inlier fit (≈40% scale, mirror flipped, ~200° rotation): three
-    /// points under-constrain a 4-DOF similarity, so a low-residual fit can pin a
-    /// confidently-WRONG transform. Lowering the floor / accepting 3-inlier solves
-    /// would persist garbage calibrations — frame 1 needs a genuine 4th correct
-    /// detection (better capture/detection), not a gate relaxation.
+    /// Why a 3-inlier fit must NOT be accepted — the inlier floor of 4 is load-bearing.
+    /// Both frames are the SAME area, so a CORRECT world→texture calibration must be
+    /// identical (a property of the area+texture). Frame 1's production deviation-blob
+    /// 3-inlier fit (1.42px residual) DIVERGES wildly from frame 2's trusted 10-inlier
+    /// fit (≈40% scale, mirror flipped, ~200° rotation): three points under-constrain a
+    /// 4-DOF similarity, so a low-residual fit can pin a confidently-WRONG transform.
+    /// Lowering the floor / accepting 3-inlier solves would persist garbage.
+    ///
+    /// <para>This does NOT mean frame 1 is unrecoverable. Frame 1 IS recoverable — the
+    /// gate-study whole-image-NCC pipeline (tools/MapCalibrationFromScreenshot, same
+    /// bbox, NO --border-mask) solves it at 16 inliers / 1.31px, matching frame 2's
+    /// cal. The 3-inlier failure is the production deviation-blob DETECTOR
+    /// underperforming on this smaller capture, not the capture itself (#978 frame-1
+    /// follow-up). The floor of 4 stays load-bearing regardless.</para>
     /// </summary>
     [SkippableFact]
     public void Frame1_three_inlier_fit_is_untrustworthy()
