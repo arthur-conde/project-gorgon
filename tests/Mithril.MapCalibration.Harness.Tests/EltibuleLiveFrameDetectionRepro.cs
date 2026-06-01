@@ -325,17 +325,20 @@ public sealed class EltibuleLiveFrameDetectionRepro
     }
 
     /// <summary>
-    /// Since the base texture and the in-game render don't pixel-register (the
-    /// deviation premise is weak), test the alternative: the
-    /// <see cref="WholeImageTemplateDetector"/>, which NCC-matches icon glyphs
-    /// directly over the screenshot and needs no terrain cancellation. Runs both
-    /// detectors through the production engine+gate on frame 2 AS-IS and compares
-    /// detection counts + solve inliers/residual.
+    /// Defines the path to recovering frame 1 in the PRODUCTION engine: at the
+    /// pixel-perfect bbox (registration held good), run both production detectors
+    /// — deviation-blob (current) and WholeImageTemplateDetector (the texture-free
+    /// alternative) — through the production engine+gate, and report inliers +
+    /// residual + recovered scale (truth ≈ 0.76). Tells us whether production's own
+    /// whole-image detector recovers frame 1 (16-ish, scale ≈0.76) the way the
+    /// gate-study tool did, or whether it needs the tool's render-size tuning.
     /// </summary>
-    [SkippableFact]
-    public void Detector_comparison_frame2()
+    [SkippableTheory]
+    [InlineData("eltibule-frame1-rejected-3inliers.gray.png", 204, 133, 847, 841)]
+    [InlineData("eltibule-frame2-accepted-7.61px.gray.png", 130, 60, 995, 986)]
+    public void Detector_comparison_aligned(string frameFile, int bx, int by, int bw, int bh)
     {
-        var framePath = Path.Combine(FrameDir, "eltibule-frame2-accepted-7.61px.gray.png");
+        var framePath = Path.Combine(FrameDir, frameFile);
         Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
         Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
             $"base-texture cache missing under {AssetCacheDir}");
@@ -343,24 +346,26 @@ public sealed class EltibuleLiveFrameDetectionRepro
         var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
         Skip.If(baseTex is null, "base texture failed to load");
         var templates = sp.GetRequiredService<IIconTemplateProvider>().GetTemplates();
-        var frame = ImageIo.LoadGray(framePath);
-        var mapRect = MapRectLocator.AutoDetect(frame, baseTex!, LowNcc, MapRectLocator.DefaultWorkingLongEdgePx);
-        Skip.If(mapRect is null, "map sub-rect not located");
         var refs = EltibuleReferences();
 
-        var request = new DetectionRequest(
-            frame, baseTex!, mapRect!, templates, RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts)
-        { RenderSizePx = RenderSizePx };
+        var crop = ImageOps.Crop(ImageIo.LoadGray(framePath), bx, by, bw, bh);
+        var tex = ImageOps.Resize(baseTex!, bw, bh);
+        var rect = new DetectionMapRect(0, 0, bw, bh, baseTex!.Width, baseTex.Height);
+        var request = new DetectionRequest(crop, tex, rect, templates,
+            RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts) { RenderSizePx = RenderSizePx };
 
         foreach (var (name, det) in new (string, ICalibrationDetector)[]
         {
             ("DeviationBlob (production)", new DeviationBlobCalibrationDetector()),
-            ("WholeImageTemplate", new WholeImageTemplateDetector()),
+            ("WholeImageTemplate (production)", new WholeImageTemplateDetector()),
         })
         {
-            Dump($"{name} detect", det.Detect(request));
-            var engine = new MapCalibrationSolveEngine(det, new CalibrationConfidenceGate());
-            DumpSolve($"{name} solve", engine.Solve(request, refs));
+            Dump($"{frameFile} {name} detect", det.Detect(request));
+            var r = new MapCalibrationSolveEngine(det, new CalibrationConfidenceGate()).Solve(request, refs);
+            if (r.Calibration is not null)
+                _out.WriteLine($"  {name} solve: ACCEPTED — {r.InlierCount} inliers, residual {r.Calibration.ResidualPixels:0.00} px, scale {r.Calibration.Scale:0.0000} (truth ~0.76)");
+            else
+                _out.WriteLine($"  {name} solve: REJECTED — {r.InlierCount} inliers ({r.RejectReason})");
         }
     }
 
@@ -627,6 +632,78 @@ public sealed class EltibuleLiveFrameDetectionRepro
         agrees.Should().BeFalse(
             "frame1's clean-residual 3-inlier fit is a WRONG transform vs the trusted frame2 cal — " +
             "demonstrating 3-inlier acceptance is unsafe and the inlier floor of 4 is load-bearing");
+    }
+
+    /// <summary>
+    /// Bisects WHY the production WholeImageTemplateDetector collapses to a tiny-scale
+    /// wrong fit on frame 1 while the gate-study tool (render-size 12) gets it right:
+    /// sweeps RenderSizePx and reports inliers/residual/scale. If a smaller render size
+    /// recovers it (scale ≈0.76), the production fix is render-size auto-sweep; if not,
+    /// the gap is the RANSAC (the tool's anti-collapse robustness).
+    /// </summary>
+    [SkippableFact]
+    public void Frame1_whole_image_render_size_sweep()
+    {
+        var framePath = Path.Combine(FrameDir, "eltibule-frame1-rejected-3inliers.gray.png");
+        Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+        using var sp = new ServiceCollection().AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var templates = sp.GetRequiredService<IIconTemplateProvider>().GetTemplates();
+        var refs = EltibuleReferences();
+        var crop = ImageOps.Crop(ImageIo.LoadGray(framePath), 204, 133, 847, 841);
+        var tex = ImageOps.Resize(baseTex!, 847, 841);
+        var rect = new DetectionMapRect(0, 0, 847, 841, baseTex!.Width, baseTex.Height);
+
+        foreach (var rs in new[] { 10, 11, 12, 13, 14, 16, 20 })
+        {
+            var req = new DetectionRequest(crop, tex, rect, templates, RimMaskMode.DeviationFlood, LowNcc, TypeFloor, BlobOpts) { RenderSizePx = rs };
+            var det = new WholeImageTemplateDetector();
+            var nDet = det.Detect(req).Sum(kv => kv.Value.Count);
+            var r = new MapCalibrationSolveEngine(det, new CalibrationConfidenceGate()).Solve(req, refs);
+            var verdict = r.Calibration is not null
+                ? $"ACCEPTED {r.InlierCount} inliers {r.Calibration.ResidualPixels:0.00}px scale {r.Calibration.Scale:0.0000}"
+                : $"REJECTED {r.InlierCount} inliers";
+            _out.WriteLine($"  renderSize={rs,2}: {nDet} detections → {verdict}   (truth scale ~0.76)");
+        }
+    }
+
+    /// <summary>
+    /// Second bisection: detection threshold. Production WholeImageTemplateDetector uses
+    /// TypeFloor 0.80; the gate-study tool uses 0.50. If the real frame-1 icons score
+    /// 0.5–0.8 they're excluded at 0.80, leaving only high-scoring rim noise → tiny-scale
+    /// collapse. Sweeps TypeFloor at the tool's render size (12) to see if matching the
+    /// tool's detection config lets production's RANSAC recover (scale ≈0.76).
+    /// </summary>
+    [SkippableFact]
+    public void Frame1_whole_image_threshold_sweep()
+    {
+        var framePath = Path.Combine(FrameDir, "eltibule-frame1-rejected-3inliers.gray.png");
+        Skip.IfNot(File.Exists(framePath), $"frame fixture missing: {framePath}");
+        Skip.IfNot(File.Exists(Path.Combine(AssetCacheDir, $"map-texture-{Area}.bin")),
+            $"base-texture cache missing under {AssetCacheDir}");
+        using var sp = new ServiceCollection().AddMithrilMapCalibrationEngine(AssetCacheDir).BuildServiceProvider();
+        var baseTex = sp.GetRequiredService<IBaseTextureProvider>().TryGetBaseTexture(Area);
+        Skip.If(baseTex is null, "base texture failed to load");
+        var templates = sp.GetRequiredService<IIconTemplateProvider>().GetTemplates();
+        var refs = EltibuleReferences();
+        var crop = ImageOps.Crop(ImageIo.LoadGray(framePath), 204, 133, 847, 841);
+        var tex = ImageOps.Resize(baseTex!, 847, 841);
+        var rect = new DetectionMapRect(0, 0, 847, 841, baseTex!.Width, baseTex.Height);
+
+        foreach (var floor in new[] { 0.45, 0.50, 0.55, 0.60, 0.70, 0.80 })
+        {
+            var req = new DetectionRequest(crop, tex, rect, templates, RimMaskMode.DeviationFlood, LowNcc, floor, BlobOpts) { RenderSizePx = 12 };
+            var det = new WholeImageTemplateDetector();
+            var nDet = det.Detect(req).Sum(kv => kv.Value.Count);
+            var r = new MapCalibrationSolveEngine(det, new CalibrationConfidenceGate()).Solve(req, refs);
+            var verdict = r.Calibration is not null
+                ? $"ACCEPTED {r.InlierCount} inliers {r.Calibration.ResidualPixels:0.00}px scale {r.Calibration.Scale:0.0000}"
+                : $"REJECTED {r.InlierCount} inliers";
+            _out.WriteLine($"  typeFloor={floor:0.00} (rs12): {nDet} detections → {verdict}   (truth scale ~0.76)");
+        }
     }
 
     private void Dump(string label, IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> det)
