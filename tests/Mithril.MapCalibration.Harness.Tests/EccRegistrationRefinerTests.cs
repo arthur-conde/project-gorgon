@@ -20,12 +20,13 @@ namespace Mithril.Tools.MapCalibration.Harness.Tests;
 /// <summary>
 /// #978 acceptance suite for the precise screenshot↔texture ECC registration fix.
 /// Drives the PRODUCTION seam (<see cref="TextureRegistrationRefiner"/>) and the full
-/// <see cref="AutoCalibrationEngine"/> path — not the hand-rolled probe — against the
-/// committed Eltibule frame fixtures + the live asset cache.
+/// <see cref="AutoCalibrationEngine"/> path against the committed Eltibule frame
+/// fixtures + the live asset cache.
 ///
-/// <para>The probe (<see cref="OpenCvRegistrationProbe.Ecc_registration_vs_ground_truth"/>)
-/// proves the ECC recipe at the algorithm level; these tests prove the production
-/// wiring (refiner → aligned crop/resample → engine) actually clears the gate.
+/// <para>These tests prove the production wiring (refiner → aligned crop/resample →
+/// engine) actually clears the gate — the genuine regression coverage that survived
+/// the #938 investigation scaffolding prune (the exploratory detect-repro and the
+/// algorithm-level OpenCV probe were removed; their findings live in mithril#979).
 /// SkippableFact: a missing fixture or asset cache skips (green no-op in CI), but on
 /// this machine the cache is present so they EXECUTE and must PASS.</para>
 /// </summary>
@@ -130,7 +131,7 @@ public sealed class EccRegistrationRefinerTests
             capture: new StubCapture(frame),
             refiner: new TextureRegistrationRefiner(),                 // REAL ECC seam
             baseTextures: baseTextures,                                // REAL cache provider
-            references: new StubAreaRefs(EltibuleLiveFrameDetectionRepro.EltibuleReferences()),
+            references: new StubAreaRefs(EltibuleReferences.All()),
             solver: new MapCalibrationSolveEngineAdapter(solveEngine), // REAL detect→solve→gate
             iconTemplates: iconTemplates,                              // REAL cache templates
             calibrationService: capturedService,
