@@ -50,13 +50,13 @@ public sealed class MapCalibrationSolveEngine
 
             if (cal is null)
             {
-                bestRejected ??= new CalibrationSolveResult(null, inliers.Count, "no geometrically-consistent fit");
+                bestRejected ??= new CalibrationSolveResult(null, inliers.Count, "no geometrically-consistent fit", inliers);
                 continue;
             }
 
             if (_gate.Accept(cal, inliers.Count, out var reason))
             {
-                var accepted = new CalibrationSolveResult(cal, inliers.Count, null);
+                var accepted = new CalibrationSolveResult(cal, inliers.Count, null, inliers);
                 // Prefer the lower-residual accepted orientation.
                 if (bestAccepted is null || cal.ResidualPixels < bestAccepted.Calibration!.ResidualPixels)
                 {
@@ -68,7 +68,7 @@ public sealed class MapCalibrationSolveEngine
                 // Track the closest rejection for a useful reason if nothing passes.
                 if (bestRejected is null || cal.ResidualPixels < (bestRejected.Calibration?.ResidualPixels ?? double.PositiveInfinity))
                 {
-                    bestRejected = new CalibrationSolveResult(null, inliers.Count, reason);
+                    bestRejected = new CalibrationSolveResult(null, inliers.Count, reason, inliers);
                 }
             }
         }
@@ -78,6 +78,7 @@ public sealed class MapCalibrationSolveEngine
             _logger?.LogInformation(
                 "Auto-calibration accepted: residual {Residual:0.00} px, {Inliers} inliers.",
                 bestAccepted.Calibration!.ResidualPixels, bestAccepted.InlierCount);
+            LogInlierCorrespondences(bestAccepted.Calibration!, bestAccepted.Inliers);
             return bestAccepted;
         }
 
@@ -127,6 +128,41 @@ public sealed class MapCalibrationSolveEngine
         }
     }
 
+    /// <summary>
+    /// Log the accepted solve's inlier correspondences — which detection paired with
+    /// which reference, and the per-inlier residual (how far the solved calibration
+    /// projects the ref's world coord from the detected texture pixel). Also logs the
+    /// inlier pixel span: a small span means the fit is anchored by a clustered set
+    /// and extrapolates poorly across the map (a "bad solve" signature even when the
+    /// local residual looks acceptable). One Information line per accepted solve.
+    /// </summary>
+    private void LogInlierCorrespondences(
+        AreaCalibration calibration,
+        IReadOnlyList<TypeAwareRansacSolver.AssignedReference>? inliers)
+    {
+        if (_logger is null || inliers is null || inliers.Count == 0) return;
+
+        var parts = new List<string>(inliers.Count);
+        double minX = double.PositiveInfinity, maxX = double.NegativeInfinity;
+        double minY = double.PositiveInfinity, maxY = double.NegativeInfinity;
+        foreach (var a in inliers)
+        {
+            var p = calibration.WorldToWindow(new WorldCoord(a.WorldX, 0, a.WorldZ));
+            var dx = p.X - a.PixelX;
+            var dy = p.Y - a.PixelY;
+            var residual = Math.Sqrt(dx * dx + dy * dy);
+            parts.Add($"{a.Label}@({a.PixelX:0},{a.PixelY:0})r={residual:0.0}");
+            if (a.PixelX < minX) minX = a.PixelX;
+            if (a.PixelX > maxX) maxX = a.PixelX;
+            if (a.PixelY < minY) minY = a.PixelY;
+            if (a.PixelY > maxY) maxY = a.PixelY;
+        }
+
+        _logger.LogInformation(
+            "Inlier correspondences ({Count}), texture-px span {SpanW:0}x{SpanH:0}: {Correspondences}.",
+            inliers.Count, maxX - minX, maxY - minY, string.Join("  ", parts));
+    }
+
     private static IReadOnlyDictionary<string, List<TypedDetection>> ToMutable(
         IReadOnlyDictionary<string, IReadOnlyList<TypedDetection>> byType)
     {
@@ -136,8 +172,15 @@ public sealed class MapCalibrationSolveEngine
     }
 }
 
-/// <summary>Outcome of a headless solve: the gated calibration (or null), the inlier count, and a reject reason when null.</summary>
+/// <summary>
+/// Outcome of a headless solve: the gated calibration (or null), the inlier count,
+/// a reject reason when null, and the inlier correspondences that produced the fit
+/// (empty when none). The correspondence list lets a caller log <i>which</i> refs
+/// matched and at what per-inlier residual — the diagnostic that turns a bare
+/// "4 inliers, 7.61 px" into a self-explaining solve.
+/// </summary>
 public sealed record CalibrationSolveResult(
     AreaCalibration? Calibration,
     int InlierCount,
-    string? RejectReason);
+    string? RejectReason,
+    IReadOnlyList<TypeAwareRansacSolver.AssignedReference>? Inliers = null);
